@@ -64,6 +64,11 @@ class DataGraph:
                 # at the end of the trace to make sure it process
                 # the last trace. I am not going to fix this now.
 
+                # Hack: ignore other lines.
+                if len(line) == 0 or (
+                    line[0] != 'i' and line[0] != 'p' and line[0] != 'r'):
+                    continue
+
                 # debug("Read in: {}".format(line))
                 if line[0] != 'i' or len(line_buffer) == 0:
                     line_buffer.append(line)
