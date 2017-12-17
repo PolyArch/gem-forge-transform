@@ -1,6 +1,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+void printFuncEnter(const char* FunctionName) {
+  printf("e|%s|\n", FunctionName);
+}
+
 void printInst(const char* FunctionName, const char* BBName, unsigned Id,
                char* OpCodeName) {
   printf("i|%s|%s|%d|%s|\n", FunctionName, BBName, Id, OpCodeName);

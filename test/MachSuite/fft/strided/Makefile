@@ -19,7 +19,7 @@ LLVM_REPLAYS=$(LLVMS:%.ll=%.rll)
 
 # Compile
 %.ll: %.c
-	clang -emit-llvm -S -I$(INCLUDE_DIR) -o $@ -c $^
+	clang -emit-llvm -S -I$(INCLUDE_DIR) $(CFLAGS) -o $@ -c $^
 
 # Instrument
 %.tll: %.ll

@@ -84,6 +84,9 @@ class Prototype : public llvm::FunctionPass {
       runOnBasicBlock(*BBIter);
     }
 
+    // Trace the function args.
+    traceFuncArgs(Function);
+
     // We always modify the function.
     return true;
   }
@@ -95,6 +98,7 @@ class Prototype : public llvm::FunctionPass {
   /* Print functions. */
   llvm::Value* PrintInstFunc;
   llvm::Value* PrintValueFunc;
+  llvm::Value* PrintFuncEnterFunc;
 
   // Insert all the print function declaration into the module.
   void registerPrintFunctions(llvm::Module& Module) {
@@ -110,7 +114,7 @@ class Prototype : public llvm::FunctionPass {
         Int8PtrTy,  // char* OpCodeName,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
-    PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
+    this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
 
     std::vector<llvm::Type*> PrintValueArgs{
         Int8PtrTy,
@@ -118,10 +122,34 @@ class Prototype : public llvm::FunctionPass {
         Int8PtrTy, Int32Ty, Int32Ty,
     };
     auto PrintValueTy = llvm::FunctionType::get(VoidTy, PrintValueArgs, true);
-    PrintValueFunc = Module.getOrInsertFunction("printValue", PrintValueTy);
+    this->PrintValueFunc =
+        Module.getOrInsertFunction("printValue", PrintValueTy);
+
+    std::vector<llvm::Type*> PrintFuncEnterArgs{
+        Int8PtrTy,
+    };
+    auto PrintFuncEnterTy =
+        llvm::FunctionType::get(VoidTy, PrintFuncEnterArgs, false);
+    this->PrintFuncEnterFunc =
+        Module.getOrInsertFunction("printFuncEnter", PrintFuncEnterTy);
   }
 
   std::map<std::string, llvm::Constant*> GlobalStrings;
+
+  bool traceFuncArgs(llvm::Function& Function) {
+    auto& EntryBB = Function.getEntryBlock();
+    llvm::IRBuilder<> Builder(&*EntryBB.begin());
+    auto PrintFuncEnterArgs =
+        std::vector<llvm::Value*>{getOrCreateStringLiteral(
+            this->GlobalStrings, this->Module, Function.getName())};
+    Builder.CreateCall(this->PrintFuncEnterFunc, PrintFuncEnterArgs);
+    for (auto ArgsIter = Function.arg_begin(), ArgsEnd = Function.arg_end();
+         ArgsIter != ArgsEnd; ArgsIter++) {
+      auto PrintValueArgs = getPrintValueArgs("p", &*ArgsIter);
+      Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+    }
+    return true;
+  }
 
   bool runOnBasicBlock(llvm::BasicBlock& BB) {
     llvm::BasicBlock::iterator NextInstIter;
@@ -130,7 +158,7 @@ class Prototype : public llvm::FunctionPass {
         this->GlobalStrings, this->Module, BB.getParent()->getName());
     auto BBNameValue = getOrCreateStringLiteral(this->GlobalStrings,
                                                 this->Module, BB.getName());
-
+    auto PHIInsts = std::vector<std::pair<llvm::PHINode*, unsigned>>();
     unsigned InstId = 0;
     for (auto InstIter = BB.begin(); InstIter != BB.end();
          InstIter = NextInstIter, InstId++) {
@@ -139,33 +167,44 @@ class Prototype : public llvm::FunctionPass {
 
       std::string OpCodeName = InstIter->getOpcodeName();
       DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
-      // if (OpCodeName == "alloca") {
-      //   // Ignore all the alloca instructions.
-      //   continue;
-      // }
       llvm::Instruction* Inst = &*InstIter;
+
       if (auto* PHI = llvm::dyn_cast<llvm::PHINode>(Inst)) {
-        // Special case for phi node as they must be the first
-        // inst of the basic block.
-        assert(InstId == 0 && "Phi node must be the first inst in BB.");
-        tracePhiInst(PHI, FunctionNameValue, BBNameValue, InstId);
+        // Special case for phi node as they must be grouped at the top
+        // of the basic block.
+        // Push them into a vector for later processing.
+        PHIInsts.emplace_back(PHI, InstId);
         continue;
       }
 
       traceNonPhiInst(Inst, FunctionNameValue, BBNameValue, InstId);
     }
+
+    // Handle all the phi nodes now.
+    if (!PHIInsts.empty()) {
+      auto InsertBefore = PHIInsts[PHIInsts.size() - 1].first->getNextNode();
+      for (auto& PHIInstPair : PHIInsts) {
+        auto PHIInst = PHIInstPair.first;
+        auto InstId = PHIInstPair.second;
+        tracePhiInst(PHIInst, FunctionNameValue, BBNameValue, InstId,
+                     InsertBefore);
+      }
+    }
+
     return true;
   }
 
   // Phi node has to be handled specially as it must be the first
   // instruction of a basic block.
+  // All the trace functions will be inserted beter @InsertBefore.
   void tracePhiInst(llvm::PHINode* Inst, llvm::Constant* FunctionNameValue,
-                    llvm::Constant* BBNameValue, unsigned InstId) {
+                    llvm::Constant* BBNameValue, unsigned InstId,
+                    llvm::Instruction* InsertBefore) {
     std::vector<llvm::Value*> PrintInstArgs =
         getPrintInstArgs(Inst, FunctionNameValue, BBNameValue, InstId);
     // Call printInst. After the instruction.
     DEBUG(llvm::errs() << "Insert printInst for phi node.\n");
-    llvm::IRBuilder<> Builder(Inst->getNextNode());
+    llvm::IRBuilder<> Builder(InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
     // Call printValue for each parameter before the instruction.
@@ -380,22 +419,6 @@ class ReplayTrace : public llvm::FunctionPass {
 
     // First simply remove all BBs.
     Function.deleteBody();
-    // llvm::BasicBlock* NextBB = nullptr;
-    // llvm::BasicBlock* BBIter = &*(Function.begin());
-    // llvm::BasicBlock* BBEnd = &*(Function.end());
-    // for (llvm::BasicBlock *BBIter = &*(Function.begin()),
-    //                       *BBEnd = &*(Function.end());
-    //      BBIter != BBEnd;) {
-    // //   for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
-    // //        InstIter != InstEnd; ++InstIter) {
-    // //     // InstIter->replaceAllUsesWith(
-    // //     //     llvm::UndefValue::get(InstIter->getType()));
-    // //     // InstIter->eraseFromParent();
-    // //   }
-    //   NextBB = BBIter->getNextNode();
-    // //   // BBIter->eraseFromParent();
-    //   BBIter = NextBB;
-    // }
 
     // Add another entry block with a simple ioctl call.
     auto NewBB = llvm::BasicBlock::Create(this->Module->getContext(), "entry",
