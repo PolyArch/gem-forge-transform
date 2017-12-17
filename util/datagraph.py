@@ -44,12 +44,23 @@ class DynamicInst:
         self.deps = list()
         self.dynamic_values = list()
         self.dynamic_result = None
+        self.environment = dict()
 
 
 class DataGraph:
     def __init__(self):
         self.functions = dict()
         self.dynamicInsts = list()
+        self.environment = dict()
+
+    @staticmethod
+    def isLegalLine(line):
+        return (line[0] == 'i' or line[0] == 'p' or
+                line[0] == 'r' or line[0] == 'a' or line[0] == 'e')
+
+    @staticmethod
+    def isBreakLine(line):
+        return line[0] == 'i' or line[0] == 'e'
 
     @staticmethod
     def createFromTrace(fileName):
@@ -65,43 +76,56 @@ class DataGraph:
                 # the last trace. I am not going to fix this now.
 
                 # Hack: ignore other lines.
-                if len(line) == 0 or (
-                    line[0] != 'i' and line[0] != 'p' and line[0] != 'r'):
+                if len(line) == 0 or (not DataGraph.isLegalLine(line)):
                     continue
 
                 # debug("Read in: {}".format(line))
-                if line[0] != 'i' or len(line_buffer) == 0:
+                if (not DataGraph.isBreakLine(line)) or len(line_buffer) == 0:
                     line_buffer.append(line)
                     continue
                 # Time to break a section.
-                static_inst, dynamic_inst = DataGraph.parseInstruction(
-                    line_buffer, dynamic_id)
+                if line_buffer[0][0] == 'i':
+                    static_inst, dynamic_inst = DataGraph.parseInstruction(
+                        line_buffer, dynamic_id)
 
-                # Add functions.
-                if static_inst.func_name not in dg.functions:
-                    dg.functions[static_inst.func_name] = Function(
-                        static_inst.func_name)
-                func = dg.functions[static_inst.func_name]
-                if static_inst.bb_name not in func.bbs:
-                    func.bbs[static_inst.bb_name] = BasicBlock(
-                        static_inst.bb_name)
-                basic_block = func.bbs[static_inst.bb_name]
-                # Get or create the static instruction.
-                if static_inst.static_id not in basic_block.insts:
-                    # This is a new static instruction we have encountered.
-                    basic_block.insts[static_inst.static_id] = static_inst
-                    # If this instruction generates a result,
-                    # add to the function value map.
-                    if static_inst.result != '':
-                        assert static_inst.result not in func.value_inst_map
-                        func.value_inst_map[static_inst.result] = static_inst
-                # Get the updated static instruction.
-                static_inst = basic_block.insts[static_inst.static_id]
-                # Insert the dynamic instruction.
-                dg.dynamicInsts.append(dynamic_inst)
+                    # Add functions.
+                    if static_inst.func_name not in dg.functions:
+                        dg.functions[static_inst.func_name] = Function(
+                            static_inst.func_name)
+                    func = dg.functions[static_inst.func_name]
+                    if static_inst.bb_name not in func.bbs:
+                        func.bbs[static_inst.bb_name] = BasicBlock(
+                            static_inst.bb_name)
+                    basic_block = func.bbs[static_inst.bb_name]
+                    # Get or create the static instruction.
+                    if static_inst.static_id not in basic_block.insts:
+                        # This is a new static instruction we have encountered.
+                        basic_block.insts[static_inst.static_id] = static_inst
+                        # If this instruction generates a result,
+                        # add to the function value map.
+                        if static_inst.result != '':
+                            assert static_inst.result not in func.value_inst_map
+                            func.value_inst_map[static_inst.result] = static_inst
+                    # Get the updated static instruction.
+                    static_inst = basic_block.insts[static_inst.static_id]
+                    # Update dynamic environment.
+                    dynamic_inst.environment = dg.environment
+                    # Insert the dynamic instruction.
+                    dg.dynamicInsts.append(dynamic_inst)
 
-                # Update.
-                dynamic_id += 1
+                    # Update.
+                    dynamic_id += 1
+                else:
+                    # Special case for enter function node.
+                    func_name, environment = DataGraph.parseFuncEnter(
+                        line_buffer)
+                    # Create the function.
+                    if func_name not in dg.functions:
+                        dg.functions[func_name] = Function(
+                            func_name)
+                    # Set the enviroment.
+                    dg.environment = environment
+
                 line_buffer = list()
                 line_buffer.append(line)
         # Add the dependence in another pass.
@@ -125,7 +149,23 @@ class DataGraph:
             if static_inst.result != '':
                 value_dynamic_inst_map[static_inst.result] = dynamic_inst
 
-    # Parse an instruction and return a tupleStaticInst.
+    # Return a tuple of function name and a dict of parameters.
+    @staticmethod
+    def parseFuncEnter(line_buffer):
+        assert len(line_buffer) > 0
+        func_name = line_buffer[0].split('|')[1]
+        environment = dict()
+        for line_id in range(1, len(line_buffer)):
+            line = line_buffer[line_id]
+            dynamic_value = DynamicValue()
+            DataGraph.parseValueLine(line, dynamic_value)
+            assert line[0] == 'p'
+            environment[dynamic_value.name] = dynamic_value
+            debug("enter {} with param {} = {}".format(
+                func_name, dynamic_value.name, dynamic_value.value))
+        return (func_name, environment)
+
+    # Parse an instruction and return a tuple of StaticInst and DynamicInst.
     @staticmethod
     def parseInstruction(line_buffer, dynamic_id):
         # debug(line_buffer)
