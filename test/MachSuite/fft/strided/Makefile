@@ -32,7 +32,7 @@ LLVM_REPLAYS=$(LLVMS:%.ll=%.rll)
 $(KERN)_trace.bc: $(LLVM_TRACES) ../../../logger.ll
 	llvm-link -o $@ $^
 
-$(KERN)_replay.bc: $(LLVM_REPLAYS)
+$(KERN)_replay.bc: $(LLVM_REPLAYS) ../../../replay.ll
 	llvm-link -o $@ $^
 
 # To asm.

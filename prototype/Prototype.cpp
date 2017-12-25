@@ -429,29 +429,32 @@ class ReplayTrace : public llvm::FunctionPass {
                                           &Function);
     llvm::IRBuilder<> Builder(NewBB);
 
-    const std::string LLVM_TRACE_CPU_FILE = "/dev/llvm_trace_cpu";
-    const int FLAGS = 2048;  // O_NONBLOCK
-    const unsigned long long REQUEST = 0;
+    for (auto ArgIter = Function.arg_begin(), ArgEnd = Function.arg_end();
+         ArgIter != ArgEnd; ArgIter++) {
+      if (ArgIter->getType()->getTypeID() != llvm::Type::TypeID::PointerTyID) {
+        continue;
+      }
+      // Map all pointer
+      auto ArgName = ArgIter->getName();
+      auto ArgNameValue =
+          getOrCreateStringLiteral(this->GlobalStrings, this->Module, ArgName);
+      auto CastAddrValue = Builder.CreateCast(
+          llvm::Instruction::CastOps::BitCast, &*ArgIter,
+          llvm::Type::getInt8PtrTy(this->Module->getContext()));
+      std::vector<llvm::Value*> MapVirtualAddrArgs{
+          ArgNameValue,
+          CastAddrValue,
+      };
+      Builder.CreateCall(this->MapVirtualAddrFunc, MapVirtualAddrArgs);
+    }
 
-    // Insert the open and ioctl call.
-    auto PathnameValue = getOrCreateStringLiteral(
-        this->GlobalStrings, this->Module, LLVM_TRACE_CPU_FILE);
-    auto FlagsValue = llvm::ConstantInt::get(
-        llvm::IntegerType::getInt32Ty(this->Module->getContext()), FLAGS, true);
-    std::vector<llvm::Value*> OpenArgs{
-        PathnameValue,
-        FlagsValue,
+    // Insert replay call.
+    auto TraceNameValue = getOrCreateStringLiteral(
+        this->GlobalStrings, this->Module, Function.getName());
+    std::vector<llvm::Value*> ReplayArgs{
+        TraceNameValue,
     };
-
-    auto FDValue = Builder.CreateCall(this->OpenFunc, OpenArgs);
-    auto RequestValue = llvm::ConstantInt::get(
-        llvm::IntegerType::getInt64Ty(this->Module->getContext()), REQUEST,
-        false);
-    std::vector<llvm::Value*> IoctlArgs{
-        FDValue,
-        RequestValue,
-    };
-    Builder.CreateCall(this->IoctlFunc, IoctlArgs);
+    Builder.CreateCall(this->ReplayFunc, ReplayArgs);
 
     // Remember to return void.
     Builder.CreateRet(nullptr);
@@ -464,8 +467,8 @@ class ReplayTrace : public llvm::FunctionPass {
   std::string Workload;
   llvm::Module* Module;
 
-  llvm::Value* OpenFunc;
-  llvm::Value* IoctlFunc;
+  llvm::Value* MapVirtualAddrFunc;
+  llvm::Value* ReplayFunc;
 
   std::map<std::string, llvm::Constant*> GlobalStrings;
 
@@ -473,22 +476,24 @@ class ReplayTrace : public llvm::FunctionPass {
   void registerFunction(llvm::Module& Module) {
     auto& Context = Module.getContext();
     auto Int8PtrTy = llvm::Type::getInt8PtrTy(Context);
+    auto VoidTy = llvm::Type::getVoidTy(Context);
     auto Int32Ty = llvm::Type::getInt32Ty(Context);
     auto Int64Ty = llvm::Type::getInt64Ty(Context);
 
-    std::vector<llvm::Type*> IoctlArgs{
-        Int32Ty,  // fd,
-        Int64Ty,  // request
+    std::vector<llvm::Type*> MapVirtualAddrArgs{
+        Int8PtrTy,
+        Int8PtrTy,
     };
-    auto IoctlTy = llvm::FunctionType::get(Int32Ty, IoctlArgs, true);
-    this->IoctlFunc = Module.getOrInsertFunction("ioctl", IoctlTy);
+    auto MapVirtualAddrTy =
+        llvm::FunctionType::get(VoidTy, MapVirtualAddrArgs, false);
+    this->MapVirtualAddrFunc =
+        Module.getOrInsertFunction("mapVirtualAddr", MapVirtualAddrTy);
 
-    std::vector<llvm::Type*> OpenArgs{
-        Int8PtrTy,  // pathname,
-        Int32Ty,    // flags,
+    std::vector<llvm::Type*> ReplayArgs{
+        Int8PtrTy,
     };
-    auto OpenTy = llvm::FunctionType::get(Int32Ty, OpenArgs, true);
-    this->OpenFunc = Module.getOrInsertFunction("open", OpenTy);
+    auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, false);
+    this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy);
   }
 };
 
