@@ -363,6 +363,10 @@ class Prototype : public llvm::FunctionPass {
         NumAdditionalArgs = 1;
         break;
       }
+      case llvm::Type::TypeID::DoubleTyID: {
+        NumAdditionalArgs = 1;
+        break;
+      }
     }
     auto NumAdditionalArgsValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(this->Module->getContext()),

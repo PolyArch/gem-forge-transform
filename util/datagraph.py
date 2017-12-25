@@ -35,6 +35,9 @@ class DynamicValue:
         self.type_name = ''
         self.type_id = -1
         self.value = ''
+        # Used for dynamic address value.
+        self.base = ''
+        self.offset = -1
 
 
 class DynamicInst:
@@ -123,15 +126,18 @@ class DataGraph:
                     if func_name not in dg.functions:
                         dg.functions[func_name] = Function(
                             func_name)
-                    # Set the enviroment.
+                    # Set the environment.
                     dg.environment = environment
 
                 line_buffer = list()
                 line_buffer.append(line)
         # Add the dependence in another pass.
         DataGraph.addRegDependence(dg)
+        # Initialize the base/offset of vaddr.
+        DataGraph.initBaseOffsetForDynamicValues(dg)
         return dg
 
+    # Add register dependence.
     @staticmethod
     def addRegDependence(dg):
         value_dynamic_inst_map = {}
@@ -149,6 +155,50 @@ class DataGraph:
             if static_inst.result != '':
                 value_dynamic_inst_map[static_inst.result] = dynamic_inst
 
+    # Initialize the 'base' and 'offset' fields of dynamic value.
+    # For now only support GEP instruction.
+    @staticmethod
+    def initBaseOffsetForDynamicValues(dg):
+        for dynamic_inst in dg.dynamicInsts:
+            static_inst = dynamic_inst.static_inst
+            environment = dynamic_inst.environment
+            if static_inst.op_name == 'getelementptr':
+                # Register new mem object.
+                dynamic_pointer = dynamic_inst.dynamic_values[0]
+                assert dynamic_pointer.name in environment
+                dynamic_base = environment[dynamic_pointer.name]
+                # This is the dynamic result.
+                dynamic_result = dynamic_inst.dynamic_result
+                dynamic_result.base = dynamic_base.base
+                dynamic_result.offset = (
+                    int(dynamic_result.value, 16) - int(dynamic_base.value, 16) + dynamic_base.offset)
+                # Register the result.
+                environment[dynamic_result.name] = dynamic_result
+                debug("Register mem address {} with base {} offset {}".format(
+                    dynamic_result.name, dynamic_result.base, dynamic_result.offset))
+            elif static_inst.op_name == 'load':
+                dynamic_pointer = dynamic_inst.dynamic_values[0]
+                assert dynamic_pointer.name in environment
+                # Get the updated dynamic address.
+                dynamic_inst.dynamic_values[0] = environment[dynamic_pointer.name]
+            elif static_inst.op_name == 'store':
+                dynamic_pointer = dynamic_inst.dynamic_values[1]
+                assert dynamic_pointer.name in environment
+                dynamic_inst.dynamic_values[1] = environment[dynamic_pointer.name]
+    
+    # Helper function to get the element size of a pointer.
+    # The parameter must be a dynamic value with type_id == 15.
+    # For now only support double*.
+    @staticmethod
+    def getElementSize(dynamic_pointer):
+        assert dynamic_pointer.type_id == 15
+        assert dynamic_pointer.type_name[-1] == '*'
+        element_type_name = dynamic_pointer.type_name[0:-1]
+        if element_type_name == 'double':
+            return 8
+        else:
+            assert False
+
     # Return a tuple of function name and a dict of parameters.
     @staticmethod
     def parseFuncEnter(line_buffer):
@@ -160,6 +210,11 @@ class DataGraph:
             dynamic_value = DynamicValue()
             DataGraph.parseValueLine(line, dynamic_value)
             assert line[0] == 'p'
+            # If the parameter is a pointer, set its base/offset
+            # to itself.
+            if dynamic_value.type_id == 15:
+                dynamic_value.base = dynamic_value.name
+                dynamic_value.offset = 0
             environment[dynamic_value.name] = dynamic_value
             debug("enter {} with param {} = {}".format(
                 func_name, dynamic_value.name, dynamic_value.value))
@@ -265,14 +320,20 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
             static_inst = dynamic_inst.static_inst
             if static_inst.op_name == 'store':
                 assert len(dynamic_inst.dynamic_values) == 2
-                output.write("s,1,{vaddr},{size},\n".format(
-                    vaddr=dynamic_inst.dynamic_values[1].value,
-                    size=4))
+                dynamic_pointer = dynamic_inst.dynamic_values[1]
+                output.write("s,1,{base},{offset},{size},{type_id},{value},\n".format(
+                    base=dynamic_pointer.base,
+                    offset=dynamic_pointer.offset,
+                    size=DataGraph.getElementSize(dynamic_pointer),
+                    type_id=dynamic_inst.dynamic_values[0].type_id,
+                    value=dynamic_inst.dynamic_values[0].value))
             elif static_inst.op_name == 'load':
                 assert len(dynamic_inst.dynamic_values) == 1
-                output.write("l,1,{vaddr},{size},\n".format(
-                    vaddr=dynamic_inst.dynamic_values[0].value,
-                    size=4))
+                dynamic_pointer = dynamic_inst.dynamic_values[0]
+                output.write("l,1,{base},{offset},{size},\n".format(
+                    base=dynamic_pointer.base,
+                    offset=dynamic_pointer.offset,
+                    size=DataGraph.getElementSize(dynamic_pointer)))
             else:
                 output.write("c,100,\n")
 
