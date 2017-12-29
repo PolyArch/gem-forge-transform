@@ -321,18 +321,20 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
             if static_inst.op_name == 'store':
                 assert len(dynamic_inst.dynamic_values) == 2
                 dynamic_pointer = dynamic_inst.dynamic_values[1]
-                output.write("s,1,{base},{offset},{size},{type_id},{value},\n".format(
+                output.write("s,1,{base},{offset},{trace_vaddr},{size},{type_id},{value},\n".format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
+                    trace_vaddr=dynamic_pointer.value,
                     size=DataGraph.getElementSize(dynamic_pointer),
                     type_id=dynamic_inst.dynamic_values[0].type_id,
                     value=dynamic_inst.dynamic_values[0].value))
             elif static_inst.op_name == 'load':
                 assert len(dynamic_inst.dynamic_values) == 1
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
-                output.write("l,1,{base},{offset},{size},\n".format(
+                output.write("l,1,{base},{offset},{trace_vaddr},{size},\n".format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
+                    trace_vaddr=dynamic_pointer.value,
                     size=DataGraph.getElementSize(dynamic_pointer)))
             else:
                 output.write("c,100,\n")
