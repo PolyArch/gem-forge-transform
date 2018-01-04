@@ -74,7 +74,8 @@ cmake ..
 make
 cd ../test
 
-WORKDIR="MachSuite/fft/strided"
+# WORKDIR="MachSuite/fft/strided"
+WORKDIR="MachSuite/fft/strided-raw"
 WORKLOAD="fft"
 cd ${WORKDIR}
 
@@ -87,20 +88,22 @@ USE_CACHE=0
 build_normal_binary ${WORKLOAD}
 
 # run gem5.
-# run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE}
+run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE}
 
 # Generate the trace binary.
-# build_llvm_trace_binary ${WORKLOAD}
+build_llvm_trace_binary ${WORKLOAD}
 
 # Run the binary to get the trace.
 TRACE_FILE_NAME="${TRACE_BINARY_NAME}.output"
 # ./${TRACE_BINARY_NAME} | tee ${TRACE_FILE_NAME}
-# ./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
+./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
 
 # Parse the trace and generate result used for gem5 LLVMTraceCPU
 GEM5_LLVM_TRACE_CPU_FILE="${WORKLOAD}_gem5_llvm_trace.txt"
-# python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
+python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
 
 # Simulate with LLVMTraceCPU
 build_llvm_replay_binary ${WORKLOAD}
 run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+
+cd ${HOME}
