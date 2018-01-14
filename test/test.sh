@@ -74,8 +74,8 @@ cmake ..
 make
 cd ../test
 
-# WORKDIR="MachSuite/fft/strided"
-WORKDIR="MachSuite/fft/strided-raw"
+WORKDIR="MachSuite/fft/strided"
+# WORKDIR="MachSuite/fft/strided-raw"
 WORKLOAD="fft"
 cd ${WORKDIR}
 
