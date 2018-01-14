@@ -23,10 +23,14 @@ void replay(const char* trace) {
     uint64_t args[2];
     args[0] = (uint64_t)trace;
     args[1] = (uint64_t)&finished_tag;
+    // The system will suspend this thread until
+    // replay is done.
+    // No more need to spin, which introduces a lot of overhead
+    // to read the memory.
     ioctl(fd, REQUEST_REPLAY, args);
     // Spin until it finished.
-    while (finished_tag == 0) {
+    // while (finished_tag == 0) {
         // printf("Replaying %s\n", trace);
-    }
+    // }
     // printf("Finished replay %s\n", trace);
 }

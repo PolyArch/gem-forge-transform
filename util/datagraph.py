@@ -131,8 +131,11 @@ class DataGraph:
 
                 line_buffer = list()
                 line_buffer.append(line)
-        # Add the dependence in another pass.
+        # Add the register dependence in another pass.
         DataGraph.addRegDependence(dg)
+        # Add the memory dependence, must be done before
+        # initializing base/offset.
+        DataGraph.addMemDependence(dg)
         # Initialize the base/offset of vaddr.
         DataGraph.initBaseOffsetForDynamicValues(dg)
         return dg
@@ -142,18 +145,84 @@ class DataGraph:
     def addRegDependence(dg):
         value_dynamic_inst_map = {}
         for dynamic_inst in dg.dynamicInsts:
-            static_inst = dynamic_inst.static_inst
-            for operand in static_inst.operands:
+            for dynamic_value in dynamic_inst.dynamic_values:
+                operand = dynamic_value.name
                 if operand == '':
                     # This is a constant, no name or dependence.
+                    continue
+                if dynamic_value.type_name == 'label':
+                    # This is a label, just ignore it.
+                    continue
+                if operand in dg.environment:
+                    # This is just a environment variable, ignore it.
                     continue
                 if operand in value_dynamic_inst_map:
                     dynamic_inst.deps.append(value_dynamic_inst_map[operand])
                 else:
                     debug("Unknown dependence for {dynamic_id}:{operand}".format(
                         dynamic_id=dynamic_inst.dynamic_id, operand=operand))
-            if static_inst.result != '':
-                value_dynamic_inst_map[static_inst.result] = dynamic_inst
+            if not dynamic_inst.dynamic_result is None:
+                value_dynamic_inst_map[dynamic_inst.dynamic_result.name] = dynamic_inst
+
+    # Add memory dependence.
+    # Must be done before initializing base/offset.
+    @staticmethod
+    def addMemDependence(dg):
+        mem_addr_store_dynamic_inst_map = dict()
+        mem_addr_load_dynamic_inst_map = dict()
+        for dynamic_inst in dg.dynamicInsts:
+            static_inst = dynamic_inst.static_inst
+            if static_inst.op_name == 'store':
+                # For store, the mem addr is the second parameter.
+                mem_addr = dynamic_inst.dynamic_values[1].value
+                if mem_addr in mem_addr_load_dynamic_inst_map:
+                    # write-after-read dependence.
+                    for load_inst in mem_addr_load_dynamic_inst_map[mem_addr]:
+                        assert load_inst.static_inst.op_name == 'load'
+                        assert load_inst.dynamic_values[0].value == mem_addr
+                        debug(('Add write-after-read dependence at {mem_addr} '
+                               'for {load_dynamic_inst_id} -> {store_dynamic_inst_id}').format(
+                            mem_addr=mem_addr,
+                            load_dynamic_inst_id=load_inst.dynamic_id,
+                            store_dynamic_inst_id=dynamic_inst.dynamic_id))
+                        dynamic_inst.deps.append(load_inst)
+                if mem_addr in mem_addr_store_dynamic_inst_map:
+                    # write-after-write dependence.
+                    store_inst = mem_addr_store_dynamic_inst_map[mem_addr]
+                    assert store_inst.static_inst.op_name == 'store'
+                    assert store_inst.dynamic_values[1].value == mem_addr
+                    debug(('Add write-after-write dependence at {mem_addr} '
+                           'for {store_dynamic_inst_id0} -> {store_dynamic_inst_id1}').format(
+                        mem_addr=mem_addr,
+                        store_dynamic_inst_id0=store_inst.dynamic_id,
+                        store_dynamic_inst_id1=dynamic_inst.dynamic_id))
+                    dynamic_inst.deps.append(store_inst)
+                # Add itself into the store map.
+                mem_addr_store_dynamic_inst_map[mem_addr] = dynamic_inst
+                # Clear the load map as all the future mem inst to this
+                # address will dependent on this inst.
+                mem_addr_load_dynamic_inst_map[mem_addr] = list()
+            elif static_inst.op_name == 'load':
+                # For load, the mem addr is the first parameter.
+                mem_addr = dynamic_inst.dynamic_values[0].value
+                if mem_addr in mem_addr_store_dynamic_inst_map:
+                    # read-after-write dependence.
+                    store_inst = mem_addr_store_dynamic_inst_map[mem_addr]
+                    assert store_inst.static_inst.op_name == 'store'
+                    assert store_inst.dynamic_values[1].value == mem_addr
+                    debug(('Add read-after-write dependence at {mem_addr} '
+                           'for {store_dynamic_inst_id} -> {load_dynamic_inst_id}').format(
+                        mem_addr=mem_addr,
+                        store_dynamic_inst_id=store_inst.dynamic_id,
+                        load_dynamic_inst_id=dynamic_inst.dynamic_id))
+                    dynamic_inst.deps.append(store_inst)
+                # There is no read-after-read dependence.
+                # Add itself into the load map.
+                if mem_addr in mem_addr_load_dynamic_inst_map:
+                    mem_addr_load_dynamic_inst_map[mem_addr].append(
+                        dynamic_inst)
+                else:
+                    mem_addr_load_dynamic_inst_map[mem_addr] = [dynamic_inst]
 
     # Initialize the 'base' and 'offset' fields of dynamic value.
     # For now only support GEP instruction.
@@ -185,7 +254,7 @@ class DataGraph:
                 dynamic_pointer = dynamic_inst.dynamic_values[1]
                 assert dynamic_pointer.name in environment
                 dynamic_inst.dynamic_values[1] = environment[dynamic_pointer.name]
-    
+
     # Helper function to get the element size of a pointer.
     # The parameter must be a dynamic value with type_id == 15.
     # For now only support double*.
@@ -318,26 +387,31 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
     with open(trace_file_name, 'w') as output:
         for dynamic_inst in dg.dynamicInsts:
             static_inst = dynamic_inst.static_inst
+            # Get all the dependence.
+            deps = ','.join(
+                [str(dep_dynamic_inst.dynamic_id) for dep_dynamic_inst in dynamic_inst.deps])
             if static_inst.op_name == 'store':
                 assert len(dynamic_inst.dynamic_values) == 2
                 dynamic_pointer = dynamic_inst.dynamic_values[1]
-                output.write("s,1,{base},{offset},{trace_vaddr},{size},{type_id},{value},\n".format(
+                output.write('s,1,{base},{offset},{trace_vaddr},{size},{type_id},{value},{deps},\n'.format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
                     trace_vaddr=dynamic_pointer.value,
                     size=DataGraph.getElementSize(dynamic_pointer),
                     type_id=dynamic_inst.dynamic_values[0].type_id,
-                    value=dynamic_inst.dynamic_values[0].value))
+                    value=dynamic_inst.dynamic_values[0].value,
+                    deps=deps))
             elif static_inst.op_name == 'load':
                 assert len(dynamic_inst.dynamic_values) == 1
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
-                output.write("l,1,{base},{offset},{trace_vaddr},{size},\n".format(
+                output.write('l,1,{base},{offset},{trace_vaddr},{size},{deps},\n'.format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
                     trace_vaddr=dynamic_pointer.value,
-                    size=DataGraph.getElementSize(dynamic_pointer)))
+                    size=DataGraph.getElementSize(dynamic_pointer),
+                    deps=deps))
             else:
-                output.write("c,100,\n")
+                output.write('c,100,{deps},\n'.format(deps=deps))
 
 
 def main(argv):
