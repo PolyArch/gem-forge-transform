@@ -74,15 +74,15 @@ cmake ..
 make
 cd ../test
 
-WORKDIR="MachSuite/fft/strided"
-# WORKDIR="MachSuite/fft/strided-raw"
+# WORKDIR="MachSuite/fft/strided"
+WORKDIR="MachSuite/fft/strided-raw"
 WORKLOAD="fft"
 cd ${WORKDIR}
 
 # Clean everything.
 make clean
 
-USE_CACHE=0
+USE_CACHE=1
 
 # build normal binary.
 build_normal_binary ${WORKLOAD}
