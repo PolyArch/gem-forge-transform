@@ -13,14 +13,12 @@ function build_normal_binary {
 # $1: The file you want to trace (without .c suffix).
 # ret: TRACE_BINARY_NAME. It will generate the llvm trace to stdout.
 function build_llvm_trace_binary {
-    local BASE_NAME=${1}
-    TRACE_BINARY_NAME="${BASE_NAME}_trace"
+    local TRACE_BINARY_NAME=${1}
     make ${TRACE_BINARY_NAME}
 }
 
 function build_llvm_replay_binary {
-    local BASE_NAME=${1}
-    REPLAY_BINARY_NAME="${BASE_NAME}_replay"
+    local REPLAY_BINARY_NAME=${1}
     make ${REPLAY_BINARY_NAME}
 }
 
@@ -74,15 +72,25 @@ cmake ..
 make
 cd ../test
 
-# WORKDIR="MachSuite/fft/strided"
-WORKDIR="MachSuite/fft/strided-raw"
+USE_CACHE=1
+
+WORKDIR="MachSuite/fft/strided"
+# WORKDIR="MachSuite/fft/strided-raw"
+# WORKDIR="MachSuite/kmp/kmp"
+# WORKLOAD="kmp"
 WORKLOAD="fft"
+
+TRACE_BINARY_NAME="${WORKLOAD}_trace"
+TRACE_FILE_NAME="${TRACE_BINARY_NAME}.output"
+
+GEM5_LLVM_TRACE_CPU_FILE="${WORKLOAD}_gem5_llvm_trace.txt"
+
+REPLAY_BINARY_NAME="${WORKLOAD}_replay"
+
 cd ${WORKDIR}
 
 # Clean everything.
 make clean
-
-USE_CACHE=1
 
 # build normal binary.
 build_normal_binary ${WORKLOAD}
@@ -91,19 +99,16 @@ build_normal_binary ${WORKLOAD}
 run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE}
 
 # Generate the trace binary.
-build_llvm_trace_binary ${WORKLOAD}
+build_llvm_trace_binary ${TRACE_BINARY_NAME}
 
 # Run the binary to get the trace.
-TRACE_FILE_NAME="${TRACE_BINARY_NAME}.output"
-# ./${TRACE_BINARY_NAME} | tee ${TRACE_FILE_NAME}
 ./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
 
 # Parse the trace and generate result used for gem5 LLVMTraceCPU
-GEM5_LLVM_TRACE_CPU_FILE="${WORKLOAD}_gem5_llvm_trace.txt"
 python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
 
-# Simulate with LLVMTraceCPU
-build_llvm_replay_binary ${WORKLOAD}
+# # Simulate with LLVMTraceCPU
+build_llvm_replay_binary ${REPLAY_BINARY_NAME}
 run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
 
 cd ${HOME}
