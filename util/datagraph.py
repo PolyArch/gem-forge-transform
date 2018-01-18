@@ -5,6 +5,10 @@ def debug(msg):
     print(msg)
 
 
+def warn(msg):
+    print("WARN!: " + msg)
+
+
 class StaticInst:
     def __init__(self):
         self.func_name = ''
@@ -29,7 +33,7 @@ class Function:
         self.value_inst_map = dict()
 
 
-class DynamicValue:
+class DynamicValue(object):
     def __init__(self):
         self.name = ''
         self.type_name = ''
@@ -38,6 +42,15 @@ class DynamicValue:
         # Used for dynamic address value.
         self.base = ''
         self.offset = -1
+
+
+class DynamicParameter(DynamicValue):
+    # Represent a dynamic parameter, with one more field
+    # to indicate which parameter it is. e.g the first one, the second one.
+
+    def __init__(self):
+        super(DynamicParameter, self).__init__()
+        self.index = -1
 
 
 class DynamicInst:
@@ -54,10 +67,11 @@ class DataGraph:
     def __init__(self):
         self.functions = dict()
         self.dynamicInsts = list()
-        self.environment = dict()
 
     @staticmethod
     def isLegalLine(line):
+        if len(line) == 0:
+            return False
         return (line[0] == 'i' or line[0] == 'p' or
                 line[0] == 'r' or line[0] == 'a' or line[0] == 'e')
 
@@ -65,9 +79,71 @@ class DataGraph:
     def isBreakLine(line):
         return line[0] == 'i' or line[0] == 'e'
 
+    # Return the new dynamic id.
+    @staticmethod
+    def processLineBuf(dg, line_buffer, environments, stack, dynamic_id):
+        # Time to break a section.
+        if line_buffer[0][0] == 'i':
+            static_inst, dynamic_inst = DataGraph.parseInstruction(
+                line_buffer, dynamic_id)
+
+            # Get the function, which is created when enter this
+            # function.
+            assert static_inst.func_name in dg.functions
+
+            # Update the stack if we are going up the stack.
+            while len(stack) > 0 and static_inst.func_name != stack[-1]:
+                debug("Leaving {func}".format(func=stack[-1]))
+                stack.pop()
+                environments.pop()
+            # Make sure we are in the correct frame.
+            assert len(
+                stack) > 0 and static_inst.func_name == stack[-1]
+
+            func = dg.functions[static_inst.func_name]
+            # Create the BB if not exist yet.
+            if static_inst.bb_name not in func.bbs:
+                func.bbs[static_inst.bb_name] = BasicBlock(
+                    static_inst.bb_name)
+            basic_block = func.bbs[static_inst.bb_name]
+            # Get or create the static instruction.
+            if static_inst.static_id not in basic_block.insts:
+                # This is a new static instruction we have encountered.
+                basic_block.insts[static_inst.static_id] = static_inst
+                # If this instruction generates a result,
+                # add to the function value map.
+                if static_inst.result != '':
+                    assert static_inst.result not in func.value_inst_map
+                    func.value_inst_map[static_inst.result] = static_inst
+            # Get the updated static instruction.
+            static_inst = basic_block.insts[static_inst.static_id]
+            # Update dynamic environment to the latest one.
+            dynamic_inst.environment = environments[-1]
+            # Insert the dynamic instruction.
+            dg.dynamicInsts.append(dynamic_inst)
+
+            # Update dynamic_id.
+            return dynamic_id + 1
+        else:
+            # Special case for enter function node.
+            func_name, environment = DataGraph.parseFuncEnter(
+                line_buffer)
+            # Create the function.
+            if func_name not in dg.functions:
+                dg.functions[func_name] = Function(
+                    func_name)
+            # Update the stack.
+            environments.append(environment)
+            stack.append(func_name)
+            # Dynamic_id is not changed.
+            return dynamic_id
+
     @staticmethod
     def createFromTrace(fileName):
         dg = DataGraph()
+        # Record the stack and parameters.
+        environments = list()
+        stack = list()
         with open(fileName) as trace:
             dynamic_id = 0
             line_buffer = list()
@@ -79,63 +155,32 @@ class DataGraph:
                 # the last trace. I am not going to fix this now.
 
                 # Hack: ignore other lines.
-                if len(line) == 0 or (not DataGraph.isLegalLine(line)):
+                if not DataGraph.isLegalLine(line):
                     continue
 
                 # debug("Read in: {}".format(line))
                 if (not DataGraph.isBreakLine(line)) or len(line_buffer) == 0:
                     line_buffer.append(line)
                     continue
-                # Time to break a section.
-                if line_buffer[0][0] == 'i':
-                    static_inst, dynamic_inst = DataGraph.parseInstruction(
-                        line_buffer, dynamic_id)
 
-                    # Add functions.
-                    if static_inst.func_name not in dg.functions:
-                        dg.functions[static_inst.func_name] = Function(
-                            static_inst.func_name)
-                    func = dg.functions[static_inst.func_name]
-                    if static_inst.bb_name not in func.bbs:
-                        func.bbs[static_inst.bb_name] = BasicBlock(
-                            static_inst.bb_name)
-                    basic_block = func.bbs[static_inst.bb_name]
-                    # Get or create the static instruction.
-                    if static_inst.static_id not in basic_block.insts:
-                        # This is a new static instruction we have encountered.
-                        basic_block.insts[static_inst.static_id] = static_inst
-                        # If this instruction generates a result,
-                        # add to the function value map.
-                        if static_inst.result != '':
-                            assert static_inst.result not in func.value_inst_map
-                            func.value_inst_map[static_inst.result] = static_inst
-                    # Get the updated static instruction.
-                    static_inst = basic_block.insts[static_inst.static_id]
-                    # Update dynamic environment.
-                    dynamic_inst.environment = dg.environment
-                    # Insert the dynamic instruction.
-                    dg.dynamicInsts.append(dynamic_inst)
-
-                    # Update.
-                    dynamic_id += 1
-                else:
-                    # Special case for enter function node.
-                    func_name, environment = DataGraph.parseFuncEnter(
-                        line_buffer)
-                    # Create the function.
-                    if func_name not in dg.functions:
-                        dg.functions[func_name] = Function(
-                            func_name)
-                    # Set the environment.
-                    dg.environment = environment
+                dynamic_id = DataGraph.processLineBuf(
+                    dg, line_buffer, environments, stack, dynamic_id)
 
                 line_buffer = list()
                 line_buffer.append(line)
+
+            # Process the last line if possible.
+            if len(line_buffer) != 0:
+                dynamic_id = DataGraph.processLineBuf(
+                    dg, line_buffer, environments, stack, dynamic_id)
+
         # Add the register dependence in another pass.
         DataGraph.addRegDependence(dg)
         # Add the memory dependence, must be done before
         # initializing base/offset.
         DataGraph.addMemDependence(dg)
+        # Add the blocking dependence for ret and call inst.
+        DataGraph.addBlockDependence(dg)
         # Initialize the base/offset of vaddr.
         DataGraph.initBaseOffsetForDynamicValues(dg)
         return dg
@@ -153,7 +198,7 @@ class DataGraph:
                 if dynamic_value.type_name == 'label':
                     # This is a label, just ignore it.
                     continue
-                if operand in dg.environment:
+                if operand in dynamic_inst.environment:
                     # This is just a environment variable, ignore it.
                     continue
                 if operand in value_dynamic_inst_map:
@@ -224,6 +269,27 @@ class DataGraph:
                 else:
                     mem_addr_load_dynamic_inst_map[mem_addr] = [dynamic_inst]
 
+    # Add block dependence for some inst, e.g. call, ret.
+    # Maintain a set of all the infly inst, and add dependence to all infly
+    # insts to achieve block effect.
+    # Must come after all mem_dep and reg_dep is added.
+    @staticmethod
+    def addBlockDependence(dg):
+        infly_inst_ids = set()
+        for dynamic_inst in dg.dynamicInsts:
+            static_inst = dynamic_inst.static_inst
+            if (static_inst.op_name == 'call' or static_inst.op_name == 'ret'):
+                # Add dependence to all infly insts.
+                for infly_inst_id in infly_inst_ids:
+                    debug('Add blocking dep for {infly_inst_id} -> {dynamic_id}'.format(
+                        infly_inst_id=infly_inst_id, dynamic_id=dynamic_inst.dynamic_id))
+                    dynamic_inst.deps.append(dg.dynamicInsts[infly_inst_id])
+            # Update the infly insts.
+            for dependent_inst in dynamic_inst.deps:
+                if dependent_inst.dynamic_id in infly_inst_ids:
+                    infly_inst_ids.remove(dependent_inst.dynamic_id)
+            infly_inst_ids.add(dynamic_inst.dynamic_id)
+
     # Initialize the 'base' and 'offset' fields of dynamic value.
     # For now only support GEP instruction.
     @staticmethod
@@ -245,6 +311,65 @@ class DataGraph:
                 environment[dynamic_result.name] = dynamic_result
                 debug("Register mem address {} with base {} offset {}".format(
                     dynamic_result.name, dynamic_result.base, dynamic_result.offset))
+            elif static_inst.op_name == 'bitcast':
+                # Check if the this is casting a pointer.
+                dynamic_pointer = dynamic_inst.dynamic_values[0]
+                if dynamic_pointer.type_id != 15:
+                    # This is not a pointer cast.
+                    continue
+                # Check if we can have the base and offset of this pointer.
+                if dynamic_pointer.name not in environment:
+                    warn(
+                        "Unkown base/offset for {name}".format(name=dynamic_pointer.name))
+                    continue
+                # Set the base/offset the same as parameter.
+                dynamic_base = environment[dynamic_pointer.name]
+                dynamic_result = dynamic_inst.dynamic_result
+                dynamic_result.base = dynamic_base.base
+                dynamic_result.offset = dynamic_base.offset
+                environment[dynamic_result.name] = dynamic_result
+                debug("Register mem address {} with base {} offset {}".format(
+                    dynamic_result.name, dynamic_result.base, dynamic_result.offset))
+            elif static_inst.op_name == 'call':
+                # For a call inst, we have to propagate the base/offset.
+                # If somehow the callee is not traced, e.g. sin/cos, then we ignore it.
+                if dynamic_inst.dynamic_id == len(dg.dynamicInsts) - 1:
+                    # This is the last inst.
+                    continue
+                if (dg.dynamicInsts[dynamic_inst.dynamic_id + 1].static_inst.func_name == static_inst.func_name):
+                    # The next inst is stil in the same function, the callee is not traced.
+                    continue
+                # Get the environment of the next dynamic inst as we are going to update it.
+                # Since all the subsequent dynamic inst in the callee will share the same environment
+                # object, we only need to update the next one.
+                next_inst_environment = dg.dynamicInsts[dynamic_inst.dynamic_id + 1].environment
+                # Check the number of formal/actual arguments match.
+                assert (len(dynamic_inst.dynamic_values) -
+                        1) == len(next_inst_environment)
+                for arg_id in xrange(len(dynamic_inst.dynamic_values) - 1):
+                    arg_dynamic_value = dynamic_inst.dynamic_values[arg_id]
+                    # Ignore the last dynamic value as it is the callee address.
+                    if arg_dynamic_value.type_id != 15:
+                        # Not pointer.
+                        continue
+                    if arg_dynamic_value.name not in environment:
+                        warn('Unknown base/offset for dynamic_id {dynamic_id}: {name}'.format(
+                            dynamic_id=dynamic_inst.dynamic_id, name=arg_dynamic_value.name))
+                        continue
+                    dynamic_base = environment[arg_dynamic_value.name]
+                    # Replace the base/offset in callee's environment to callers.
+                    # TODO: A very hacky and dummy to do this. Should improve this later.
+                    found = False
+                    for dynamic_parameter in next_inst_environment.items():
+                        if dynamic_parameter.index == arg_id:
+                            debug("Populate base/offset into callee, {parameter} with base {base} offset {offset}".format(
+                                parameter=dynamic_parameter.name, base=dynamic_base.base, offset=dynamic_base.offset))
+                            found = True
+                            dynamic_parameter.base = dynamic_base.base
+                            dynamic_parameter.offset = dynamic_base.offset
+                            break
+                    assert found
+
             elif static_inst.op_name == 'load':
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
                 assert dynamic_pointer.name in environment
@@ -265,7 +390,12 @@ class DataGraph:
         element_type_name = dynamic_pointer.type_name[0:-1]
         if element_type_name == 'double':
             return 8
+        elif element_type_name == 'i32':
+            return 4
+        elif element_type_name == 'i8':
+            return 1
         else:
+            debug('Unkown type size {type}'.format(type=element_type_name))
             assert False
 
     # Return a tuple of function name and a dict of parameters.
@@ -276,17 +406,19 @@ class DataGraph:
         environment = dict()
         for line_id in range(1, len(line_buffer)):
             line = line_buffer[line_id]
-            dynamic_value = DynamicValue()
-            DataGraph.parseValueLine(line, dynamic_value)
+            dynamic_parameter = DynamicParameter()
+            # Set the index for this parameter.
+            dynamic_parameter.index = line_id - 1
+            DataGraph.parseValueLine(line, dynamic_parameter)
             assert line[0] == 'p'
             # If the parameter is a pointer, set its base/offset
             # to itself.
-            if dynamic_value.type_id == 15:
-                dynamic_value.base = dynamic_value.name
-                dynamic_value.offset = 0
-            environment[dynamic_value.name] = dynamic_value
+            if dynamic_parameter.type_id == 15:
+                dynamic_parameter.base = dynamic_parameter.name
+                dynamic_parameter.offset = 0
+            environment[dynamic_parameter.name] = dynamic_parameter
             debug("enter {} with param {} = {}".format(
-                func_name, dynamic_value.name, dynamic_value.value))
+                func_name, dynamic_parameter.name, dynamic_parameter.value))
         return (func_name, environment)
 
     # Parse an instruction and return a tuple of StaticInst and DynamicInst.
@@ -388,30 +520,37 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
         for dynamic_inst in dg.dynamicInsts:
             static_inst = dynamic_inst.static_inst
             # Get all the dependence.
-            deps = ','.join(
+            deps = '|'.join(
                 [str(dep_dynamic_inst.dynamic_id) for dep_dynamic_inst in dynamic_inst.deps])
             if static_inst.op_name == 'store':
                 assert len(dynamic_inst.dynamic_values) == 2
                 dynamic_pointer = dynamic_inst.dynamic_values[1]
-                output.write('s,1,{base},{offset},{trace_vaddr},{size},{type_id},{value},{deps},\n'.format(
+                output.write('s|1|{base}|{offset}|{trace_vaddr}|{size}|{type_id}|{type_name}|{value}|{deps}|\n'.format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
                     trace_vaddr=dynamic_pointer.value,
                     size=DataGraph.getElementSize(dynamic_pointer),
                     type_id=dynamic_inst.dynamic_values[0].type_id,
+                    type_name=dynamic_inst.dynamic_values[0].type_name,
                     value=dynamic_inst.dynamic_values[0].value,
                     deps=deps))
             elif static_inst.op_name == 'load':
                 assert len(dynamic_inst.dynamic_values) == 1
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
-                output.write('l,1,{base},{offset},{trace_vaddr},{size},{deps},\n'.format(
+                output.write('l|1|{base}|{offset}|{trace_vaddr}|{size}|{deps}|\n'.format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
                     trace_vaddr=dynamic_pointer.value,
                     size=DataGraph.getElementSize(dynamic_pointer),
                     deps=deps))
+            # Special case for the call/ret inst so that the trace cpu can
+            # have the basic information about the stack.
+            elif static_inst.op_name == 'call':
+                output.write('call|100|{deps}|\n'.format(deps=deps))
+            elif static_inst.op_name == 'ret':
+                output.write('ret|100|{deps}|\n'.format(deps=deps))
             else:
-                output.write('c,100,{deps},\n'.format(deps=deps))
+                output.write('c|100|{deps}|\n'.format(deps=deps))
 
 
 def main(argv):

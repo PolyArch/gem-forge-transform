@@ -133,7 +133,6 @@ class LocateAccelerableFunctions : public llvm::CallGraphSCCPass {
   llvm::CallGraphNode* ExternalCallingNode;
 
   std::map<std::string, bool> MapFunctionAccelerable;
-  std::set<std::string> AccelerableFunctions;
 };
 
 // This is a pass to instrument a function and trace it.
@@ -168,10 +167,9 @@ class Prototype : public llvm::FunctionPass {
     // Check if this function is accelerable.
     bool Accelerable =
         getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
-    // A special hack: do not trace main function for now because it will break
-    // our stride-raw benchmark. We do not want to take a huge leap for now.
-    // TODO: remove this after stack trace is supported.
-    if (FunctionName == "main") {
+    // A special hack: do not trace function which
+    // returns a value, currently we donot support return in our trace.
+    if (!Function.getReturnType()->isVoidTy()) {
       Accelerable = false;
     }
     if (!Accelerable) {
@@ -492,6 +490,8 @@ class ReplayTrace : public llvm::FunctionPass {
   ReplayTrace() : llvm::FunctionPass(ID) {}
 
   void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
+    Info.addRequired<LocateAccelerableFunctions>();
+    Info.addPreserved<LocateAccelerableFunctions>();
     // We require the loop information.
     Info.addRequired<llvm::LoopInfoWrapperPass>();
     Info.addPreserved<llvm::LoopInfoWrapperPass>();
@@ -515,17 +515,22 @@ class ReplayTrace : public llvm::FunctionPass {
     auto FunctionName = Function.getName().str();
     DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
-    // For now run on any functions we have found.
-    if (FunctionName != Workload) {
+    // Check if this function is accelerable.
+    bool Accelerable =
+        getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
+    // A special hack: do not trace function which
+    // returns a value, currently we donot support return in our trace.
+    if (!Function.getReturnType()->isVoidTy()) {
+      Accelerable = false;
+    }
+    if (!Accelerable) {
       return false;
     }
+
     DEBUG(llvm::errs() << "Found workload: " << FunctionName << '\n');
 
     // Change the function body to call ioctl
     // to replay the trace.
-    // TODO: handle return value.
-    // current implementation only supports void funciton.
-
     // First simply remove all BBs.
     Function.deleteBody();
 
