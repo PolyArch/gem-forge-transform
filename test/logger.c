@@ -1,4 +1,5 @@
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 
 void printFuncEnter(const char* FunctionName) {
@@ -46,30 +47,37 @@ void printValue(const char* Tag, const char* Name, const char* TypeName,
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
     case LabelTyID: {
-      char* value = va_arg(VAList, char*);
-      printf("%s", value);
       break;
     }
     case IntegerTyID: {
       unsigned value = va_arg(VAList, unsigned);
-      printf("%u", value);
+      printf("%u|", value);
       break;
     }
     case DoubleTyID: {
       double value = va_arg(VAList, double);
-      printf("%f", value);
+      printf("%f|", value);
       break;
     }
     case PointerTyID: {
       void* value = va_arg(VAList, void*);
-      printf("%p", value);
+      printf("%p|", value);
+      break;
+    }
+    case VectorTyID: {
+      uint32_t size = va_arg(VAList, uint32_t);
+      uint8_t* buffer = va_arg(VAList, uint8_t*);
+      for (uint32_t i = 0; i < size; ++i) {
+        printf("%hhu,", buffer[i]);
+      }
+      printf("|");
       break;
     }
     default: {
-      printf("UnsupportedType");
+      printf("UnsupportedType|");
       break;
     }
   }
   va_end(VAList);
-  printf("|\n");
+  printf("\n");
 }

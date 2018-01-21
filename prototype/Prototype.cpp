@@ -16,6 +16,15 @@
 #define DEBUG_TYPE "PrototypePass"
 namespace {
 
+bool isIntrinsicFunctionName(const std::string& FunctionName) {
+  if (FunctionName.find("llvm.") == 0) {
+    // Hack: return true if the name start with llvm.
+    return true;
+  } else {
+    return false;
+  }
+}
+
 llvm::Constant* getOrCreateStringLiteral(
     std::map<std::string, llvm::Constant*>& GlobalStrings, llvm::Module* Module,
     const std::string& Str) {
@@ -46,7 +55,22 @@ llvm::Constant* getOrCreateStringLiteral(
     GlobalStrings[Str] = llvm::ConstantExpr::getGetElementPtr(
         ArrayTy, GlobalVariableStr, Indexes);
   }
-  return GlobalStrings[Str];
+  return GlobalStrings.at(Str);
+}
+
+llvm::Value* getOrCreateVectorStoreBuffer(
+    std::map<unsigned int, llvm::Value*>& VectorStoreBuffer,
+    llvm::Function* Function, llvm::VectorType* Type) {
+  auto BitSize = Type->getBitWidth();
+  if (VectorStoreBuffer.find(BitSize) == VectorStoreBuffer.end()) {
+    // Insert at the beginning of the function.
+    auto IP = Function->front().getFirstInsertionPt();
+    llvm::IRBuilder<> Builder(IP->getParent(), IP);
+    llvm::Value* Alloca = Builder.CreateAlloca(Type);
+    VectorStoreBuffer[BitSize] = Alloca;
+  }
+
+  return VectorStoreBuffer.at(BitSize);
 }
 
 // A analysis pass to locate all the accelerable functions.
@@ -60,8 +84,11 @@ class LocateAccelerableFunctions : public llvm::CallGraphSCCPass {
   LocateAccelerableFunctions()
       : llvm::CallGraphSCCPass(ID), CallsExternalNode(nullptr) {}
   bool doInitialization(llvm::CallGraph& CG) override {
+    // Add some math accelerable functions.
+    this->MathAcclerableFunctionNames.insert("sin");
+    this->MathAcclerableFunctionNames.insert("cos");
     // We do not modify the module.
-    // CG.dump();
+    CG.dump();
     this->CallsExternalNode = CG.getCallsExternalNode();
     this->ExternalCallingNode = CG.getExternalCallingNode();
     return false;
@@ -80,6 +107,11 @@ class LocateAccelerableFunctions : public llvm::CallGraphSCCPass {
         return false;
       }
       auto CallerName = Caller->getFunction()->getName().str();
+      // By pass checking of all the math accelerable functions.
+      if (this->isMathAccelerable(CallerName)) {
+        continue;
+      }
+      // Check this function doesn't call external methods.
       for (auto CalleeIter = Caller->begin(), CalleeEnd = Caller->end();
            CalleeIter != CalleeEnd; ++CalleeIter) {
         // CalleeIter is a std::vector<CallRecord>::const_iterator.
@@ -133,6 +165,16 @@ class LocateAccelerableFunctions : public llvm::CallGraphSCCPass {
   llvm::CallGraphNode* ExternalCallingNode;
 
   std::map<std::string, bool> MapFunctionAccelerable;
+
+  std::set<std::string> MathAcclerableFunctionNames;
+
+  // Some special math function we always want to mark as accelerable,
+  // even if we don't have the trace.
+  // TODO: Use a map for this.
+  bool isMathAccelerable(const std::string& FunctionName) {
+    return this->MathAcclerableFunctionNames.find(FunctionName) !=
+           this->MathAcclerableFunctionNames.end();
+  }
 };
 
 // This is a pass to instrument a function and trace it.
@@ -175,11 +217,11 @@ class Prototype : public llvm::FunctionPass {
     if (!Accelerable) {
       return false;
     }
-    // For now run on any functions we have found.
-    // if (FunctionName != Workload) {
-    //   return false;
-    // }
-    DEBUG(llvm::errs() << "Found workload: " << FunctionName << '\n');
+
+    // Set the current function.
+    this->CurrentFunction = &Function;
+    // Clear the vector store buffer.
+    this->VectorStoreBuffer.clear();
 
     for (auto BBIter = Function.begin(), BBEnd = Function.end();
          BBIter != BBEnd; ++BBIter) {
@@ -197,6 +239,8 @@ class Prototype : public llvm::FunctionPass {
  private:
   std::string Workload;
   llvm::Module* Module;
+  llvm::Function* CurrentFunction;
+  std::map<unsigned int, llvm::Value*> VectorStoreBuffer;
 
   /* Print functions. */
   llvm::Value* PrintInstFunc;
@@ -248,7 +292,7 @@ class Prototype : public llvm::FunctionPass {
     Builder.CreateCall(this->PrintFuncEnterFunc, PrintFuncEnterArgs);
     for (auto ArgsIter = Function.arg_begin(), ArgsEnd = Function.arg_end();
          ArgsIter != ArgsEnd; ArgsIter++) {
-      auto PrintValueArgs = getPrintValueArgs("p", &*ArgsIter);
+      auto PrintValueArgs = getPrintValueArgs("p", &*ArgsIter, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
     return true;
@@ -324,7 +368,7 @@ class Prototype : public llvm::FunctionPass {
     // Call printResult after the instruction (if it has a result).
     if (Inst->getName() != "") {
       DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
-      auto PrintValueArgs = getPrintValueArgs("r", Inst);
+      auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
   }
@@ -340,23 +384,21 @@ class Prototype : public llvm::FunctionPass {
     std::vector<llvm::Value*> PrintInstArgs =
         getPrintInstArgs(Inst, FunctionNameValue, BBNameValue, InstId);
     // Call printInst. Before the instruction.
-    DEBUG(llvm::errs() << "Insert printInst\n");
     llvm::IRBuilder<> Builder(Inst);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
     // Call printValue for each parameter before the instruction.
     for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
          OperandId < NumOperands; OperandId++) {
-      DEBUG(llvm::errs() << "Insert printValue\n");
-      auto PrintValueArgs = getPrintValueArgs("p", Inst->getOperand(OperandId));
+      auto PrintValueArgs =
+          getPrintValueArgs("p", Inst->getOperand(OperandId), Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
 
     // Call printResult after the instruction (if it has a result).
     if (Inst->getName() != "") {
-      DEBUG(llvm::errs() << "Insert printResult\n");
       Builder.SetInsertPoint(Inst->getNextNode());
-      auto PrintValueArgs = getPrintValueArgs("r", Inst);
+      auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
   }
@@ -431,7 +473,8 @@ class Prototype : public llvm::FunctionPass {
 
   // get arguments from printValue
   std::vector<llvm::Value*> getPrintValueArgs(const std::string& Tag,
-                                              llvm::Value* Parameter) {
+                                              llvm::Value* Parameter,
+                                              llvm::IRBuilder<>& Builder) {
     auto TagValue =
         getOrCreateStringLiteral(this->GlobalStrings, this->Module, Tag);
     auto Name = Parameter->getName();
@@ -453,33 +496,64 @@ class Prototype : public llvm::FunctionPass {
         getOrCreateStringLiteral(this->GlobalStrings, this->Module, TypeName);
 
     unsigned NumAdditionalArgs = 0;
+    std::vector<llvm::Value*> AdditionalArgValues;
     switch (TypeId) {
-      case llvm::Type::TypeID::IntegerTyID: {
+      case llvm::Type::TypeID::IntegerTyID:
+      case llvm::Type::TypeID::DoubleTyID: {
         NumAdditionalArgs = 1;
+        AdditionalArgValues.push_back(Parameter);
         break;
       }
       case llvm::Type::TypeID::PointerTyID: {
         NumAdditionalArgs = 1;
+        if (isIntrinsicFunctionName(Name)) {
+          // For instrinsic function, just use 0 as the address.
+          AdditionalArgValues.push_back(llvm::ConstantInt::get(
+              llvm::IntegerType::getInt32Ty(this->Module->getContext()), 0,
+              false));
+        } else {
+          AdditionalArgValues.push_back(Parameter);
+        }
         break;
       }
-      case llvm::Type::TypeID::LabelTyID: {
-        NumAdditionalArgs = 1;
+      case llvm::Type::TypeID::VectorTyID: {
+        NumAdditionalArgs = 2;
+        // For vector, we have to allocate a buffer.
+        auto Buffer = getOrCreateVectorStoreBuffer(
+            this->VectorStoreBuffer, this->CurrentFunction,
+            llvm::cast<llvm::VectorType>(Type));
+        // Store the vector into the buffer.
+        auto TypeBytes = Type->getScalarSizeInBits() / 8;
+        // Since the buffer can be allocated from other vector, do a bitcast.
+        auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
+        Builder.CreateAlignedStore(Parameter, CastBuffer, TypeBytes);
+        // The first additional arguments will be the size of the buffer.
+        AdditionalArgValues.push_back(llvm::ConstantInt::get(
+            llvm::IntegerType::getInt32Ty(this->Module->getContext()),
+            TypeBytes, false));
+        // The second additional argument will be the buffer.
+        AdditionalArgValues.push_back(Buffer);
         break;
       }
-      case llvm::Type::TypeID::DoubleTyID: {
-        NumAdditionalArgs = 1;
+      default: {
+        NumAdditionalArgs = 0;
         break;
       }
     }
+
+    assert(NumAdditionalArgs == AdditionalArgValues.size() &&
+           "The number of additional arguments doesn't match.");
+
     auto NumAdditionalArgsValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(this->Module->getContext()),
         NumAdditionalArgs, false);
 
     std::vector<llvm::Value*> Args{TagValue, NameValue, TypeNameValue,
                                    TypeIdValue, NumAdditionalArgsValue};
-    if (NumAdditionalArgs == 1) {
-      Args.push_back(Parameter);
+    for (auto AdditionalArgValue : AdditionalArgValues) {
+      Args.push_back(AdditionalArgValue);
     }
+
     return std::move(Args);
   }
 };
