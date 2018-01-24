@@ -28,6 +28,7 @@ void replay(const char* trace) {
     // No more need to spin, which introduces a lot of overhead
     // to read the memory.
     ioctl(fd, REQUEST_REPLAY, args);
+    printf("Returned replay\n");
     // Spin until it finished.
     // while (finished_tag == 0) {
         // printf("Replaying %s\n", trace);

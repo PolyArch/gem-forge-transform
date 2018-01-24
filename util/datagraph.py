@@ -2,7 +2,8 @@ import sys
 
 
 def debug(msg):
-    print(msg)
+    # print(msg)
+    pass
 
 
 def warn(msg):
@@ -297,9 +298,26 @@ class DataGraph:
         for dynamic_inst in dg.dynamicInsts:
             static_inst = dynamic_inst.static_inst
             environment = dynamic_inst.environment
-            if static_inst.op_name == 'getelementptr':
+            if static_inst.op_name == 'alloca':
+                dynamic_pointer = dynamic_inst.dynamic_result
+                # Assert we haven't has this value in the environment.
+                if dynamic_pointer.name in environment:
+                    print("{We already have the dynamic value {name}".format(
+                        name=dynamic_pointer.name))
+                assert dynamic_pointer.name not in environment
+                # Set the base/offset to itself.
+                dynamic_pointer.base = dynamic_pointer.name
+                dynamic_pointer.offset = 0
+                # Register the dynamic value.
+                debug("Register stack address {name} with base {base} offset {offset}".format(
+                    name=dynamic_pointer.name, base=dynamic_pointer.base, offset=dynamic_pointer.offset))
+                environment[dynamic_pointer.name] = dynamic_pointer
+            elif static_inst.op_name == 'getelementptr':
                 # Register new mem object.
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
+                if dynamic_pointer.name not in environment:
+                    print("Failed to find dynamic pointer {name}".format(
+                        name=dynamic_pointer.name))
                 assert dynamic_pointer.name in environment
                 dynamic_base = environment[dynamic_pointer.name]
                 # This is the dynamic result.
@@ -360,7 +378,7 @@ class DataGraph:
                     # Replace the base/offset in callee's environment to callers.
                     # TODO: A very hacky and dummy to do this. Should improve this later.
                     found = False
-                    for dynamic_parameter in next_inst_environment.items():
+                    for dynamic_parameter in next_inst_environment.values():
                         if dynamic_parameter.index == arg_id:
                             debug("Populate base/offset into callee, {parameter} with base {base} offset {offset}".format(
                                 parameter=dynamic_parameter.name, base=dynamic_base.base, offset=dynamic_base.offset))
@@ -368,7 +386,10 @@ class DataGraph:
                             dynamic_parameter.base = dynamic_base.base
                             dynamic_parameter.offset = dynamic_base.offset
                             break
-                    assert found
+                    if not found:
+                        warn('Failed to populate into callee {arg_id} {arg}'.format(
+                            arg_id=arg_id, arg=arg_dynamic_value.name))
+                        assert found
 
             elif static_inst.op_name == 'load':
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
@@ -380,6 +401,25 @@ class DataGraph:
                 assert dynamic_pointer.name in environment
                 dynamic_inst.dynamic_values[1] = environment[dynamic_pointer.name]
 
+    @staticmethod
+    def getTypeSize(type_name):
+        if type_name == 'double':
+            return 8
+        elif type_name[0] == 'i':
+            # Arbitrary width integer.
+            bit_width = int(type_name[1:])
+            return bit_width / 8
+        elif type_name[0] == '<' or type_name[0] == '[':
+            # Vector type or array
+            # Hack: only handles <n x t>
+            x_pos = type_name.find('x')
+            num_element = int(type_name[1:x_pos])
+            element_type_name = type_name[x_pos + 2:-1]
+            return num_element * DataGraph.getTypeSize(element_type_name)
+        else:
+            warn('Unkown type size {type}'.format(type=type_name))
+            assert False
+
     # Helper function to get the element size of a pointer.
     # The parameter must be a dynamic value with type_id == 15.
     # For now only support double*.
@@ -388,15 +428,7 @@ class DataGraph:
         assert dynamic_pointer.type_id == 15
         assert dynamic_pointer.type_name[-1] == '*'
         element_type_name = dynamic_pointer.type_name[0:-1]
-        if element_type_name == 'double':
-            return 8
-        elif element_type_name == 'i32':
-            return 4
-        elif element_type_name == 'i8':
-            return 1
-        else:
-            debug('Unkown type size {type}'.format(type=element_type_name))
-            assert False
+        return DataGraph.getTypeSize(element_type_name)
 
     # Return a tuple of function name and a dict of parameters.
     @staticmethod
@@ -417,8 +449,8 @@ class DataGraph:
                 dynamic_parameter.base = dynamic_parameter.name
                 dynamic_parameter.offset = 0
             environment[dynamic_parameter.name] = dynamic_parameter
-            debug("enter {} with param {} = {}".format(
-                func_name, dynamic_parameter.name, dynamic_parameter.value))
+            warn("enter {} with param {} {} = {}".format(
+                func_name, dynamic_parameter.index, dynamic_parameter.name, dynamic_parameter.value))
         return (func_name, environment)
 
     # Parse an instruction and return a tuple of StaticInst and DynamicInst.
@@ -546,7 +578,28 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
             # Special case for the call/ret inst so that the trace cpu can
             # have the basic information about the stack.
             elif static_inst.op_name == 'call':
-                output.write('call|100|{deps}|\n'.format(deps=deps))
+                # Special case for sin and cos.
+                # Replace call to sin and cos with another inst sin/cos.
+                name = 'call'
+                callee = dynamic_inst.dynamic_values[-1].name
+                if callee == 'sin':
+                    name = 'sin'
+                elif callee == 'cos':
+                    name = 'cos'
+                # For now all the call to intrinsic functions is a normal
+                # computation instruction.
+                # We can't ignore this as all the dynamic_id will be wrong.
+                if callee.find('llvm.') == 0:
+                    name = 'c'
+                output.write('{name}|100|{deps}|\n'.format(
+                    name=name, deps=deps))
+            elif static_inst.op_name == 'alloca':
+                dynamic_pointer = dynamic_inst.dynamic_result
+                output.write('alloca|100|{base}|{trace_vaddr}|{size}|{deps}|\n'.format(
+                    base=dynamic_pointer.name,
+                    trace_vaddr=dynamic_pointer.value,
+                    size=DataGraph.getElementSize(dynamic_pointer),
+                    deps=deps))
             elif static_inst.op_name == 'ret':
                 output.write('ret|100|{deps}|\n'.format(deps=deps))
             else:

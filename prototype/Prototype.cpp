@@ -517,13 +517,14 @@ class Prototype : public llvm::FunctionPass {
         break;
       }
       case llvm::Type::TypeID::VectorTyID: {
+        // Cast to VectorType.
+        auto VectorType = llvm::cast<llvm::VectorType>(Type);
         NumAdditionalArgs = 2;
         // For vector, we have to allocate a buffer.
         auto Buffer = getOrCreateVectorStoreBuffer(
-            this->VectorStoreBuffer, this->CurrentFunction,
-            llvm::cast<llvm::VectorType>(Type));
+            this->VectorStoreBuffer, this->CurrentFunction, VectorType);
         // Store the vector into the buffer.
-        auto TypeBytes = Type->getScalarSizeInBits() / 8;
+        auto TypeBytes = VectorType->getBitWidth() / 8;
         // Since the buffer can be allocated from other vector, do a bitcast.
         auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
         Builder.CreateAlignedStore(Parameter, CastBuffer, TypeBytes);
