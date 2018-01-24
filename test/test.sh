@@ -48,7 +48,7 @@ function run_gem5_llvm_trace_cpu {
     local USE_CACHE=${2}
     local CPU_TYPE="TimingSimpleCPU"
     local TRACE_FILE_NAME=${3}
-    local DEBUG_TYPE="LLVMTraceCPU"
+    local DEBUG_TYPE="--debug-flags=LLVMTraceCPU"
     local GEM5_OUT_DIR="${BINARY_NAME}.${CPU_TYPE}.m5out"
     mkdir -p ${GEM5_OUT_DIR}
     local GEM5_PATH="/home/sean/Public/gem5"
@@ -59,9 +59,9 @@ function run_gem5_llvm_trace_cpu {
     local L2_SIZE="256kB"
     local L3_SIZE="6144kB"
     if (( USE_CACHE == 1 )); then
-        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} --debug-flags=${DEBUG_TYPE} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --llvm-trace-file=${TRACE_FILE_NAME} --caches --l2cache --cpu-type=${CPU_TYPE} --l1d_size=${L1D_SIZE} --l1i_size=${L1I_SIZE} --l2_size=${L2_SIZE} --l3_size=${L3_SIZE}
+        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} ${DEBUG_TYPE} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --llvm-trace-file=${TRACE_FILE_NAME} --caches --l2cache --cpu-type=${CPU_TYPE} --l1d_size=${L1D_SIZE} --l1i_size=${L1I_SIZE} --l2_size=${L2_SIZE} --l3_size=${L3_SIZE}
     else
-        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} --debug-flags=${DEBUG_TYPE} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --cpu-type=${CPU_TYPE} --llvm-trace-file=${TRACE_FILE_NAME}
+        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} ${DEBUG_TYPE} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --cpu-type=${CPU_TYPE} --llvm-trace-file=${TRACE_FILE_NAME}
     fi
 }
 
@@ -106,10 +106,10 @@ build_llvm_trace_binary ${TRACE_BINARY_NAME}
 ./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
 
 # Parse the trace and generate result used for gem5 LLVMTraceCPU
-# python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
+python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
 
-# # # Simulate with LLVMTraceCPU
-# build_llvm_replay_binary ${REPLAY_BINARY_NAME}
-# run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+# Simulate with LLVMTraceCPU
+build_llvm_replay_binary ${REPLAY_BINARY_NAME}
+run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
 
 cd ${HOME}
