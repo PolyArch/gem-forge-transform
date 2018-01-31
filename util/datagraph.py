@@ -552,12 +552,12 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
         for dynamic_inst in dg.dynamicInsts:
             static_inst = dynamic_inst.static_inst
             # Get all the dependence.
-            deps = '|'.join(
+            deps = ','.join(
                 [str(dep_dynamic_inst.dynamic_id) for dep_dynamic_inst in dynamic_inst.deps])
             if static_inst.op_name == 'store':
                 assert len(dynamic_inst.dynamic_values) == 2
                 dynamic_pointer = dynamic_inst.dynamic_values[1]
-                output.write('s|1|{base}|{offset}|{trace_vaddr}|{size}|{type_id}|{type_name}|{value}|{deps}|\n'.format(
+                output.write('store|{deps}|{base}|{offset}|{trace_vaddr}|{size}|{type_id}|{type_name}|{value}|\n'.format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
                     trace_vaddr=dynamic_pointer.value,
@@ -569,7 +569,7 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
             elif static_inst.op_name == 'load':
                 assert len(dynamic_inst.dynamic_values) == 1
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
-                output.write('l|1|{base}|{offset}|{trace_vaddr}|{size}|{deps}|\n'.format(
+                output.write('load|{deps}|{base}|{offset}|{trace_vaddr}|{size}|\n'.format(
                     base=dynamic_pointer.base,
                     offset=dynamic_pointer.offset,
                     trace_vaddr=dynamic_pointer.value,
@@ -590,20 +590,20 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
                 # computation instruction.
                 # We can't ignore this as all the dynamic_id will be wrong.
                 if callee.find('llvm.') == 0:
-                    name = 'c'
-                output.write('{name}|100|{deps}|\n'.format(
+                    name = 'call_intrinsic'
+                output.write('{name}|{deps}|100|\n'.format(
                     name=name, deps=deps))
             elif static_inst.op_name == 'alloca':
                 dynamic_pointer = dynamic_inst.dynamic_result
-                output.write('alloca|100|{base}|{trace_vaddr}|{size}|{deps}|\n'.format(
+                output.write('alloca|{deps}|{base}|{trace_vaddr}|{size}|\n'.format(
                     base=dynamic_pointer.name,
                     trace_vaddr=dynamic_pointer.value,
                     size=DataGraph.getElementSize(dynamic_pointer),
                     deps=deps))
             elif static_inst.op_name == 'ret':
-                output.write('ret|100|{deps}|\n'.format(deps=deps))
+                output.write('ret|{deps}|100|{deps}|\n'.format(deps=deps))
             else:
-                output.write('c|100|{deps}|\n'.format(deps=deps))
+                output.write('{op_name}|{deps}|100|\n'.format(op_name=static_inst.op_name, deps=deps))
 
 
 def main(argv):
