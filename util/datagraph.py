@@ -591,7 +591,7 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
                 # We can't ignore this as all the dynamic_id will be wrong.
                 if callee.find('llvm.') == 0:
                     name = 'call_intrinsic'
-                output.write('{name}|{deps}|100|\n'.format(
+                output.write('{name}|{deps}|\n'.format(
                     name=name, deps=deps))
             elif static_inst.op_name == 'alloca':
                 dynamic_pointer = dynamic_inst.dynamic_result
@@ -601,9 +601,9 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
                     size=DataGraph.getElementSize(dynamic_pointer),
                     deps=deps))
             elif static_inst.op_name == 'ret':
-                output.write('ret|{deps}|100|{deps}|\n'.format(deps=deps))
+                output.write('ret|{deps}|\n'.format(deps=deps))
             else:
-                output.write('{op_name}|{deps}|100|\n'.format(op_name=static_inst.op_name, deps=deps))
+                output.write('{op_name}|{deps}|\n'.format(op_name=static_inst.op_name, deps=deps))
 
 
 def main(argv):
