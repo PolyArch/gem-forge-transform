@@ -27,6 +27,8 @@ function run_gem5 {
     local BINARY_NAME=${1}
     local USE_CACHE=${2}
     local CPU_TYPE="TimingSimpleCPU"
+    # local DEBUG_TYPE="--debug-flags=Exec,-ExecTicks"
+    local DEBUG_TYPE=""
     local GEM5_OUT_DIR="${BINARY_NAME}.${CPU_TYPE}.m5out"
     mkdir -p ${GEM5_OUT_DIR}
     local GEM5_PATH="/home/sean/Public/gem5"
@@ -37,9 +39,9 @@ function run_gem5 {
     local L2_SIZE="256kB"
     local L3_SIZE="6144kB"
     if (( USE_CACHE == 1 )); then
-        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --caches --l2cache --cpu-type=${CPU_TYPE} --l1d_size=${L1D_SIZE} --l1i_size=${L1I_SIZE} --l2_size=${L2_SIZE} --l3_size=${L3_SIZE}
+        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} ${DEBUG_TYPE} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --caches --l2cache --cpu-type=${CPU_TYPE} --l1d_size=${L1D_SIZE} --l1i_size=${L1I_SIZE} --l2_size=${L2_SIZE} --l3_size=${L3_SIZE}
     else
-        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --cpu-type=${CPU_TYPE}
+        ${GEM5_X86} --outdir=${GEM5_OUT_DIR} ${DEBUG_TYPE} ${GEM5_SE_CONFIG} --cmd=${BINARY_NAME} --cpu-type=${CPU_TYPE}
     fi
 }
 
@@ -74,8 +76,8 @@ cd ../test
 
 USE_CACHE=1
 
-WORKDIR="MachSuite/fft/transpose"
-# WORKDIR="MachSuite/fft/strided"
+# WORKDIR="MachSuite/fft/transpose"
+WORKDIR="MachSuite/fft/strided"
 # WORKDIR="MachSuite/fft/strided-raw"
 # WORKDIR="MachSuite/kmp/kmp"
 # WORKLOAD="kmp"
@@ -93,6 +95,8 @@ cd ${WORKDIR}
 # Clean everything.
 make clean
 
+# run_gem5 "/home/sean/a.out"
+
 # build normal binary.
 # build_normal_binary ${WORKLOAD}
 
@@ -100,16 +104,22 @@ make clean
 # run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE}
 
 # Generate the trace binary.
-build_llvm_trace_binary ${TRACE_BINARY_NAME}
+# build_llvm_trace_binary ${TRACE_BINARY_NAME}
 
 # Run the binary to get the trace.
-./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
+# ./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
 
 # Parse the trace and generate result used for gem5 LLVMTraceCPU
-python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
+# python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
 
 # Simulate with LLVMTraceCPU
-build_llvm_replay_binary ${REPLAY_BINARY_NAME}
-run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+# build_llvm_replay_binary ${REPLAY_BINARY_NAME}
+# run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+
+# Generate a dot file for a bb.
+DOT_FILE_NAME="dg.dot"
+PNG_FILE_NAME="dg.png"
+python ${HOME}/util/DotGraphExporter.py ${TRACE_FILE_NAME} ${DOT_FILE_NAME}
+dot -Tpng ${DOT_FILE_NAME} -o${PNG_FILE_NAME}
 
 cd ${HOME}

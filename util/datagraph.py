@@ -23,7 +23,7 @@ class StaticInst:
 class BasicBlock:
     def __init__(self, name):
         self.name = name
-        self.insts = {}
+        self.insts = dict()
 
 
 class Function:
