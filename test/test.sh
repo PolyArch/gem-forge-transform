@@ -67,6 +67,19 @@ function run_gem5_llvm_trace_cpu {
     fi
 }
 
+function test_dot_exporter {
+    local TRACE_FILE_NAME=${1}
+    local DOT_FILE_NAME="dg.dot"
+    local PNG_FILE_NAME="dg.png"
+    python ${HOME}/util/DotGraphExporter.py ${TRACE_FILE_NAME} ${DOT_FILE_NAME}
+    dot -Tpng ${DOT_FILE_NAME} -o${PNG_FILE_NAME}
+}
+
+function test_CCA {
+    local TRACE_FILE_NAME=${1}
+    python ${HOME}/util/CCATransform.py ${TRACE_FILE_NAME}
+}
+
 # We are in the root directory. Rebuild the pass.
 HOME=${PWD}
 cd build
@@ -110,16 +123,13 @@ make clean
 # ./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
 
 # Parse the trace and generate result used for gem5 LLVMTraceCPU
-# python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
+python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
 
 # Simulate with LLVMTraceCPU
-# build_llvm_replay_binary ${REPLAY_BINARY_NAME}
-# run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+build_llvm_replay_binary ${REPLAY_BINARY_NAME}
+run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
 
-# Generate a dot file for a bb.
-DOT_FILE_NAME="dg.dot"
-PNG_FILE_NAME="dg.png"
-python ${HOME}/util/DotGraphExporter.py ${TRACE_FILE_NAME} ${DOT_FILE_NAME}
-dot -Tpng ${DOT_FILE_NAME} -o${PNG_FILE_NAME}
+# test_dot_exporter ${TRACE_FILE_NAME}
+# test_CCA ${TRACE_FILE_NAME}
 
 cd ${HOME}

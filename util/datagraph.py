@@ -16,8 +16,22 @@ class StaticInst:
         self.bb_name = ''
         self.static_id = -1
         self.op_name = ''
-        self.result = ''
+        # A extension that one staticInst may produce
+        # more than one result.
+        self.results = set()
         self.operands = list()
+        # A map from result to users.
+        self.users = dict()
+
+    def __str__(self):
+        return '{func},{bb},{static_id},{op_name},{results}|{operands}'.format(
+            func=self.func_name,
+            bb=self.bb_name,
+            static_id=self.static_id,
+            op_name=self.op_name,
+            results=self.results,
+            operands=self.operands
+        )
 
 
 class BasicBlock:
@@ -60,8 +74,12 @@ class DynamicInst:
         self.static_inst = static_inst
         self.deps = list()
         self.dynamic_values = list()
-        self.dynamic_result = None
+        self.dynamic_results = set()
         self.environment = dict()
+
+    def getSingleResult(self):
+        assert len(self.dynamic_results) == 1
+        return next(iter(self.dynamic_results))
 
 
 class DataGraph:
@@ -111,13 +129,20 @@ class DataGraph:
             if static_inst.static_id not in basic_block.insts:
                 # This is a new static instruction we have encountered.
                 basic_block.insts[static_inst.static_id] = static_inst
+                # Update the user map for dependent insts.
+                for operand in static_inst.operands:
+                    if operand in func.value_inst_map:
+                        func.value_inst_map[operand].users[operand].add(
+                            static_inst)
                 # If this instruction generates a result,
                 # add to the function value map.
-                if static_inst.result != '':
-                    assert static_inst.result not in func.value_inst_map
-                    func.value_inst_map[static_inst.result] = static_inst
+                for result in static_inst.results:
+                    assert result not in func.value_inst_map
+                    func.value_inst_map[result] = static_inst
             # Get the updated static instruction.
             static_inst = basic_block.insts[static_inst.static_id]
+            # Update the dynamic inst's static_inst.
+            dynamic_inst.static_inst = static_inst
             # Update dynamic environment to the latest one.
             dynamic_inst.environment = environments[-1]
             # Insert the dynamic instruction.
@@ -207,8 +232,8 @@ class DataGraph:
                 else:
                     debug("Unknown dependence for {dynamic_id}:{operand}".format(
                         dynamic_id=dynamic_inst.dynamic_id, operand=operand))
-            if not dynamic_inst.dynamic_result is None:
-                value_dynamic_inst_map[dynamic_inst.dynamic_result.name] = dynamic_inst
+            for dynamic_result in dynamic_inst.dynamic_results:
+                value_dynamic_inst_map[dynamic_result.name] = dynamic_inst
 
     # Add memory dependence.
     # Must be done before initializing base/offset.
@@ -299,7 +324,7 @@ class DataGraph:
             static_inst = dynamic_inst.static_inst
             environment = dynamic_inst.environment
             if static_inst.op_name == 'alloca':
-                dynamic_pointer = dynamic_inst.dynamic_result
+                dynamic_pointer = dynamic_inst.getSingleResult()
                 # Assert we haven't has this value in the environment.
                 if dynamic_pointer.name in environment:
                     print("{We already have the dynamic value {name}".format(
@@ -316,12 +341,12 @@ class DataGraph:
                 # Register new mem object.
                 dynamic_pointer = dynamic_inst.dynamic_values[0]
                 if dynamic_pointer.name not in environment:
-                    print("Failed to find dynamic pointer {name}".format(
+                    warn("Failed to find dynamic pointer {name}".format(
                         name=dynamic_pointer.name))
                 assert dynamic_pointer.name in environment
                 dynamic_base = environment[dynamic_pointer.name]
                 # This is the dynamic result.
-                dynamic_result = dynamic_inst.dynamic_result
+                dynamic_result = dynamic_inst.getSingleResult()
                 dynamic_result.base = dynamic_base.base
                 dynamic_result.offset = (
                     int(dynamic_result.value, 16) - int(dynamic_base.value, 16) + dynamic_base.offset)
@@ -342,7 +367,7 @@ class DataGraph:
                     continue
                 # Set the base/offset the same as parameter.
                 dynamic_base = environment[dynamic_pointer.name]
-                dynamic_result = dynamic_inst.dynamic_result
+                dynamic_result = dynamic_inst.getSingleResult()
                 dynamic_result.base = dynamic_base.base
                 dynamic_result.offset = dynamic_base.offset
                 environment[dynamic_result.name] = dynamic_result
@@ -469,8 +494,9 @@ class DataGraph:
                 dynamic_inst.dynamic_values.append(dynamic_value)
                 static_inst.operands.append(dynamic_value.name)
             elif line[0] == 'r':
-                dynamic_inst.dynamic_result = dynamic_value
-                static_inst.result = dynamic_value.name
+                dynamic_inst.dynamic_results.add(dynamic_value)
+                static_inst.results.add(dynamic_value.name)
+                static_inst.users[dynamic_value.name] = set()
             else:
                 assert False
         return (static_inst, dynamic_inst)
@@ -500,12 +526,12 @@ def print_function(dg, args):
     for _, f in dg.functions.iteritems():
         for _, bb in f.bbs.iteritems():
             for _, static_inst in bb.insts.iteritems():
-                debug("{func},{bb},{static_id},{op_name},{result},{operands}".format(
+                debug("{func},{bb},{static_id},{op_name},{results},{operands}".format(
                     func=static_inst.func_name,
                     bb=static_inst.bb_name,
                     static_id=static_inst.static_id,
                     op_name=static_inst.op_name,
-                    result=static_inst.result,
+                    results=static_inst.results,
                     operands=static_inst.operands
                 ))
 
@@ -513,13 +539,13 @@ def print_function(dg, args):
 def print_trace(dg, args):
     for dynamic_inst in dg.dynamicInsts:
         static_inst = dynamic_inst.static_inst
-        print("{dynamic_id},{func},{bb},{static_id},{op_name},{result},{operands}".format(
+        print("{dynamic_id},{func},{bb},{static_id},{op_name},{results},{operands}".format(
             dynamic_id=dynamic_inst.dynamic_id,
             func=static_inst.func_name,
             bb=static_inst.bb_name,
             static_id=static_inst.static_id,
             op_name=static_inst.op_name,
-            result=static_inst.result,
+            results=static_inst.results,
             operands=static_inst.operands
         ))
         dependent_dynamic_ids = list()
@@ -603,7 +629,8 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
             elif static_inst.op_name == 'ret':
                 output.write('ret|{deps}|\n'.format(deps=deps))
             else:
-                output.write('{op_name}|{deps}|\n'.format(op_name=static_inst.op_name, deps=deps))
+                output.write('{op_name}|{deps}|\n'.format(
+                    op_name=static_inst.op_name, deps=deps))
 
 
 def main(argv):
