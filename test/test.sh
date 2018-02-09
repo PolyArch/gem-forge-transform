@@ -26,7 +26,7 @@ function build_llvm_replay_binary {
 function run_gem5 {
     local BINARY_NAME=${1}
     local USE_CACHE=${2}
-    local CPU_TYPE="TimingSimpleCPU"
+    local CPU_TYPE="DerivO3CPU"
     # local DEBUG_TYPE="--debug-flags=Exec,-ExecTicks"
     local DEBUG_TYPE=""
     local GEM5_OUT_DIR="${BINARY_NAME}.${CPU_TYPE}.m5out"
@@ -48,10 +48,10 @@ function run_gem5 {
 function run_gem5_llvm_trace_cpu {
     local BINARY_NAME=${1}
     local USE_CACHE=${2}
-    local CPU_TYPE="TimingSimpleCPU"
+    local CPU_TYPE="DerivO3CPU"
     local TRACE_FILE_NAME=${3}
     local DEBUG_TYPE="--debug-flags=LLVMTraceCPU"
-    local GEM5_OUT_DIR="${BINARY_NAME}.${CPU_TYPE}.m5out"
+    local GEM5_OUT_DIR="${BINARY_NAME}.${CPU_TYPE}.${TRACE_FILE_NAME}.m5out"
     mkdir -p ${GEM5_OUT_DIR}
     local GEM5_PATH="/home/sean/Public/gem5"
     local GEM5_X86="${GEM5_PATH}/build/X86/gem5.opt"
@@ -77,7 +77,8 @@ function test_dot_exporter {
 
 function test_CCA {
     local TRACE_FILE_NAME=${1}
-    python ${HOME}/util/CCATransform.py ${TRACE_FILE_NAME}
+    local GEM5_LLVM_TRACE_CPU_FILE=${2}
+    python ${HOME}/util/CCATransform.py ${TRACE_FILE_NAME} ${GEM5_LLVM_TRACE_CPU_FILE}
 }
 
 # We are in the root directory. Rebuild the pass.
@@ -100,6 +101,7 @@ TRACE_BINARY_NAME="${WORKLOAD}_trace"
 TRACE_FILE_NAME="${TRACE_BINARY_NAME}.output"
 
 GEM5_LLVM_TRACE_CPU_FILE="${WORKLOAD}_gem5_llvm_trace.txt"
+GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE="${WORKLOAD}_gem5_llvm_trace_transformed.txt"
 
 REPLAY_BINARY_NAME="${WORKLOAD}_replay"
 
@@ -123,13 +125,14 @@ make clean
 # ./${TRACE_BINARY_NAME} > ${TRACE_FILE_NAME}
 
 # Parse the trace and generate result used for gem5 LLVMTraceCPU
-python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
+# python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
+# test_CCA ${TRACE_FILE_NAME} ${GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE}
 
 # Simulate with LLVMTraceCPU
 build_llvm_replay_binary ${REPLAY_BINARY_NAME}
 run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE}
 
 # test_dot_exporter ${TRACE_FILE_NAME}
-# test_CCA ${TRACE_FILE_NAME}
 
 cd ${HOME}

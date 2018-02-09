@@ -300,6 +300,9 @@ def main(argv):
     bbName = 'if.then'
     threshold = 1.1
     CCATransform(dg, funcName, bbName, threshold)
+    # Print to a gem5 trace file.
+    outputFn = argv[2]
+    datagraph.print_gem5_llvm_trace_cpu_to_file(dg, ['', outputFn])
 
 
 if __name__ == '__main__':
