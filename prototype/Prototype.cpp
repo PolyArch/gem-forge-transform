@@ -614,6 +614,7 @@ class ReplayTrace : public llvm::FunctionPass {
                                           &Function);
     llvm::IRBuilder<> Builder(NewBB);
 
+    std::vector<llvm::Value*> ReplayArgs;
     for (auto ArgIter = Function.arg_begin(), ArgEnd = Function.arg_end();
          ArgIter != ArgEnd; ArgIter++) {
       if (ArgIter->getType()->getTypeID() != llvm::Type::TypeID::PointerTyID) {
@@ -626,19 +627,18 @@ class ReplayTrace : public llvm::FunctionPass {
       auto CastAddrValue = Builder.CreateCast(
           llvm::Instruction::CastOps::BitCast, &*ArgIter,
           llvm::Type::getInt8PtrTy(this->Module->getContext()));
-      std::vector<llvm::Value*> MapVirtualAddrArgs{
-          ArgNameValue,
-          CastAddrValue,
-      };
-      Builder.CreateCall(this->MapVirtualAddrFunc, MapVirtualAddrArgs);
+      ReplayArgs.push_back(ArgNameValue);
+      ReplayArgs.push_back(CastAddrValue);
     }
 
     // Insert replay call.
     auto TraceNameValue = getOrCreateStringLiteral(
         this->GlobalStrings, this->Module, Function.getName());
-    std::vector<llvm::Value*> ReplayArgs{
-        TraceNameValue,
-    };
+    auto NumMapsValue = llvm::ConstantInt::get(
+        llvm::IntegerType::getInt64Ty(this->Module->getContext()),
+        ReplayArgs.size() / 2, false);
+    ReplayArgs.insert(ReplayArgs.begin(), NumMapsValue);
+    ReplayArgs.insert(ReplayArgs.begin(), TraceNameValue);
     Builder.CreateCall(this->ReplayFunc, ReplayArgs);
 
     // Remember to return void.
@@ -652,7 +652,6 @@ class ReplayTrace : public llvm::FunctionPass {
   std::string Workload;
   llvm::Module* Module;
 
-  llvm::Value* MapVirtualAddrFunc;
   llvm::Value* ReplayFunc;
 
   std::map<std::string, llvm::Constant*> GlobalStrings;
@@ -662,22 +661,13 @@ class ReplayTrace : public llvm::FunctionPass {
     auto& Context = Module.getContext();
     auto Int8PtrTy = llvm::Type::getInt8PtrTy(Context);
     auto VoidTy = llvm::Type::getVoidTy(Context);
-    auto Int32Ty = llvm::Type::getInt32Ty(Context);
     auto Int64Ty = llvm::Type::getInt64Ty(Context);
-
-    std::vector<llvm::Type*> MapVirtualAddrArgs{
-        Int8PtrTy,
-        Int8PtrTy,
-    };
-    auto MapVirtualAddrTy =
-        llvm::FunctionType::get(VoidTy, MapVirtualAddrArgs, false);
-    this->MapVirtualAddrFunc =
-        Module.getOrInsertFunction("mapVirtualAddr", MapVirtualAddrTy);
 
     std::vector<llvm::Type*> ReplayArgs{
         Int8PtrTy,
+        Int64Ty,
     };
-    auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, false);
+    auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, true);
     this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy);
   }
 };
