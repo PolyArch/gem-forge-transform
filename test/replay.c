@@ -7,6 +7,8 @@ static const char* LLVM_TRACE_CPU_FILE = "/dev/llvm_trace_cpu";
 static const unsigned long REQUEST_MAP = 0;
 static const unsigned long REQUEST_REPLAY = 1;
 
+static const int MAX_NUM_MAPPED_ARGS = 10;
+
 void mapVirtualAddr(const char* name, const void* vaddr) {
     int flags = 2048;
     int fd = open(LLVM_TRACE_CPU_FILE, flags);
@@ -28,10 +30,4 @@ void replay(const char* trace) {
     // No more need to spin, which introduces a lot of overhead
     // to read the memory.
     ioctl(fd, REQUEST_REPLAY, args);
-    printf("Returned replay\n");
-    // Spin until it finished.
-    // while (finished_tag == 0) {
-        // printf("Replaying %s\n", trace);
-    // }
-    // printf("Finished replay %s\n", trace);
 }
