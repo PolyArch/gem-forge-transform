@@ -22,6 +22,8 @@ class StaticInst:
         self.operands = list()
         # A map from result to users.
         self.users = dict()
+        # Only used for accelerator inst.
+        self.context = None
 
     def __str__(self):
         return '{func},{bb},{static_id},{op_name},{results}|{operands}'.format(
@@ -628,6 +630,9 @@ def print_gem5_llvm_trace_cpu_to_file(dg, args):
                     deps=deps))
             elif static_inst.op_name == 'ret':
                 output.write('ret|{deps}|\n'.format(deps=deps))
+            elif static_inst.op_name == 'cca':
+                output.write('{op_name}|{deps}|{context}|\n'.format(
+                    op_name=static_inst.op_name, deps=deps, context=static_inst.context))
             else:
                 output.write('{op_name}|{deps}|\n'.format(
                     op_name=static_inst.op_name, deps=deps))

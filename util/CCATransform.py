@@ -34,7 +34,7 @@ def estimateSpeedUp(func, staticInsts):
     # Estimate the speed up if we map a subgraph to CCA.
     # @return float: the estimated speedup.
     # Hack: ignore empty subgraph.
-    if len(staticInsts) == 0:
+    if len(staticInsts) <= 1:
         return 1.0
     return 1.2
 
@@ -223,11 +223,11 @@ def createReplaceBasicBlock(func, bb, staticInsts):
     newStaticInst.op_name = 'cca'
     newStaticInst.static_id = insertPoint
     newStaticInst.operands = operands
-    # HACK: This breaks the assumption that each inst will have only one result.
-    # I am very unhappy about this. But since we only apply one-pass transformation,
-    # it may be OK for now.
     newStaticInst.results = outputs
     newStaticInst.users = outsideUsers
+    # HACK: For now the context would be a latency, and we set it
+    # to fixed 2 cycles.
+    newStaticInst.context = 2
     # Add to the new basic block.
     newBB.insts[newStaticInst.static_id] = newStaticInst
     return (newBB, newStaticInst)
