@@ -14,6 +14,11 @@ def warn(msg):
     print("WARN!: {msg}".format(msg=msg))
 
 
+def panic(msg):
+    warn(msg)
+    assert False
+
+
 def checkConstraints(func, staticInsts):
     # Check if a subgraph matches our constraints on CCA.
     # @param subgraphNodeNames: a set contains the node name in the subgraph.
@@ -142,21 +147,87 @@ def replaceBB(dg, bb, staticInsts, newBB, newStaticInst):
     return replaceCount
 
 
+def getLatencyOfSubgraph(func, bb, staticInsts):
+    topologicalSorted = list()
+    stack = list()
+    visited = dict()
+    # Get all the pure outputs to the stack as they
+    # are the bottom of the dependence graph.
+    for staticInst in staticInsts:
+        usedInside = False
+        for result in staticInst.results:
+            for user in staticInst.users[result]:
+                if user in staticInsts:
+                    usedInside = True
+                    break
+            if usedInside:
+                break
+        if not usedInside:
+            stack.append(staticInst)
+            visited[staticInst] = 0
+    if len(stack) != 1:
+        panic("Number of pure output node is not 1 but {n}".format(
+            n=len(stack)))
+    while stack:
+        # Topological sort.
+        # Check all inputs.
+        staticInst = stack.pop()
+        if visited[staticInst] == 0:
+            stack.append(staticInst)
+            visited[staticInst] = 1
+        elif visited[staticInst] == 1:
+            visited[staticInst] = 2
+            topologicalSorted.append(staticInst)
+            continue
+        else:
+            continue
+        for operand in staticInst.operands:
+            if operand not in func.value_inst_map:
+                # Ignore parameter.
+                continue
+            depStaticInst = func.value_inst_map[operand]
+            if depStaticInst in staticInsts:
+                # If we haven't visite the inst.
+                if depStaticInst not in visited or visited[depStaticInst] == 0:
+                    visited[depStaticInst] = 0
+                    stack.append(depStaticInst)
+    # Reversely processing the sorted insts.
+    layerMap = dict()
+    minLayer = 0
+    for idx in xrange(len(topologicalSorted) - 1, -1, -1):
+        staticInst = topologicalSorted[idx]
+        if staticInst not in layerMap:
+            # A new thread.
+            layerMap[staticInst] = 0
+        currentLayer = layerMap[staticInst]
+        minLayer = min(minLayer, currentLayer)
+        for operand in staticInst.operands:
+            if operand not in func.value_inst_map:
+                # Ignore parameter.
+                continue
+            depStaticInst = func.value_inst_map[operand]
+            if depStaticInst in staticInsts:
+                if depStaticInst not in layerMap:
+                    layerMap[depStaticInst] = currentLayer - 1
+                else:
+                    layerMap[depStaticInst] = min(layerMap[depStaticInst], currentLayer - 1)
+    return (-minLayer) + 1
+
 def createReplaceBasicBlock(func, bb, staticInsts):
     # Create a new basic with the subgraph replaced.
     # NOTE: The original func is not modified.
     def findLatestInput():
         # Find the latest input inst id inside this bb.
         # Also find all the input operand.
-        latestInputId = -1
-        operands = list()
+        latestInputId= -1
+        operands= list()
         for staticInst in staticInsts:
             for operand in staticInst.operands:
                 if operand not in func.value_inst_map:
                     # Ignore parameter.
                     operands.append(operand)
                     continue
-                depStaticInst = func.value_inst_map[operand]
+                depStaticInst= func.value_inst_map[operand]
                 if depStaticInst in staticInsts:
                     # Ignore intermediate results.
                     continue
@@ -165,28 +236,28 @@ def createReplaceBasicBlock(func, bb, staticInsts):
                     operands.append(operand)
                     continue
                 operands.append(operand)
-                latestInputId = max(latestInputId, depStaticInst.static_id)
+                latestInputId= max(latestInputId, depStaticInst.static_id)
         return (latestInputId, operands)
     # Find the earliest user id inside this bb.
 
     def findEarliestUser():
-        earliestUserId = max(bb.insts.keys()) + 1
-        outputs = set()
-        outsideUsers = dict()
+        earliestUserId= max(bb.insts.keys()) + 1
+        outputs= set()
+        outsideUsers= dict()
         for staticInst in staticInsts:
             for result in staticInst.results:
                 outputs.add(result)
-                outsideUsers[result] = set()
-                usedOutside = False
+                outsideUsers[result]= set()
+                usedOutside= False
                 for user in staticInst.users[result]:
                     if user not in staticInsts:
                         outsideUsers[result].add(user)
-                        usedOutside = True
+                        usedOutside= True
                         if user.bb_name == bb.name:
                             # This is an outside user from same bb.
                             # We care about the static_id to get the
                             # earliest insertion point.
-                            earliestUserId = min(
+                            earliestUserId= min(
                                 earliestUserId, user.static_id)
                 if not usedOutside:
                     # Remove the result if not used outside.
@@ -194,69 +265,69 @@ def createReplaceBasicBlock(func, bb, staticInsts):
                     outsideUsers.pop(result)
         return (earliestUserId, outputs, outsideUsers)
     # Our new static inst can only be inserted at (latestInput, earliestUser)
-    latestInputId, operands = findLatestInput()
-    earliestUserId, outputs, outsideUsers = findEarliestUser()
+    latestInputId, operands= findLatestInput()
+    earliestUserId, outputs, outsideUsers= findEarliestUser()
     if earliestUserId <= latestInputId + 1:
         raise ValueError('EarliestUserId {earliest} <= LatestInputId {latest} + 1'.format(
             earliest=earliestUserId, latest=latestInputId))
 
     # Insert at simply the first replaced static inst with in
     # (latestInput, earliestUser)
-    insertPoint = -1
+    insertPoint= -1
     for staticInst in staticInsts:
         if staticInst.static_id > latestInputId and staticInst.static_id < earliestUserId:
-            insertPoint = staticInst.static_id
+            insertPoint= staticInst.static_id
             break
     if insertPoint == -1:
         raise ValueError('Failed to find a insert point')
 
     # Create the new basic block.
-    newBB = datagraph.BasicBlock(bb.name)
+    newBB= datagraph.BasicBlock(bb.name)
     # Copy all the other insts not in the subgraph.
     for staticInst in bb.insts.values():
         if staticInst not in staticInsts:
-            newBB.insts[staticInst.static_id] = staticInst
+            newBB.insts[staticInst.static_id]= staticInst
     # Create the new static inst.
-    newStaticInst = datagraph.StaticInst()
-    newStaticInst.func_name = func.name
-    newStaticInst.bb_name = bb.name
-    newStaticInst.op_name = 'cca'
-    newStaticInst.static_id = insertPoint
-    newStaticInst.operands = operands
-    newStaticInst.results = outputs
-    newStaticInst.users = outsideUsers
+    newStaticInst= datagraph.StaticInst()
+    newStaticInst.func_name= func.name
+    newStaticInst.bb_name= bb.name
+    newStaticInst.op_name= 'cca'
+    newStaticInst.static_id= insertPoint
+    newStaticInst.operands= operands
+    newStaticInst.results= outputs
+    newStaticInst.users= outsideUsers
     # HACK: For now the context would be a latency, and we set it
     # to fixed 2 cycles.
-    newStaticInst.context = 2
+    newStaticInst.context= getLatencyOfSubgraph(func, bb, staticInsts)
     # Add to the new basic block.
-    newBB.insts[newStaticInst.static_id] = newStaticInst
+    newBB.insts[newStaticInst.static_id]= newStaticInst
     return (newBB, newStaticInst)
 
 
 def replaceSubgraph(dg, func, bb, staticInsts):
     # Replace the staticInsts with a single CCA inst.
-    oldDynamicInstCount = len(dg.dynamicInsts)
-    newBB, newStaticInst = createReplaceBasicBlock(func, bb, staticInsts)
-    count = replaceBB(dg, bb, staticInsts, newBB, newStaticInst)
+    oldDynamicInstCount= len(dg.dynamicInsts)
+    newBB, newStaticInst= createReplaceBasicBlock(func, bb, staticInsts)
+    count= replaceBB(dg, bb, staticInsts, newBB, newStaticInst)
     warn('Replaced count {count}, old {old}, new {new}'.format(
         count=count, old=oldDynamicInstCount, new=len(dg.dynamicInsts)))
 
 
 def CCATransform(dg, funcName, bbName, threshold):
-    func = dg.functions[funcName]
-    bb = dg.functions[funcName].bbs[bbName]
-    graph = DotGraphExporter.extractGraph(func, bb.insts.values())
-    matchedStaticInsts = set()
-    subgraphs = list()
+    func= dg.functions[funcName]
+    bb= dg.functions[funcName].bbs[bbName]
+    graph= DotGraphExporter.extractGraph(func, bb.insts.values())
+    matchedStaticInsts= set()
+    subgraphs= list()
     for idx in reversed(xrange(len(bb.insts))):
-        staticInst = bb.insts[idx]
+        staticInst= bb.insts[idx]
         if staticInst in matchedStaticInsts:
             continue
-        currentSubgraph = set()
-        pqueue = list()
+        currentSubgraph= set()
+        pqueue= list()
         heapq.heappush(pqueue, staticInst)
         while pqueue:
-            candidataInst = heapq.heappop(pqueue)
+            candidataInst= heapq.heappop(pqueue)
             # Add candidate to the currentSubgraph.
             currentSubgraph.add(candidataInst)
             if not checkConstraints(func, currentSubgraph):
@@ -278,30 +349,31 @@ def CCATransform(dg, funcName, bbName, threshold):
     # Print all the matched subgraph.
     for idx in xrange(len(subgraphs)):
         subgraph = DotGraphExporter.extractGraph(func, subgraphs[idx])
-        subgraphName = 'subgraph_{idx}'.format(idx=idx)
+        latency = getLatencyOfSubgraph(func, bb, subgraphs[idx])
+        subgraphName= 'subgraph_{idx}_{latency}'.format(idx=idx, latency=latency)
         DotGraphExporter.toDot(subgraphName + '.dot', subgraphName, subgraph)
     # Replace all the subgraph and print out the replaced BB.
     for idx in xrange(len(subgraphs)):
-    # for idx in xrange(1):
+        # for idx in xrange(1):
         warn('Replacing {idx}/{all}'.format(idx=idx, all=len(subgraphs)))
         replaceSubgraph(dg, func, bb, subgraphs[idx])
         # Get the new BB.
-        bb = func.bbs[bbName]
+        bb= func.bbs[bbName]
         # Print it out.
-        subgraph = DotGraphExporter.extractGraph(func, bb.insts.values())
-        subgraphName = 'replaced_{idx}'.format(idx=idx)
+        subgraph= DotGraphExporter.extractGraph(func, bb.insts.values())
+        subgraphName= 'replaced_{idx}'.format(idx=idx)
         DotGraphExporter.toDot(subgraphName + '.dot', subgraphName, subgraph)
 
 
 def main(argv):
-    fn = argv[1]
-    dg = datagraph.DataGraph.createFromTrace(fn)
-    funcName = 'fft'
-    bbName = 'if.then'
-    threshold = 1.1
+    fn= argv[1]
+    dg= datagraph.DataGraph.createFromTrace(fn)
+    funcName= 'fft'
+    bbName= 'if.then'
+    threshold= 1.1
     CCATransform(dg, funcName, bbName, threshold)
     # Print to a gem5 trace file.
-    outputFn = argv[2]
+    outputFn= argv[2]
     datagraph.print_gem5_llvm_trace_cpu_to_file(dg, ['', outputFn])
 
 
