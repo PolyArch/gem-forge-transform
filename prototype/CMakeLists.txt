@@ -1,5 +1,8 @@
 add_library(PrototypePass MODULE
     Prototype.cpp
+    DynamicTrace.cpp
+    Replay.cpp
+    LocateAccelerableFunctions.cpp
 )
 
 # LLVM is (typically) built with no C++ RTTI. We need to match that;

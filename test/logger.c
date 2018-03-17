@@ -1,14 +1,26 @@
+#include <assert.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 
-void printFuncEnter(const char* FunctionName) {
-  printf("e|%s|\n", FunctionName);
-}
+static FILE* p = NULL;
+static const char* TraceFileName = "llvm_trace.txt";
+static const char* OpenMode = "w";
+
+#define log(...)                          \
+  {                                       \
+    if (p == NULL) {                      \
+      p = fopen(TraceFileName, OpenMode); \
+    }                                     \
+    assert(p != NULL);                    \
+    fprintf(p, __VA_ARGS__);              \
+  }
+
+void printFuncEnter(const char* FunctionName) { log("e|%s|\n", FunctionName); }
 
 void printInst(const char* FunctionName, const char* BBName, unsigned Id,
                char* OpCodeName) {
-  printf("i|%s|%s|%d|%s|\n", FunctionName, BBName, Id, OpCodeName);
+  log("i|%s|%s|%d|%s|\n", FunctionName, BBName, Id, OpCodeName);
 }
 
 // Copy from LLVM Type.h
@@ -42,7 +54,7 @@ enum LLVMTypeID {
  */
 void printValue(const char* Tag, const char* Name, const char* TypeName,
                 unsigned TypeId, unsigned NumAdditionalArgs, ...) {
-  printf("%s|%s|%s|%u|", Tag, Name, TypeName, TypeId);
+  log("%s|%s|%s|%u|", Tag, Name, TypeName, TypeId);
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
@@ -51,33 +63,33 @@ void printValue(const char* Tag, const char* Name, const char* TypeName,
     }
     case IntegerTyID: {
       unsigned value = va_arg(VAList, unsigned);
-      printf("%u|", value);
+      log("%u|", value);
       break;
     }
     case DoubleTyID: {
       double value = va_arg(VAList, double);
-      printf("%f|", value);
+      log("%f|", value);
       break;
     }
     case PointerTyID: {
       void* value = va_arg(VAList, void*);
-      printf("%p|", value);
+      log("%p|", value);
       break;
     }
     case VectorTyID: {
       uint32_t size = va_arg(VAList, uint32_t);
       uint8_t* buffer = va_arg(VAList, uint8_t*);
       for (uint32_t i = 0; i < size; ++i) {
-        printf("%hhu,", buffer[i]);
+        log("%hhu,", buffer[i]);
       }
-      printf("|");
+      log("|");
       break;
     }
     default: {
-      printf("UnsupportedType|");
+      log("UnsupportedType|");
       break;
     }
   }
   va_end(VAList);
-  printf("\n");
+  log("\n");
 }

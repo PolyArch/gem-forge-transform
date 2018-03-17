@@ -10,6 +10,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 
+#include "LocateAccelerableFunctions.h"
+
 #include <map>
 #include <set>
 
@@ -73,110 +75,6 @@ llvm::Value* getOrCreateVectorStoreBuffer(
   return VectorStoreBuffer.at(BitSize);
 }
 
-// A analysis pass to locate all the accelerable functions.
-// A function is accelerable if:
-// 1. it has no system call.
-// 2. the function it calls is also acclerable.
-// In short, we can trace these functions and that's why they are accelerable.
-class LocateAccelerableFunctions : public llvm::CallGraphSCCPass {
- public:
-  static char ID;
-  LocateAccelerableFunctions()
-      : llvm::CallGraphSCCPass(ID), CallsExternalNode(nullptr) {}
-  bool doInitialization(llvm::CallGraph& CG) override {
-    // Add some math accelerable functions.
-    this->MathAcclerableFunctionNames.insert("sin");
-    this->MathAcclerableFunctionNames.insert("cos");
-    // We do not modify the module.
-    CG.dump();
-    this->CallsExternalNode = CG.getCallsExternalNode();
-    this->ExternalCallingNode = CG.getExternalCallingNode();
-    return false;
-  }
-  bool runOnSCC(llvm::CallGraphSCC& SCC) override {
-    // If any function in this SCC calls an external node or unaccelerable
-    // functions, then it is not accelerable.
-    bool Accelerable = true;
-    for (auto NodeIter = SCC.begin(), NodeEnd = SCC.end(); NodeIter != NodeEnd;
-         ++NodeIter) {
-      // NodeIter is a std::vector<CallGraphNode *>::const_iterator.
-      llvm::CallGraphNode* Caller = *NodeIter;
-      if (Caller == this->ExternalCallingNode ||
-          Caller == this->CallsExternalNode) {
-        // Special case: ignore ExternalCallingNode and CallsExternalNode.
-        return false;
-      }
-      auto CallerName = Caller->getFunction()->getName().str();
-      // By pass checking of all the math accelerable functions.
-      if (this->isMathAccelerable(CallerName)) {
-        continue;
-      }
-      // Check this function doesn't call external methods.
-      for (auto CalleeIter = Caller->begin(), CalleeEnd = Caller->end();
-           CalleeIter != CalleeEnd; ++CalleeIter) {
-        // CalleeIter is a std::vector<CallRecord>::const_iterator.
-        // CallRecord is a std::pair<WeakTrackingVH, CallGraphNode *>.
-        llvm::CallGraphNode* Callee = CalleeIter->second;
-        // Calls external node.
-        if (Callee == this->CallsExternalNode) {
-          //   DEBUG(llvm::errs() << CallerName << " calls external node\n");
-          Accelerable = false;
-          break;
-        }
-        // Calls unaccelerable node.
-        auto CalleeName = Callee->getFunction()->getName().str();
-        if (this->MapFunctionAccelerable.find(CalleeName) !=
-                this->MapFunctionAccelerable.end() &&
-            this->MapFunctionAccelerable[CalleeName] == false) {
-          //   DEBUG(llvm::errs() << CallerName << " calls unaccelerable
-          //   function "
-          //                      << CalleeName << '\n');
-          Accelerable = false;
-          break;
-        }
-      }
-      if (!Accelerable) {
-        break;
-      }
-    }
-    // Add these functions to the map.
-    for (auto CallerIter = SCC.begin(), CallerEnd = SCC.end();
-         CallerIter != CallerEnd; ++CallerIter) {
-      llvm::CallGraphNode* Caller = *CallerIter;
-      auto CallerName = Caller->getFunction()->getName().str();
-      if (Accelerable) {
-        DEBUG(llvm::errs() << CallerName << " is accelerable? "
-                           << (Accelerable ? "true" : "false") << '\n');
-      }
-      this->MapFunctionAccelerable[CallerName] = Accelerable;
-    }
-    return false;
-  }
-  bool isAccelerable(const std::string& FunctionName) const {
-    return this->MapFunctionAccelerable.find(FunctionName) !=
-               this->MapFunctionAccelerable.end() &&
-           this->MapFunctionAccelerable.at(FunctionName);
-  }
-
- private:
-  // This represents an external function been called.
-  llvm::CallGraphNode* CallsExternalNode;
-  // This represents an external function calling to internal functions.
-  llvm::CallGraphNode* ExternalCallingNode;
-
-  std::map<std::string, bool> MapFunctionAccelerable;
-
-  std::set<std::string> MathAcclerableFunctionNames;
-
-  // Some special math function we always want to mark as accelerable,
-  // even if we don't have the trace.
-  // TODO: Use a map for this.
-  bool isMathAccelerable(const std::string& FunctionName) {
-    return this->MathAcclerableFunctionNames.find(FunctionName) !=
-           this->MathAcclerableFunctionNames.end();
-  }
-};
-
 // This is a pass to instrument a function and trace it.
 class Prototype : public llvm::FunctionPass {
  public:
@@ -188,8 +86,8 @@ class Prototype : public llvm::FunctionPass {
     Info.addPreserved<LocateAccelerableFunctions>();
     Info.addRequired<llvm::LoopInfoWrapperPass>();
     Info.addPreserved<llvm::LoopInfoWrapperPass>();
-    Info.addRequiredID(llvm::InstructionNamerID);
-    Info.addPreservedID(llvm::InstructionNamerID);
+    // Info.addRequiredID(llvm::InstructionNamerID);
+    // Info.addPreservedID(llvm::InstructionNamerID);
   }
   bool doInitialization(llvm::Module& Module) override {
     this->Module = &Module;
@@ -559,130 +457,10 @@ class Prototype : public llvm::FunctionPass {
   }
 };
 
-class ReplayTrace : public llvm::FunctionPass {
- public:
-  static char ID;
-  ReplayTrace() : llvm::FunctionPass(ID) {}
-
-  void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
-    Info.addRequired<LocateAccelerableFunctions>();
-    Info.addPreserved<LocateAccelerableFunctions>();
-    // We require the loop information.
-    Info.addRequired<llvm::LoopInfoWrapperPass>();
-    Info.addPreserved<llvm::LoopInfoWrapperPass>();
-    Info.addRequiredID(llvm::InstructionNamerID);
-    Info.addPreservedID(llvm::InstructionNamerID);
-  }
-
-  bool doInitialization(llvm::Module& Module) override {
-    this->Module = &Module;
-    Workload = "fft";
-    DEBUG(llvm::errs() << "Initialize ReplaceTrace with workload: " << Workload
-                       << '\n');
-
-    // Register the external ioctl function.
-    registerFunction(Module);
-
-    return true;
-  }
-
-  bool runOnFunction(llvm::Function& Function) override {
-    auto FunctionName = Function.getName().str();
-    DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
-
-    // Check if this function is accelerable.
-    bool Accelerable =
-        getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
-    // A special hack: do not trace function which
-    // returns a value, currently we donot support return in our trace.
-    if (!Function.getReturnType()->isVoidTy()) {
-      Accelerable = false;
-    }
-    if (!Accelerable) {
-      return false;
-    }
-
-    DEBUG(llvm::errs() << "Found workload: " << FunctionName << '\n');
-
-    // Change the function body to call ioctl
-    // to replay the trace.
-    // First simply remove all BBs.
-    Function.deleteBody();
-
-    // Add another entry block with a simple ioctl call.
-    auto NewBB = llvm::BasicBlock::Create(this->Module->getContext(), "entry",
-                                          &Function);
-    llvm::IRBuilder<> Builder(NewBB);
-
-    std::vector<llvm::Value*> ReplayArgs;
-    for (auto ArgIter = Function.arg_begin(), ArgEnd = Function.arg_end();
-         ArgIter != ArgEnd; ArgIter++) {
-      if (ArgIter->getType()->getTypeID() != llvm::Type::TypeID::PointerTyID) {
-        continue;
-      }
-      // Map all pointer
-      auto ArgName = ArgIter->getName();
-      auto ArgNameValue =
-          getOrCreateStringLiteral(this->GlobalStrings, this->Module, ArgName);
-      auto CastAddrValue = Builder.CreateCast(
-          llvm::Instruction::CastOps::BitCast, &*ArgIter,
-          llvm::Type::getInt8PtrTy(this->Module->getContext()));
-      ReplayArgs.push_back(ArgNameValue);
-      ReplayArgs.push_back(CastAddrValue);
-    }
-
-    // Insert replay call.
-    auto TraceNameValue = getOrCreateStringLiteral(
-        this->GlobalStrings, this->Module, Function.getName());
-    auto NumMapsValue = llvm::ConstantInt::get(
-        llvm::IntegerType::getInt64Ty(this->Module->getContext()),
-        ReplayArgs.size() / 2, false);
-    ReplayArgs.insert(ReplayArgs.begin(), NumMapsValue);
-    ReplayArgs.insert(ReplayArgs.begin(), TraceNameValue);
-    Builder.CreateCall(this->ReplayFunc, ReplayArgs);
-
-    // Remember to return void.
-    Builder.CreateRet(nullptr);
-
-    // We always modify the function.
-    return true;
-  }
-
- private:
-  std::string Workload;
-  llvm::Module* Module;
-
-  llvm::Value* ReplayFunc;
-
-  std::map<std::string, llvm::Constant*> GlobalStrings;
-
-  // Insert all the print function declaration into the module.
-  void registerFunction(llvm::Module& Module) {
-    auto& Context = Module.getContext();
-    auto Int8PtrTy = llvm::Type::getInt8PtrTy(Context);
-    auto VoidTy = llvm::Type::getVoidTy(Context);
-    auto Int64Ty = llvm::Type::getInt64Ty(Context);
-
-    std::vector<llvm::Type*> ReplayArgs{
-        Int8PtrTy,
-        Int64Ty,
-    };
-    auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, true);
-    this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy);
-  }
-};
-
 }  // namespace
 
 #undef DEBUG_TYPE
 
-char LocateAccelerableFunctions::ID = 0;
-static llvm::RegisterPass<LocateAccelerableFunctions> L(
-    "locate-acclerable-functions", "Locate accelerable functions", false, true);
-
 char Prototype::ID = 0;
 static llvm::RegisterPass<Prototype> X("prototype", "Prototype pass", false,
                                        false);
-char ReplayTrace::ID = 0;
-static llvm::RegisterPass<ReplayTrace> R("replay", "replay the llvm trace",
-                                         false, false);
