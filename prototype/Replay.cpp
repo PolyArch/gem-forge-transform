@@ -82,6 +82,9 @@ class ReplayTrace : public llvm::FunctionPass {
     DEBUG(llvm::errs() << "Parsed # dynamic insts: "
                        << this->Trace->DyanmicInstsMap.size() << '\n');
 
+    DEBUG(llvm::errs() << "Parsed # memory dependences: "
+                       << this->Trace->NumMemDependences << '\n');
+
     Workload = "fft";
     DEBUG(llvm::errs() << "Initialize ReplaceTrace with workload: " << Workload
                        << '\n');
