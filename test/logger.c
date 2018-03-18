@@ -59,6 +59,8 @@ void printValue(const char* Tag, const char* Name, const char* TypeName,
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
     case LabelTyID: {
+      // For label, log the name again to be compatible with other type.
+      log("%s|", Name);
       break;
     }
     case IntegerTyID: {
