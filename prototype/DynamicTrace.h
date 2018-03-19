@@ -94,6 +94,11 @@ class DynamicTrace {
                                         const std::string& BasicBlockName,
                                         const int Index);
 
+  DynamicInstruction* getLatestDynamicIdForStaticInstruction(
+      llvm::Instruction* StaticInstruction);
+
+  DynamicInstruction* getPreviousDynamicInstruction();
+
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.
   std::unordered_map<uint64_t, DynamicId> AddrToLastStoreInstMap;
@@ -113,6 +118,15 @@ class DynamicTrace {
                                 llvm::Instruction* StaticInstruction);
   void addRegisterDependence(DynamicId CurrentDynamicId,
                              llvm::Instruction* OperandStaticInst);
+
+  // Records the information of the dynamic value inter-frame.
+  // Especially used for mem/base initialization.
+  std::list<std::unordered_map<llvm::Argument*, DynamicValue*>>
+      DynamicFrameStack;
+
+  // Handle the memory address base/offset.
+  // Very important to be replayable in gem5.
+  void handleMemoryBase(DynamicInstruction* DynamicInst);
 };
 
 #endif
