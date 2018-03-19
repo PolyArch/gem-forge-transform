@@ -1,4 +1,5 @@
 #include "DynamicTrace.h"
+#include "IdenticalTransformer.h"
 
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
@@ -68,8 +69,8 @@ class ReplayTrace : public llvm::FunctionPass {
     // We require the loop information.
     Info.addRequired<llvm::LoopInfoWrapperPass>();
     Info.addPreserved<llvm::LoopInfoWrapperPass>();
-    Info.addRequiredID(llvm::InstructionNamerID);
-    Info.addPreservedID(llvm::InstructionNamerID);
+    // Info.addRequiredID(llvm::InstructionNamerID);
+    // Info.addPreservedID(llvm::InstructionNamerID);
   }
 
   bool doInitialization(llvm::Module& Module) override {
@@ -84,6 +85,11 @@ class ReplayTrace : public llvm::FunctionPass {
 
     DEBUG(llvm::errs() << "Parsed # memory dependences: "
                        << this->Trace->NumMemDependences << '\n');
+
+    // Generate the output.
+    IdenticalTransformer* Transformer =
+        new IdenticalTransformer(this->Trace, "llvm_trace_gem5.txt");
+    delete Transformer;
 
     Workload = "fft";
     DEBUG(llvm::errs() << "Initialize ReplaceTrace with workload: " << Workload

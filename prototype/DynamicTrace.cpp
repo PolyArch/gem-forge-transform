@@ -1,6 +1,5 @@
 #include "DynamicTrace.h"
 
-#include "llvm/IR/Instructions.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -286,7 +285,8 @@ void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
     // Handle RAW dependence.
     assert(DynamicInst->DynamicOperands.size() == 1 &&
            "Invalid number of dynamic operands for load.");
-    uint64_t BaseAddr = std::stoull(DynamicInst->DynamicOperands[0]->Value);
+    uint64_t BaseAddr =
+        std::stoull(DynamicInst->DynamicOperands[0]->Value, nullptr, 16);
     llvm::Type* LoadedType =
         LoadStaticInstruction->getPointerOperandType()->getPointerElementType();
     uint64_t LoadedTypeSizeInByte =
@@ -308,7 +308,8 @@ void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
     // Handle WAW and WAR dependence.
     assert(DynamicInst->DynamicOperands.size() == 2 &&
            "Invalid number of dynamic operands for store.");
-    uint64_t BaseAddr = std::stoull(DynamicInst->DynamicOperands[1]->Value);
+    uint64_t BaseAddr =
+        std::stoull(DynamicInst->DynamicOperands[1]->Value, nullptr, 16);
     llvm::Type* StoredType = StoreStaticInstruction->getPointerOperandType()
                                  ->getPointerElementType();
     uint64_t StoredTypeSizeInByte =
@@ -604,12 +605,25 @@ void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
           llvm::dyn_cast<llvm::GetElementPtrInst>(StaticInstruction)) {
     // GEP.
     DynamicValue* BaseValue = DynamicInst->DynamicOperands[0];
-    uint64_t OperandAddr = stoull(BaseValue->Value);
-    uint64_t ResultAddr = stoull(DynamicInst->DynamicResult->Value);
+    uint64_t OperandAddr = stoull(BaseValue->Value, nullptr, 16);
+    uint64_t ResultAddr =
+        stoull(DynamicInst->DynamicResult->Value, nullptr, 16);
     // Compute base/offset from the first operand.
     DynamicInst->DynamicResult->MemBase = BaseValue->MemBase;
     DynamicInst->DynamicResult->MemOffset =
         BaseValue->MemOffset + (ResultAddr - OperandAddr);
+
+    {
+      static int count = 0;
+      if (count < 5) {
+        DEBUG(llvm::errs() << "GEP " << DynamicInst->DynamicResult->MemBase
+                           << ' ' << DynamicInst->DynamicResult->MemOffset
+                           << ' ' << DynamicInst->DynamicResult->Value << ' '
+                           << ResultAddr << ' ' << OperandAddr << ' '
+                           << BaseValue->MemOffset << '\n');
+        count++;
+      }
+    }
     return;
   }
 

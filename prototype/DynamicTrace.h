@@ -2,6 +2,7 @@
 #define LLVM_TDG_DYNAMIC_TRACE_H
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
 #include <list>
