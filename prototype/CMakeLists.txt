@@ -3,6 +3,7 @@ add_library(PrototypePass MODULE
     DynamicTrace.cpp
     Replay.cpp
     LocateAccelerableFunctions.cpp
+    IdenticalTransformer.cpp
 )
 
 # LLVM is (typically) built with no C++ RTTI. We need to match that;

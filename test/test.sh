@@ -73,21 +73,21 @@ CPU_NUM=1
 BINARY_ARGS=""
 
 # WORKDIR="MachSuite/fft/transpose"
-# WORKDIR="MachSuite/fft/strided"
+WORKDIR="MachSuite/fft/strided"
 # WORKDIR="MachSuite/fft/strided-raw"
 # WORKDIR="MachSuite/fft/strided-pseudo"
 # WORKDIR="MachSuite/kmp/kmp"
 # WORKLOAD="kmp"
-# WORKLOAD="fft"
-WORKDIR="hello"
-WORKLOAD="hello"
+WORKLOAD="fft"
+# WORKDIR="hello"
+# WORKLOAD="hello"
 
 NORMAL_BINARY_NAME=${WORKLOAD}
 
 TRACE_BINARY_NAME="${WORKLOAD}_trace"
 TRACE_FILE_NAME="llvm_trace.txt"
 
-GEM5_LLVM_TRACE_CPU_FILE="${WORKLOAD}_gem5_llvm_trace.txt"
+GEM5_LLVM_TRACE_CPU_FILE="llvm_trace_gem5.txt"
 GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE="${WORKLOAD}_gem5_llvm_trace_transformed.txt"
 
 REPLAY_BINARY_NAME="${WORKLOAD}_replay"
@@ -95,16 +95,16 @@ REPLAY_BINARY_NAME="${WORKLOAD}_replay"
 cd ${WORKDIR}
 
 # Clean everything.
-# make clean
+make clean
 
 # run_gem5 "/home/sean/a.out" ${USE_CACHE} 4 ""
-PARSEC_ROOT="/home/sean/Documents/parsec-3.0/pkgs/apps/raytrace/obj/amd64-linux.gcc"
+# PARSEC_ROOT="/home/sean/Documents/parsec-3.0/pkgs/apps/raytrace/obj/amd64-linux.gcc"
 # run_gem5 "${PARSEC_ROOT}/bin/rtview" ${USE_CACHE} 4 "${PARSEC_ROOT}/bunny.obj -automove -nthreads 2 -frames 1 -res 16 16"
-run_gem5 "${PARSEC_ROOT}/bin/rtview" ${USE_CACHE} 4 "${PARSEC_ROOT}/happy_buddha.obj -automove -nthreads 2 -frames 3 -res 480 270"
+# run_gem5 "${PARSEC_ROOT}/bin/rtview" ${USE_CACHE} 4 "${PARSEC_ROOT}/happy_buddha.obj -automove -nthreads 2 -frames 3 -res 480 270"
 # run_gem5 "/home/sean/test_gem5_multithread/test" ${USE_CACHE} 4 ""
 
 # build normal binary.
-# make ${WORKLOAD}
+make ${WORKLOAD}
 
 # run gem5.
 # run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE} ${CPU_NUM} ${BINARY_ARGS}
@@ -120,8 +120,8 @@ run_gem5 "${PARSEC_ROOT}/bin/rtview" ${USE_CACHE} 4 "${PARSEC_ROOT}/happy_buddha
 # test_CCA ${TRACE_FILE_NAME} ${GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE}
 
 # Simulate with LLVMTraceCPU
-# make ${REPLAY_BINARY_NAME}
-# run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+make ${REPLAY_BINARY_NAME}
+run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
 # run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE}
 
 # test_dot_exporter ${TRACE_FILE_NAME}
