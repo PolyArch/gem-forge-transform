@@ -1,5 +1,4 @@
 #include "DynamicTrace.h"
-#include "IdenticalTransformer.h"
 
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
@@ -16,6 +15,7 @@
 
 #include "LocateAccelerableFunctions.h"
 
+#include <fstream>
 #include <map>
 #include <set>
 
@@ -60,8 +60,20 @@ llvm::Constant* getOrCreateStringLiteral(
 
 class ReplayTrace : public llvm::FunctionPass {
  public:
+  using DynamicId = DynamicTrace::DynamicId;
   static char ID;
-  ReplayTrace() : llvm::FunctionPass(ID) {}
+  ReplayTrace()
+      : llvm::FunctionPass(ID),
+        Trace(nullptr),
+        OutTraceName("llvm_trace_gem5.txt") {}
+
+  virtual ~ReplayTrace() {
+    // Remember to release the trace.
+    if (this->Trace != nullptr) {
+      delete this->Trace;
+      this->Trace = nullptr;
+    }
+  }
 
   void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
     Info.addRequired<LocateAccelerableFunctions>();
@@ -86,14 +98,8 @@ class ReplayTrace : public llvm::FunctionPass {
     DEBUG(llvm::errs() << "Parsed # memory dependences: "
                        << this->Trace->NumMemDependences << '\n');
 
-    // Generate the output.
-    IdenticalTransformer* Transformer =
-        new IdenticalTransformer(this->Trace, "llvm_trace_gem5.txt");
-    delete Transformer;
-
-    Workload = "fft";
-    DEBUG(llvm::errs() << "Initialize ReplaceTrace with workload: " << Workload
-                       << '\n');
+    // Generate the transformation of the trace.
+    this->TransformTrace();
 
     // Register the external ioctl function.
     registerFunction(Module);
@@ -117,7 +123,8 @@ class ReplayTrace : public llvm::FunctionPass {
       return false;
     }
 
-    DEBUG(llvm::errs() << "Found workload: " << FunctionName << '\n');
+    DEBUG(llvm::errs() << "Found accelerable function: " << FunctionName
+                       << '\n');
 
     // Change the function body to call ioctl
     // to replay the trace.
@@ -163,10 +170,28 @@ class ReplayTrace : public llvm::FunctionPass {
     return true;
   }
 
- private:
+ protected:
+  // The default transformation is just an identical transformation.
+  // Other pass can override this function to perform their own transformation.
+  virtual void TransformTrace() {
+    assert(this->Trace != nullptr && "Must have a trace to be transformed.");
+    // Simply generate the output data graph for gem5 to use.
+    std::ofstream OutTrace(this->OutTraceName);
+    assert(OutTrace.is_open() && "Failed to open output trace file.");
+    for (DynamicId Id = 0,
+                   NumDynamicInsts = this->Trace->DyanmicInstsMap.size();
+         Id != NumDynamicInsts; ++Id) {
+      DynamicInstruction* DynamicInst = this->Trace->DyanmicInstsMap.at(Id);
+      this->formatInstruction(DynamicInst, OutTrace);
+      OutTrace << '\n';
+    }
+    OutTrace.close();
+  }
+
   DynamicTrace* Trace;
 
-  std::string Workload;
+  std::string OutTraceName;
+
   llvm::Module* Module;
 
   llvm::Value* ReplayFunc;
@@ -186,6 +211,106 @@ class ReplayTrace : public llvm::FunctionPass {
     };
     auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, true);
     this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy);
+  }
+
+  //************************************************************************//
+  // Helper function to generate the trace for gem5.
+  //************************************************************************//
+  void formatInstruction(DynamicInstruction* DynamicInst,
+                         std::ofstream& Out) {  // The op_code field.
+    this->formatOpCode(DynamicInst->StaticInstruction, Out);
+    Out << '|';
+    // The dependence field.
+    this->formatDeps(DynamicInst, Out);
+    Out << '|';
+    // Other fields for other isnsts.
+    if (auto LoadStaticInstruction =
+            llvm::dyn_cast<llvm::LoadInst>(DynamicInst->StaticInstruction)) {
+      // base|offset|trace_vaddr|size|
+      DynamicValue* LoadedAddr = DynamicInst->DynamicOperands[0];
+      uint64_t LoadedSize = this->Trace->DataLayout->getTypeStoreSize(
+          LoadStaticInstruction->getPointerOperandType()
+              ->getPointerElementType());
+      Out << LoadedAddr->MemBase << '|' << LoadedAddr->MemOffset << '|'
+          << LoadedAddr->Value << '|' << LoadedSize << '|';
+      return;
+    }
+
+    if (auto StoreStaticInstruction =
+            llvm::dyn_cast<llvm::StoreInst>(DynamicInst->StaticInstruction)) {
+      // base|offset|trace_vaddr|size|type_id|type_name|value|
+      DynamicValue* StoredAddr = DynamicInst->DynamicOperands[1];
+      llvm::Type* StoredType = StoreStaticInstruction->getPointerOperandType()
+                                   ->getPointerElementType();
+      uint64_t StoredSize =
+          this->Trace->DataLayout->getTypeStoreSize(StoredType);
+      std::string TypeName;
+      {
+        llvm::raw_string_ostream Stream(TypeName);
+        StoredType->print(Stream);
+      }
+      Out << StoredAddr->MemBase << '|' << StoredAddr->MemOffset << '|'
+          << StoredAddr->Value << '|' << StoredSize << '|'
+          << StoredType->getTypeID() << '|' << TypeName << '|'
+          << DynamicInst->DynamicOperands[0]->Value << '|';
+      return;
+    }
+
+    if (auto AllocaStaticInstruction =
+            llvm::dyn_cast<llvm::AllocaInst>(DynamicInst->StaticInstruction)) {
+      // base|trace_vaddr|size|
+      uint64_t AllocatedSize = this->Trace->DataLayout->getTypeStoreSize(
+          AllocaStaticInstruction->getAllocatedType());
+      Out << DynamicInst->DynamicResult->MemBase << '|'
+          << DynamicInst->DynamicResult->Value << '|' << AllocatedSize << '|';
+      return;
+    }
+  }
+
+  void formatDeps(DynamicInstruction* DynamicInst, std::ofstream& Out) {
+    {
+      auto DepIter = this->Trace->RegDeps.find(DynamicInst->Id);
+      if (DepIter != this->Trace->RegDeps.end()) {
+        for (const auto& DepId : DepIter->second) {
+          Out << DepId << ',';
+        }
+      }
+    }
+    {
+      auto DepIter = this->Trace->MemDeps.find(DynamicInst->Id);
+      if (DepIter != this->Trace->MemDeps.end()) {
+        for (const auto& DepId : DepIter->second) {
+          Out << DepId << ',';
+        }
+      }
+    }
+    {
+      auto DepIter = this->Trace->MemDeps.find(DynamicInst->Id);
+      if (DepIter != this->Trace->MemDeps.end()) {
+        for (const auto& DepId : DepIter->second) {
+          Out << DepId << ',';
+        }
+      }
+    }
+  }
+
+  void formatOpCode(llvm::Instruction* StaticInstruction, std::ofstream& Out) {
+    if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(StaticInstruction)) {
+      llvm::Function* Callee = CallInst->getCalledFunction();
+      if (Callee->isIntrinsic()) {
+        // For instrinsic, use "call_intrinsic" for now.
+        Out << "call_intrinsic";
+      } else if (Callee->getName() == "sin") {
+        Out << "sin";
+      } else if (Callee->getName() == "cos") {
+        Out << "cos";
+      } else {
+        Out << "call";
+      }
+      return;
+    }
+    // For other inst, just use the original op code.
+    Out << StaticInstruction->getOpcodeName();
   }
 };
 }  // namespace
