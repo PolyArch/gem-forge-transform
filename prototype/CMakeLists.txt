@@ -2,6 +2,7 @@ add_library(PrototypePass MODULE
     Prototype.cpp
     DynamicTrace.cpp
     Replay.cpp
+    StreamReplay.cpp
     LocateAccelerableFunctions.cpp
 )
 
