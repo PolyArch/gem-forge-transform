@@ -73,14 +73,17 @@ CPU_NUM=1
 BINARY_ARGS=""
 
 # WORKDIR="MachSuite/fft/transpose"
-WORKDIR="MachSuite/fft/strided"
+# WORKDIR="MachSuite/fft/strided"
 # WORKDIR="MachSuite/fft/strided-raw"
 # WORKDIR="MachSuite/fft/strided-pseudo"
+# WORKLOAD="fft"
 # WORKDIR="MachSuite/kmp/kmp"
 # WORKLOAD="kmp"
-WORKLOAD="fft"
 # WORKDIR="hello"
 # WORKLOAD="hello"
+
+WORKDIR="testscratch"
+WORKLOAD="scratch"
 
 NORMAL_BINARY_NAME=${WORKLOAD}
 
@@ -110,10 +113,10 @@ make ${WORKLOAD}
 # run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE} ${CPU_NUM} ${BINARY_ARGS}
 
 # Generate the trace binary.
-# make ${TRACE_BINARY_NAME}
+make ${TRACE_BINARY_NAME}
 
 # Run the binary to get the trace.
-# ./${TRACE_BINARY_NAME} 
+./${TRACE_BINARY_NAME} 
 
 # Parse the trace and generate result used for gem5 LLVMTraceCPU
 # python ${HOME}/util/datagraph.py ${TRACE_FILE_NAME} pr_gem5 ${GEM5_LLVM_TRACE_CPU_FILE}
