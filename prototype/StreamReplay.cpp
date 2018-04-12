@@ -2,6 +2,7 @@
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 
 #include <unordered_map>
 
@@ -35,6 +36,16 @@ class StreamReplayTrace : public ReplayTrace {
   //   bool doInitialization(llvm::Module& Module) override;
 
   bool runOnFunction(llvm::Function& Function) override {
+    // For now ignore the untraced functions.
+    bool Accelerable =
+        this->getAnalysis<LocateAccelerableFunctions>().isAccelerable(
+            Function.getName());
+    if (!Function.getReturnType()->isVoidTy()) {
+      Accelerable = false;
+    }
+    if (!Accelerable) {
+      return false;
+    }
 
     // Collect information of stream in this function.
     // This will not modify the llvm function.
@@ -48,9 +59,32 @@ class StreamReplayTrace : public ReplayTrace {
         llvm::Instruction* Inst = &*InstIter;
         if (llvm::isa<llvm::LoadInst>(Inst) ||
             llvm::isa<llvm::StoreInst>(Inst)) {
+          // This is a memory access we are about.
           this->StaticMemAccessCount++;
-        //   this->DynamicMemAccessCount +=
-        //       this->Trace->StaticToDynamicMap.at(Inst).size();
+          this->DynamicMemAccessCount +=
+              this->Trace->StaticToDynamicMap.at(Inst).size();
+
+          llvm::Value* Addr = nullptr;
+          if (llvm::isa<llvm::LoadInst>(Inst)) {
+            Addr = Inst->getOperand(0);
+          } else {
+            Addr = Inst->getOperand(1);
+          }
+
+          // Check if this is a stream.
+          const llvm::SCEV* SCEV = SE.getSCEV(Addr);
+          DEBUG(SCEV->print(llvm::errs()));
+          DEBUG(llvm::errs() << '\n');
+          if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
+            // We only care about affine stream transformation now.
+            if (AddRecSCEV->isAffine()) {
+              this->StaticStreamCount++;
+              this->DynamicStreamCount +=
+                  this->Trace->StaticToDynamicMap.at(Inst).size();
+              // Update the histogram.
+              
+            }
+          }
         }
       }
     }
@@ -64,6 +98,10 @@ class StreamReplayTrace : public ReplayTrace {
                        << '\n');
     DEBUG(llvm::errs() << "DynamicMemAccessCount: "
                        << this->DynamicMemAccessCount << '\n');
+    DEBUG(llvm::errs() << "StaticStreamCount: " << this->StaticStreamCount
+                       << '\n');
+    DEBUG(llvm::errs() << "DynamicStreamCount: " << this->DynamicStreamCount
+                       << '\n');
     return false;
   }
 

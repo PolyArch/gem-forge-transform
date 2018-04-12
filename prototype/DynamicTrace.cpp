@@ -75,6 +75,7 @@ DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
                            llvm::Module* _Module)
     : Module(_Module),
       NumMemDependences(0),
+      CurrentDynamicId(0),
       CurrentFunctionName(""),
       CurrentBasicBlockName(""),
       CurrentIndex(-1) {
@@ -136,7 +137,6 @@ void DynamicTrace::parseDynamicInstruction(
     const std::list<std::string>& LineBuffer) {
   assert(LineBuffer.size() > 0 && "Emptry line buffer.");
 
-  static DynamicId CurrentDynamicId = 0;
   auto LineIter = LineBuffer.begin();
   // Parse the instruction line.
   auto InstructionLineFields = splitByChar(*LineIter, '|');
@@ -189,14 +189,17 @@ void DynamicTrace::parseDynamicInstruction(
 
   // Create the new dynamic instructions.
   DynamicInstruction* DynamicInst =
-      new DynamicInstruction(CurrentDynamicId, StaticInstruction, DynamicResult,
-                             std::move(DynamicOperands));
+      new DynamicInstruction(this->CurrentDynamicId, StaticInstruction,
+                             DynamicResult, std::move(DynamicOperands));
 
   this->handleRegisterDependence(CurrentDynamicId, StaticInstruction);
   this->handleMemoryDependence(DynamicInst);
 
+  // Handle the memory base/offset.
+  this->handleMemoryBase(DynamicInst);
+
   // Add to the map.
-  this->DyanmicInstsMap.emplace(CurrentDynamicId, DynamicInst);
+  this->DyanmicInstsMap.emplace(this->CurrentDynamicId, DynamicInst);
   // Add the map from static instrunction to dynamic.
   if (this->StaticToDynamicMap.find(StaticInstruction) ==
       this->StaticToDynamicMap.end()) {
@@ -204,10 +207,7 @@ void DynamicTrace::parseDynamicInstruction(
                                      std::list<DynamicInstruction*>());
   }
   this->StaticToDynamicMap.at(StaticInstruction).push_back(DynamicInst);
-  CurrentDynamicId++;
-
-  // Handle the memory base/offset.
-  this->handleMemoryBase(DynamicInst);
+  this->CurrentDynamicId++;
 }
 
 void DynamicTrace::addRegisterDependence(DynamicId CurrentDynamicId,
@@ -228,12 +228,12 @@ void DynamicTrace::handleRegisterDependence(
   // Special rule for phi node.
   if (auto PhiStaticInst = llvm::dyn_cast<llvm::PHINode>(StaticInstruction)) {
     // Get the previous basic block.
-    assert(this->DyanmicInstsMap.find(CurrentDynamicId - 1) !=
-               this->DyanmicInstsMap.end() &&
-           "There should be an inst before phi inst.");
+    DynamicInstruction* PrevNonPhiDYnamicInstruction =
+        this->getPreviousNonPhiDynamicInstruction(CurrentDynamicId);
+    assert(PrevNonPhiDYnamicInstruction != nullptr &&
+           "There should be a non-phi inst before phi inst.");
     llvm::BasicBlock* PrevBasicBlock =
-        this->DyanmicInstsMap.at(CurrentDynamicId - 1)
-            ->StaticInstruction->getParent();
+        PrevNonPhiDYnamicInstruction->StaticInstruction->getParent();
     // Check all the incoming values.
     for (unsigned int OperandId = 0,
                       NumOperands = PhiStaticInst->getNumIncomingValues();
@@ -369,14 +369,14 @@ void DynamicTrace::parseFunctionEnter(
 
         // If there is a previous call inst, copy the base/offset.
         // Otherwise, initialize to itself.
-        DynamicInstruction* PrevDynamicInstruction =
-            this->getPreviousDynamicInstruction();
-        if (PrevDynamicInstruction == nullptr) {
+        if (this->DynamicFrameStack.size() == 0) {
           // There is no caller.
           DynamicArgument->MemBase = StaticArgument->getName();
           DynamicArgument->MemOffset = 0;
         } else {
           // The previous inst must be a call.
+          DynamicInstruction* PrevDynamicInstruction =
+              this->DyanmicInstsMap.at(this->CurrentDynamicId - 1);
           assert(llvm::isa<llvm::CallInst>(
                      PrevDynamicInstruction->StaticInstruction) &&
                  "The previous instruction is not a call");
@@ -483,8 +483,8 @@ DynamicInstruction* DynamicTrace::getLatestDynamicIdForStaticInstruction(
                        << StaticInstruction->getParent()->getName()
                        << StaticInstruction->getName() << '\n');
   }
-  assert(this->StaticToDynamicMap.find(StaticInstruction) !=
-             this->StaticToDynamicMap.end() &&
+  assert((this->StaticToDynamicMap.find(StaticInstruction) !=
+          this->StaticToDynamicMap.end()) &&
          "Static inst should have dynamic occurrence.");
   const auto& DynamicInsts = this->StaticToDynamicMap.at(StaticInstruction);
   assert(DynamicInsts.size() != 0 &&
@@ -495,17 +495,24 @@ DynamicInstruction* DynamicTrace::getLatestDynamicIdForStaticInstruction(
 void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
   llvm::Instruction* StaticInstruction = DynamicInst->StaticInstruction;
 
+  // DEBUG(llvm::errs() << "handle memory base for inst "
+  //                    << StaticInstruction->getFunction()->getName()
+  //                    << StaticInstruction->getParent()->getName()
+  //                    << StaticInstruction->getName() << '\n');
+
   // Special rule for phi node.
   if (auto PhiStaticInst = llvm::dyn_cast<llvm::PHINode>(StaticInstruction)) {
     // Get the previous basic block.
-    DynamicInstruction* PrevDynamicInstruction =
-        this->getPreviousDynamicInstruction();
-    assert(PrevDynamicInstruction != nullptr &&
+
+    DynamicInstruction* PrevNonPhiDynamicInstruction =
+        this->getPreviousNonPhiDynamicInstruction(DynamicInst->Id);
+
+    assert(PrevNonPhiDynamicInstruction != nullptr &&
            "There should have at least one dynamic instruction before phi "
            "instruction.");
 
     llvm::BasicBlock* PrevBasicBlock =
-        PrevDynamicInstruction->StaticInstruction->getParent();
+        PrevNonPhiDynamicInstruction->StaticInstruction->getParent();
     // Check all the incoming values.
     for (unsigned int OperandIndex = 0,
                       NumOperands = PhiStaticInst->getNumIncomingValues();
@@ -655,6 +662,19 @@ DynamicInstruction* DynamicTrace::getPreviousDynamicInstruction() {
     return this->getLatestDynamicIdForStaticInstruction(
         &*PrevStaticInstruction);
   }
+}
+
+DynamicInstruction* DynamicTrace::getPreviousNonPhiDynamicInstruction(
+    DynamicId CurrentDynamicId) {
+  while (CurrentDynamicId > 0) {
+    DynamicInstruction* DInstruction =
+        this->DyanmicInstsMap.at(CurrentDynamicId - 1);
+    if (!llvm::isa<llvm::PHINode>(DInstruction->StaticInstruction)) {
+      return DInstruction;
+    }
+    CurrentDynamicId--;
+  }
+  return nullptr;
 }
 
 #undef DEBUG_TYPE
