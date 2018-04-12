@@ -91,9 +91,7 @@ class Prototype : public llvm::FunctionPass {
   }
   bool doInitialization(llvm::Module& Module) override {
     this->Module = &Module;
-    Workload = "fft";
-    DEBUG(llvm::errs() << "Initialize Prototype with workload: " << Workload
-                       << '\n');
+    DEBUG(llvm::errs() << "Initialize Prototype\n");
 
     // Register the external log functions.
     registerPrintFunctions(Module);
@@ -135,7 +133,6 @@ class Prototype : public llvm::FunctionPass {
   }
 
  private:
-  std::string Workload;
   llvm::Module* Module;
   llvm::Function* CurrentFunction;
   std::map<unsigned int, llvm::Value*> VectorStoreBuffer;
