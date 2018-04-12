@@ -124,7 +124,7 @@ make ${TRACE_BINARY_NAME}
 
 # Simulate with LLVMTraceCPU
 make ${REPLAY_BINARY_NAME}
-run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+# run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
 # run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE}
 
 # test_dot_exporter ${TRACE_FILE_NAME}

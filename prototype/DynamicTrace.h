@@ -83,6 +83,8 @@ class DynamicTrace {
   void parseDynamicInstruction(const std::list<std::string>& LineBuffer);
   void parseFunctionEnter(const std::list<std::string>& LineBuffer);
 
+  DynamicId CurrentDynamicId;
+
   std::string CurrentFunctionName;
   std::string CurrentBasicBlockName;
   int CurrentIndex;
@@ -99,6 +101,8 @@ class DynamicTrace {
       llvm::Instruction* StaticInstruction);
 
   DynamicInstruction* getPreviousDynamicInstruction();
+
+  DynamicInstruction* getPreviousNonPhiDynamicInstruction(DynamicId CurrentDynamicId);
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.

@@ -86,8 +86,6 @@ class Prototype : public llvm::FunctionPass {
     Info.addPreserved<LocateAccelerableFunctions>();
     Info.addRequired<llvm::LoopInfoWrapperPass>();
     Info.addPreserved<llvm::LoopInfoWrapperPass>();
-    // Info.addRequiredID(llvm::InstructionNamerID);
-    // Info.addPreservedID(llvm::InstructionNamerID);
   }
   bool doInitialization(llvm::Module& Module) override {
     this->Module = &Module;
@@ -113,7 +111,7 @@ class Prototype : public llvm::FunctionPass {
     if (!Accelerable) {
       return false;
     }
-
+    
     // Set the current function.
     this->CurrentFunction = &Function;
     // Clear the vector store buffer.
