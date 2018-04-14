@@ -84,8 +84,8 @@ class Prototype : public llvm::FunctionPass {
     // We require the loop information.
     Info.addRequired<LocateAccelerableFunctions>();
     Info.addPreserved<LocateAccelerableFunctions>();
-    Info.addRequired<llvm::LoopInfoWrapperPass>();
-    Info.addPreserved<llvm::LoopInfoWrapperPass>();
+    // Info.addRequired<llvm::LoopInfoWrapperPass>();
+    // Info.addPreserved<llvm::LoopInfoWrapperPass>();
   }
   bool doInitialization(llvm::Module& Module) override {
     this->Module = &Module;
