@@ -100,17 +100,18 @@ class Prototype : public llvm::FunctionPass {
     auto FunctionName = Function.getName().str();
     DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
-    // Check if this function is accelerable.
-    bool Accelerable =
-        getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
-    // A special hack: do not trace function which
-    // returns a value, currently we donot support return in our trace.
-    if (!Function.getReturnType()->isVoidTy()) {
-      Accelerable = false;
-    }
-    if (!Accelerable) {
-      return false;
-    }
+    // // Check if this function is accelerable.
+    // bool Accelerable =
+    //     getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
+    // // A special hack: do not trace function which
+    // // returns a value, currently we donot support return in our trace.
+    // if (!Function.getReturnType()->isVoidTy()) {
+    //   Accelerable = false;
+    // }
+    // if (!Accelerable) {
+    //   return false;
+    // }
+    // What if we trace all the functions?
     
     // Set the current function.
     this->CurrentFunction = &Function;
@@ -159,7 +160,7 @@ class Prototype : public llvm::FunctionPass {
     std::vector<llvm::Type*> PrintValueArgs{
         Int8PtrTy,
         Int8PtrTy,  // char* Name,
-        Int8PtrTy, Int32Ty, Int32Ty,
+        Int32Ty, Int32Ty,
     };
     auto PrintValueTy = llvm::FunctionType::get(VoidTy, PrintValueArgs, true);
     this->PrintValueFunc =
@@ -338,14 +339,6 @@ class Prototype : public llvm::FunctionPass {
         llvm::IntegerType::getInt32Ty(this->Module->getContext()), TypeId,
         false);
 
-    std::string TypeName;
-    {
-      llvm::raw_string_ostream Stream(TypeName);
-      Type->print(Stream);
-    }
-    auto TypeNameValue =
-        getOrCreateStringLiteral(this->GlobalStrings, this->Module, TypeName);
-
     unsigned NumAdditionalArgs = 1;
     auto NumAdditionalArgsValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(this->Module->getContext()),
@@ -357,7 +350,6 @@ class Prototype : public llvm::FunctionPass {
 
     std::vector<llvm::Value*> Args{TagValue,
                                    NameValue,
-                                   TypeNameValue,
                                    TypeIdValue,
                                    NumAdditionalArgsValue,
                                    IncomingValueNameValue};
@@ -379,14 +371,6 @@ class Prototype : public llvm::FunctionPass {
     auto TypeIdValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(this->Module->getContext()), TypeId,
         false);
-
-    std::string TypeName;
-    {
-      llvm::raw_string_ostream Stream(TypeName);
-      Type->print(Stream);
-    }
-    auto TypeNameValue =
-        getOrCreateStringLiteral(this->GlobalStrings, this->Module, TypeName);
 
     unsigned NumAdditionalArgs = 0;
     std::vector<llvm::Value*> AdditionalArgValues;
@@ -442,7 +426,7 @@ class Prototype : public llvm::FunctionPass {
         llvm::IntegerType::getInt32Ty(this->Module->getContext()),
         NumAdditionalArgs, false);
 
-    std::vector<llvm::Value*> Args{TagValue, NameValue, TypeNameValue,
+    std::vector<llvm::Value*> Args{TagValue, NameValue,
                                    TypeIdValue, NumAdditionalArgsValue};
     for (auto AdditionalArgValue : AdditionalArgValues) {
       Args.push_back(AdditionalArgValue);

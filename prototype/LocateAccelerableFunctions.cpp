@@ -83,10 +83,8 @@ bool LocateAccelerableFunctions::runOnSCC(llvm::CallGraphSCC& SCC) {
 
     auto Function = Caller->getFunction();
     auto CallerName = Function->getName().str();
-    if (Accelerable) {
-      DEBUG(llvm::errs() << CallerName << " is accelerable? "
-                         << (Accelerable ? "true" : "false") << '\n');
-    }
+    DEBUG(llvm::errs() << CallerName << " is accelerable? "
+                       << (Accelerable ? "true" : "false") << '\n');
     this->MapFunctionAccelerable[CallerName] = Accelerable;
 
     // Update statistics.
@@ -111,8 +109,7 @@ uint64_t AccelerableFunctionInfo::countInstructionInFunction(
 
 void AccelerableFunctionInfo::countLoopInCurrentFunction(
     uint64_t& TopLevelLoopCount, uint64_t& AllLoopCount) {
-  auto& LoopInfo =
-      this->getAnalysis<llvm::LoopInfoWrapperPass>().getLoopInfo();
+  auto& LoopInfo = this->getAnalysis<llvm::LoopInfoWrapperPass>().getLoopInfo();
   TopLevelLoopCount = 0;
   AllLoopCount = LoopInfo.getLoopsInPreorder().size();
   for (auto LoopIter = LoopInfo.begin(), LoopEnd = LoopInfo.end();
