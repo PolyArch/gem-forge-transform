@@ -10,6 +10,7 @@ TEST_ROOT_DIR=..
 
 #####################################################################################
 PASS_SO_DIR=$(TEST_ROOT_DIR)/../build/prototype
+LOGGER_DIR=$(TEST_ROOT_DIR)/../prototype
 OPT_ARGS=-load=$(PASS_SO_DIR)/libPrototypePass.so -S -time-passes
 
 ALL_SRCS=$(SRCS)
@@ -30,14 +31,14 @@ $(KERN)_trace.ll: $(KERN).bc
 	opt $(OPT_ARGS) -debug-only=PrototypePass -prototype -o $@ $^
 
 $(KERN)_replay.ll: $(KERN).bc
-	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -replay -trace-file=llvm_trace.txt -o $@ $^
+	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -stream-replay -trace-file=llvm_trace.txt -o $@ $^
 
 # To binary.
 $(KERN): $(KERN).bc
 	clang -O0 -o $@ $^
 
-$(KERN)_trace: $(KERN)_trace.ll $(TEST_ROOT_DIR)/logger.c
-	clang -O0 -o $@ $^
+$(KERN)_trace: $(KERN)_trace.ll $(LOGGER_DIR)/logger.c
+	clang -O0 $^ -lz -o $@
 
 $(KERN)_replay: $(KERN)_replay.ll $(TEST_ROOT_DIR)/replay.c
 	clang -O0 -o $@ $^

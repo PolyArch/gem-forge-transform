@@ -1,19 +1,28 @@
+#include "GZUtil.h"
+
 #include <assert.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-static FILE* p = NULL;
-static const char* TraceFileName = "llvm_trace.txt";
+static gzFile p = NULL;
+static const char* TraceFileName = "llvm_trace.gz";
 static const char* OpenMode = "w";
 
-#define log(...)                          \
-  {                                       \
-    if (p == NULL) {                      \
-      p = fopen(TraceFileName, OpenMode); \
-    }                                     \
-    assert(p != NULL);                    \
-    fprintf(p, __VA_ARGS__);              \
+void cleanup() {
+  if (p != NULL) {
+    gzclose(p);
+  }
+}
+
+#define log(...)                           \
+  {                                        \
+    if (p == NULL) {                       \
+      p = gzopen(TraceFileName, OpenMode); \
+      atexit(&cleanup);                    \
+    }                                      \
+    assert(p != NULL);                     \
+    gzprintf(p, __VA_ARGS__);              \
   }
 
 void printFuncEnter(const char* FunctionName) { log("e|%s|\n", FunctionName); }
@@ -52,9 +61,9 @@ enum LLVMTypeID {
  * Print a value.
  * @param Tag: Can be either param or result.
  */
-void printValue(const char* Tag, const char* Name, const char* TypeName,
-                unsigned TypeId, unsigned NumAdditionalArgs, ...) {
-  log("%s|%s|%s|%u|", Tag, Name, TypeName, TypeId);
+void printValue(const char* Tag, const char* Name, unsigned TypeId,
+                unsigned NumAdditionalArgs, ...) {
+  log("%s|%s|%u|", Tag, Name, TypeId);
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {

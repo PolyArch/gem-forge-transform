@@ -4,6 +4,7 @@ add_library(PrototypePass MODULE
     Replay.cpp
     StreamReplay.cpp
     LocateAccelerableFunctions.cpp
+    GZUtil.cpp
 )
 
 # LLVM is (typically) built with no C++ RTTI. We need to match that;
@@ -11,3 +12,5 @@ add_library(PrototypePass MODULE
 set_target_properties(PrototypePass PROPERTIES
     COMPILE_FLAGS "-std=c++14 -fno-rtti"
 )
+
+target_link_libraries(PrototypePass -lz)

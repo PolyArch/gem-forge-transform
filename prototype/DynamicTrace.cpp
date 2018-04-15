@@ -1,4 +1,5 @@
 #include "DynamicTrace.h"
+#include "logger.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -82,11 +83,26 @@ DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
   this->DataLayout = new llvm::DataLayout(this->Module);
 
   // Parse the trace file.
-  std::ifstream TraceFile(_TraceFileName);
-  assert(TraceFile.is_open() && "Failed to open trace file.");
+  GZTrace* TraceFile = gzOpenGZTrace(_TraceFileName.c_str());
+  assert(TraceFile != NULL && "Failed to open trace file.");
+  // std::ifstream TraceFile(_TraceFileName);
+  // assert(TraceFile.is_open() && "Failed to open trace file.");
   std::string Line;
   std::list<std::string> LineBuffer;
-  while (std::getline(TraceFile, Line)) {
+  // while (std::getline(TraceFile, Line)) {
+  while (true) {
+    int LineLen = gzReadNextLine(TraceFile);
+    if (LineLen == 0) {
+      // Reached the end.
+      break;
+    }
+
+    assert(LineLen > 0 && "Something wrong when reading gz trace file.");
+
+    // Copy the new line to "Line" variable.
+    Line = TraceFile->LineBuf;
+    // DEBUG(llvm::errs() << "Read in line: " << Line << '\n');
+
     if (isBreakLine(Line)) {
       // Time to parse the buffer.
       this->parseLineBuffer(LineBuffer);
@@ -103,7 +119,8 @@ DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
     this->parseLineBuffer(LineBuffer);
     LineBuffer.clear();
   }
-  TraceFile.close();
+  // TraceFile.close();
+  gzCloseGZTrace(TraceFile);
 }
 
 DynamicTrace::~DynamicTrace() {
@@ -160,7 +177,7 @@ void DynamicTrace::parseDynamicInstruction(
       case 'r': {
         // This is the result line.
         auto ResultLineFields = splitByChar(*LineIter, '|');
-        DynamicResult = new DynamicValue(ResultLineFields[4]);
+        DynamicResult = new DynamicValue(ResultLineFields[3]);
         break;
       }
       case 'p': {
@@ -170,10 +187,10 @@ void DynamicTrace::parseDynamicInstruction(
         if (OperandLineFields.size() < 5) {
           DEBUG(llvm::errs() << *LineIter << '\n');
         }
-        assert(OperandLineFields.size() >= 5 &&
+        assert(OperandLineFields.size() >= 4 &&
                "Too few fields for operand line.");
         DynamicOperands[OperandIndex++] =
-            new DynamicValue(OperandLineFields[4]);
+            new DynamicValue(OperandLineFields[3]);
         break;
       }
       default: {
@@ -360,9 +377,9 @@ void DynamicTrace::parseFunctionEnter(
     switch (LineIter->at(0)) {
       case 'p': {
         auto ArugmentLineFields = splitByChar(*LineIter, '|');
-        assert(ArugmentLineFields.size() >= 5 &&
+        assert(ArugmentLineFields.size() >= 4 &&
                "Too few argument line fields.");
-        DynamicValue* DynamicArgument = new DynamicValue(ArugmentLineFields[4]);
+        DynamicValue* DynamicArgument = new DynamicValue(ArugmentLineFields[3]);
 
         llvm::Argument* StaticArgument = &*ArgumentIter;
         DynamicFrame.emplace(StaticArgument, DynamicArgument);
