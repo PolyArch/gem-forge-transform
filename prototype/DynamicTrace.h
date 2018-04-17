@@ -74,6 +74,33 @@ class DynamicTrace {
   // Some statistics.
   uint64_t NumMemDependences;
 
+  static bool isBreakLine(const std::string& Line) {
+    if (Line.size() == 0) {
+      return true;
+    }
+    return Line[0] == 'i' || Line[0] == 'e';
+  }
+  
+  /**
+   * Split a string like a|b|c| into [a, b, c].
+   */
+  static std::vector<std::string> splitByChar(const std::string& source,
+                                              char split) {
+    std::vector<std::string> ret;
+    size_t idx = 0, prev = 0;
+    for (; idx < source.size(); ++idx) {
+      if (source[idx] == split) {
+        ret.push_back(source.substr(prev, idx - prev));
+        prev = idx + 1;
+      }
+    }
+    // Don't miss the possible last field.
+    if (prev < idx) {
+      ret.push_back(source.substr(prev, idx - prev));
+    }
+    return std::move(ret);
+  }
+
  private:
   /**********************************************************************/
   /* These are temporary fields used in construnction only.
@@ -102,7 +129,8 @@ class DynamicTrace {
 
   DynamicInstruction* getPreviousDynamicInstruction();
 
-  DynamicInstruction* getPreviousNonPhiDynamicInstruction(DynamicId CurrentDynamicId);
+  DynamicInstruction* getPreviousNonPhiDynamicInstruction(
+      DynamicId CurrentDynamicId);
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.

@@ -291,6 +291,21 @@ class Prototype : public llvm::FunctionPass {
 
     // Call printResult after the instruction (if it has a result).
     if (Inst->getName() != "") {
+
+      // // Special case for call instruction.
+      // // If the callee is traced, then to avoid mixing the trace,
+      // // we do not log the result as it can still be collected by 
+      // // the traced ret instruction of callee.
+      // if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
+      //   auto Callee = CallInst->getCalledFunction();
+      //   // If callee has a body, then we can ignore the result as if will
+      //   // be traced by callee's ret expression.
+      //   if (!Callee->isDeclaration()) {
+      //     // Do not printResult.
+      //     return;
+      //   }
+      // }
+
       Builder.SetInsertPoint(Inst->getNextNode());
       auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
