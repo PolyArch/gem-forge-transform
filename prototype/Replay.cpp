@@ -73,16 +73,17 @@ bool ReplayTrace::doInitialization(llvm::Module& Module) {
 
   assert(TraceFileName.getNumOccurrences() == 1 &&
          "Please specify the trace file.");
+  // For now do not load in the trace.
   this->Trace = new DynamicTrace(TraceFileName, this->Module);
 
   DEBUG(llvm::errs() << "Parsed # dynamic insts: "
                      << this->Trace->DyanmicInstsMap.size() << '\n');
 
-  DEBUG(llvm::errs() << "Parsed # memory dependences: "
-                     << this->Trace->NumMemDependences << '\n');
+  // DEBUG(llvm::errs() << "Parsed # memory dependences: "
+  //                    << this->Trace->NumMemDependences << '\n');
 
-  // Generate the transformation of the trace.
-  this->TransformTrace();
+  // // Generate the transformation of the trace.
+  // this->TransformTrace();
 
   // Register the external ioctl function.
   registerFunction(Module);

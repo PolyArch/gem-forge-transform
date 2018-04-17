@@ -1,5 +1,5 @@
 #include "DynamicTrace.h"
-#include "logger.h"
+#include "GZUtil.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -8,34 +8,6 @@
 #include <vector>
 
 #define DEBUG_TYPE "DynamicTrace"
-
-namespace {
-bool isBreakLine(const std::string& Line) {
-  if (Line.size() == 0) {
-    return true;
-  }
-  return Line[0] == 'i' || Line[0] == 'e';
-}
-
-/**
- * Split a string like a|b|c| into [a, b, c].
- */
-std::vector<std::string> splitByChar(const std::string& source, char split) {
-  std::vector<std::string> ret;
-  size_t idx = 0, prev = 0;
-  for (; idx < source.size(); ++idx) {
-    if (source[idx] == split) {
-      ret.push_back(source.substr(prev, idx - prev));
-      prev = idx + 1;
-    }
-  }
-  // Don't miss the possible last field.
-  if (prev < idx) {
-    ret.push_back(source.substr(prev, idx - prev));
-  }
-  return std::move(ret);
-}
-}  // namespace
 
 DynamicValue::DynamicValue(const std::string& _Value)
     : Value(_Value), MemBase(""), MemOffset(0) {}
@@ -51,11 +23,20 @@ DynamicInstruction::DynamicInstruction(
          "Non null static instruction ptr.");
   if (this->DynamicResult != nullptr) {
     // Sanity check to make sure that the static instruction do has result.
+    if (this->StaticInstruction->getName() == "") {
+      DEBUG(
+          llvm::errs() << "DynamicResult set for non-result static instruction "
+                       << this->StaticInstruction->getName() << '\n');
+    }
     assert(this->StaticInstruction->getName() != "" &&
            "DynamicResult set for non-result static instruction.");
   } else {
-    assert(this->StaticInstruction->getName() == "" &&
-           "Missing DynamicResult for result static instruction.");
+    // Comment this out as for some call inst, if the callee is traced,
+    // then we donot log the result.
+    if (!llvm::isa<llvm::CallInst>(_StaticInstruction)) {
+      assert(this->StaticInstruction->getName() == "" &&
+             "Missing DynamicResult for non-call instruction.");
+    }
   }
 }
 
@@ -85,10 +66,9 @@ DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
   // Parse the trace file.
   GZTrace* TraceFile = gzOpenGZTrace(_TraceFileName.c_str());
   assert(TraceFile != NULL && "Failed to open trace file.");
-  // std::ifstream TraceFile(_TraceFileName);
-  // assert(TraceFile.is_open() && "Failed to open trace file.");
   std::string Line;
   std::list<std::string> LineBuffer;
+  uint64_t LineCount = 0;
   // while (std::getline(TraceFile, Line)) {
   while (true) {
     int LineLen = gzReadNextLine(TraceFile);
@@ -101,7 +81,12 @@ DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
 
     // Copy the new line to "Line" variable.
     Line = TraceFile->LineBuf;
-    // DEBUG(llvm::errs() << "Read in line: " << Line << '\n');
+    LineCount++;
+    assert(LineLen == Line.size() && "Unmatched LineLen with Line.size().");
+    DEBUG(llvm::errs() << "Read in line # " << LineCount << ": " << Line
+                       << '\n');
+    // DEBUG(llvm::errs() << "Head " << TraceFile->HeadIdx << " Tail "
+    //                    << TraceFile->TailIdx << '\n');
 
     if (isBreakLine(Line)) {
       // Time to parse the buffer.
@@ -165,6 +150,13 @@ void DynamicTrace::parseDynamicInstruction(
   int Index = std::stoi(InstructionLineFields[3]);
   llvm::Instruction* StaticInstruction =
       this->getLLVMInstruction(FunctionName, BasicBlockName, Index);
+  if (InstructionLineFields[4] != StaticInstruction->getOpcodeName()) {
+    DEBUG(llvm::errs() << "Unmatched static opcode "
+                       << StaticInstruction->getOpcodeName()
+                       << " dynamic opcode " << InstructionLineFields[4]);
+  }
+  assert(InstructionLineFields[4] == StaticInstruction->getOpcodeName() &&
+         "Unmatched opcode.");
 
   // Parse the dynamic values.
   ++LineIter;
@@ -176,6 +168,8 @@ void DynamicTrace::parseDynamicInstruction(
     switch (LineIter->at(0)) {
       case 'r': {
         // This is the result line.
+        assert(DynamicResult == nullptr &&
+               "Multiple results for single instruction.");
         auto ResultLineFields = splitByChar(*LineIter, '|');
         DynamicResult = new DynamicValue(ResultLineFields[3]);
         break;
@@ -184,7 +178,7 @@ void DynamicTrace::parseDynamicInstruction(
         assert(OperandIndex < StaticInstruction->getNumOperands() &&
                "Too much operands.");
         auto OperandLineFields = splitByChar(*LineIter, '|');
-        if (OperandLineFields.size() < 5) {
+        if (OperandLineFields.size() < 4) {
           DEBUG(llvm::errs() << *LineIter << '\n');
         }
         assert(OperandLineFields.size() >= 4 &&
@@ -204,16 +198,35 @@ void DynamicTrace::parseDynamicInstruction(
   assert(OperandIndex == StaticInstruction->getNumOperands() &&
          "Missing dynamic value for operand.");
 
+  // Special case: Result of ret instruction.
+  // This can only happen when we returned from a traced
+  // callee, the extra result belongs to the "call" instruction
+  // in caller, e.g.
+  // caller::call
+  // caller::call::param
+  // ...
+  // callee::ret
+  // callee::ret::param
+  // caller::call::result
+  // For now simply ignore it.
+  if (llvm::isa<llvm::ReturnInst>(StaticInstruction) &&
+      DynamicResult != nullptr) {
+    // Free the dynamic result for now.
+    delete DynamicResult;
+    DynamicResult = nullptr;
+  }
+
   // Create the new dynamic instructions.
   DynamicInstruction* DynamicInst =
       new DynamicInstruction(this->CurrentDynamicId, StaticInstruction,
                              DynamicResult, std::move(DynamicOperands));
 
-  this->handleRegisterDependence(CurrentDynamicId, StaticInstruction);
-  this->handleMemoryDependence(DynamicInst);
+  // For now do not handle any dependences.
+  // this->handleRegisterDependence(CurrentDynamicId, StaticInstruction);
+  // this->handleMemoryDependence(DynamicInst);
 
-  // Handle the memory base/offset.
-  this->handleMemoryBase(DynamicInst);
+  // // Handle the memory base/offset.
+  // this->handleMemoryBase(DynamicInst);
 
   // Add to the map.
   this->DyanmicInstsMap.emplace(this->CurrentDynamicId, DynamicInst);
@@ -444,6 +457,11 @@ llvm::Instruction* DynamicTrace::getLLVMInstruction(
         this->Module->getFunction(this->CurrentFunctionName);
     assert(this->CurrentFunction &&
            "Failed to loop up traced function in module.");
+
+    // Remember to clear the BB and Index.
+    this->CurrentBasicBlock = nullptr;
+    this->CurrentBasicBlockName = "";
+    this->CurrentIndex = -1;
   }
   assert(FunctionName == this->CurrentFunctionName && "Invalid function name.");
 
