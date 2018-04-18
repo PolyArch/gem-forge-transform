@@ -84,8 +84,6 @@ class Prototype : public llvm::FunctionPass {
     // We require the loop information.
     Info.addRequired<LocateAccelerableFunctions>();
     Info.addPreserved<LocateAccelerableFunctions>();
-    // Info.addRequired<llvm::LoopInfoWrapperPass>();
-    // Info.addPreserved<llvm::LoopInfoWrapperPass>();
   }
   bool doInitialization(llvm::Module& Module) override {
     this->Module = &Module;
@@ -100,17 +98,17 @@ class Prototype : public llvm::FunctionPass {
     auto FunctionName = Function.getName().str();
     DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
-    // // Check if this function is accelerable.
-    // bool Accelerable =
-    //     getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
-    // // A special hack: do not trace function which
-    // // returns a value, currently we donot support return in our trace.
-    // if (!Function.getReturnType()->isVoidTy()) {
-    //   Accelerable = false;
-    // }
-    // if (!Accelerable) {
-    //   return false;
-    // }
+    // Check if this function is accelerable.
+    bool Accelerable =
+        getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
+    // A special hack: do not trace function which
+    // returns a value, currently we donot support return in our trace.
+    if (!Function.getReturnType()->isVoidTy()) {
+      Accelerable = false;
+    }
+    if (!Accelerable) {
+      return false;
+    }
     // What if we trace all the functions?
     
     // Set the current function.
@@ -291,21 +289,6 @@ class Prototype : public llvm::FunctionPass {
 
     // Call printResult after the instruction (if it has a result).
     if (Inst->getName() != "") {
-
-      // // Special case for call instruction.
-      // // If the callee is traced, then to avoid mixing the trace,
-      // // we do not log the result as it can still be collected by 
-      // // the traced ret instruction of callee.
-      // if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
-      //   auto Callee = CallInst->getCalledFunction();
-      //   // If callee has a body, then we can ignore the result as if will
-      //   // be traced by callee's ret expression.
-      //   if (!Callee->isDeclaration()) {
-      //     // Do not printResult.
-      //     return;
-      //   }
-      // }
-
       Builder.SetInsertPoint(Inst->getNextNode());
       auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
@@ -419,7 +402,8 @@ class Prototype : public llvm::FunctionPass {
         auto TypeBytes = VectorType->getBitWidth() / 8;
         // Since the buffer can be allocated from other vector, do a bitcast.
         auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
-        Builder.CreateAlignedStore(Parameter, CastBuffer, TypeBytes);
+        auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
+        Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
         // The first additional arguments will be the size of the buffer.
         AdditionalArgValues.push_back(llvm::ConstantInt::get(
             llvm::IntegerType::getInt32Ty(this->Module->getContext()),

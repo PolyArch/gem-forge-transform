@@ -222,11 +222,11 @@ void DynamicTrace::parseDynamicInstruction(
                              DynamicResult, std::move(DynamicOperands));
 
   // For now do not handle any dependences.
-  // this->handleRegisterDependence(CurrentDynamicId, StaticInstruction);
-  // this->handleMemoryDependence(DynamicInst);
+  this->handleRegisterDependence(CurrentDynamicId, StaticInstruction);
+  this->handleMemoryDependence(DynamicInst);
 
-  // // Handle the memory base/offset.
-  // this->handleMemoryBase(DynamicInst);
+  // Handle the memory base/offset.
+  this->handleMemoryBase(DynamicInst);
 
   // Add to the map.
   this->DyanmicInstsMap.emplace(this->CurrentDynamicId, DynamicInst);

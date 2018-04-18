@@ -20,6 +20,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
         StaticStreamCount(0),
         StaticAffineStreamCount(0),
         StaticQuadricStreamCount(0),
+        DynamicInstructionCount(0),
         DynamicMemAccessCount(0),
         DynamicStreamCount(0),
         CurrentFunction(nullptr),
@@ -39,7 +40,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   }
 
   bool doInitialization(llvm::Module& Module) override {
-    GZTrace* TraceFile = gzOpenGZTrace("llvm_trace.5x64x36.gz");
+    GZTrace* TraceFile = gzOpenGZTrace("llvm_trace.gz");
     assert(TraceFile != NULL && "Failed to open trace file.");
     std::string Line;
     std::list<std::string> LineBuffer;
@@ -170,6 +171,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
                        << this->StaticAffineStreamCount << '\n');
     DEBUG(llvm::errs() << "StaticQuadricStreamCount: "
                        << this->StaticQuadricStreamCount << '\n');
+    DEBUG(llvm::errs() << "DynamicInstructionCount: "
+                       << this->DynamicInstructionCount << '\n');
     DEBUG(llvm::errs() << "DynamicMemAccessCount: "
                        << this->DynamicMemAccessCount << '\n');
     DEBUG(llvm::errs() << "DynamicStreamCount: " << this->DynamicStreamCount
@@ -183,6 +186,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   uint64_t StaticAffineStreamCount;
   uint64_t StaticQuadricStreamCount;
 
+  uint64_t DynamicInstructionCount;
   uint64_t DynamicMemAccessCount;
   uint64_t DynamicStreamCount;
 
@@ -275,6 +279,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
         } else {
           this->StaticInstructionInstantiatedCount[StaticInstruction]++;
         }
+        this->DynamicInstructionCount++;
         break;
       }
       case 'e':
