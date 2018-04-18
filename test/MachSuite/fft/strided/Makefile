@@ -10,45 +10,10 @@ FILES=$(SRCS) $(KERN).h ../../common/support.h
 INCLUDE_DIR=../../common
 
 #####################################################################################
-PASS_SO_DIR=../../../../build/prototype
-OPT_ARGS=-load=$(PASS_SO_DIR)/libPrototypePass.so -S -time-passes
-
 ALL_SRCS=$(SRCS) ../../common/harness.c
-LLVMS=$(ALL_SRCS:%.c=%.o)
-LLVM_TRACES=$(LLVMS:%.ll=%.tll)
-LLVM_REPLAYS=$(LLVMS:%.ll=%.rll)
+ROOT_DIR=../../../..
 
-# Compile
-%.o: %.c
-	clang -flto -I${INCLUDE_DIR} ${CFLAGS} -o $@ -c $^
-
-$(KERN).bc: $(LLVMS)
-	clang -flto -Wl,-plugin-opt=emit-llvm $^ -o $@
-	# Name everthing
-	opt -instnamer $@ -o $@
-
-# Instrument
-$(KERN)_trace.ll: $(KERN).bc
-	opt $(OPT_ARGS) -debug-only=PrototypePass -prototype -o $@ $^
-
-$(KERN)_replay.ll: $(KERN).bc
-	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -replay -trace-file=llvm_trace.txt -o $@ $^
-
-# To binary.
-$(KERN)_trace: $(KERN)_trace.ll ../../../logger.c
-	clang -O0 -o $@ $^
-
-$(KERN)_replay: $(KERN)_replay.ll ../../../replay.c
-	clang -O0 -o $@ $^
-
-run_trace: $(KERN)_trace input.data check.data
-	./$(KERN)_trace input.data check.data
-
-clean_trace:
-	rm -f $(KERN)_trace $(LLVMS) $(LLVM_TRACES) $(KERN)_trace.bc $(KERN)_trace.s
-
-clean_replay:
-	rm -f $(KERN)_replay $(LLVMS) $(LLVM_REPLAYS) $(KERN)_replay.bc $(KERN)_replay.s
+include ../../Makefile.TDG
 
 #####################################################################################
 
@@ -65,5 +30,5 @@ generate: $(FILES) generate.c
 hls: $(KERN).c $(KERN).h
 	vivado_hls hls.tcl
 
-clean: clean_trace clean_replay
+clean:
 	rm -f $(KERN) generate output.data

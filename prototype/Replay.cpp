@@ -82,8 +82,8 @@ bool ReplayTrace::doInitialization(llvm::Module& Module) {
   // DEBUG(llvm::errs() << "Parsed # memory dependences: "
   //                    << this->Trace->NumMemDependences << '\n');
 
-  // // Generate the transformation of the trace.
-  // this->TransformTrace();
+  // Generate the transformation of the trace.
+  this->TransformTrace();
 
   // Register the external ioctl function.
   registerFunction(Module);
