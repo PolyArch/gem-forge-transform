@@ -100,7 +100,7 @@ bool ReplayTrace::runOnFunction(llvm::Function& Function) {
       getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
   // A special hack: do not trace function which
   // returns a value, currently we donot support return in our trace.
-  if (!Function.getReturnType()->isVoidTy()) {
+  if (!Function.getReturnType()->isVoidTy()) {  
     Accelerable = false;
   }
   if (!Accelerable) {

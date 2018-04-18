@@ -13,7 +13,7 @@ LLVMS=$(ALL_SRCS:%.c=%.o)
 LLVM_TRACES=$(LLVMS:%.ll=%.tll)
 LLVM_REPLAYS=$(LLVMS:%.ll=%.rll)
 
-TRACE_LINK_FLAGS="${LINK_FLAG} -lz"
+TRACE_LINK_FLAGS=${LINK_FLAG} -lz
 
 # Compile
 %.o: %.c
