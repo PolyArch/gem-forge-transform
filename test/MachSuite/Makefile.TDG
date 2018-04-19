@@ -7,11 +7,12 @@
 # $LINK_FLAG
 
 PASS_SO_DIR=${ROOT_DIR}/build/prototype
+GEM5_DIR=/home/sean/Public/gem5
 OPT_ARGS=-load=$(PASS_SO_DIR)/libPrototypePass.so -S -time-passes
 
 LLVMS=$(ALL_SRCS:%.c=%.o)
-LLVM_TRACES=$(LLVMS:%.ll=%.tll)
-LLVM_REPLAYS=$(LLVMS:%.ll=%.rll)
+
+REPLAY_INCLUDE_DIR=${INCLUDE_DIR} -I${GEM5_DIR}/include
 
 TRACE_LINK_FLAGS=${LINK_FLAG} -lz
 
@@ -35,14 +36,16 @@ $(KERN)_replay.ll: $(KERN).bc
 $(KERN)_trace: $(KERN)_trace.ll $(ROOT_DIR)/prototype/logger.c
 	clang -O0 $^ -o $@ ${TRACE_LINK_FLAGS}
 
-$(KERN)_replay: $(KERN)_replay.ll ../../../replay.c
-	clang -O0 $^ -o $@ ${LINK_FLAG}
+$(KERN)_replay: $(KERN)_replay.ll ${ROOT_DIR}/test/replay.c
+	clang -c -O0 $(KERN)_replay.ll -o ${KERN}_replay_before_gcc.o ${LINK_FLAG}
+	# Must use gcc to link gem5 pseudo instruction asm.
+	gcc -O0 -I${GEM5_DIR}/include ${ROOT_DIR}/test/replay.c ${GEM5_DIR}/util/m5/m5op_x86.S $(KERN)_replay_before_gcc.o -o $@
 
 run_trace: $(KERN)_trace input.data check.data
 	./$(KERN)_trace input.data check.data
 
 clean_trace:
-	rm -f $(KERN)_trace $(LLVMS) $(LLVM_TRACES) $(KERN)_trace.bc $(KERN)_trace.s
+	rm -f $(KERN)_trace $(LLVMS) ${KERN}_trace.ll ${KERN}.bc
 
 clean_replay:
-	rm -f $(KERN)_replay $(LLVMS) $(LLVM_REPLAYS) $(KERN)_replay.bc $(KERN)_replay.s
+	rm -f $(KERN)_replay $(LLVMS) $(KERN)_replay.ll ${KERN}.bc ${KERN}_replay_before_gcc.S
