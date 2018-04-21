@@ -6,6 +6,8 @@
 
 static const uint64_t MAX_NUM_MAPPED_ARGS = 10;
 
+#define REPLAY_WITH_IOCTL
+
 #ifdef REPLAY_WITH_IOCTL
 static const char* LLVM_TRACE_CPU_FILE = "/dev/llvm_trace_cpu";
 static const unsigned long REQUEST_REPLAY = 0;

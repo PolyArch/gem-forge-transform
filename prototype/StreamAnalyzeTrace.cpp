@@ -4,9 +4,13 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/Support/CommandLine.h"
 
 #include <list>
 #include <unordered_map>
+
+static llvm::cl::opt<std::string> TraceFileName("stream-trace-file",
+                                                llvm::cl::desc("Trace file."));
 
 #define DEBUG_TYPE "ReplayPass"
 
@@ -40,7 +44,11 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   }
 
   bool doInitialization(llvm::Module& Module) override {
-    GZTrace* TraceFile = gzOpenGZTrace("llvm_trace.gz");
+    assert(TraceFileName.getNumOccurrences() == 1 &&
+           "Please specify the trace file.");
+
+    std::string TraceFileNameStr = TraceFileName;
+    GZTrace* TraceFile = gzOpenGZTrace(TraceFileNameStr.c_str());
     assert(TraceFile != NULL && "Failed to open trace file.");
     std::string Line;
     std::list<std::string> LineBuffer;
@@ -120,8 +128,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
 
           // Check if this is a stream.
           const llvm::SCEV* SCEV = SE.getSCEV(Addr);
-          DEBUG(SCEV->print(llvm::errs()));
-          DEBUG(llvm::errs() << '\n');
+          // DEBUG(SCEV->print(llvm::errs()));
+          // DEBUG(llvm::errs() << '\n');
           if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
             // This is a stream.
             this->StaticStreamCount++;
@@ -221,7 +229,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
         const std::string& BasicBlockName = InstructionLineFields[2];
         int Index = std::stoi(InstructionLineFields[3]);
 
-        if (this->CurrentFunction == nullptr || this->CurrentFunction->getName() != FunctionName) {
+        if (this->CurrentFunction == nullptr ||
+            this->CurrentFunction->getName() != FunctionName) {
           this->CurrentFunction = Module.getFunction(FunctionName);
           assert(this->CurrentFunction &&
                  "Failed to loop up traced function in module.");
@@ -229,7 +238,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
           this->CurrentIndex = -1;
         }
 
-        if (this->CurrentBasicBlock == nullptr || BasicBlockName != this->CurrentBasicBlock->getName()) {
+        if (this->CurrentBasicBlock == nullptr ||
+            BasicBlockName != this->CurrentBasicBlock->getName()) {
           // We are in a new basic block.
           // Find the new basic block.
           for (auto BBIter = this->CurrentFunction->begin(),

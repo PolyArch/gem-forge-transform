@@ -31,7 +31,7 @@ $(KERN)_trace.ll: $(KERN).bc
 	opt $(OPT_ARGS) -debug-only=PrototypePass -prototype -o $@ $^
 
 $(KERN)_replay.ll: $(KERN).bc
-	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -stream-replay -trace-file=llvm_trace.txt -o $@ $^
+	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -stream-replay -trace-file=llvm_trace.gz -o $@ $^
 
 # To binary.
 $(KERN): $(KERN).bc

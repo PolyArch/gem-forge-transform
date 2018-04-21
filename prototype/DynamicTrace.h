@@ -80,7 +80,7 @@ class DynamicTrace {
     }
     return Line[0] == 'i' || Line[0] == 'e';
   }
-  
+
   /**
    * Split a string like a|b|c| into [a, b, c].
    */
@@ -151,6 +151,8 @@ class DynamicTrace {
                                 llvm::Instruction* StaticInstruction);
   void addRegisterDependence(DynamicId CurrentDynamicId,
                              llvm::Instruction* OperandStaticInst);
+  llvm::Instruction* resolveRegisterDependenceInPhiNode(
+      llvm::Instruction* OperandStaticInst);
 
   // Records the information of the dynamic value inter-frame.
   // Especially used for mem/base initialization.

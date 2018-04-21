@@ -79,11 +79,11 @@ BINARY_ARGS=""
 # WORKLOAD="fft"
 # WORKDIR="MachSuite/kmp/kmp"
 # WORKLOAD="kmp"
-# WORKDIR="hello"
-# WORKLOAD="hello"
+WORKDIR="hello"
+WORKLOAD="hello"
 
-WORKDIR="testscratch"
-WORKLOAD="scratch"
+# WORKDIR="testscratch"
+# WORKLOAD="scratch"
 
 NORMAL_BINARY_NAME=${WORKLOAD}
 
@@ -99,6 +99,8 @@ cd ${WORKDIR}
 
 # Clean everything.
 make clean
+make clean_trace
+make clean_replay
 
 # run_gem5 "/home/sean/a.out" ${USE_CACHE} 4 ""
 # PARSEC_ROOT="/home/sean/Documents/parsec-3.0/pkgs/apps/raytrace/obj/amd64-linux.gcc"
@@ -110,7 +112,7 @@ make clean
 make ${WORKLOAD}
 
 # run gem5.
-# run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE} ${CPU_NUM} ${BINARY_ARGS}
+run_gem5 ${NORMAL_BINARY_NAME} ${USE_CACHE} ${CPU_NUM} ${BINARY_ARGS}
 
 # Generate the trace binary.
 make ${TRACE_BINARY_NAME}
@@ -124,7 +126,7 @@ make ${TRACE_BINARY_NAME}
 
 # Simulate with LLVMTraceCPU
 make ${REPLAY_BINARY_NAME}
-# run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
+run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_FILE}
 # run_gem5_llvm_trace_cpu ${REPLAY_BINARY_NAME} ${USE_CACHE} ${GEM5_LLVM_TRACE_CPU_TRANSFORMED_FILE}
 
 # test_dot_exporter ${TRACE_FILE_NAME}

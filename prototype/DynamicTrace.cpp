@@ -273,7 +273,16 @@ void DynamicTrace::handleRegisterDependence(
         // Check if the value is produced by an inst.
         if (auto OperandStaticInst = llvm::dyn_cast<llvm::Instruction>(
                 PhiStaticInst->getIncomingValue(OperandId))) {
-          this->addRegisterDependence(CurrentDynamicId, OperandStaticInst);
+          // Also resolve the phi dependence for phi node.
+          OperandStaticInst =
+              this->resolveRegisterDependenceInPhiNode(OperandStaticInst);
+          if (OperandStaticInst != nullptr) {
+            // Sanity check: no instruction can be dynamically dependent on
+            // phi node.
+            assert(!llvm::isa<llvm::PHINode>(OperandStaticInst) &&
+                   "No inst should be dynamically dependent on phi node.");
+            this->addRegisterDependence(CurrentDynamicId, OperandStaticInst);
+          }
         }
         break;
       }
@@ -286,9 +295,48 @@ void DynamicTrace::handleRegisterDependence(
        OperandId != NumOperands; ++OperandId) {
     if (auto OperandStaticInst = llvm::dyn_cast<llvm::Instruction>(
             StaticInstruction->getOperand(OperandId))) {
-      this->addRegisterDependence(CurrentDynamicId, OperandStaticInst);
+      OperandStaticInst =
+          this->resolveRegisterDependenceInPhiNode(OperandStaticInst);
+      // Just insert the register dependence.
+      if (OperandStaticInst != nullptr) {
+        // Sanity check: no instruction can be dynamically dependent on
+        // phi node.
+        assert(!llvm::isa<llvm::PHINode>(OperandStaticInst) &&
+               "No inst should be dynamically dependent on phi node.");
+        this->addRegisterDependence(CurrentDynamicId, OperandStaticInst);
+      }
     }
   }
+}
+
+llvm::Instruction* DynamicTrace::resolveRegisterDependenceInPhiNode(
+    llvm::Instruction* OperandStaticInst) {
+  // Special rules to remove phi dependence.
+  // If the instruction is dependent on a phi node, we set the
+  // register dependence to the dependent of phi node.
+  // This helps in replay to skip the phi node. But we keep the
+  // phi node in the graph for now so that the dynamic id is still valid.
+  while (OperandStaticInst != nullptr &&
+         llvm::isa<llvm::PHINode>(OperandStaticInst)) {
+    // Assert that the phi node should have at most one dynamic dependence.
+    auto LastDependentPhiDynamicInst =
+        this->StaticToDynamicMap.at(OperandStaticInst).back();
+    if (this->RegDeps.find(LastDependentPhiDynamicInst->Id) !=
+        this->RegDeps.end()) {
+      const auto& PhiDependentSet =
+          this->RegDeps.at(LastDependentPhiDynamicInst->Id);
+      assert(PhiDependentSet.size() <= 1 &&
+             "Dependent Phi node should have at most one dynamic dependence.");
+      if (PhiDependentSet.size() == 1) {
+        OperandStaticInst = this->DyanmicInstsMap.at(*PhiDependentSet.begin())
+                                ->StaticInstruction;
+      } else {
+        // There is no dependence after all the phi node is resovled.
+        OperandStaticInst = nullptr;
+      }
+    }
+  }
+  return OperandStaticInst;
 }
 
 bool DynamicTrace::checkAndAddMemoryDependence(
