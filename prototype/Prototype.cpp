@@ -6,6 +6,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
@@ -14,6 +15,11 @@
 
 #include <map>
 #include <set>
+
+// #define TRACE_INST_ONLY
+
+static llvm::cl::opt<std::string> TraceFunctionName(
+    "trace-function", llvm::cl::desc("Trace function."));
 
 #define DEBUG_TYPE "PrototypePass"
 namespace {
@@ -110,7 +116,13 @@ class Prototype : public llvm::FunctionPass {
       return false;
     }
     // What if we trace all the functions?
-    
+
+    if (TraceFunctionName.getNumOccurrences() == 1) {
+      if (Function.getName() != TraceFunctionName) {
+        return false;
+      }
+    }
+
     // Set the current function.
     this->CurrentFunction = &Function;
     // Clear the vector store buffer.
@@ -158,7 +170,8 @@ class Prototype : public llvm::FunctionPass {
     std::vector<llvm::Type*> PrintValueArgs{
         Int8PtrTy,
         Int8PtrTy,  // char* Name,
-        Int32Ty, Int32Ty,
+        Int32Ty,
+        Int32Ty,
     };
     auto PrintValueTy = llvm::FunctionType::get(VoidTy, PrintValueArgs, true);
     this->PrintValueFunc =
@@ -216,12 +229,21 @@ class Prototype : public llvm::FunctionPass {
         continue;
       }
 
+      // Ignore the landpadinst.
+      if (llvm::isa<llvm::LandingPadInst>(Inst)) {
+        continue;
+      }
+
       traceNonPhiInst(Inst, FunctionNameValue, BBNameValue, InstId);
     }
 
     // Handle all the phi nodes now.
     if (!PHIInsts.empty()) {
       auto InsertBefore = PHIInsts[PHIInsts.size() - 1].first->getNextNode();
+      // Ignore landingpadinst.
+      while (llvm::isa<llvm::LandingPadInst>(InsertBefore)) {
+        InsertBefore = InsertBefore->getNextNode();
+      }
       for (auto& PHIInstPair : PHIInsts) {
         auto PHIInst = PHIInstPair.first;
         auto InstId = PHIInstPair.second;
@@ -246,6 +268,7 @@ class Prototype : public llvm::FunctionPass {
     llvm::IRBuilder<> Builder(InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
+#ifndef TRACE_INST_ONLY
     // Call printValue for each parameter before the instruction.
     for (unsigned IncomingValueId = 0,
                   NumIncomingValues = Inst->getNumIncomingValues();
@@ -263,6 +286,7 @@ class Prototype : public llvm::FunctionPass {
       auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
+#endif
   }
 
   // Insert the trace call to non phi instructions.
@@ -279,6 +303,7 @@ class Prototype : public llvm::FunctionPass {
     llvm::IRBuilder<> Builder(Inst);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
+#ifndef TRACE_INST_ONLY
     // Call printValue for each parameter before the instruction.
     for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
          OperandId < NumOperands; OperandId++) {
@@ -289,10 +314,17 @@ class Prototype : public llvm::FunctionPass {
 
     // Call printResult after the instruction (if it has a result).
     if (Inst->getName() != "") {
-      Builder.SetInsertPoint(Inst->getNextNode());
       auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
-      Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+      llvm::Instruction* NextInst = Inst->getNextNode();
+      if (NextInst == nullptr) {
+        // If this is the last inst, ignore it for now.
+      } else {
+        assert(NextInst != nullptr && "Null next inst.");
+        Builder.SetInsertPoint(NextInst);
+        Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+      }
     }
+#endif
   }
 
   std::vector<llvm::Value*> getPrintInstArgs(llvm::Instruction* Inst,
@@ -346,9 +378,7 @@ class Prototype : public llvm::FunctionPass {
     auto IncomingValueNameValue = getOrCreateStringLiteral(
         this->GlobalStrings, this->Module, IncomingValueName);
 
-    std::vector<llvm::Value*> Args{TagValue,
-                                   NameValue,
-                                   TypeIdValue,
+    std::vector<llvm::Value*> Args{TagValue, NameValue, TypeIdValue,
                                    NumAdditionalArgsValue,
                                    IncomingValueNameValue};
     return std::move(Args);
@@ -425,8 +455,8 @@ class Prototype : public llvm::FunctionPass {
         llvm::IntegerType::getInt32Ty(this->Module->getContext()),
         NumAdditionalArgs, false);
 
-    std::vector<llvm::Value*> Args{TagValue, NameValue,
-                                   TypeIdValue, NumAdditionalArgsValue};
+    std::vector<llvm::Value*> Args{TagValue, NameValue, TypeIdValue,
+                                   NumAdditionalArgsValue};
     for (auto AdditionalArgValue : AdditionalArgValues) {
       Args.push_back(AdditionalArgValue);
     }
