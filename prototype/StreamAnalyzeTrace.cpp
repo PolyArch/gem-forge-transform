@@ -4,9 +4,11 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CommandLine.h"
 
 #include <list>
+#include <map>
 #include <unordered_map>
 
 static llvm::cl::opt<std::string> TraceFileName("stream-trace-file",
@@ -27,9 +29,12 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
         DynamicInstructionCount(0),
         DynamicMemAccessCount(0),
         DynamicStreamCount(0),
+        DynamicMemAccessBytes(0),
+        DynamicStreamBytes(0),
         CurrentFunction(nullptr),
         CurrentBasicBlock(nullptr),
-        CurrentIndex(-1) {}
+        CurrentIndex(-1),
+        DataLayout(nullptr) {}
   virtual ~StreamAnalysisTrace() {}
 
   void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
@@ -46,6 +51,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   bool doInitialization(llvm::Module& Module) override {
     assert(TraceFileName.getNumOccurrences() == 1 &&
            "Please specify the trace file.");
+
+    this->DataLayout = new llvm::DataLayout(&Module);
 
     std::string TraceFileNameStr = TraceFileName;
     GZTrace* TraceFile = gzOpenGZTrace(TraceFileNameStr.c_str());
@@ -113,53 +120,51 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
           // This is a memory access we are about.
           this->StaticMemAccessCount++;
 
-          if (this->StaticInstructionInstantiatedCount.find(Inst) !=
-              this->StaticInstructionInstantiatedCount.end()) {
-            this->DynamicMemAccessCount +=
-                this->StaticInstructionInstantiatedCount.at(Inst);
-          }
-
           llvm::Value* Addr = nullptr;
           if (llvm::isa<llvm::LoadInst>(Inst)) {
             Addr = Inst->getOperand(0);
           } else {
             Addr = Inst->getOperand(1);
           }
-
+          uint64_t AccessBytes = this->DataLayout->getTypeStoreSize(
+              Addr->getType()->getPointerElementType());
+          if (this->StaticInstructionInstantiatedCount.find(Inst) !=
+              this->StaticInstructionInstantiatedCount.end()) {
+            this->DynamicMemAccessCount +=
+                this->StaticInstructionInstantiatedCount.at(Inst);
+            this->DynamicMemAccessBytes +=
+                this->StaticInstructionInstantiatedCount.at(Inst) * AccessBytes;
+          }
           // Check if this is a stream.
           const llvm::SCEV* SCEV = SE.getSCEV(Addr);
+          std::string SCEVFormat;
+          llvm::raw_string_ostream rs(SCEVFormat);
+          SCEV->print(rs);
+          // DEBUG(llvm::errs() << rs.str() << '\n');
+
           // DEBUG(SCEV->print(llvm::errs()));
           // DEBUG(llvm::errs() << '\n');
           if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
             // This is a stream.
             this->StaticStreamCount++;
             if (AddRecSCEV->isAffine()) {
+              rs << " affine";
               this->StaticAffineStreamCount++;
               if (this->StaticInstructionInstantiatedCount.find(Inst) !=
                   this->StaticInstructionInstantiatedCount.end()) {
                 auto DynamicInstructionCount =
                     this->StaticInstructionInstantiatedCount.at(Inst);
                 this->DynamicStreamCount += DynamicInstructionCount;
-                // // Update the histogram.
-                // if (this->StaticStreamInstiatedHistogram.find(Inst) ==
-                //     this->StaticStreamInstiatedHistogram.end()) {
-                //   this->StaticStreamInstiatedHistogram.emplace(
-                //       Inst, std::unordered_map<uint64_t, uint64_t>());
-                // }
-                // auto& InstHistogram =
-                //     this->StaticStreamInstiatedHistogram.at(Inst);
-                // if (InstHistogram.find(DynamicInstructionCount) ==
-                //     InstHistogram.end()) {
-                //   InstHistogram.emplace(DynamicInstructionCount, 1);
-                // } else {
-                //   InstHistogram[DynamicInstructionCount]++;
-                // }
+                this->DynamicStreamBytes +=
+                    AccessBytes * DynamicInstructionCount;
               }
             }
             if (AddRecSCEV->isQuadratic()) {
               this->StaticQuadricStreamCount++;
             }
           }
+
+          this->StaticInstructionSCEVMap.emplace(Inst, rs.str());
         }
       }
     }
@@ -185,6 +190,39 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
                        << this->DynamicMemAccessCount << '\n');
     DEBUG(llvm::errs() << "DynamicStreamCount: " << this->DynamicStreamCount
                        << '\n');
+    DEBUG(llvm::errs() << "DynamicMemAccessBytes: "
+                       << this->DynamicMemAccessBytes << '\n');
+    DEBUG(llvm::errs() << "DynamicStreamBytes: " << this->DynamicStreamBytes
+                       << '\n');
+    // Try to sort out top 10.
+    const size_t MaxCount = 50;
+    std::multimap<uint64_t, llvm::Instruction*> TopMemAccess;
+    for (const auto& Entry : this->StaticInstructionInstantiatedCount) {
+      if (llvm::isa<llvm::LoadInst>(Entry.first) ||
+          llvm::isa<llvm::StoreInst>(Entry.first)) {
+        if (TopMemAccess.size() < MaxCount) {
+          TopMemAccess.emplace(Entry.second, Entry.first);
+        } else {
+          uint64_t TemporaryMinimum = TopMemAccess.cbegin()->first;
+          if (Entry.second > TemporaryMinimum) {
+            TopMemAccess.emplace(Entry.second, Entry.first);
+            // Remove the first (minimum) element.
+            TopMemAccess.erase(TopMemAccess.cbegin());
+          }
+        }
+      }
+    }
+    // Print out the top memory access.
+    for (auto& Entry : TopMemAccess) {
+      llvm::Instruction* Inst = Entry.second;
+      DEBUG(llvm::errs() << Entry.first << ' ' << Inst->getFunction()->getName()
+                         << ' ' << Inst->getParent()->getName() << ' '
+                         << Inst->getName() << ' '
+                         << this->StaticInstructionSCEVMap.at(Inst) << '\n');
+    }
+
+    delete this->DataLayout;
+    this->DataLayout = nullptr;
     return false;
   }
 
@@ -197,17 +235,20 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   uint64_t DynamicInstructionCount;
   uint64_t DynamicMemAccessCount;
   uint64_t DynamicStreamCount;
-
-  std::unordered_map<llvm::Instruction*, std::unordered_map<uint64_t, uint64_t>>
-      StaticStreamInstiatedHistogram;
+  uint64_t DynamicMemAccessBytes;
+  uint64_t DynamicStreamBytes;
 
   std::unordered_map<llvm::Instruction*, uint64_t>
       StaticInstructionInstantiatedCount;
+
+  std::unordered_map<llvm::Instruction*, std::string> StaticInstructionSCEVMap;
 
   llvm::Function* CurrentFunction;
   llvm::BasicBlock* CurrentBasicBlock;
   int64_t CurrentIndex;
   llvm::BasicBlock::iterator CurrentStaticInstruction;
+
+  llvm::DataLayout* DataLayout;
 
   void parseLineBuffer(llvm::Module& Module,
                        const std::list<std::string>& LineBuffer) {
