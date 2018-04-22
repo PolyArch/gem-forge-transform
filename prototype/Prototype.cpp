@@ -16,7 +16,7 @@
 #include <map>
 #include <set>
 
-// #define TRACE_INST_ONLY
+#define TRACE_INST_ONLY
 
 static llvm::cl::opt<std::string> TraceFunctionName(
     "trace-function", llvm::cl::desc("Trace function."));
