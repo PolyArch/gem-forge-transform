@@ -13,12 +13,14 @@ DynamicValue::DynamicValue(const std::string& _Value)
     : Value(_Value), MemBase(""), MemOffset(0) {}
 
 DynamicInstruction::DynamicInstruction(
-    DynamicId _Id, llvm::Instruction* _StaticInstruction,
-    DynamicValue* _DynamicResult, std::vector<DynamicValue*> _DynamicOperands)
-    : Id(_Id),
-      StaticInstruction(_StaticInstruction),
+    llvm::Instruction* _StaticInstruction, DynamicValue* _DynamicResult,
+    std::vector<DynamicValue*> _DynamicOperands, DynamicInstruction* _Prev,
+    DynamicInstruction* _Next)
+    : StaticInstruction(_StaticInstruction),
       DynamicResult(_DynamicResult),
-      DynamicOperands(std::move(_DynamicOperands)) {
+      DynamicOperands(std::move(_DynamicOperands)),
+      Prev(_Prev),
+      Next(_Next) {
   assert(this->StaticInstruction != nullptr &&
          "Non null static instruction ptr.");
   if (this->DynamicResult != nullptr) {
@@ -55,9 +57,10 @@ DynamicInstruction::~DynamicInstruction() {
 
 DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
                            llvm::Module* _Module)
-    : Module(_Module),
+    : DynamicInstructionListHead(nullptr),
+      DynamicInstructionListTail(nullptr),
+      Module(_Module),
       NumMemDependences(0),
-      CurrentDynamicId(0),
       CurrentFunctionName(""),
       CurrentBasicBlockName(""),
       CurrentIndex(-1) {
@@ -109,10 +112,14 @@ DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
 }
 
 DynamicTrace::~DynamicTrace() {
-  for (auto& Iter : this->DyanmicInstsMap) {
-    delete Iter.second;
-    Iter.second = nullptr;
+  DynamicInstruction* Iter = this->DynamicInstructionListHead;
+  while (Iter != nullptr) {
+    auto Prev = Iter;
+    Iter = Iter->Next;
+    delete Prev;
   }
+  this->DynamicInstructionListHead = nullptr;
+  this->DynamicInstructionListTail = nullptr;
   delete this->DataLayout;
 }
 
@@ -217,19 +224,25 @@ void DynamicTrace::parseDynamicInstruction(
   }
 
   // Create the new dynamic instructions.
-  DynamicInstruction* DynamicInst =
-      new DynamicInstruction(this->CurrentDynamicId, StaticInstruction,
-                             DynamicResult, std::move(DynamicOperands));
+  DynamicInstruction* DynamicInst = new DynamicInstruction(
+      StaticInstruction, DynamicResult, std::move(DynamicOperands),
+      this->DynamicInstructionListTail, nullptr);
 
   // For now do not handle any dependences.
-  this->handleRegisterDependence(CurrentDynamicId, StaticInstruction);
+  this->handleRegisterDependence(DynamicInst, StaticInstruction);
   this->handleMemoryDependence(DynamicInst);
 
   // Handle the memory base/offset.
   this->handleMemoryBase(DynamicInst);
 
-  // Add to the map.
-  this->DyanmicInstsMap.emplace(this->CurrentDynamicId, DynamicInst);
+  // Add to the list.
+  if (this->DynamicInstructionListTail != nullptr) {
+    this->DynamicInstructionListTail->Next = DynamicInst;
+  }
+  this->DynamicInstructionListTail = DynamicInst;
+  if (this->DynamicInstructionListHead == nullptr) {
+    this->DynamicInstructionListHead = DynamicInst;
+  }
   // Add the map from static instrunction to dynamic.
   if (this->StaticToDynamicMap.find(StaticInstruction) ==
       this->StaticToDynamicMap.end()) {
@@ -237,29 +250,29 @@ void DynamicTrace::parseDynamicInstruction(
                                      std::list<DynamicInstruction*>());
   }
   this->StaticToDynamicMap.at(StaticInstruction).push_back(DynamicInst);
-  this->CurrentDynamicId++;
 }
 
-void DynamicTrace::addRegisterDependence(DynamicId CurrentDynamicId,
+void DynamicTrace::addRegisterDependence(DynamicInstruction* DynamicInst,
                                          llvm::Instruction* OperandStaticInst) {
   // Push the latest dynamic inst of the operand static inst.
   DynamicInstruction* OperandDynamicInst =
       this->getLatestDynamicIdForStaticInstruction(OperandStaticInst);
-  this->RegDeps[CurrentDynamicId].insert(OperandDynamicInst->Id);
+  this->RegDeps[DynamicInst].insert(OperandDynamicInst);
 }
 
 void DynamicTrace::handleRegisterDependence(
-    DynamicId CurrentDynamicId, llvm::Instruction* StaticInstruction) {
+    DynamicInstruction* DynamicInst, llvm::Instruction* StaticInstruction) {
   // Handle register dependence.
-  assert(this->RegDeps.find(CurrentDynamicId) == this->RegDeps.end() &&
-         "Used DynamicId.");
-  this->RegDeps.emplace(CurrentDynamicId, std::unordered_set<DynamicId>());
+  assert(this->RegDeps.find(DynamicInst) == this->RegDeps.end() &&
+         "This dynamic instruction's register dependence has already been "
+         "handled.");
+  this->RegDeps.emplace(DynamicInst, std::unordered_set<DynamicInstruction*>());
 
   // Special rule for phi node.
   if (auto PhiStaticInst = llvm::dyn_cast<llvm::PHINode>(StaticInstruction)) {
     // Get the previous basic block.
     DynamicInstruction* PrevNonPhiDYnamicInstruction =
-        this->getPreviousNonPhiDynamicInstruction(CurrentDynamicId);
+        this->getPreviousNonPhiDynamicInstruction(DynamicInst);
     assert(PrevNonPhiDYnamicInstruction != nullptr &&
            "There should be a non-phi inst before phi inst.");
     llvm::BasicBlock* PrevBasicBlock =
@@ -281,7 +294,7 @@ void DynamicTrace::handleRegisterDependence(
             // phi node.
             assert(!llvm::isa<llvm::PHINode>(OperandStaticInst) &&
                    "No inst should be dynamically dependent on phi node.");
-            this->addRegisterDependence(CurrentDynamicId, OperandStaticInst);
+            this->addRegisterDependence(DynamicInst, OperandStaticInst);
           }
         }
         break;
@@ -303,7 +316,7 @@ void DynamicTrace::handleRegisterDependence(
         // phi node.
         assert(!llvm::isa<llvm::PHINode>(OperandStaticInst) &&
                "No inst should be dynamically dependent on phi node.");
-        this->addRegisterDependence(CurrentDynamicId, OperandStaticInst);
+        this->addRegisterDependence(DynamicInst, OperandStaticInst);
       }
     }
   }
@@ -321,15 +334,14 @@ llvm::Instruction* DynamicTrace::resolveRegisterDependenceInPhiNode(
     // Assert that the phi node should have at most one dynamic dependence.
     auto LastDependentPhiDynamicInst =
         this->StaticToDynamicMap.at(OperandStaticInst).back();
-    if (this->RegDeps.find(LastDependentPhiDynamicInst->Id) !=
+    if (this->RegDeps.find(LastDependentPhiDynamicInst) !=
         this->RegDeps.end()) {
       const auto& PhiDependentSet =
-          this->RegDeps.at(LastDependentPhiDynamicInst->Id);
+          this->RegDeps.at(LastDependentPhiDynamicInst);
       assert(PhiDependentSet.size() <= 1 &&
              "Dependent Phi node should have at most one dynamic dependence.");
       if (PhiDependentSet.size() == 1) {
-        OperandStaticInst = this->DyanmicInstsMap.at(*PhiDependentSet.begin())
-                                ->StaticInstruction;
+        OperandStaticInst = (*PhiDependentSet.begin())->StaticInstruction;
       } else {
         // There is no dependence after all the phi node is resovled.
         OperandStaticInst = nullptr;
@@ -340,16 +352,17 @@ llvm::Instruction* DynamicTrace::resolveRegisterDependenceInPhiNode(
 }
 
 bool DynamicTrace::checkAndAddMemoryDependence(
-    std::unordered_map<uint64_t, DynamicId>& LastMap, uint64_t Addr,
-    DynamicId CurrentDynamicId) {
+    std::unordered_map<uint64_t, DynamicInstruction*>& LastMap, uint64_t Addr,
+    DynamicInstruction* DynamicInst) {
   auto Iter = LastMap.find(Addr);
   if (Iter != LastMap.end()) {
     // There is a dependence.
-    auto DepIter = this->MemDeps.find(CurrentDynamicId);
+    auto DepIter = this->MemDeps.find(DynamicInst);
     if (DepIter == this->MemDeps.end()) {
-      DepIter = this->MemDeps
-                    .emplace(CurrentDynamicId, std::unordered_set<DynamicId>())
-                    .first;
+      DepIter =
+          this->MemDeps
+              .emplace(DynamicInst, std::unordered_set<DynamicInstruction*>())
+              .first;
     }
     DepIter->second.insert(Iter->second);
     return true;
@@ -372,11 +385,11 @@ void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
     for (uint64_t ByteIter = 0; ByteIter < LoadedTypeSizeInByte; ++ByteIter) {
       uint64_t Addr = BaseAddr + ByteIter;
       if (this->checkAndAddMemoryDependence(this->AddrToLastStoreInstMap, Addr,
-                                            DynamicInst->Id)) {
+                                            DynamicInst)) {
         this->NumMemDependences++;
       }
       // Update the latest read map.
-      this->AddrToLastLoadInstMap.emplace(Addr, DynamicInst->Id);
+      this->AddrToLastLoadInstMap.emplace(Addr, DynamicInst);
     }
     return;
   }
@@ -396,16 +409,16 @@ void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
       uint64_t Addr = BaseAddr + ByteIter;
       // WAW.
       if (this->checkAndAddMemoryDependence(this->AddrToLastStoreInstMap, Addr,
-                                            DynamicInst->Id)) {
+                                            DynamicInst)) {
         this->NumMemDependences++;
       }
       // WAR.
       if (this->checkAndAddMemoryDependence(this->AddrToLastLoadInstMap, Addr,
-                                            DynamicInst->Id)) {
+                                            DynamicInst)) {
         this->NumMemDependences++;
       }
       // Update the last store map.
-      this->AddrToLastStoreInstMap.emplace(Addr, DynamicInst->Id);
+      this->AddrToLastStoreInstMap.emplace(Addr, DynamicInst);
     }
     return;
   }
@@ -454,7 +467,7 @@ void DynamicTrace::parseFunctionEnter(
         } else {
           // The previous inst must be a call.
           DynamicInstruction* PrevDynamicInstruction =
-              this->DyanmicInstsMap.at(this->CurrentDynamicId - 1);
+              this->DynamicInstructionListTail;
           assert(llvm::isa<llvm::CallInst>(
                      PrevDynamicInstruction->StaticInstruction) &&
                  "The previous instruction is not a call");
@@ -588,7 +601,7 @@ void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
     // Get the previous basic block.
 
     DynamicInstruction* PrevNonPhiDynamicInstruction =
-        this->getPreviousNonPhiDynamicInstruction(DynamicInst->Id);
+        this->getPreviousNonPhiDynamicInstruction(DynamicInst);
 
     assert(PrevNonPhiDynamicInstruction != nullptr &&
            "There should have at least one dynamic instruction before phi "
@@ -748,14 +761,13 @@ DynamicInstruction* DynamicTrace::getPreviousDynamicInstruction() {
 }
 
 DynamicInstruction* DynamicTrace::getPreviousNonPhiDynamicInstruction(
-    DynamicId CurrentDynamicId) {
-  while (CurrentDynamicId > 0) {
-    DynamicInstruction* DInstruction =
-        this->DyanmicInstsMap.at(CurrentDynamicId - 1);
+    DynamicInstruction* DynamicInst) {
+  while (DynamicInst != nullptr && DynamicInst->Prev != nullptr) {
+    DynamicInstruction* DInstruction = DynamicInst->Prev;
     if (!llvm::isa<llvm::PHINode>(DInstruction->StaticInstruction)) {
       return DInstruction;
     }
-    CurrentDynamicId--;
+    DynamicInst = DynamicInst->Prev;
   }
   return nullptr;
 }

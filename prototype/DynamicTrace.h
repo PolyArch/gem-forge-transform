@@ -24,9 +24,10 @@ class DynamicInstruction {
  public:
   using DynamicId = uint64_t;
 
-  DynamicInstruction(DynamicId _Id, llvm::Instruction* _StaticInstruction,
+  DynamicInstruction(llvm::Instruction* _StaticInstruction,
                      DynamicValue* _DynamicResult,
-                     std::vector<DynamicValue*> _DynamicOperands);
+                     std::vector<DynamicValue*> _DynamicOperands,
+                     DynamicInstruction* _Prev, DynamicInstruction* _Next);
   // Not copiable.
   DynamicInstruction(const DynamicInstruction& other) = delete;
   DynamicInstruction& operator=(const DynamicInstruction& other) = delete;
@@ -36,9 +37,11 @@ class DynamicInstruction {
 
   ~DynamicInstruction();
 
-  DynamicId Id;
   llvm::Instruction* StaticInstruction;
   DynamicValue* DynamicResult;
+
+  DynamicInstruction* Prev;
+  DynamicInstruction* Next;
 
   // This is important to store some constant/non-instruction generated
   // operands
@@ -57,10 +60,18 @@ class DynamicTrace {
   DynamicTrace(DynamicTrace&& other) = delete;
   DynamicTrace& operator=(DynamicTrace&& other) = delete;
 
-  std::unordered_map<DynamicId, std::unordered_set<DynamicId>> RegDeps;
-  std::unordered_map<DynamicId, std::unordered_set<DynamicId>> CtrDeps;
-  std::unordered_map<DynamicId, std::unordered_set<DynamicId>> MemDeps;
-  std::unordered_map<DynamicId, DynamicInstruction*> DyanmicInstsMap;
+  DynamicInstruction* DynamicInstructionListHead;
+  DynamicInstruction* DynamicInstructionListTail;
+
+  std::unordered_map<DynamicInstruction*,
+                     std::unordered_set<DynamicInstruction*>>
+      RegDeps;
+  std::unordered_map<DynamicInstruction*,
+                     std::unordered_set<DynamicInstruction*>>
+      CtrDeps;
+  std::unordered_map<DynamicInstruction*,
+                     std::unordered_set<DynamicInstruction*>>
+      MemDeps;
 
   // Map from llvm static instructions to dynamic instructions.
   // Ordered by the apperance of that dynamic instruction in the trace.
@@ -110,8 +121,6 @@ class DynamicTrace {
   void parseDynamicInstruction(const std::list<std::string>& LineBuffer);
   void parseFunctionEnter(const std::list<std::string>& LineBuffer);
 
-  DynamicId CurrentDynamicId;
-
   std::string CurrentFunctionName;
   std::string CurrentBasicBlockName;
   int CurrentIndex;
@@ -130,26 +139,26 @@ class DynamicTrace {
   DynamicInstruction* getPreviousDynamicInstruction();
 
   DynamicInstruction* getPreviousNonPhiDynamicInstruction(
-      DynamicId CurrentDynamicId);
+      DynamicInstruction* DynamicInst);
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.
-  std::unordered_map<uint64_t, DynamicId> AddrToLastStoreInstMap;
+  std::unordered_map<uint64_t, DynamicInstruction*> AddrToLastStoreInstMap;
   // A map from virtual address to the last dynamic load instructions that
   // reads from it.
-  std::unordered_map<uint64_t, DynamicId> AddrToLastLoadInstMap;
+  std::unordered_map<uint64_t, DynamicInstruction*> AddrToLastLoadInstMap;
 
   // Handle the RAW, WAW, WAR dependence.
   void handleMemoryDependence(DynamicInstruction* DynamicInst);
 
   // Return true if there is a dependence.
   bool checkAndAddMemoryDependence(
-      std::unordered_map<uint64_t, DynamicId>& LastMap, uint64_t Addr,
-      DynamicId CurrentDynamicId);
+      std::unordered_map<uint64_t, DynamicInstruction*>& LastMap, uint64_t Addr,
+      DynamicInstruction* DynamicInst);
 
-  void handleRegisterDependence(DynamicId CurrentDynamicId,
+  void handleRegisterDependence(DynamicInstruction* DynamicInst,
                                 llvm::Instruction* StaticInstruction);
-  void addRegisterDependence(DynamicId CurrentDynamicId,
+  void addRegisterDependence(DynamicInstruction* DynamicInst,
                              llvm::Instruction* OperandStaticInst);
   llvm::Instruction* resolveRegisterDependenceInPhiNode(
       llvm::Instruction* OperandStaticInst);

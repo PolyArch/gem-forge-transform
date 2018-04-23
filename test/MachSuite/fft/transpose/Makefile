@@ -1,7 +1,7 @@
 KERN=fft
 ALG=transpose
 
-CFLAGS?=-O3 -Wall -Wno-unused-label
+override CFLAGS:=$(CFLAGS) -O3 -Wall -Wno-unused-label
 
 SRCS=$(KERN).c local_support.c ../../common/support.c
 FILES=$(SRCS) $(KERN).h ../../common/support.h
@@ -12,12 +12,12 @@ LINK_FLAG=-lm
 ROOT_DIR=../../../..
 ALL_SRCS=$(SRCS) ../../common/harness.c
 
-include ../../Makefile.TDG
+include ../../Makefile.TDG.mk
 
 #####################################################################################
 
-$(KERN): $(FILES) ../../common/harness.c
-	$(CC) $(CFLAGS) -I../../common -o $(KERN) $(SRCS) ../../common/harness.c $(LINK_FLAG)
+# $(KERN): $(FILES) ../../common/harness.c
+# 	$(CC) $(CFLAGS) -I../../common -o $(KERN) $(SRCS) ../../common/harness.c $(LINK_FLAG)
 
 run: $(KERN) input.data check.data
 	./$(KERN) input.data check.data
