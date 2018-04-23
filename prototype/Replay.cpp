@@ -76,9 +76,6 @@ bool ReplayTrace::doInitialization(llvm::Module& Module) {
   // For now do not load in the trace.
   this->Trace = new DynamicTrace(TraceFileName, this->Module);
 
-  DEBUG(llvm::errs() << "Parsed # dynamic insts: "
-                     << this->Trace->DyanmicInstsMap.size() << '\n');
-
   // DEBUG(llvm::errs() << "Parsed # memory dependences: "
   //                    << this->Trace->NumMemDependences << '\n');
 
@@ -100,7 +97,7 @@ bool ReplayTrace::runOnFunction(llvm::Function& Function) {
       getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
   // A special hack: do not trace function which
   // returns a value, currently we donot support return in our trace.
-  if (!Function.getReturnType()->isVoidTy()) {  
+  if (!Function.getReturnType()->isVoidTy()) {
     Accelerable = false;
   }
   if (!Accelerable) {
@@ -160,11 +157,15 @@ void ReplayTrace::TransformTrace() {
   // Simply generate the output data graph for gem5 to use.
   std::ofstream OutTrace(this->OutTraceName);
   assert(OutTrace.is_open() && "Failed to open output trace file.");
-  for (DynamicId Id = 0, NumDynamicInsts = this->Trace->DyanmicInstsMap.size();
-       Id != NumDynamicInsts; ++Id) {
-    DynamicInstruction* DynamicInst = this->Trace->DyanmicInstsMap.at(Id);
-    this->formatInstruction(DynamicInst, OutTrace);
+  std::unordered_map<DynamicInstruction*, DynamicId> AllocatedDynamicIdMap;
+  DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
+  DynamicId Id = 0;
+  while (Iter != nullptr) {
+    AllocatedDynamicIdMap.emplace(Iter, Id);
+    this->formatInstruction(Iter, OutTrace, AllocatedDynamicIdMap);
     OutTrace << '\n';
+    Id++;
+    Iter = Iter->Next;
   }
   OutTrace.close();
 }
@@ -187,12 +188,14 @@ void ReplayTrace::registerFunction(llvm::Module& Module) {
 //************************************************************************//
 // Helper function to generate the trace for gem5.
 //************************************************************************//
-void ReplayTrace::formatInstruction(DynamicInstruction* DynamicInst,
-                                    std::ofstream& Out) {  // The op_code field.
+void ReplayTrace::formatInstruction(
+    DynamicInstruction* DynamicInst, std::ofstream& Out,
+    const std::unordered_map<DynamicInstruction*, DynamicId>&
+        AllocatedDynamicIdMap) {  // The op_code field.
   this->formatOpCode(DynamicInst->StaticInstruction, Out);
   Out << '|';
   // The dependence field.
-  this->formatDeps(DynamicInst, Out);
+  this->formatDeps(DynamicInst, Out, AllocatedDynamicIdMap);
   Out << '|';
   // Other fields for other isnsts.
   if (auto LoadStaticInstruction =
@@ -237,29 +240,31 @@ void ReplayTrace::formatInstruction(DynamicInstruction* DynamicInst,
   }
 }
 
-void ReplayTrace::formatDeps(DynamicInstruction* DynamicInst,
-                             std::ofstream& Out) {
+void ReplayTrace::formatDeps(
+    DynamicInstruction* DynamicInst, std::ofstream& Out,
+    const std::unordered_map<DynamicInstruction*, DynamicId>&
+        AllocatedDynamicIdMap) {
   {
-    auto DepIter = this->Trace->RegDeps.find(DynamicInst->Id);
+    auto DepIter = this->Trace->RegDeps.find(DynamicInst);
     if (DepIter != this->Trace->RegDeps.end()) {
-      for (const auto& DepId : DepIter->second) {
-        Out << DepId << ',';
+      for (const auto& DepInst : DepIter->second) {
+        Out << AllocatedDynamicIdMap.at(DepInst) << ',';
       }
     }
   }
   {
-    auto DepIter = this->Trace->MemDeps.find(DynamicInst->Id);
+    auto DepIter = this->Trace->MemDeps.find(DynamicInst);
     if (DepIter != this->Trace->MemDeps.end()) {
-      for (const auto& DepId : DepIter->second) {
-        Out << DepId << ',';
+      for (const auto& DepInst : DepIter->second) {
+        Out << AllocatedDynamicIdMap.at(DepInst) << ',';
       }
     }
   }
   {
-    auto DepIter = this->Trace->MemDeps.find(DynamicInst->Id);
+    auto DepIter = this->Trace->MemDeps.find(DynamicInst);
     if (DepIter != this->Trace->MemDeps.end()) {
-      for (const auto& DepId : DepIter->second) {
-        Out << DepId << ',';
+      for (const auto& DepInst : DepIter->second) {
+        Out << AllocatedDynamicIdMap.at(DepInst) << ',';
       }
     }
   }

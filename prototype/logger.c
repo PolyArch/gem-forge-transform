@@ -77,6 +77,11 @@ void printValue(const char* Tag, const char* Name, unsigned TypeId,
       log("%u|", value);
       break;
     }
+    case FloatTyID: {
+      float value = va_arg(VAList, float);
+      log("%f|", value);
+      break;
+    }
     case DoubleTyID: {
       double value = va_arg(VAList, double);
       log("%f|", value);

@@ -16,7 +16,7 @@
 #include <map>
 #include <set>
 
-#define TRACE_INST_ONLY
+// #define TRACE_INST_ONLY
 
 static llvm::cl::opt<std::string> TraceFunctionName(
     "trace-function", llvm::cl::desc("Trace function."));
@@ -218,7 +218,7 @@ class Prototype : public llvm::FunctionPass {
       NextInstIter++;
 
       std::string OpCodeName = InstIter->getOpcodeName();
-      DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
+      // DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
       llvm::Instruction* Inst = &*InstIter;
 
       if (auto* PHI = llvm::dyn_cast<llvm::PHINode>(Inst)) {
@@ -294,7 +294,7 @@ class Prototype : public llvm::FunctionPass {
                        llvm::Constant* FunctionNameValue,
                        llvm::Constant* BBNameValue, unsigned InstId) {
     std::string OpCodeName = Inst->getOpcodeName();
-    DEBUG(llvm::errs() << "traceNonPhiInst: " << OpCodeName << '\n');
+    // DEBUG(llvm::errs() << "traceNonPhiInst: " << OpCodeName << '\n');
     assert(OpCodeName != "phi" && "traceNonPhiInst can't trace phi inst.");
 
     std::vector<llvm::Value*> PrintInstArgs =
@@ -314,13 +314,14 @@ class Prototype : public llvm::FunctionPass {
 
     // Call printResult after the instruction (if it has a result).
     if (Inst->getName() != "") {
-      auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
       llvm::Instruction* NextInst = Inst->getNextNode();
       if (NextInst == nullptr) {
         // If this is the last inst, ignore it for now.
+        assert(false && "Missing tracing last inst in block.");
       } else {
         assert(NextInst != nullptr && "Null next inst.");
         Builder.SetInsertPoint(NextInst);
+        auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
         Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
       }
     }
