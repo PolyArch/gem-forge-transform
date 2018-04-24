@@ -37,8 +37,16 @@ class ReplayTrace : public llvm::FunctionPass {
 
   std::map<std::string, llvm::Constant*> GlobalStrings;
 
+  // This map stores heuristic of the number of micro-ops a static instruction
+  // can be translated into.
+  std::unordered_map<llvm::Instruction*, uint32_t> FakeNumMicroOps;
+
+  uint32_t estimateNumMicroOps(llvm::Instruction* StaticInstruction);
+
   // Insert all the print function declaration into the module.
   void registerFunction(llvm::Module& Module);
+
+  void fakeRegisterAllocation();
 
   //************************************************************************//
   // Helper function to generate the trace for gem5.
