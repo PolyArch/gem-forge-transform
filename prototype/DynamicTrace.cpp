@@ -86,8 +86,8 @@ DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
     Line = TraceFile->LineBuf;
     LineCount++;
     assert(LineLen == Line.size() && "Unmatched LineLen with Line.size().");
-    DEBUG(llvm::errs() << "Read in line # " << LineCount << ": " << Line
-                       << '\n');
+    // DEBUG(llvm::errs() << "Read in line # " << LineCount << ": " << Line
+    //                    << '\n');
     // DEBUG(llvm::errs() << "Head " << TraceFile->HeadIdx << " Tail "
     //                    << TraceFile->TailIdx << '\n');
 

@@ -29,7 +29,7 @@ def run_gem5(binary, binary_args):
         '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
         GEM5_SE_CONFIG,
         '--cmd={cmd}'.format(cmd=binary),
-        '--options="{binary_args}"'.format(binary_args=binary_args),
+        '--options={binary_args}'.format(binary_args=binary_args),
         '--caches',
         '--l2cache',
         '--cpu-type={cpu_type}'.format(cpu_type=CPU_TYPE),
@@ -57,7 +57,7 @@ def run_gem5_llvm_trace_cpu(binary, binary_args):
         GEM5_SE_CONFIG,
         '--cmd={cmd}'.format(cmd=binary),
         '--llvm-trace-file={trace_file}'.format(trace_file=LLVM_TRACE_FN),
-        '--options="{binary_args}"'.format(binary_args=binary_args),
+        '--options={binary_args}'.format(binary_args=binary_args),
         '--caches',
         '--l2cache',
         '--cpu-type={cpu_type}'.format(cpu_type=CPU_TYPE),
@@ -113,8 +113,9 @@ def run_single_test(binary, binary_args, workload_size):
     binary_trace = binary + '_trace'
     make_target(binary_trace, workload_size)
     # Run it for the trace.
-    subprocess.check_call(
-        ['./{binary}'.format(binary=binary_trace), binary_args])
+    trace_args = binary_args.split()
+    trace_args.insert(0, './{binary}'.format(binary=binary_trace))
+    subprocess.check_call(trace_args)
     # Build the replay binary.
     binary_replay = binary + '_replay'
     make_target(binary_replay, workload_size)
@@ -125,28 +126,61 @@ def run_single_test(binary, binary_args, workload_size):
     return (workload_size, gem5_stats_normal, gem5_stats_replay)
 
 
+def fit_stats(normals, replays):
+    fit = numpy.polyfit(normals, replays, 1)
+    print(
+        'fit {a}*normal + {b}'.format(a=fit[0], b=fit[1]))
+    fit_fn = numpy.poly1d(fit)
+    plt.plot(normals, replays, 'yo',
+             normals, fit_fn(normals), '--k')
+    plt.show()
+
+
+def verify_one_varialbe(results, variable):
+    normals = list()
+    replays = list()
+    for result in results:
+        normal = result[1][variable]
+        replay = result[2][variable]
+        print('{workload_size} {normal} {replay}'.format(
+            workload_size=result[0], normal=normal, replay=replay))
+        normals.append(normal)
+        replays.append(replay)
+    fit_stats(normals, replays)
+
+
+def verify_split_varialbe(results, variable_normal, variable_replay_cpu0, variable_replay_cpu1):
+    normals = list()
+    replays = list()
+    for result in results:
+        normal = result[1][variable_normal]
+        replay = result[2][variable_replay_cpu0] + \
+            result[2][variable_replay_cpu1]
+        print('{workload_size} {normal} {replay}'.format(
+            workload_size=result[0], normal=normal, replay=replay))
+        normals.append(normal)
+        replays.append(replay)
+    fit_stats(normals, replays)
+
+
 def verify(binary, binary_args):
     # Do the test with variable workload size.
     results = list()
-    for workload_size in xrange(1, 10):
+    for workload_size in xrange(1, 5):
         results.append(run_single_test(binary, binary_args, workload_size))
-    SIM_TICKS_FIELD = 'sim_ticks'
-    sim_ticks_normals = list()
-    sim_ticks_replays = list()
-    for result in results:
-        sim_ticks_normal = result[1][SIM_TICKS_FIELD]
-        sim_ticks_replay = result[2][SIM_TICKS_FIELD]
-        print('{workload_size} {normal} {replay}'.format(
-            workload_size=result[0], normal=sim_ticks_normal, replay=sim_ticks_replay))
-        sim_ticks_normals.append(sim_ticks_normal)
-        sim_ticks_replays.append(sim_ticks_replay)
-    sim_ticks_fit = numpy.polyfit(sim_ticks_normals, sim_ticks_replays, 1)
-    print(
-        'fit {a}*normal + {b}'.format(a=sim_ticks_fit[0], b=sim_ticks_fit[1]))
-    sim_ticks_fit_fn = numpy.poly1d(sim_ticks_fit)
-    plt.plot(sim_ticks_normals, sim_ticks_replays, 'yo',
-             sim_ticks_normals, sim_ticks_fit_fn(sim_ticks_normals), '--k')
-    plt.show()
+    verify_one_varialbe(results, 'sim_ticks')
+    # verify_one_varialbe(results, 'system.mem_ctrls.bytes_read::total')
+    # verify_one_varialbe(results, 'system.mem_ctrls.bytes_written::total')
+    # verify_split_varialbe(results, 'system.cpu.dcache.WriteReq_accesses::total',
+    #                       'system.cpu0.dcache.WriteReq_accesses::total', 'system.cpu1.dcache.WriteReq_accesses::total')
+    # verify_split_varialbe(results, 'system.cpu.dcache.ReadReq_accesses::total',
+    #                       'system.cpu0.dcache.ReadReq_accesses::total', 'system.cpu1.dcache.ReadReq_accesses::total')
+    verify_split_varialbe(results, 'system.cpu.commit.op_class_0::IntAlu',
+                          'system.cpu0.commit.op_class_0::IntAlu', 'system.cpu1.iew.FU_type_0::IntAlu')
+    verify_split_varialbe(results, 'system.cpu.commit.committedInsts',
+                          'system.cpu0.commit.committedInsts', 'system.cpu1.commit.committedInsts')
+    verify_split_varialbe(results, 'system.cpu.commit.committedOps',
+                          'system.cpu0.commit.committedOps', 'system.cpu1.commit.committedOps')
 
 
 def main(path, binary, binary_args):
@@ -156,4 +190,8 @@ def main(path, binary, binary_args):
 
 
 if __name__ == '__main__':
-    main('./hello', 'hello', '')
+    # main('./hello', 'hello', '')
+    main('./Vertical/EI', 'bench', '')
+    # main('./MachSuite/fft/strided', 'fft', 'input.data check.data')
+    # main('./MachSuite/fft/transpose', 'fft', 'input.data output.data')
+    # main('./MachSuite/kmp/kmp', 'kmp', 'input.data output.data')
