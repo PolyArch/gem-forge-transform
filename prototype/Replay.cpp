@@ -273,16 +273,30 @@ void ReplayTrace::fakeRegisterAllocation() {
   DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount << '\n');
 }
 
-uint32_t ReplayTrace::estimateNumMicroOps(llvm::Instruction* StaticInstruction) {
-  uint32_t fakeNumMicroOps = 1;
-  for (unsigned int Idx = 0, NumOperands = StaticInstruction->getNumOperands();
-       Idx != NumOperands; ++Idx) {
-    // Heuristic on the number of immediate number of operands.
-    if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx))) {
-      fakeNumMicroOps++;
-    }
-  }
-  return fakeNumMicroOps;
+uint32_t ReplayTrace::estimateNumMicroOps(
+    llvm::Instruction* StaticInstruction) {
+  uint32_t FakeNumMicroOps = 1;
+  // for (unsigned int Idx = 0, NumOperands = StaticInstruction->getNumOperands();
+  //      Idx != NumOperands; ++Idx) {
+  //   // Heuristic on the number of immediate number of operands.
+  //   if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx))) {
+  //     FakeNumMicroOps++;
+  //   }
+  // }
+  // This is handled by a fixed 12 cycle latency idiv fu in gem5.
+  // if (StaticInstruction->getOpcode() == llvm::Instruction::SDiv) {
+  //   FakeNumMicroOps += 12;
+  // }
+
+  // Special case for two additional mulel muleh microop.
+  // if (StaticInstruction->getOpcode() == llvm::Instruction::Mul) {
+  //   FakeNumMicroOps += 1;
+  // }
+  // if (StaticInstruction->getOpcode() == llvm::Instruction::Br) {
+  //   FakeNumMicroOps += 1;
+  // }
+
+  return FakeNumMicroOps;
 }
 
 // The default transformation is just an identical transformation.
