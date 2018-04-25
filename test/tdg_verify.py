@@ -27,6 +27,7 @@ def run_gem5(binary, binary_args):
     gem5_args = [
         GEM5_X86,
         '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
+        # '--debug-flags=I'
         GEM5_SE_CONFIG,
         '--cmd={cmd}'.format(cmd=binary),
         '--options={binary_args}'.format(binary_args=binary_args),
@@ -166,7 +167,7 @@ def verify_split_varialbe(results, variable_normal, variable_replay_cpu0, variab
 def verify(binary, binary_args):
     # Do the test with variable workload size.
     results = list()
-    for workload_size in xrange(1, 5):
+    for workload_size in xrange(1, 4):
         results.append(run_single_test(binary, binary_args, workload_size))
     verify_one_varialbe(results, 'sim_ticks')
     # verify_one_varialbe(results, 'system.mem_ctrls.bytes_read::total')
@@ -175,8 +176,12 @@ def verify(binary, binary_args):
     #                       'system.cpu0.dcache.WriteReq_accesses::total', 'system.cpu1.dcache.WriteReq_accesses::total')
     # verify_split_varialbe(results, 'system.cpu.dcache.ReadReq_accesses::total',
     #                       'system.cpu0.dcache.ReadReq_accesses::total', 'system.cpu1.dcache.ReadReq_accesses::total')
-    verify_split_varialbe(results, 'system.cpu.commit.op_class_0::IntAlu',
-                          'system.cpu0.commit.op_class_0::IntAlu', 'system.cpu1.iew.FU_type_0::IntAlu')
+    # verify_split_varialbe(results, 'system.cpu.commit.op_class_0::IntAlu',
+    #                       'system.cpu0.commit.op_class_0::IntAlu', 'system.cpu1.iew.FU_type_0::IntAlu')
+    verify_split_varialbe(results, 'system.cpu.commit.op_class_0::IntMult',
+                          'system.cpu0.commit.op_class_0::IntMult', 'system.cpu1.iew.FU_type_0::IntMult')
+    # verify_split_varialbe(results, 'system.cpu.commit.op_class_0::FloatMult',
+    #                       'system.cpu0.commit.op_class_0::FloatMult', 'system.cpu1.iew.FU_type_0::FloatMult')
     verify_split_varialbe(results, 'system.cpu.commit.committedInsts',
                           'system.cpu0.commit.committedInsts', 'system.cpu1.commit.committedInsts')
     verify_split_varialbe(results, 'system.cpu.commit.committedOps',
@@ -191,7 +196,11 @@ def main(path, binary, binary_args):
 
 if __name__ == '__main__':
     # main('./hello', 'hello', '')
-    main('./Vertical/EI', 'bench', '')
+    main('/home/sean/Documents/LLVM-TDG/test/Vertical/ED1', 'bench', '')
+    main('/home/sean/Documents/LLVM-TDG/test/Vertical/EI', 'bench', '')
+    main('/home/sean/Documents/LLVM-TDG/test/Vertical/EF', 'bench', '')
+    main('/home/sean/Documents/LLVM-TDG/test/Vertical/EM1', 'bench', '')
+    main('/home/sean/Documents/LLVM-TDG/test/Vertical/EM5', 'bench', '')
     # main('./MachSuite/fft/strided', 'fft', 'input.data check.data')
     # main('./MachSuite/fft/transpose', 'fft', 'input.data output.data')
     # main('./MachSuite/kmp/kmp', 'kmp', 'input.data output.data')
