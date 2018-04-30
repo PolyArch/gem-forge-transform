@@ -16,7 +16,7 @@ bool LocateAccelerableFunctions::doInitialization(llvm::CallGraph& CG) {
   this->MathAcclerableFunctionNames.insert("sin");
   this->MathAcclerableFunctionNames.insert("cos");
 
-  CG.dump();
+  // CG.dump();
   this->CallsExternalNode = CG.getCallsExternalNode();
   this->ExternalCallingNode = CG.getExternalCallingNode();
 

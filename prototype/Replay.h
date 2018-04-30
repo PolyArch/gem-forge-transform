@@ -34,6 +34,8 @@ class ReplayTrace : public llvm::FunctionPass {
   llvm::Module* Module;
 
   llvm::Value* ReplayFunc;
+  llvm::Instruction* FakeRegisterSpill;
+  llvm::Instruction* FakeRegisterFill;
 
   std::map<std::string, llvm::Constant*> GlobalStrings;
 
@@ -41,12 +43,12 @@ class ReplayTrace : public llvm::FunctionPass {
   // can be translated into.
   std::unordered_map<llvm::Instruction*, uint32_t> FakeNumMicroOps;
 
-  uint32_t estimateNumMicroOps(llvm::Instruction* StaticInstruction);
-
   // Insert all the print function declaration into the module.
   void registerFunction(llvm::Module& Module);
 
   void fakeRegisterAllocation();
+  void fakeMicroOps();
+  void fakeFixRegisterDeps();
 
   //************************************************************************//
   // Helper function to generate the trace for gem5.
@@ -58,7 +60,7 @@ class ReplayTrace : public llvm::FunctionPass {
   void formatDeps(DynamicInstruction* DynamicInst, std::ofstream& Out,
                   const std::unordered_map<DynamicInstruction*, DynamicId>&
                       AllocatedDynamicIdMap);
-  void formatOpCode(llvm::Instruction* StaticInstruction, std::ofstream& Out);
+  void formatOpCode(DynamicInstruction* DynamicInst, std::ofstream& Out);
 };
 
 #endif
