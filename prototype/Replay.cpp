@@ -71,6 +71,9 @@ void ReplayTrace::getAnalysisUsage(llvm::AnalysisUsage& Info) const {
 bool ReplayTrace::doInitialization(llvm::Module& Module) {
   this->Module = &Module;
 
+  // Register the external ioctl function.
+  registerFunction(Module);
+
   assert(TraceFileName.getNumOccurrences() == 1 &&
          "Please specify the trace file.");
   // For now do not load in the trace.
@@ -81,9 +84,6 @@ bool ReplayTrace::doInitialization(llvm::Module& Module) {
 
   // Generate the transformation of the trace.
   this->TransformTrace();
-
-  // Register the external ioctl function.
-  registerFunction(Module);
 
   return true;
 }
@@ -150,58 +150,62 @@ bool ReplayTrace::runOnFunction(llvm::Function& Function) {
   return true;
 }
 
-static llvm::LoadInst* createFakeLoad(llvm::Module& Module) {
-  llvm::Value* Addr = llvm::ConstantPointerNull::get(
-      llvm::IntegerType::getInt64PtrTy(Module.getContext()));
-  return new llvm::LoadInst(Addr, "fake");
-}
+class FakeDynamicInstruction : public DynamicInstruction {
+ public:
+  FakeDynamicInstruction(const std::string& _OpName,
+                         DynamicValue* _DynamicResult,
+                         std::vector<DynamicValue*> _DynamicOperands,
+                         DynamicInstruction* _Prev, DynamicInstruction* _Next)
+      : DynamicInstruction(_DynamicResult, std::move(_DynamicOperands), _Prev,
+                           _Next),
+        OpName(_OpName) {}
+  const std::string& getOpName() override { return this->OpName; }
+  std::string OpName;
+};
 
-static llvm::StoreInst* createFakeStore(llvm::Module& Module) {
-  llvm::Value* Addr = llvm::ConstantPointerNull::get(
-      llvm::IntegerType::getInt64PtrTy(Module.getContext()));
-  return new llvm::StoreInst(
-      llvm::ConstantInt::get(llvm::IntegerType::getInt64Ty(Module.getContext()),
-                             0),
-      Addr);
-}
-
-static DynamicInstruction* createFakeDynamicLoad(llvm::LoadInst* StaticInst) {
+static DynamicInstruction* createFakeDynamicLoad(
+    llvm::Instruction* StaticInst) {
+  assert(StaticInst != nullptr && "Null static instruction.");
   DynamicValue* Result = new DynamicValue("0");
   DynamicValue* Operand = new DynamicValue("0");
   Operand->MemBase = "$sp";
   Operand->MemOffset = 0;
   auto Operands = std::vector<DynamicValue*>{Operand};
-  return new DynamicInstruction(StaticInst, Result, std::move(Operands),
-                                nullptr, nullptr);
+  return new LLVMDynamicInstruction(StaticInst, Result, std::move(Operands),
+                                    nullptr, nullptr);
 }
 
-static DynamicInstruction* createFakeDynamicStore(llvm::StoreInst* StaticInst) {
+static DynamicInstruction* createFakeDynamicStore(
+    llvm::Instruction* StaticInst) {
   DynamicValue* StoreValue = new DynamicValue("0");
   DynamicValue* Operand = new DynamicValue("0");
   Operand->MemBase = "$sp";
   Operand->MemOffset = 0;
   auto Operands = std::vector<DynamicValue*>{StoreValue, Operand};
-  return new DynamicInstruction(StaticInst, nullptr, std::move(Operands),
-                                nullptr, nullptr);
+  return new LLVMDynamicInstruction(StaticInst, nullptr, std::move(Operands),
+                                    nullptr, nullptr);
 }
 
 static void insertDynamicInst(DynamicInstruction* NewInst,
                               DynamicInstruction* InsertAfter,
-                              DynamicInstruction* InsertBefore) {
+                              DynamicInstruction* InsertBefore,
+                              DynamicInstruction** Head,
+                              DynamicInstruction** Tail) {
   NewInst->Prev = InsertAfter;
   NewInst->Next = InsertBefore;
-  if (InsertBefore == nullptr && InsertAfter == nullptr) {
-    return;
-  }
   if (InsertAfter != nullptr) {
     assert(InsertAfter->Next == InsertBefore &&
            "Invalid next dynamic instruction.");
     InsertAfter->Next = NewInst;
+  } else {
+    *Head = NewInst;
   }
   if (InsertBefore != nullptr) {
     assert(InsertBefore->Prev == InsertAfter &&
            "Invalid prev dynamic instruction.");
     InsertBefore->Prev = NewInst;
+  } else {
+    *Tail = NewInst;
   }
 }
 
@@ -209,10 +213,7 @@ void ReplayTrace::fakeRegisterAllocation() {
   assert(this->Trace != nullptr &&
          "Must have a trace to be transformed to fake register allocation.");
 
-  const size_t NUM_PHYS_REGS = 16;
-
-  auto FakeStaticLoad = createFakeLoad(*(this->Module));
-  auto FakeStaticStore = createFakeStore(*(this->Module));
+  const size_t NUM_PHYS_REGS = 8;
 
   DynamicInstruction* Iter = this->Trace->DynamicInstructionListTail;
   std::unordered_set<DynamicInstruction*> LiveDynamicInsts;
@@ -249,15 +250,20 @@ void ReplayTrace::fakeRegisterAllocation() {
           LiveDynamicInsts.erase(SpillInst);
           FakeSpillCount++;
           // Simply insert a fake load/store pair of 64 bits to stack.
-          auto FakeDynamicLoad = createFakeDynamicLoad(FakeStaticLoad);
-          auto FakeDynamicStore = createFakeDynamicStore(FakeStaticStore);
+          auto FakeDynamicLoad = createFakeDynamicLoad(this->FakeRegisterFill);
+          auto FakeDynamicStore =
+              createFakeDynamicStore(this->FakeRegisterSpill);
           // Add a simple reg dependence between load and iter.
           // store
           // load
           // iter
           // Insert into the list.
-          insertDynamicInst(FakeDynamicStore, Iter->Prev, Iter);
-          insertDynamicInst(FakeDynamicLoad, Iter->Prev, Iter);
+          insertDynamicInst(FakeDynamicStore, Iter->Prev, Iter,
+                            &(this->Trace->DynamicInstructionListHead),
+                            &(this->Trace->DynamicInstructionListTail));
+          insertDynamicInst(FakeDynamicLoad, Iter->Prev, Iter,
+                            &(this->Trace->DynamicInstructionListHead),
+                            &(this->Trace->DynamicInstructionListTail));
           InsertedDynamicLoads.emplace_back(FakeDynamicLoad);
         }
         // Add the dep inst into the live set.
@@ -273,37 +279,144 @@ void ReplayTrace::fakeRegisterAllocation() {
   DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount << '\n');
 }
 
-uint32_t ReplayTrace::estimateNumMicroOps(
-    llvm::Instruction* StaticInstruction) {
-  uint32_t FakeNumMicroOps = 1;
-  // for (unsigned int Idx = 0, NumOperands = StaticInstruction->getNumOperands();
-  //      Idx != NumOperands; ++Idx) {
-  //   // Heuristic on the number of immediate number of operands.
-  //   if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx))) {
-  //     FakeNumMicroOps++;
-  //   }
-  // }
-  // This is handled by a fixed 12 cycle latency idiv fu in gem5.
-  // if (StaticInstruction->getOpcode() == llvm::Instruction::SDiv) {
-  //   FakeNumMicroOps += 12;
-  // }
+static DynamicInstruction* createFakeDynamicLIMM() {
+  auto Operands = std::vector<DynamicValue*>();
+  return new FakeDynamicInstruction("limm", nullptr, std::move(Operands),
+                                    nullptr, nullptr);
+}
 
-  // Special case for two additional mulel muleh microop.
-  // if (StaticInstruction->getOpcode() == llvm::Instruction::Mul) {
-  //   FakeNumMicroOps += 1;
-  // }
-  // if (StaticInstruction->getOpcode() == llvm::Instruction::Br) {
-  //   FakeNumMicroOps += 1;
-  // }
+void ReplayTrace::fakeFixRegisterDeps() {
+  DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
+  // In gem5, mul/div is fixed to write to rax.
+  // We fake this dependence.
+  DynamicInstruction* PrevMulDivInst = nullptr;
+  while (Iter != nullptr) {
+    if (Iter->getStaticInstruction() != nullptr) {
+      auto StaticInstruction = Iter->getStaticInstruction();
+      switch (StaticInstruction->getOpcode()) {
+        case llvm::Instruction::Mul:
+        case llvm::Instruction::UDiv:
+        case llvm::Instruction::SDiv:
+        case llvm::Instruction::URem:
+        case llvm::Instruction::SRem: {
+          // Add the fake register dependence.
+          if (PrevMulDivInst != nullptr) {
+            if (this->Trace->RegDeps.find(Iter) == this->Trace->RegDeps.end()) {
+              this->Trace->RegDeps.emplace(
+                  Iter, std::unordered_set<DynamicInstruction*>());
+            }
+            this->Trace->RegDeps.at(Iter).insert(PrevMulDivInst);
+          }
+          PrevMulDivInst = Iter;
+          break;
+        }
+        default:
+          break;
+      }
+      Iter = Iter->Next;
+    }
+  }
+}
 
-  return FakeNumMicroOps;
+void ReplayTrace::fakeMicroOps() {
+  DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
+  while (Iter != nullptr) {
+    auto IterPrev = Iter->Prev;
+    auto IterNext = Iter->Next;
+
+    if (Iter->getStaticInstruction() != nullptr) {
+      // This is an llvm instruction.
+      auto StaticInstruction = Iter->getStaticInstruction();
+
+      // Ignore all the phi node and switch.
+      if (StaticInstruction->getOpcode() != llvm::Instruction::PHI &&
+          StaticInstruction->getOpcode() != llvm::Instruction::Switch) {
+        // Fake micro ops pending to be inserted.
+        // If 1, means that the fake micro op should be inserted
+        // into the dependent path.
+        std::vector<uint8_t> FakeNumMicroOps;
+        for (unsigned int Idx = 0,
+                          NumOperands = StaticInstruction->getNumOperands();
+             Idx != NumOperands; ++Idx) {
+          if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx))) {
+            // This is an immediate number.
+            // No dependency for loading an immediate.
+            FakeNumMicroOps.push_back(0);
+          }
+        }
+
+        switch (StaticInstruction->getOpcode()) {
+          case llvm::Instruction::Mul: {
+            // Add mulel and muleh op.
+            // Normally this should be
+            // mulix
+            // mulel
+            // mules
+            // But now we fake it as:
+            // limm
+            // limm
+            // mul
+            FakeNumMicroOps.push_back(0);
+            FakeNumMicroOps.push_back(0);
+            break;
+          }
+          case llvm::Instruction::Br: {
+            // rdip
+            // wrip
+            FakeNumMicroOps.push_back(1);
+            // FakeNumMicroOps.push_back(0);
+            break;
+          }
+          default:
+            break;
+        }
+
+        std::vector<DynamicInstruction*> Fakes;
+        Fakes.reserve(FakeNumMicroOps.size());
+        for (const auto FakeDep : FakeNumMicroOps) {
+          auto FakeInstruction = createFakeDynamicLIMM();
+          if (FakeDep == 1) {
+            // If FakeDep, make the micro op dependent on inst's dependence.
+            if (this->Trace->RegDeps.find(Iter) != this->Trace->RegDeps.end()) {
+              this->Trace->RegDeps.emplace(FakeInstruction,
+                                           this->Trace->RegDeps.at(Iter));
+            }
+            if (this->Trace->CtrDeps.find(Iter) != this->Trace->CtrDeps.end()) {
+              this->Trace->CtrDeps.emplace(FakeInstruction,
+                                           this->Trace->CtrDeps.at(Iter));
+            }
+          }
+          Fakes.push_back(FakeInstruction);
+        }
+
+        for (auto FakeOp : Fakes) {
+          insertDynamicInst(FakeOp, IterPrev, Iter,
+                            &(this->Trace->DynamicInstructionListHead),
+                            &(this->Trace->DynamicInstructionListTail));
+          // Fix the dependence.
+          // Make the inst dependent on the micro op.
+          if (this->Trace->RegDeps.find(Iter) == this->Trace->RegDeps.end()) {
+            this->Trace->RegDeps.emplace(
+                Iter, std::unordered_set<DynamicInstruction*>());
+          }
+          this->Trace->RegDeps.at(Iter).insert(FakeOp);
+          IterPrev = FakeOp;
+        }
+      }
+    }
+
+    Iter = IterNext;
+  }
 }
 
 // The default transformation is just an identical transformation.
 // Other pass can override this function to perform their own transformation.
 void ReplayTrace::TransformTrace() {
   assert(this->Trace != nullptr && "Must have a trace to be transformed.");
+  // First we fake the register allocation, and then the micro ops.
   // this->fakeRegisterAllocation();
+  // this->fakeFixRegisterDeps();
+  this->fakeMicroOps();
   // Simply generate the output data graph for gem5 to use.
   std::ofstream OutTrace(this->OutTraceName);
   assert(OutTrace.is_open() && "Failed to open output trace file.");
@@ -333,6 +446,27 @@ void ReplayTrace::registerFunction(llvm::Module& Module) {
   };
   auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, true);
   this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy);
+
+  auto FakeRegisterAllocationTy = llvm::FunctionType::get(VoidTy, false);
+  auto FakeRegisterAllocationFunc = llvm::Function::Create(
+      FakeRegisterAllocationTy, llvm::Function::InternalLinkage,
+      "LLVM_TDG_FAKE_REGISTER_ALLOCATION", &Module);
+
+  auto FakeRegisterAllocationBB = llvm::BasicBlock::Create(
+      Module.getContext(), "entry", FakeRegisterAllocationFunc);
+  llvm::IRBuilder<> Builder(FakeRegisterAllocationBB);
+
+  auto FakeRegisterAllocationAddr = llvm::ConstantPointerNull::get(
+      llvm::IntegerType::getInt64PtrTy(Module.getContext()));
+  auto FakeRegisterAllocationValue = llvm::ConstantInt::get(
+      llvm::IntegerType::getInt64Ty(Module.getContext()), 0);
+
+  this->FakeRegisterFill =
+      Builder.CreateLoad(FakeRegisterAllocationAddr, "FakeRegisterFill64");
+  this->FakeRegisterSpill = Builder.CreateStore(FakeRegisterAllocationValue,
+                                                FakeRegisterAllocationAddr);
+  DEBUG(llvm::errs() << this->FakeRegisterFill->getName() << '\n');
+  Builder.CreateRetVoid();
 }
 
 //************************************************************************//
@@ -342,27 +476,23 @@ void ReplayTrace::formatInstruction(
     DynamicInstruction* DynamicInst, std::ofstream& Out,
     const std::unordered_map<DynamicInstruction*, DynamicId>&
         AllocatedDynamicIdMap) {  // The op_code field.
-  this->formatOpCode(DynamicInst->StaticInstruction, Out);
+  this->formatOpCode(DynamicInst, Out);
   Out << '|';
   // The faked number of micro ops.
   uint32_t FakeNumMicroOps = 1;
-  llvm::Instruction* StaticInstruction = DynamicInst->StaticInstruction;
-  if (StaticInstruction != nullptr) {
-    auto FakeNumMicroOpIter = this->FakeNumMicroOps.find(StaticInstruction);
-    if (FakeNumMicroOpIter == this->FakeNumMicroOps.end()) {
-      FakeNumMicroOps = this->estimateNumMicroOps(StaticInstruction);
-      this->FakeNumMicroOps.emplace(StaticInstruction, FakeNumMicroOps);
-    } else {
-      FakeNumMicroOps = FakeNumMicroOpIter->second;
-    }
-  }
   Out << FakeNumMicroOps << '|';
   // The dependence field.
   this->formatDeps(DynamicInst, Out, AllocatedDynamicIdMap);
   Out << '|';
-  // Other fields for other isnsts.
+  // Other fields for other insts.
+  // If this is a self defined inst.
+  if (DynamicInst->getStaticInstruction() == nullptr) {
+    // Simply return.
+    return;
+  }
+
   if (auto LoadStaticInstruction =
-          llvm::dyn_cast<llvm::LoadInst>(DynamicInst->StaticInstruction)) {
+          llvm::dyn_cast<llvm::LoadInst>(DynamicInst->getStaticInstruction())) {
     // base|offset|trace_vaddr|size|
     DynamicValue* LoadedAddr = DynamicInst->DynamicOperands[0];
     uint64_t LoadedSize = this->Trace->DataLayout->getTypeStoreSize(
@@ -370,11 +500,13 @@ void ReplayTrace::formatInstruction(
             ->getPointerElementType());
     Out << LoadedAddr->MemBase << '|' << LoadedAddr->MemOffset << '|'
         << LoadedAddr->Value << '|' << LoadedSize << '|';
+    // This load inst will produce some new base for future memory access.
+    Out << DynamicInst->DynamicResult->MemBase << '|';
     return;
   }
 
-  if (auto StoreStaticInstruction =
-          llvm::dyn_cast<llvm::StoreInst>(DynamicInst->StaticInstruction)) {
+  if (auto StoreStaticInstruction = llvm::dyn_cast<llvm::StoreInst>(
+          DynamicInst->getStaticInstruction())) {
     // base|offset|trace_vaddr|size|type_id|type_name|value|
     DynamicValue* StoredAddr = DynamicInst->DynamicOperands[1];
     llvm::Type* StoredType = StoreStaticInstruction->getPointerOperandType()
@@ -392,8 +524,8 @@ void ReplayTrace::formatInstruction(
     return;
   }
 
-  if (auto AllocaStaticInstruction =
-          llvm::dyn_cast<llvm::AllocaInst>(DynamicInst->StaticInstruction)) {
+  if (auto AllocaStaticInstruction = llvm::dyn_cast<llvm::AllocaInst>(
+          DynamicInst->getStaticInstruction())) {
     // base|trace_vaddr|size|
     uint64_t AllocatedSize = this->Trace->DataLayout->getTypeStoreSize(
         AllocaStaticInstruction->getAllocatedType());
@@ -424,8 +556,8 @@ void ReplayTrace::formatDeps(
     }
   }
   {
-    auto DepIter = this->Trace->MemDeps.find(DynamicInst);
-    if (DepIter != this->Trace->MemDeps.end()) {
+    auto DepIter = this->Trace->CtrDeps.find(DynamicInst);
+    if (DepIter != this->Trace->CtrDeps.end()) {
       for (const auto& DepInst : DepIter->second) {
         Out << AllocatedDynamicIdMap.at(DepInst) << ',';
       }
@@ -433,8 +565,16 @@ void ReplayTrace::formatDeps(
   }
 }
 
-void ReplayTrace::formatOpCode(llvm::Instruction* StaticInstruction,
+void ReplayTrace::formatOpCode(DynamicInstruction* DynamicInst,
                                std::ofstream& Out) {
+  llvm::Instruction* StaticInstruction = DynamicInst->getStaticInstruction();
+
+  // DEBUG(llvm::errs() << "Format " << DynamicInst->getOpName() << '\n');
+  if (StaticInstruction == nullptr) {
+    // Self defined instruction.
+    Out << DynamicInst->getOpName();
+    return;
+  }
   if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(StaticInstruction)) {
     llvm::Function* Callee = CallInst->getCalledFunction();
     if (Callee->isIntrinsic()) {

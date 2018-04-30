@@ -24,8 +24,7 @@ class DynamicInstruction {
  public:
   using DynamicId = uint64_t;
 
-  DynamicInstruction(llvm::Instruction* _StaticInstruction,
-                     DynamicValue* _DynamicResult,
+  DynamicInstruction(DynamicValue* _DynamicResult,
                      std::vector<DynamicValue*> _DynamicOperands,
                      DynamicInstruction* _Prev, DynamicInstruction* _Next);
   // Not copiable.
@@ -35,9 +34,10 @@ class DynamicInstruction {
   DynamicInstruction(DynamicInstruction&& other) = delete;
   DynamicInstruction& operator=(DynamicInstruction&& other) = delete;
 
-  ~DynamicInstruction();
+  virtual ~DynamicInstruction();
+  virtual const std::string& getOpName() = 0;
+  virtual llvm::Instruction* getStaticInstruction() { return nullptr; }
 
-  llvm::Instruction* StaticInstruction;
   DynamicValue* DynamicResult;
 
   DynamicInstruction* Prev;
@@ -46,6 +46,27 @@ class DynamicInstruction {
   // This is important to store some constant/non-instruction generated
   // operands
   std::vector<DynamicValue*> DynamicOperands;
+};
+
+class LLVMDynamicInstruction : public DynamicInstruction {
+ public:
+  LLVMDynamicInstruction(llvm::Instruction* _StaticInstruction,
+                         DynamicValue* _DynamicResult,
+                         std::vector<DynamicValue*> _DynamicOperands,
+                         DynamicInstruction* _Prev, DynamicInstruction* _Next);
+  // Not copiable.
+  LLVMDynamicInstruction(const LLVMDynamicInstruction& other) = delete;
+  LLVMDynamicInstruction& operator=(const LLVMDynamicInstruction& other) =
+      delete;
+  // Not Movable.
+  LLVMDynamicInstruction(LLVMDynamicInstruction&& other) = delete;
+  LLVMDynamicInstruction& operator=(LLVMDynamicInstruction&& other) = delete;
+  const std::string& getOpName() override { return this->OpName; }
+  llvm::Instruction* getStaticInstruction() override {
+    return this->StaticInstruction;
+  }
+  llvm::Instruction* StaticInstruction;
+  std::string OpName;
 };
 
 class DynamicTrace {
@@ -140,6 +161,8 @@ class DynamicTrace {
 
   DynamicInstruction* getPreviousNonPhiDynamicInstruction(
       DynamicInstruction* DynamicInst);
+  DynamicInstruction* getPreviousBranchDynamicInstruction(
+      DynamicInstruction* DynamicInst);
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.
@@ -150,6 +173,8 @@ class DynamicTrace {
 
   // Handle the RAW, WAW, WAR dependence.
   void handleMemoryDependence(DynamicInstruction* DynamicInst);
+
+  void handleControlDependence(DynamicInstruction* DynamicInst);
 
   // Return true if there is a dependence.
   bool checkAndAddMemoryDependence(

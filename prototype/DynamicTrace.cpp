@@ -13,14 +13,34 @@ DynamicValue::DynamicValue(const std::string& _Value)
     : Value(_Value), MemBase(""), MemOffset(0) {}
 
 DynamicInstruction::DynamicInstruction(
+    DynamicValue* _DynamicResult, std::vector<DynamicValue*> _DynamicOperands,
+    DynamicInstruction* _Prev, DynamicInstruction* _Next)
+    : DynamicResult(_DynamicResult),
+      DynamicOperands(std::move(_DynamicOperands)),
+      Prev(_Prev),
+      Next(_Next) {}
+
+DynamicInstruction::~DynamicInstruction() {
+  if (this->DynamicResult != nullptr) {
+    delete this->DynamicResult;
+    this->DynamicResult = nullptr;
+  }
+  for (auto& OperandsIter : this->DynamicOperands) {
+    if (OperandsIter != nullptr) {
+      delete OperandsIter;
+      OperandsIter = nullptr;
+    }
+  }
+}
+
+LLVMDynamicInstruction::LLVMDynamicInstruction(
     llvm::Instruction* _StaticInstruction, DynamicValue* _DynamicResult,
     std::vector<DynamicValue*> _DynamicOperands, DynamicInstruction* _Prev,
     DynamicInstruction* _Next)
-    : StaticInstruction(_StaticInstruction),
-      DynamicResult(_DynamicResult),
-      DynamicOperands(std::move(_DynamicOperands)),
-      Prev(_Prev),
-      Next(_Next) {
+    : DynamicInstruction(_DynamicResult, std::move(_DynamicOperands), _Prev,
+                         _Next),
+      StaticInstruction(_StaticInstruction),
+      OpName(StaticInstruction->getOpcodeName()) {
   assert(this->StaticInstruction != nullptr &&
          "Non null static instruction ptr.");
   if (this->DynamicResult != nullptr) {
@@ -38,19 +58,6 @@ DynamicInstruction::DynamicInstruction(
     if (!llvm::isa<llvm::CallInst>(_StaticInstruction)) {
       assert(this->StaticInstruction->getName() == "" &&
              "Missing DynamicResult for non-call instruction.");
-    }
-  }
-}
-
-DynamicInstruction::~DynamicInstruction() {
-  if (this->DynamicResult != nullptr) {
-    delete this->DynamicResult;
-    this->DynamicResult = nullptr;
-  }
-  for (auto& OperandsIter : this->DynamicOperands) {
-    if (OperandsIter != nullptr) {
-      delete OperandsIter;
-      OperandsIter = nullptr;
     }
   }
 }
@@ -224,13 +231,14 @@ void DynamicTrace::parseDynamicInstruction(
   }
 
   // Create the new dynamic instructions.
-  DynamicInstruction* DynamicInst = new DynamicInstruction(
+  DynamicInstruction* DynamicInst = new LLVMDynamicInstruction(
       StaticInstruction, DynamicResult, std::move(DynamicOperands),
       this->DynamicInstructionListTail, nullptr);
 
   // For now do not handle any dependences.
   this->handleRegisterDependence(DynamicInst, StaticInstruction);
   this->handleMemoryDependence(DynamicInst);
+  this->handleControlDependence(DynamicInst);
 
   // Handle the memory base/offset.
   this->handleMemoryBase(DynamicInst);
@@ -276,7 +284,7 @@ void DynamicTrace::handleRegisterDependence(
     assert(PrevNonPhiDYnamicInstruction != nullptr &&
            "There should be a non-phi inst before phi inst.");
     llvm::BasicBlock* PrevBasicBlock =
-        PrevNonPhiDYnamicInstruction->StaticInstruction->getParent();
+        PrevNonPhiDYnamicInstruction->getStaticInstruction()->getParent();
     // Check all the incoming values.
     for (unsigned int OperandId = 0,
                       NumOperands = PhiStaticInst->getNumIncomingValues();
@@ -341,7 +349,7 @@ llvm::Instruction* DynamicTrace::resolveRegisterDependenceInPhiNode(
       assert(PhiDependentSet.size() <= 1 &&
              "Dependent Phi node should have at most one dynamic dependence.");
       if (PhiDependentSet.size() == 1) {
-        OperandStaticInst = (*PhiDependentSet.begin())->StaticInstruction;
+        OperandStaticInst = (*PhiDependentSet.begin())->getStaticInstruction();
       } else {
         // There is no dependence after all the phi node is resovled.
         OperandStaticInst = nullptr;
@@ -372,7 +380,7 @@ bool DynamicTrace::checkAndAddMemoryDependence(
 
 void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
   if (auto LoadStaticInstruction =
-          llvm::dyn_cast<llvm::LoadInst>(DynamicInst->StaticInstruction)) {
+          llvm::dyn_cast<llvm::LoadInst>(DynamicInst->getStaticInstruction())) {
     // Handle RAW dependence.
     assert(DynamicInst->DynamicOperands.size() == 1 &&
            "Invalid number of dynamic operands for load.");
@@ -394,8 +402,8 @@ void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
     return;
   }
 
-  if (auto StoreStaticInstruction =
-          llvm::dyn_cast<llvm::StoreInst>(DynamicInst->StaticInstruction)) {
+  if (auto StoreStaticInstruction = llvm::dyn_cast<llvm::StoreInst>(
+          DynamicInst->getStaticInstruction())) {
     // Handle WAW and WAR dependence.
     assert(DynamicInst->DynamicOperands.size() == 2 &&
            "Invalid number of dynamic operands for store.");
@@ -469,7 +477,7 @@ void DynamicTrace::parseFunctionEnter(
           DynamicInstruction* PrevDynamicInstruction =
               this->DynamicInstructionListTail;
           assert(llvm::isa<llvm::CallInst>(
-                     PrevDynamicInstruction->StaticInstruction) &&
+                     PrevDynamicInstruction->getStaticInstruction()) &&
                  "The previous instruction is not a call");
           DynamicArgument->MemBase =
               PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemBase;
@@ -589,7 +597,7 @@ DynamicInstruction* DynamicTrace::getLatestDynamicIdForStaticInstruction(
 }
 
 void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
-  llvm::Instruction* StaticInstruction = DynamicInst->StaticInstruction;
+  llvm::Instruction* StaticInstruction = DynamicInst->getStaticInstruction();
 
   // DEBUG(llvm::errs() << "handle memory base for inst "
   //                    << StaticInstruction->getFunction()->getName()
@@ -608,7 +616,7 @@ void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
            "instruction.");
 
     llvm::BasicBlock* PrevBasicBlock =
-        PrevNonPhiDynamicInstruction->StaticInstruction->getParent();
+        PrevNonPhiDynamicInstruction->getStaticInstruction()->getParent();
     // Check all the incoming values.
     for (unsigned int OperandIndex = 0,
                       NumOperands = PhiStaticInst->getNumIncomingValues();
@@ -746,6 +754,42 @@ void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
     DynamicInst->DynamicResult->MemOffset = BaseValue->MemOffset;
     return;
   }
+
+  // To have some basic support of dynamic memory access.
+  if (auto LoadStaticInstruction =
+          llvm::dyn_cast<llvm::LoadInst>(StaticInstruction)) {
+    // We only worried about this if we are loading an pointer.
+    if (LoadStaticInstruction->getType()->isPointerTy()) {
+      // In that case, we init the base to itself, offset to 0.
+      DynamicInst->DynamicResult->MemBase = LoadStaticInstruction->getName();
+      DynamicInst->DynamicResult->MemOffset = 0;
+
+      {
+        static int count = 0;
+        if (count < 5) {
+          DEBUG(llvm::errs()
+                << "LOAD " << DynamicInst->DynamicResult->MemBase << ' '
+                << DynamicInst->DynamicResult->MemOffset << ' '
+                << DynamicInst->DynamicResult->Value << ' ' << '\n');
+          count++;
+        }
+      }
+
+      return;
+    }
+  }
+}
+
+void DynamicTrace::handleControlDependence(DynamicInstruction* DynamicInst) {
+  auto DepInst = this->getPreviousBranchDynamicInstruction(DynamicInst);
+  if (DepInst != nullptr) {
+    // DEBUG(llvm::errs() << "Get control dependence!\n");
+    if (this->CtrDeps.find(DynamicInst) == this->CtrDeps.end()) {
+      this->CtrDeps.emplace(DynamicInst,
+                            std::unordered_set<DynamicInstruction*>());
+    }
+    this->CtrDeps.at(DynamicInst).insert(DepInst);
+  }
 }
 
 DynamicInstruction* DynamicTrace::getPreviousDynamicInstruction() {
@@ -764,8 +808,25 @@ DynamicInstruction* DynamicTrace::getPreviousNonPhiDynamicInstruction(
     DynamicInstruction* DynamicInst) {
   while (DynamicInst != nullptr && DynamicInst->Prev != nullptr) {
     DynamicInstruction* DInstruction = DynamicInst->Prev;
-    if (!llvm::isa<llvm::PHINode>(DInstruction->StaticInstruction)) {
+    if (!llvm::isa<llvm::PHINode>(DInstruction->getStaticInstruction())) {
       return DInstruction;
+    }
+    DynamicInst = DynamicInst->Prev;
+  }
+  return nullptr;
+}
+
+DynamicInstruction* DynamicTrace::getPreviousBranchDynamicInstruction(
+    DynamicInstruction* DynamicInst) {
+  while (DynamicInst != nullptr && DynamicInst->Prev != nullptr) {
+    DynamicInstruction* DInstruction = DynamicInst->Prev;
+    switch (DInstruction->getStaticInstruction()->getOpcode()) {
+      case llvm::Instruction::Br:
+      case llvm::Instruction::Ret:
+      case llvm::Instruction::Call:
+        return DInstruction;
+      default:
+        break;
     }
     DynamicInst = DynamicInst->Prev;
   }
