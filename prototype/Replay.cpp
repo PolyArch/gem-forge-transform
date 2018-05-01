@@ -360,11 +360,12 @@ void ReplayTrace::fakeMicroOps() {
             FakeNumMicroOps.push_back(0);
             break;
           }
+          case llvm::Instruction::Switch:
           case llvm::Instruction::Br: {
             // rdip
             // wrip
             FakeNumMicroOps.push_back(1);
-            // FakeNumMicroOps.push_back(0);
+            FakeNumMicroOps.push_back(1);
             break;
           }
           default:
@@ -531,6 +532,49 @@ void ReplayTrace::formatInstruction(
         AllocaStaticInstruction->getAllocatedType());
     Out << DynamicInst->DynamicResult->MemBase << '|'
         << DynamicInst->DynamicResult->Value << '|' << AllocatedSize << '|';
+    return;
+  }
+
+  // For conditional branching, we also log the target basic block.
+  if (auto BranchStaticInstruction = llvm::dyn_cast<llvm::BranchInst>(
+          DynamicInst->getStaticInstruction())) {
+    if (BranchStaticInstruction->isConditional()) {
+      DynamicInstruction* NextLLVMDynamicInst = DynamicInst->Next;
+      while (NextLLVMDynamicInst != nullptr) {
+        // Check if this is an LLVM inst, i.e. not our inserted.
+        if (NextLLVMDynamicInst->getStaticInstruction() != nullptr) {
+          break;
+        }
+        NextLLVMDynamicInst = NextLLVMDynamicInst->Next;
+      }
+      // Log the static instruction's address and target branch name.
+      // Use the memory address as the identifier for static instruction
+      // is very hacky, but it does maintain unique.
+      std::string NextBBName =
+          NextLLVMDynamicInst->getStaticInstruction()->getParent()->getName();
+      Out << BranchStaticInstruction << '|' << NextBBName << '|';
+    }
+    return;
+  }
+
+  // For switch, do the same.
+  // TODO: Reuse code with branch case.
+  if (auto SwitchStaticInstruction = llvm::dyn_cast<llvm::SwitchInst>(
+          DynamicInst->getStaticInstruction())) {
+    DynamicInstruction* NextLLVMDynamicInst = DynamicInst->Next;
+    while (NextLLVMDynamicInst != nullptr) {
+      // Check if this is an LLVM inst, i.e. not our inserted.
+      if (NextLLVMDynamicInst->getStaticInstruction() != nullptr) {
+        break;
+      }
+      NextLLVMDynamicInst = NextLLVMDynamicInst->Next;
+    }
+    // Log the static instruction's address and target branch name.
+    // Use the memory address as the identifier for static instruction
+    // is very hacky, but it does maintain unique.
+    std::string NextBBName =
+        NextLLVMDynamicInst->getStaticInstruction()->getParent()->getName();
+    Out << SwitchStaticInstruction << '|' << NextBBName << '|';
     return;
   }
 }
