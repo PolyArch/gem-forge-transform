@@ -37,6 +37,7 @@ class DynamicInstruction {
   virtual ~DynamicInstruction();
   virtual const std::string& getOpName() = 0;
   virtual llvm::Instruction* getStaticInstruction() { return nullptr; }
+  virtual void dump() {}
 
   DynamicValue* DynamicResult;
 

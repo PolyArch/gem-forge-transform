@@ -16,6 +16,137 @@ static llvm::cl::opt<std::string> TraceFileName("stream-trace-file",
 
 #define DEBUG_TYPE "ReplayPass"
 
+#define CCA_SUBGRAPH_DEPTH_MAX 7u
+
+namespace {
+
+struct CCASubGraph {
+ public:
+  CCASubGraph() : Source(nullptr), InsertionPoint(nullptr) {}
+  std::unordered_set<llvm::Instruction*> StaticInstructions;
+  std::unordered_set<llvm::Instruction*> DependentStaticInstructions;
+  std::unordered_set<llvm::Instruction*> UsedStaticInstructions;
+  llvm::Instruction* Source;
+  llvm::Instruction* InsertionPoint;
+  void addInstruction(llvm::Instruction* StaticInstruction) {
+    if (this->StaticInstructions.size() == 0) {
+      // This is the first instruction.
+      this->Source = StaticInstruction;
+    }
+    this->StaticInstructions.insert(StaticInstruction);
+  }
+  void removeInstruction(llvm::Instruction* StaticInstruction) {
+    this->StaticInstructions.erase(StaticInstruction);
+    if (this->Source == StaticInstruction) {
+      this->Source = nullptr;
+    }
+  }
+  // Finally popluate the dependent and user.
+  void finalize() {
+    for (auto StaticInstruction : this->StaticInstructions) {
+      // Add to dependent static instructions.
+      for (unsigned OperandIdx = 0,
+                    NumOperands = StaticInstruction->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        auto Operand = StaticInstruction->getOperand(OperandIdx);
+        if (auto DependentStaticInstruction =
+                llvm::dyn_cast<llvm::Instruction>(Operand)) {
+          if (this->StaticInstructions.find(DependentStaticInstruction) ==
+              this->StaticInstructions.end()) {
+            this->DependentStaticInstructions.insert(
+                DependentStaticInstruction);
+          }
+        }
+      }
+      // Add the used instructions.
+      for (auto UserIter = StaticInstruction->user_begin(),
+                UserEnd = StaticInstruction->user_end();
+           UserIter != UserEnd; ++UserIter) {
+        if (auto UsedStaticInstruction =
+                llvm::dyn_cast<llvm::Instruction>(*UserIter)) {
+          if (this->StaticInstructions.find(UsedStaticInstruction) ==
+              this->StaticInstructions.end()) {
+            this->UsedStaticInstructions.insert(UsedStaticInstruction);
+          }
+        }
+      }
+    }
+  }
+  uint32_t getDepth() const {
+    std::list<llvm::Instruction*> Stack;
+    if (this->Source == nullptr) {
+      return 0;
+    }
+    // Topological sort.
+    std::unordered_map<llvm::Instruction*, int> Visited;
+    Stack.push_back(this->Source);
+    Visited[this->Source] = 0;
+    std::list<llvm::Instruction*> Sorted;
+    while (!Stack.empty()) {
+      auto Node = Stack.back();
+      if (Visited.at(Node) == 0) {
+        // We haven't visited this.
+        Visited.at(Node) = 1;
+        Sorted.push_back(Node);
+        for (unsigned OperandIdx = 0, NumOperands = Node->getNumOperands();
+             OperandIdx != NumOperands; ++OperandIdx) {
+          auto Operand = Node->getOperand(OperandIdx);
+          if (auto DepNode = llvm::dyn_cast<llvm::Instruction>(Operand)) {
+            if (this->StaticInstructions.find(DepNode) !=
+                this->StaticInstructions.end()) {
+              // We found a dep node.
+              auto VisitedIter = Visited.find(DepNode);
+              if (VisitedIter == Visited.end() || VisitedIter->second == 0) {
+                // We haven't visit this.
+                Stack.push_back(DepNode);
+                Visited[DepNode] = 0;
+              }
+            }
+          }
+        }
+      } else {
+        // We have visited this before.
+        Stack.pop_back();
+      }
+    }
+    std::unordered_map<llvm::Instruction*, uint32_t> Dist;
+    Dist[this->Source] = 1;
+    uint32_t Depth = 1;
+    for (auto Node : Sorted) {
+      for (unsigned OperandIdx = 0, NumOperands = Node->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        auto Operand = Node->getOperand(OperandIdx);
+        if (auto DepNode = llvm::dyn_cast<llvm::Instruction>(Operand)) {
+          if (this->StaticInstructions.find(DepNode) !=
+              this->StaticInstructions.end()) {
+            // We found a dep node.
+            auto DistIter = Dist.find(DepNode);
+            if (DistIter == Dist.end() ||
+                DistIter->second < Dist.at(Node) + 1) {
+              Dist[DepNode] = Dist.at(Node) + 1;
+            }
+            Depth = std::max(Depth, Dist.at(DepNode));
+          }
+        }
+      }
+    }
+    return Depth;
+  }
+  void clear() {
+    this->StaticInstructions.clear();
+    this->DependentStaticInstructions.clear();
+    this->UsedStaticInstructions.clear();
+    this->InsertionPoint = nullptr;
+    this->Source = nullptr;
+  }
+  void dump() const {
+    for (auto Inst : this->StaticInstructions) {
+      DEBUG(llvm::errs() << "Subgraph " << Inst->getName() << '\n');
+    }
+  }
+};
+}  // namespace
+
 // Analyze the stream interface.
 class StreamAnalysisTrace : public llvm::FunctionPass {
  public:
@@ -99,6 +230,10 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     // TraceFile.close();
     gzCloseGZTrace(TraceFile);
 
+    for (size_t i = 0; i < CCA_SUBGRAPH_DEPTH_MAX; ++i) {
+      this->SubGraphDepthHistograpm[i] = 0;
+    }
+
     return false;
   }
 
@@ -112,67 +247,67 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
 
     for (auto BBIter = Function.begin(), BBEnd = Function.end();
          BBIter != BBEnd; ++BBIter) {
-      for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
-           InstIter != InstEnd; ++InstIter) {
-        llvm::Instruction* Inst = &*InstIter;
-        if (llvm::isa<llvm::LoadInst>(Inst) ||
-            llvm::isa<llvm::StoreInst>(Inst)) {
-          // This is a memory access we are about.
-          this->StaticMemAccessCount++;
+      this->CCASubGraphDepthAnalyze(&*BBIter);
+      // for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
+      //      InstIter != InstEnd; ++InstIter) {
+      //   llvm::Instruction* Inst = &*InstIter;
+      //   if (llvm::isa<llvm::LoadInst>(Inst) ||
+      //       llvm::isa<llvm::StoreInst>(Inst)) {
+      //     // This is a memory access we are about.
+      //     this->StaticMemAccessCount++;
 
-          llvm::Value* Addr = nullptr;
-          if (llvm::isa<llvm::LoadInst>(Inst)) {
-            Addr = Inst->getOperand(0);
-          } else {
-            Addr = Inst->getOperand(1);
-          }
-          uint64_t AccessBytes = this->DataLayout->getTypeStoreSize(
-              Addr->getType()->getPointerElementType());
-          if (this->StaticInstructionInstantiatedCount.find(Inst) !=
-              this->StaticInstructionInstantiatedCount.end()) {
-            this->DynamicMemAccessCount +=
-                this->StaticInstructionInstantiatedCount.at(Inst);
-            this->DynamicMemAccessBytes +=
-                this->StaticInstructionInstantiatedCount.at(Inst) * AccessBytes;
-          }
-          // Check if this is a stream.
-          const llvm::SCEV* SCEV = SE.getSCEV(Addr);
-          std::string SCEVFormat;
-          llvm::raw_string_ostream rs(SCEVFormat);
-          SCEV->print(rs);
-          // DEBUG(llvm::errs() << rs.str() << '\n');
+      //     llvm::Value* Addr = nullptr;
+      //     if (llvm::isa<llvm::LoadInst>(Inst)) {
+      //       Addr = Inst->getOperand(0);
+      //     } else {
+      //       Addr = Inst->getOperand(1);
+      //     }
+      //     uint64_t AccessBytes = this->DataLayout->getTypeStoreSize(
+      //         Addr->getType()->getPointerElementType());
+      //     if (this->StaticInstructionInstantiatedCount.find(Inst) !=
+      //         this->StaticInstructionInstantiatedCount.end()) {
+      //       this->DynamicMemAccessCount +=
+      //           this->StaticInstructionInstantiatedCount.at(Inst);
+      //       this->DynamicMemAccessBytes +=
+      //           this->StaticInstructionInstantiatedCount.at(Inst) * AccessBytes;
+      //     }
+      //     // Check if this is a stream.
+      //     const llvm::SCEV* SCEV = SE.getSCEV(Addr);
+      //     std::string SCEVFormat;
+      //     llvm::raw_string_ostream rs(SCEVFormat);
+      //     SCEV->print(rs);
+      //     // DEBUG(llvm::errs() << rs.str() << '\n');
 
-          // DEBUG(SCEV->print(llvm::errs()));
-          // DEBUG(llvm::errs() << '\n');
-          if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
-            // This is a stream.
-            this->StaticStreamCount++;
-            if (AddRecSCEV->isAffine()) {
-              rs << " affine";
-              this->StaticAffineStreamCount++;
-              if (this->StaticInstructionInstantiatedCount.find(Inst) !=
-                  this->StaticInstructionInstantiatedCount.end()) {
-                auto DynamicInstructionCount =
-                    this->StaticInstructionInstantiatedCount.at(Inst);
-                this->DynamicStreamCount += DynamicInstructionCount;
-                this->DynamicStreamBytes +=
-                    AccessBytes * DynamicInstructionCount;
-              }
-            }
-            if (AddRecSCEV->isQuadratic()) {
-              this->StaticQuadricStreamCount++;
-            }
-          }
+      //     // DEBUG(SCEV->print(llvm::errs()));
+      //     // DEBUG(llvm::errs() << '\n');
+      //     if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
+      //       // This is a stream.
+      //       this->StaticStreamCount++;
+      //       if (AddRecSCEV->isAffine()) {
+      //         rs << " affine";
+      //         this->StaticAffineStreamCount++;
+      //         if (this->StaticInstructionInstantiatedCount.find(Inst) !=
+      //             this->StaticInstructionInstantiatedCount.end()) {
+      //           auto DynamicInstructionCount =
+      //               this->StaticInstructionInstantiatedCount.at(Inst);
+      //           this->DynamicStreamCount += DynamicInstructionCount;
+      //           this->DynamicStreamBytes +=
+      //               AccessBytes * DynamicInstructionCount;
+      //         }
+      //       }
+      //       if (AddRecSCEV->isQuadratic()) {
+      //         this->StaticQuadricStreamCount++;
+      //       }
+      //     }
 
-          this->StaticInstructionSCEVMap.emplace(Inst, rs.str());
-        }
-      }
+      //     this->StaticInstructionSCEVMap.emplace(Inst, rs.str());
+      //   }
+      // }
     }
 
     // Call the base runOnFunction to prepare it for replay.
     // For now no change.
     return false;
-    // return ReplayTrace::runOnFunction(Function);
   }
 
   bool doFinalization(llvm::Module& Module) override {
@@ -194,32 +329,36 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
                        << this->DynamicMemAccessBytes << '\n');
     DEBUG(llvm::errs() << "DynamicStreamBytes: " << this->DynamicStreamBytes
                        << '\n');
+    for (size_t i = 0; i < CCA_SUBGRAPH_DEPTH_MAX; ++i) {
+      DEBUG(llvm::errs() << "CCASubGraphDepth:" << i + 1 << ':'
+                         << this->SubGraphDepthHistograpm[i] << '\n');
+    }
     // Try to sort out top 10.
-    const size_t MaxCount = 50;
-    std::multimap<uint64_t, llvm::Instruction*> TopMemAccess;
-    for (const auto& Entry : this->StaticInstructionInstantiatedCount) {
-      if (llvm::isa<llvm::LoadInst>(Entry.first) ||
-          llvm::isa<llvm::StoreInst>(Entry.first)) {
-        if (TopMemAccess.size() < MaxCount) {
-          TopMemAccess.emplace(Entry.second, Entry.first);
-        } else {
-          uint64_t TemporaryMinimum = TopMemAccess.cbegin()->first;
-          if (Entry.second > TemporaryMinimum) {
-            TopMemAccess.emplace(Entry.second, Entry.first);
-            // Remove the first (minimum) element.
-            TopMemAccess.erase(TopMemAccess.cbegin());
-          }
-        }
-      }
-    }
-    // Print out the top memory access.
-    for (auto& Entry : TopMemAccess) {
-      llvm::Instruction* Inst = Entry.second;
-      DEBUG(llvm::errs() << Entry.first << ' ' << Inst->getFunction()->getName()
-                         << ' ' << Inst->getParent()->getName() << ' '
-                         << Inst->getName() << ' '
-                         << this->StaticInstructionSCEVMap.at(Inst) << '\n');
-    }
+    // const size_t MaxCount = 50;
+    // std::multimap<uint64_t, llvm::Instruction*> TopMemAccess;
+    // for (const auto& Entry : this->StaticInstructionInstantiatedCount) {
+    //   if (llvm::isa<llvm::LoadInst>(Entry.first) ||
+    //       llvm::isa<llvm::StoreInst>(Entry.first)) {
+    //     if (TopMemAccess.size() < MaxCount) {
+    //       TopMemAccess.emplace(Entry.second, Entry.first);
+    //     } else {
+    //       uint64_t TemporaryMinimum = TopMemAccess.cbegin()->first;
+    //       if (Entry.second > TemporaryMinimum) {
+    //         TopMemAccess.emplace(Entry.second, Entry.first);
+    //         // Remove the first (minimum) element.
+    //         TopMemAccess.erase(TopMemAccess.cbegin());
+    //       }
+    //     }
+    //   }
+    // }
+    // // Print out the top memory access.
+    // for (auto& Entry : TopMemAccess) {
+    //   llvm::Instruction* Inst = Entry.second;
+    //   DEBUG(llvm::errs() << Entry.first << ' ' << Inst->getFunction()->getName()
+    //                      << ' ' << Inst->getParent()->getName() << ' '
+    //                      << Inst->getName() << ' '
+    //                      << this->StaticInstructionSCEVMap.at(Inst) << '\n');
+    // }
 
     delete this->DataLayout;
     this->DataLayout = nullptr;
@@ -227,6 +366,125 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   }
 
  protected:
+  bool CCACheckConstraints(
+      const CCASubGraph& SubGraph, llvm::Instruction* CandidateInst,
+      const std::unordered_set<llvm::Instruction*>& MatchedInst) const {
+    switch (CandidateInst->getOpcode()) {
+      case llvm::Instruction::PHI:
+      case llvm::Instruction::Br:
+      case llvm::Instruction::Switch:
+      case llvm::Instruction::IndirectBr:
+      case llvm::Instruction::Ret:
+      case llvm::Instruction::Call:
+      case llvm::Instruction::Load:
+      case llvm::Instruction::Store: {
+        return false;
+      }
+      default: { break; }
+    }
+    // Make sure that the candidate doesn't have dependence on other cca.
+    // This is key to avoid lock between two cca instructions.
+    // We do this by making sure that no cca is directly dependent on other cca.
+    // This is pretty conservative.
+    for (unsigned OperandIdx = 0, NumOperands = CandidateInst->getNumOperands();
+         OperandIdx != NumOperands; ++OperandIdx) {
+      auto Operand = CandidateInst->getOperand(OperandIdx);
+      if (auto DepInst = llvm::dyn_cast<llvm::Instruction>(Operand)) {
+        if (SubGraph.StaticInstructions.find(DepInst) ==
+                SubGraph.StaticInstructions.end() &&
+            MatchedInst.find(DepInst) != MatchedInst.end()) {
+          // This dependent instruction is already replaced by some other cca.
+          return false;
+        }
+      }
+    }
+
+    // Same thing for user.
+    for (auto UserIter = CandidateInst->user_begin(),
+              UserEnd = CandidateInst->user_end();
+         UserIter != UserEnd; ++UserIter) {
+      if (auto UsedStaticInstruction =
+              llvm::dyn_cast<llvm::Instruction>(*UserIter)) {
+        if (SubGraph.StaticInstructions.find(UsedStaticInstruction) ==
+                SubGraph.StaticInstructions.end() &&
+            MatchedInst.find(UsedStaticInstruction) != MatchedInst.end()) {
+          return false;
+        }
+      }
+    }
+
+    // Check the number of instructions is within the number of
+    // function units.
+    // return SubGraph.StaticInstructions.size() <= CCAFUMax.getValue();
+    // return SubGraph.getDepth() <= CCAFUMax.getValue();
+    return true;
+  }
+
+  void CCASubGraphDepthAnalyze(llvm::BasicBlock* BB) {
+    auto FirstInst = &*(BB->begin());
+    if (this->StaticInstructionInstantiatedCount.find(FirstInst) ==
+        this->StaticInstructionInstantiatedCount.end()) {
+      return;
+    }
+    auto InstantiateCount = StaticInstructionInstantiatedCount.at(FirstInst);
+
+    CCASubGraph CurrentSubGraph;
+    std::list<llvm::Instruction*> WaitList;
+    std::unordered_set<llvm::Instruction*> MatchedStaticInsts;
+    for (auto InstIter = BB->rbegin(), InstEnd = BB->rend();
+         InstIter != InstEnd; ++InstIter) {
+      auto Inst = &*InstIter;
+      if (MatchedStaticInsts.find(Inst) != MatchedStaticInsts.end()) {
+        continue;
+      }
+      // This is a new seed.
+      CurrentSubGraph.clear();
+      WaitList.clear();
+      WaitList.push_back(Inst);
+      while (!WaitList.empty()) {
+        auto CandidateInst = WaitList.front();
+        WaitList.pop_front();
+        // Temporarily add the candidate into the subgraph.
+        CurrentSubGraph.addInstruction(CandidateInst);
+        if (this->CCACheckConstraints(CurrentSubGraph, CandidateInst,
+                                      MatchedStaticInsts)) {
+          // This candidate is good to go.
+          MatchedStaticInsts.insert(CandidateInst);
+          // Add more dependent one into the wait list.
+          for (unsigned OperandIdx = 0,
+                        NumOperands = CandidateInst->getNumOperands();
+               OperandIdx != NumOperands; ++OperandIdx) {
+            if (auto DependentInst = llvm::dyn_cast<llvm::Instruction>(
+                    CandidateInst->getOperand(OperandIdx))) {
+              if (MatchedStaticInsts.find(DependentInst) ==
+                  MatchedStaticInsts.end()) {
+                if (DependentInst->getParent() == BB) {
+                  WaitList.push_back(DependentInst);
+                }
+              }
+            }
+          }
+        } else {
+          // This candidate breaks constraints, remove it.
+          CurrentSubGraph.removeInstruction(CandidateInst);
+        }
+      }
+
+      // We have a new subgraph.
+      // First we finalize it.
+      CurrentSubGraph.finalize();
+      DEBUG(llvm::errs() << "Detect subgraph:\n");
+      CurrentSubGraph.dump();
+      auto Depth = CurrentSubGraph.getDepth();
+      if (Depth > 0) {
+        Depth = std::min(Depth, CCA_SUBGRAPH_DEPTH_MAX);
+        for (size_t i = Depth - 1; i < CCA_SUBGRAPH_DEPTH_MAX; ++i) {
+          this->SubGraphDepthHistograpm[i] += InstantiateCount;
+        }
+      }
+    }
+  }
+
   uint64_t StaticMemAccessCount;
   uint64_t StaticStreamCount;
   uint64_t StaticAffineStreamCount;
@@ -237,6 +495,9 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   uint64_t DynamicStreamCount;
   uint64_t DynamicMemAccessBytes;
   uint64_t DynamicStreamBytes;
+
+  // Hack this class for CCA analysis.
+  uint64_t SubGraphDepthHistograpm[CCA_SUBGRAPH_DEPTH_MAX];
 
   std::unordered_map<llvm::Instruction*, uint64_t>
       StaticInstructionInstantiatedCount;
@@ -333,6 +594,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
         this->DynamicInstructionCount++;
         break;
       }
+      case 'p':
+      case 'r':
       case 'e':
         // Simply ignore function enter trace.
         break;

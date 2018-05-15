@@ -15,7 +15,7 @@ class ReplayTrace : public llvm::FunctionPass {
  public:
   using DynamicId = DynamicTrace::DynamicId;
   static char ID;
-  ReplayTrace();
+  ReplayTrace(char _ID = ID);
   virtual ~ReplayTrace();
 
   void getAnalysisUsage(llvm::AnalysisUsage& Info) const override;

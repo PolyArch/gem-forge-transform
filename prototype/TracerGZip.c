@@ -1,12 +1,14 @@
-#include "GZUtil.h"
+
+#include "Tracer.h"
 
 #include <assert.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <zlib.h>
 
 static gzFile p = NULL;
-static const char* TraceFileName = "llvm_trace.gz";
 static const char* OpenMode = "w";
 
 void cleanup() {
@@ -18,7 +20,7 @@ void cleanup() {
 #define log(...)                           \
   {                                        \
     if (p == NULL) {                       \
-      p = gzopen(TraceFileName, OpenMode); \
+      p = gzopen(TRACE_FILE_NAME, OpenMode); \
       atexit(&cleanup);                    \
     }                                      \
     assert(p != NULL);                     \
@@ -77,11 +79,8 @@ void printValue(const char* Tag, const char* Name, unsigned TypeId,
       log("%u|", value);
       break;
     }
-    case FloatTyID: {
-      float value = va_arg(VAList, float);
-      log("%f|", value);
-      break;
-    }
+    // Float is promoted to double on x64.
+    case FloatTyID:
     case DoubleTyID: {
       double value = va_arg(VAList, double);
       log("%f|", value);
@@ -109,3 +108,6 @@ void printValue(const char* Tag, const char* Name, unsigned TypeId,
   va_end(VAList);
   log("\n");
 }
+
+// Do nothing for the wrap function.
+void printInstEnd() {}
