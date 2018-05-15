@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package LLVM.TDG;
+
+message DynamicLLVMInstruction {
+    string Func = 1;
+    string BB = 2;
+    uint32 Id = 3;
+}
+
