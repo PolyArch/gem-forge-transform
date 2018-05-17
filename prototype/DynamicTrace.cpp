@@ -185,20 +185,20 @@ void DynamicTrace::parseDynamicInstruction(
         assert(DynamicResult == nullptr &&
                "Multiple results for single instruction.");
         auto ResultLineFields = splitByChar(*LineIter, '|');
-        DynamicResult = new DynamicValue(ResultLineFields[3]);
+        DynamicResult = new DynamicValue(ResultLineFields[1]);
         break;
       }
       case 'p': {
         assert(OperandIndex < StaticInstruction->getNumOperands() &&
                "Too much operands.");
         auto OperandLineFields = splitByChar(*LineIter, '|');
-        if (OperandLineFields.size() < 4) {
+        if (OperandLineFields.size() < 2) {
           DEBUG(llvm::errs() << *LineIter << '\n');
         }
-        assert(OperandLineFields.size() >= 4 &&
+        assert(OperandLineFields.size() >= 2 &&
                "Too few fields for operand line.");
         DynamicOperands[OperandIndex++] =
-            new DynamicValue(OperandLineFields[3]);
+            new DynamicValue(OperandLineFields[1]);
         break;
       }
       default: {
@@ -459,9 +459,9 @@ void DynamicTrace::parseFunctionEnter(
     switch (LineIter->at(0)) {
       case 'p': {
         auto ArugmentLineFields = splitByChar(*LineIter, '|');
-        assert(ArugmentLineFields.size() >= 4 &&
+        assert(ArugmentLineFields.size() >= 2 &&
                "Too few argument line fields.");
-        DynamicValue* DynamicArgument = new DynamicValue(ArugmentLineFields[3]);
+        DynamicValue* DynamicArgument = new DynamicValue(ArugmentLineFields[1]);
 
         llvm::Argument* StaticArgument = &*ArgumentIter;
         DynamicFrame.emplace(StaticArgument, DynamicArgument);

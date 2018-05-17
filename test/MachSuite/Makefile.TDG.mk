@@ -6,21 +6,27 @@
 # $KERN
 # $LINK_FLAG
 
+CXX=clang++
 override CFLAGS:=${CFLAGS} -O3
 CCA_MAX_FUS?=3
 
 BUILD_DIR=$(ROOT_DIR)/build/prototype
 GEM5_DIR=/home/sean/Public/gem5
-OPT_ARGS=-load=$(BUILD_DIR)/libPrototypePass.so -S
+OPT_ARGS=-load=$(BUILD_DIR)/libLLVMTDGPass.so -S
 
 LLVMS=$(ALL_SRCS:%.c=%.o)
 
 REPLAY_INCLUDE_DIR=$(INCLUDE_DIR) -I$(GEM5_DIR)/include
 
-TRACE_LINK_FLAGS=$(LINK_FLAG) -lz
-# Link the gzip tracer.
-TRACER_LIB=$(BUILD_DIR)/libTracerGZip.a
 TRACER_FILE_NAME=llvm_trace
+
+# Link the gzip tracer.
+# TRACE_LINK_FLAGS=$(LINK_FLAG) -lz
+# TRACER_LIB=$(BUILD_DIR)/libTracerGZip.a
+# Link the protobuf tracer.
+TRACE_LINK_FLAGS=$(LINK_FLAG) -lprotobuf
+TRACER_LIB=$(BUILD_DIR)/libTracerProtobuf.a
+
 
 # Compile
 %.o: %.c
@@ -36,7 +42,7 @@ $(KERN): $(KERN).bc
 
 # Instrument
 $(KERN)_trace.ll: $(KERN).bc
-	opt $(OPT_ARGS) -debug-only=PrototypePass -prototype -o $@ $^
+	opt $(OPT_ARGS) -debug-only=TracePass -trace-pass -o $@ $^
 
 $(KERN)_replay.ll: $(KERN).bc
 	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -replay -trace-file=$(TRACER_FILE_NAME) $^ -o $@ 
@@ -48,8 +54,9 @@ $(KERN)_cca_analysis.ll : $(KERN).bc
 	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -stream-analysis-trace -stream-trace-file=$(TRACER_FILE_NAME) -analyze $^
 
 # To binary.
+# Trace is linked with CXX as the trace library is in cxx.
 $(KERN)_trace: $(KERN)_trace.ll $(TRACER_LIB)
-	clang -O0 $^ -o $@ $(TRACE_LINK_FLAGS)
+	$(CXX) -O0 $^ -o $@ $(TRACE_LINK_FLAGS)
 
 $(KERN)_replay: $(KERN)_replay.ll ${ROOT_DIR}/test/replay.c
 	clang -c -O0 $(KERN)_replay.ll -o ${KERN}_replay_before_gcc.o
