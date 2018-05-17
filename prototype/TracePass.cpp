@@ -12,6 +12,7 @@
 #include "llvm/Transforms/Scalar.h"
 
 #include "LocateAccelerableFunctions.h"
+#include "Tracer.h"
 
 #include <map>
 #include <set>
@@ -21,7 +22,7 @@
 static llvm::cl::opt<std::string> TraceFunctionName(
     "trace-function", llvm::cl::desc("Trace function."));
 
-#define DEBUG_TYPE "PrototypePass"
+#define DEBUG_TYPE "TracePass"
 namespace {
 
 bool isIntrinsicFunctionName(const std::string& FunctionName) {
@@ -82,10 +83,10 @@ llvm::Value* getOrCreateVectorStoreBuffer(
 }
 
 // This is a pass to instrument a function and trace it.
-class Prototype : public llvm::FunctionPass {
+class TracePass : public llvm::FunctionPass {
  public:
   static char ID;
-  Prototype() : llvm::FunctionPass(ID) {}
+  TracePass() : llvm::FunctionPass(ID) {}
   void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
     // We require the loop information.
     Info.addRequired<LocateAccelerableFunctions>();
@@ -93,7 +94,7 @@ class Prototype : public llvm::FunctionPass {
   }
   bool doInitialization(llvm::Module& Module) override {
     this->Module = &Module;
-    DEBUG(llvm::errs() << "Initialize Prototype\n");
+    DEBUG(llvm::errs() << "Initialize TracePass\n");
 
     // Register the external log functions.
     registerPrintFunctions(Module);
@@ -150,12 +151,14 @@ class Prototype : public llvm::FunctionPass {
   llvm::Value* PrintInstFunc;
   llvm::Value* PrintValueFunc;
   llvm::Value* PrintFuncEnterFunc;
+  llvm::Value* PrintInstEndFunc;
 
   // Insert all the print function declaration into the module.
   void registerPrintFunctions(llvm::Module& Module) {
     auto& Context = Module.getContext();
     auto VoidTy = llvm::Type::getVoidTy(Context);
     auto Int8PtrTy = llvm::Type::getInt8PtrTy(Context);
+    auto Int8Ty = llvm::Type::getInt8Ty(Context);
     auto Int32Ty = llvm::Type::getInt32Ty(Context);
 
     std::vector<llvm::Type*> PrintInstArgs{
@@ -168,7 +171,7 @@ class Prototype : public llvm::FunctionPass {
     this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
 
     std::vector<llvm::Type*> PrintValueArgs{
-        Int8PtrTy,
+        Int8Ty,
         Int8PtrTy,  // char* Name,
         Int32Ty,
         Int32Ty,
@@ -184,6 +187,10 @@ class Prototype : public llvm::FunctionPass {
         llvm::FunctionType::get(VoidTy, PrintFuncEnterArgs, false);
     this->PrintFuncEnterFunc =
         Module.getOrInsertFunction("printFuncEnter", PrintFuncEnterTy);
+
+    auto PrintInstEndTy = llvm::FunctionType::get(VoidTy, false);
+    this->PrintInstEndFunc =
+        Module.getOrInsertFunction("printInstEnd", PrintInstEndTy);
   }
 
   std::map<std::string, llvm::Constant*> GlobalStrings;
@@ -197,9 +204,11 @@ class Prototype : public llvm::FunctionPass {
     Builder.CreateCall(this->PrintFuncEnterFunc, PrintFuncEnterArgs);
     for (auto ArgsIter = Function.arg_begin(), ArgsEnd = Function.arg_end();
          ArgsIter != ArgsEnd; ArgsIter++) {
-      auto PrintValueArgs = getPrintValueArgs("p", &*ArgsIter, Builder);
+      auto PrintValueArgs =
+          getPrintValueArgs(PRINT_VALUE_TAG_PARAMETER, &*ArgsIter, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
+    Builder.CreateCall(this->PrintInstEndFunc);
     return true;
   }
 
@@ -283,7 +292,8 @@ class Prototype : public llvm::FunctionPass {
     // Call printResult after the instruction (if it has a result).
     if (Inst->getName() != "") {
       DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
-      auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
+      auto PrintValueArgs =
+          getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
 #endif
@@ -307,8 +317,8 @@ class Prototype : public llvm::FunctionPass {
     // Call printValue for each parameter before the instruction.
     for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
          OperandId < NumOperands; OperandId++) {
-      auto PrintValueArgs =
-          getPrintValueArgs("p", Inst->getOperand(OperandId), Builder);
+      auto PrintValueArgs = getPrintValueArgs(
+          PRINT_VALUE_TAG_PARAMETER, Inst->getOperand(OperandId), Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
 
@@ -321,11 +331,14 @@ class Prototype : public llvm::FunctionPass {
       } else {
         assert(NextInst != nullptr && "Null next inst.");
         Builder.SetInsertPoint(NextInst);
-        auto PrintValueArgs = getPrintValueArgs("r", Inst, Builder);
+        auto PrintValueArgs =
+            getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
         Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
       }
     }
 #endif
+    // Call printInstEnd to commit.
+    Builder.CreateCall(this->PrintInstEndFunc);
   }
 
   std::vector<llvm::Value*> getPrintInstArgs(llvm::Instruction* Inst,
@@ -356,8 +369,9 @@ class Prototype : public llvm::FunctionPass {
   // value's name.
   std::vector<llvm::Value*> getPrintValueArgsForPhiParameter(
       llvm::Value* IncomingValue, llvm::BasicBlock* IncomingBlock) {
-    auto TagValue =
-        getOrCreateStringLiteral(this->GlobalStrings, this->Module, "p");
+    auto TagValue = llvm::ConstantInt::get(
+        llvm::IntegerType::getInt8Ty(this->Module->getContext()),
+        PRINT_VALUE_TAG_PARAMETER, false);
     auto Name = IncomingBlock->getName();
     auto NameValue =
         getOrCreateStringLiteral(this->GlobalStrings, this->Module, Name);
@@ -386,11 +400,11 @@ class Prototype : public llvm::FunctionPass {
   }
 
   // get arguments from printValue
-  std::vector<llvm::Value*> getPrintValueArgs(const std::string& Tag,
+  std::vector<llvm::Value*> getPrintValueArgs(const char Tag,
                                               llvm::Value* Parameter,
                                               llvm::IRBuilder<>& Builder) {
-    auto TagValue =
-        getOrCreateStringLiteral(this->GlobalStrings, this->Module, Tag);
+    auto TagValue = llvm::ConstantInt::get(
+        llvm::IntegerType::getInt8Ty(this->Module->getContext()), Tag, false);
     auto Name = Parameter->getName();
     auto NameValue =
         getOrCreateStringLiteral(this->GlobalStrings, this->Module, Name);
@@ -470,6 +484,6 @@ class Prototype : public llvm::FunctionPass {
 
 #undef DEBUG_TYPE
 
-char Prototype::ID = 0;
-static llvm::RegisterPass<Prototype> X("prototype", "Prototype pass", false,
+char TracePass::ID = 0;
+static llvm::RegisterPass<TracePass> X("trace-pass", "Trace pass", false,
                                        false);
