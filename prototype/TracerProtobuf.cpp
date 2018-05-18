@@ -3,6 +3,7 @@
 #include "Tracer.h"
 
 #include <cassert>
+#include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -30,7 +31,7 @@ void cleanup() {
 
 static LLVM::TDG::DynamicLLVMTraceEntry protobufTraceEntry;
 
-void printFuncEnter(const char* FunctionName) {
+void printFuncEnterImpl(const char* FunctionName) {
   if (protobufTraceEntry.has_inst()) {
     // The previous one is inst.
     // Clear it and allocate a new func enter.
@@ -44,10 +45,10 @@ void printFuncEnter(const char* FunctionName) {
   protobufTraceEntry.mutable_func_enter()->set_func(FunctionName);
 }
 
-void printInst(const char* FunctionName, const char* BBName, unsigned Id,
-               char* OpCodeName) {
+void printInstImpl(const char* FunctionName, const char* BBName, unsigned Id,
+                   char* OpCodeName) {
   if (protobufTraceEntry.has_func_enter()) {
-    // The previous one is inst.
+    // The previous one is func enter.
     // Clear it and allocate a new func enter.
     protobufTraceEntry.clear_func_enter();
   }
@@ -63,51 +64,9 @@ void printInst(const char* FunctionName, const char* BBName, unsigned Id,
   protobufTraceEntry.mutable_inst()->clear_result();
 }
 
-void printValue(const char Tag, const char* Name, unsigned TypeId,
-                unsigned NumAdditionalArgs, ...) {
-  const size_t VALUE_BUFFER_SIZE = 256;
-  static char valueBuffer[VALUE_BUFFER_SIZE];
-
-  va_list VAList;
-  va_start(VAList, NumAdditionalArgs);
-  switch (TypeId) {
-    case TypeID::LabelTyID: {
-      // For label, log the name again to be compatible with other type.
-      snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%s", Name);
-      break;
-    }
-    case TypeID::IntegerTyID: {
-      unsigned value = va_arg(VAList, unsigned);
-      snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%u", value);
-      break;
-    }
-    // Float is promoted to double on x64.
-    case TypeID::FloatTyID:
-    case TypeID::DoubleTyID: {
-      double value = va_arg(VAList, double);
-      snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%f", value);
-      break;
-    }
-    case TypeID::PointerTyID: {
-      void* value = va_arg(VAList, void*);
-      snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%p", value);
-      break;
-    }
-    case TypeID::VectorTyID: {
-      uint32_t size = va_arg(VAList, uint32_t);
-      uint8_t* buffer = va_arg(VAList, uint8_t*);
-      for (uint32_t i = 0; i < size; ++i) {
-        snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%hhu,", buffer[i]);
-      }
-      break;
-    }
-    default: {
-      snprintf(valueBuffer, VALUE_BUFFER_SIZE, "UnsupportedType");
-      break;
-    }
-  }
-  va_end(VAList);
-
+static const size_t VALUE_BUFFER_SIZE = 256;
+static char valueBuffer[VALUE_BUFFER_SIZE];
+static void addValueToDynamicInst(const char Tag) {
   switch (Tag) {
     case PRINT_VALUE_TAG_PARAMETER: {
       if (protobufTraceEntry.has_inst()) {
@@ -127,8 +86,46 @@ void printValue(const char Tag, const char* Name, unsigned TypeId,
   }
 }
 
+void printValueLabelImpl(const char Tag, const char* Name, unsigned TypeId) {
+  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%s", Name);
+  addValueToDynamicInst(Tag);
+}
+void printValueIntImpl(const char Tag, const char* Name, unsigned TypeId,
+                       uint64_t Value) {
+  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%" PRIu64, Value);
+  addValueToDynamicInst(Tag);
+}
+void printValueFloatImpl(const char Tag, const char* Name, unsigned TypeId,
+                         double Value) {
+  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%f", Value);
+  addValueToDynamicInst(Tag);
+}
+void printValuePointerImpl(const char Tag, const char* Name, unsigned TypeId,
+                           void* Value) {
+  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%p", Value);
+  addValueToDynamicInst(Tag);
+}
+void printValueVectorImpl(const char Tag, const char* Name, unsigned TypeId,
+                          uint32_t Size, uint8_t* Value) {
+  for (uint32_t i = 0, pos = 0; i < Size; ++i) {
+    pos +=
+        snprintf(valueBuffer + pos, VALUE_BUFFER_SIZE - pos, "%hhu,", Value[i]);
+  }
+  addValueToDynamicInst(Tag);
+}
+void printValueUnsupportImpl(const char Tag, const char* Name,
+                             unsigned TypeId) {
+  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "UnsupportedType(%u)", TypeId);
+  addValueToDynamicInst(Tag);
+}
+
 // Serialize to file.
-void printInstEnd() {
+void printInstEndImpl() {
+  protobufTraceEntry.SerializeToOstream(&getTraceFile());
+  count++;
+}
+
+void printFuncEnterEndImpl() {
   protobufTraceEntry.SerializeToOstream(&getTraceFile());
   count++;
 }

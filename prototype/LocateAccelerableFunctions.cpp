@@ -89,7 +89,7 @@ bool LocateAccelerableFunctions::runOnSCC(llvm::CallGraphSCC& SCC) {
 
     // Update statistics.
     // We only count those function with body we known.
-    if (Function->size() == 0) {
+    if (Function->isDeclaration()) {
       // We don't have the definition?
       continue;
     }

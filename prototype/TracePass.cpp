@@ -16,11 +16,12 @@
 
 #include <map>
 #include <set>
+#include <unordered_set>
 
-// #define TRACE_INST_ONLY
-
-static llvm::cl::opt<std::string> TraceFunctionName(
-    "trace-function", llvm::cl::desc("Trace function."));
+static llvm::cl::list<std::string> TraceFunctionNames(
+    "trace-function", llvm::cl::desc("Trace function names."));
+static llvm::cl::opt<bool> TraceInstructionOnly(
+    "trace-inst-only", llvm::cl::desc("Trace instruction only."));
 
 #define DEBUG_TYPE "TracePass"
 namespace {
@@ -99,30 +100,38 @@ class TracePass : public llvm::FunctionPass {
     // Register the external log functions.
     registerPrintFunctions(Module);
 
+    // If trace function specified, find all the reachable functions.
+    for (unsigned i = 0; i < TraceFunctionNames.size(); ++i) {
+      this->tracedFunctionNames.insert(TraceFunctionNames[i]);
+    }
+
     return true;
   }
   bool runOnFunction(llvm::Function& Function) override {
     auto FunctionName = Function.getName().str();
     DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
+    // We will instrument all the functions anyway,
+    // and let the run time tracer decide if it should be traced or not.
+
     // Check if this function is accelerable.
-    bool Accelerable =
-        getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
-    // A special hack: do not trace function which
-    // returns a value, currently we donot support return in our trace.
-    if (!Function.getReturnType()->isVoidTy()) {
-      Accelerable = false;
-    }
-    if (!Accelerable) {
-      return false;
-    }
+    // bool Accelerable =
+    //     getAnalysis<LocateAccelerableFunctions>().isAccelerable(FunctionName);
+    // // A special hack: do not trace function which
+    // // returns a value, currently we donot support return in our trace.
+    // if (!Function.getReturnType()->isVoidTy()) {
+    //   Accelerable = false;
+    // }
+    // if (!Accelerable) {
+    //   return false;
+    // }
     // What if we trace all the functions?
 
-    if (TraceFunctionName.getNumOccurrences() == 1) {
-      if (Function.getName() != TraceFunctionName) {
-        return false;
-      }
-    }
+    // if (TraceFunctionName.getNumOccurrences() == 1) {
+    //   if (Function.getName() != TraceFunctionName) {
+    //     return false;
+    //   }
+    // }
 
     // Set the current function.
     this->CurrentFunction = &Function;
@@ -152,6 +161,10 @@ class TracePass : public llvm::FunctionPass {
   llvm::Value* PrintValueFunc;
   llvm::Value* PrintFuncEnterFunc;
   llvm::Value* PrintInstEndFunc;
+  llvm::Value* PrintFuncEnterEndFunc;
+
+  // Contains all the traced functions, if specified.
+  std::unordered_set<std::string> tracedFunctionNames;
 
   // Insert all the print function declaration into the module.
   void registerPrintFunctions(llvm::Module& Module) {
@@ -182,6 +195,7 @@ class TracePass : public llvm::FunctionPass {
 
     std::vector<llvm::Type*> PrintFuncEnterArgs{
         Int8PtrTy,
+        Int32Ty,
     };
     auto PrintFuncEnterTy =
         llvm::FunctionType::get(VoidTy, PrintFuncEnterArgs, false);
@@ -191,6 +205,10 @@ class TracePass : public llvm::FunctionPass {
     auto PrintInstEndTy = llvm::FunctionType::get(VoidTy, false);
     this->PrintInstEndFunc =
         Module.getOrInsertFunction("printInstEnd", PrintInstEndTy);
+
+    auto PrintFuncEnterEndTy = llvm::FunctionType::get(VoidTy, false);
+    this->PrintFuncEnterEndFunc =
+        Module.getOrInsertFunction("printFuncEnterEnd", PrintFuncEnterEndTy);
   }
 
   std::map<std::string, llvm::Constant*> GlobalStrings;
@@ -198,9 +216,23 @@ class TracePass : public llvm::FunctionPass {
   bool traceFuncArgs(llvm::Function& Function) {
     auto& EntryBB = Function.getEntryBlock();
     llvm::IRBuilder<> Builder(&*EntryBB.begin());
-    auto PrintFuncEnterArgs =
-        std::vector<llvm::Value*>{getOrCreateStringLiteral(
-            this->GlobalStrings, this->Module, Function.getName())};
+
+    bool IsTraced = true;
+    if (this->tracedFunctionNames.size() != 0) {
+      // The user has specified the traced functions.
+      std::string FunctionName = Function.getName();
+      IsTraced = this->tracedFunctionNames.find(FunctionName) !=
+                 this->tracedFunctionNames.end();
+    }
+    auto IsTracedValue = llvm::ConstantInt::get(
+        llvm::IntegerType::getInt32Ty(this->Module->getContext()),
+        (IsTraced ? 1 : 0), false);
+
+    auto PrintFuncEnterArgs = std::vector<llvm::Value*>{
+        getOrCreateStringLiteral(this->GlobalStrings, this->Module,
+                                 Function.getName()),
+        IsTracedValue,
+    };
     Builder.CreateCall(this->PrintFuncEnterFunc, PrintFuncEnterArgs);
     for (auto ArgsIter = Function.arg_begin(), ArgsEnd = Function.arg_end();
          ArgsIter != ArgsEnd; ArgsIter++) {
@@ -208,7 +240,7 @@ class TracePass : public llvm::FunctionPass {
           getPrintValueArgs(PRINT_VALUE_TAG_PARAMETER, &*ArgsIter, Builder);
       Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
     }
-    Builder.CreateCall(this->PrintInstEndFunc);
+    Builder.CreateCall(this->PrintFuncEnterEndFunc);
     return true;
   }
 
@@ -277,26 +309,27 @@ class TracePass : public llvm::FunctionPass {
     llvm::IRBuilder<> Builder(InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
-#ifndef TRACE_INST_ONLY
-    // Call printValue for each parameter before the instruction.
-    for (unsigned IncomingValueId = 0,
-                  NumIncomingValues = Inst->getNumIncomingValues();
-         IncomingValueId < NumIncomingValues; IncomingValueId++) {
-      DEBUG(llvm::errs() << "Insert printValue for phi node.\n");
-      auto PrintValueArgs = getPrintValueArgsForPhiParameter(
-          Inst->getIncomingValue(IncomingValueId),
-          Inst->getIncomingBlock(IncomingValueId));
-      Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
-    }
+    if (!TraceInstructionOnly.getValue()) {
+      // Call printValue for each parameter before the instruction.
+      for (unsigned IncomingValueId = 0,
+                    NumIncomingValues = Inst->getNumIncomingValues();
+           IncomingValueId < NumIncomingValues; IncomingValueId++) {
+        DEBUG(llvm::errs() << "Insert printValue for phi node.\n");
+        auto PrintValueArgs = getPrintValueArgsForPhiParameter(
+            Inst->getIncomingValue(IncomingValueId),
+            Inst->getIncomingBlock(IncomingValueId));
+        Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+      }
 
-    // Call printResult after the instruction (if it has a result).
-    if (Inst->getName() != "") {
-      DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
-      auto PrintValueArgs =
-          getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
-      Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+      // Call printResult after the instruction (if it has a result).
+      if (Inst->getName() != "") {
+        DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
+        auto PrintValueArgs =
+            getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
+        Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+      }
     }
-#endif
+    Builder.CreateCall(this->PrintInstEndFunc);
   }
 
   // Insert the trace call to non phi instructions.
@@ -313,30 +346,43 @@ class TracePass : public llvm::FunctionPass {
     llvm::IRBuilder<> Builder(Inst);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
-#ifndef TRACE_INST_ONLY
-    // Call printValue for each parameter before the instruction.
-    for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
-         OperandId < NumOperands; OperandId++) {
-      auto PrintValueArgs = getPrintValueArgs(
-          PRINT_VALUE_TAG_PARAMETER, Inst->getOperand(OperandId), Builder);
-      Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
-    }
-
-    // Call printResult after the instruction (if it has a result).
-    if (Inst->getName() != "") {
-      llvm::Instruction* NextInst = Inst->getNextNode();
-      if (NextInst == nullptr) {
-        // If this is the last inst, ignore it for now.
-        assert(false && "Missing tracing last inst in block.");
-      } else {
-        assert(NextInst != nullptr && "Null next inst.");
-        Builder.SetInsertPoint(NextInst);
-        auto PrintValueArgs =
-            getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
+    if (!TraceInstructionOnly) {
+      // Call printValue for each parameter before the instruction.
+      for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
+           OperandId < NumOperands; OperandId++) {
+        auto PrintValueArgs = getPrintValueArgs(
+            PRINT_VALUE_TAG_PARAMETER, Inst->getOperand(OperandId), Builder);
         Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
       }
+
+      // Call printResult after the instruction (if it has a result).
+      bool shouldTraceResult = Inst->getName() != "";
+      // Special case for call: if the callee is traced, then we do
+      // not log the result, but rely on the traced ret to provide it.
+      // Otherwise, we log the result.
+      if (shouldTraceResult) {
+        if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
+          if (!CallInst->getCalledFunction()->isDeclaration()) {
+            // The callee is traced.
+            shouldTraceResult = false;
+          }
+        }
+      }
+
+      if (shouldTraceResult) {
+        llvm::Instruction* NextInst = Inst->getNextNode();
+        if (NextInst == nullptr) {
+          // If this is the last inst, ignore it for now.
+          assert(false && "Missing tracing last inst in block.");
+        } else {
+          assert(NextInst != nullptr && "Null next inst.");
+          Builder.SetInsertPoint(NextInst);
+          auto PrintValueArgs =
+              getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
+          Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+        }
+      }
     }
-#endif
     // Call printInstEnd to commit.
     Builder.CreateCall(this->PrintInstEndFunc);
   }
