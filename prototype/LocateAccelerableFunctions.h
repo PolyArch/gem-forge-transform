@@ -18,7 +18,7 @@
 
 // A analysis pass to locate all the accelerable functions.
 // A function is accelerable if:
-// 1. it has no system call.
+// 1. it has no call to external functions.
 // 2. the function it calls is also acclerable.
 // In short, we can trace these functions and that's why they are accelerable.
 class LocateAccelerableFunctions : public llvm::CallGraphSCCPass {

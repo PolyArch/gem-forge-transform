@@ -42,7 +42,7 @@ $(KERN): $(KERN).bc
 
 # Instrument
 $(KERN)_trace.ll: $(KERN).bc
-	opt $(OPT_ARGS) -debug-only=TracePass -trace-pass -o $@ $^
+	opt $(OPT_ARGS) -debug-only=TracePass -trace-pass -trace-function=$(KERN) -o $@ $^
 
 $(KERN)_replay.ll: $(KERN).bc
 	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -replay -trace-file=$(TRACER_FILE_NAME) $^ -o $@ 
