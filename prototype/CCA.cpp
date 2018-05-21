@@ -142,8 +142,10 @@ class CCADynamicInstruction : public DynamicInstruction {
  public:
   CCADynamicInstruction(const std::string& _OpName, DynamicInstruction* _Prev,
                         DynamicInstruction* _Next)
-      : DynamicInstruction(nullptr, std::vector<DynamicValue*>(), _Prev, _Next),
-        OpName(_OpName) {}
+      : DynamicInstruction(), OpName(_OpName) {
+    this->Prev = _Prev;
+    this->Next = _Next;
+  }
   const std::string& getOpName() override { return this->OpName; }
   std::string OpName;
   // For debug.

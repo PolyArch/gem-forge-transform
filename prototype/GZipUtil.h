@@ -10,11 +10,13 @@
 typedef struct GZTraceT {
   char PingPongBuffer[2 * GZ_TRACE_BUF_LEN];
   char LineBuf[GZ_TRACE_LINE_MAX_LEN];
+  int LineLen;
   gzFile File;
   uint64_t HeadIdx;
   uint64_t TailIdx;
 } GZTrace;
 
+// Return NULL if failed.
 GZTrace* gzOpenGZTrace(const char* FileName);
 void gzCloseGZTrace(GZTrace* Trace);
 int gzReadNextLine(GZTrace* Trace);

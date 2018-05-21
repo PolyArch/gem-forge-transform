@@ -1,5 +1,4 @@
-#include "DynamicTrace.h"
-#include "GZUtil.h"
+#include "TraceParserGZip.h"
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -10,6 +9,7 @@
 #include <list>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 
 static llvm::cl::opt<std::string> TraceFileName("stream-trace-file",
                                                 llvm::cl::desc("Trace file."));
@@ -186,49 +186,31 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     this->DataLayout = new llvm::DataLayout(&Module);
 
     std::string TraceFileNameStr = TraceFileName;
-    GZTrace* TraceFile = gzOpenGZTrace(TraceFileNameStr.c_str());
-    assert(TraceFile != NULL && "Failed to open trace file.");
-    std::string Line;
-    std::list<std::string> LineBuffer;
-    uint64_t LineCount = 0;
-    // while (std::getline(TraceFile, Line)) {
+
+    auto Parser = new TraceParserGZip(TraceFileNameStr);
     while (true) {
-      int LineLen = gzReadNextLine(TraceFile);
-      if (LineLen == 0) {
-        // Reached the end.
+      auto NextType = Parser->getNextType();
+      if (NextType == TraceParser::END) {
         break;
       }
-
-      assert(LineLen > 0 && "Something wrong when reading gz trace file.");
-
-      // Copy the new line to "Line" variable.
-      Line = TraceFile->LineBuf;
-      LineCount++;
-      assert(LineLen == Line.size() && "Unmatched LineLen with Line.size().");
-
-      if (LineCount % 1000000 == 0) {
-        DEBUG(llvm::errs() << "Read in line # " << LineCount << ": " << Line
-                           << '\n');
-      }
-
-      if (DynamicTrace::isBreakLine(Line)) {
-        // Time to parse the buffer.
-        this->parseLineBuffer(Module, LineBuffer);
-        // Clear the buffer.
-        LineBuffer.clear();
-      }
-      // Add the new line into the buffer if not empty.
-      if (Line.size() > 0) {
-        LineBuffer.push_back(Line);
+      switch (NextType) {
+        case TraceParser::INST: {
+          auto Parsed = Parser->parseLLVMInstruction();
+          this->parseInst(Module, Parsed);
+          break;
+        }
+        case TraceParser::FUNC_ENTER: {
+          auto Parsed = Parser->parseFunctionEnter();
+          // Ignore function enter.
+          break;
+        }
+        default: {
+          llvm_unreachable("Unknown next type.");
+          break;
+        }
       }
     }
-    // Process the last instruction if there is any.
-    if (LineBuffer.size() != 0) {
-      this->parseLineBuffer(Module, LineBuffer);
-      LineBuffer.clear();
-    }
-    // TraceFile.close();
-    gzCloseGZTrace(TraceFile);
+    delete Parser;
 
     for (size_t i = 0; i < CCA_SUBGRAPH_DEPTH_MAX; ++i) {
       this->SubGraphDepthHistograpm[i] = 0;
@@ -269,7 +251,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
       //       this->DynamicMemAccessCount +=
       //           this->StaticInstructionInstantiatedCount.at(Inst);
       //       this->DynamicMemAccessBytes +=
-      //           this->StaticInstructionInstantiatedCount.at(Inst) * AccessBytes;
+      //           this->StaticInstructionInstantiatedCount.at(Inst) *
+      //           AccessBytes;
       //     }
       //     // Check if this is a stream.
       //     const llvm::SCEV* SCEV = SE.getSCEV(Addr);
@@ -354,7 +337,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     // // Print out the top memory access.
     // for (auto& Entry : TopMemAccess) {
     //   llvm::Instruction* Inst = Entry.second;
-    //   DEBUG(llvm::errs() << Entry.first << ' ' << Inst->getFunction()->getName()
+    //   DEBUG(llvm::errs() << Entry.first << ' ' <<
+    //   Inst->getFunction()->getName()
     //                      << ' ' << Inst->getParent()->getName() << ' '
     //                      << Inst->getName() << ' '
     //                      << this->StaticInstructionSCEVMap.at(Inst) << '\n');
@@ -511,97 +495,65 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
 
   llvm::DataLayout* DataLayout;
 
-  void parseLineBuffer(llvm::Module& Module,
-                       const std::list<std::string>& LineBuffer) {
-    // Silently ignore empty line buffer.
-    if (LineBuffer.size() == 0) {
-      return;
+  void parseInst(llvm::Module& Module, TraceParser::TracedInst& Parsed) {
+    if (this->CurrentFunction == nullptr ||
+        this->CurrentFunction->getName() != Parsed.Func) {
+      this->CurrentFunction = Module.getFunction(Parsed.Func);
+      assert(this->CurrentFunction &&
+             "Failed to loop up traced function in module.");
+      this->CurrentBasicBlock = nullptr;
+      this->CurrentIndex = -1;
     }
-    switch (LineBuffer.front().front()) {
-      case 'i': {
-        // This is a dynamic instruction.
-        // Try to locate the static instruciton.
-        auto InstructionLineFields =
-            DynamicTrace::splitByChar(LineBuffer.front(), '|');
-        assert(InstructionLineFields.size() == 5 &&
-               "Incorrect fields for instrunction line.");
-        assert(InstructionLineFields[0] == "i" &&
-               "The first filed must be \"i\".");
-        const std::string& FunctionName = InstructionLineFields[1];
-        const std::string& BasicBlockName = InstructionLineFields[2];
-        int Index = std::stoi(InstructionLineFields[3]);
 
-        if (this->CurrentFunction == nullptr ||
-            this->CurrentFunction->getName() != FunctionName) {
-          this->CurrentFunction = Module.getFunction(FunctionName);
-          assert(this->CurrentFunction &&
-                 "Failed to loop up traced function in module.");
-          this->CurrentBasicBlock = nullptr;
+    if (this->CurrentBasicBlock == nullptr ||
+        Parsed.BB != this->CurrentBasicBlock->getName()) {
+      // We are in a new basic block.
+      // Find the new basic block.
+      for (auto BBIter = this->CurrentFunction->begin(),
+                BBEnd = this->CurrentFunction->end();
+           BBIter != BBEnd; ++BBIter) {
+        if (std::string(BBIter->getName()) == Parsed.BB) {
+          this->CurrentBasicBlock = &*BBIter;
+          // Clear index.
           this->CurrentIndex = -1;
+          break;
         }
-
-        if (this->CurrentBasicBlock == nullptr ||
-            BasicBlockName != this->CurrentBasicBlock->getName()) {
-          // We are in a new basic block.
-          // Find the new basic block.
-          for (auto BBIter = this->CurrentFunction->begin(),
-                    BBEnd = this->CurrentFunction->end();
-               BBIter != BBEnd; ++BBIter) {
-            if (std::string(BBIter->getName()) == BasicBlockName) {
-              this->CurrentBasicBlock = &*BBIter;
-              // Clear index.
-              this->CurrentIndex = -1;
-              break;
-            }
-          }
-        }
-
-        assert(this->CurrentBasicBlock->getName() == BasicBlockName &&
-               "Invalid basic block name.");
-
-        if (Index != this->CurrentIndex) {
-          int Count = 0;
-          for (auto InstIter = this->CurrentBasicBlock->begin(),
-                    InstEnd = this->CurrentBasicBlock->end();
-               InstIter != InstEnd; ++InstIter) {
-            if (Count == Index) {
-              this->CurrentIndex = Index;
-              this->CurrentStaticInstruction = InstIter;
-              break;
-            }
-            Count++;
-          }
-        }
-
-        llvm::Instruction* StaticInstruction =
-            &*(this->CurrentStaticInstruction);
-
-        assert(Index == this->CurrentIndex && "Invalid index.");
-
-        assert(this->CurrentStaticInstruction !=
-                   this->CurrentBasicBlock->end() &&
-               "Invalid end index.");
-
-        this->CurrentStaticInstruction++;
-        this->CurrentIndex++;
-        if (this->StaticInstructionInstantiatedCount.find(StaticInstruction) ==
-            this->StaticInstructionInstantiatedCount.end()) {
-          this->StaticInstructionInstantiatedCount.emplace(StaticInstruction,
-                                                           1);
-        } else {
-          this->StaticInstructionInstantiatedCount[StaticInstruction]++;
-        }
-        this->DynamicInstructionCount++;
-        break;
       }
-      case 'p':
-      case 'r':
-      case 'e':
-        // Simply ignore function enter trace.
-        break;
-      default:
-        llvm_unreachable("Unrecognized line buffer.");
     }
+
+    assert(this->CurrentBasicBlock->getName() == Parsed.BB &&
+           "Invalid basic block name.");
+
+    if (Parsed.Id != this->CurrentIndex) {
+      int Count = 0;
+      for (auto InstIter = this->CurrentBasicBlock->begin(),
+                InstEnd = this->CurrentBasicBlock->end();
+           InstIter != InstEnd; ++InstIter) {
+        if (Count == Parsed.Id) {
+          this->CurrentIndex = Parsed.Id;
+          this->CurrentStaticInstruction = InstIter;
+          break;
+        }
+        Count++;
+      }
+    }
+
+    llvm::Instruction* StaticInstruction = &*(this->CurrentStaticInstruction);
+
+    assert(Parsed.Id == this->CurrentIndex && "Invalid index.");
+
+    assert(this->CurrentStaticInstruction != this->CurrentBasicBlock->end() &&
+           "Invalid end index.");
+
+    this->CurrentStaticInstruction++;
+    this->CurrentIndex++;
+    if (this->StaticInstructionInstantiatedCount.find(StaticInstruction) ==
+        this->StaticInstructionInstantiatedCount.end()) {
+      this->StaticInstructionInstantiatedCount.emplace(StaticInstruction, 1);
+    } else {
+      this->StaticInstructionInstantiatedCount[StaticInstruction]++;
+    }
+    this->DynamicInstructionCount++;
   }
 };
 

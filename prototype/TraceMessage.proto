@@ -3,21 +3,23 @@ syntax = "proto3";
 package LLVM.TDG;
 
 message DynamicLLVMInstruction {
-    string func = 1;
-    string bb = 2;
-    uint32 id = 3;
-    repeated string params = 4;
-    string result = 5;
+  string func = 1;
+  string bb = 2;
+  uint32 id = 3;
+  repeated string params = 4;
+  string result = 5;
+  string op = 6;
 }
 
 // Logs information on entering a function.
 message DynamicLLVMFunctionEnter {
-    string func = 1;
-    repeated string params = 2;
+  string func = 1;
+  repeated string params = 2;
 }
 
 message DynamicLLVMTraceEntry {
+  oneof Entry {
     DynamicLLVMInstruction inst = 1;
     DynamicLLVMFunctionEnter func_enter = 2;
+  }
 }
-

@@ -23,9 +23,11 @@ TRACER_FILE_NAME=llvm_trace
 # Link the gzip tracer.
 # TRACE_LINK_FLAGS=$(LINK_FLAG) -lz
 # TRACER_LIB=$(BUILD_DIR)/libTracerGZip.a
+# TRACE_FILE_FORMAT=gzip
 # Link the protobuf tracer.
 TRACE_LINK_FLAGS=$(LINK_FLAG) -lprotobuf
 TRACER_LIB=$(BUILD_DIR)/libTracerProtobuf.a
+TRACE_FILE_FORMAT=protobuf
 
 
 # Compile
@@ -45,7 +47,7 @@ $(KERN)_trace.ll: $(KERN).bc
 	opt $(OPT_ARGS) -debug-only=TracePass -trace-pass -trace-function=$(KERN) -o $@ $^
 
 $(KERN)_replay.ll: $(KERN).bc
-	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -replay -trace-file=$(TRACER_FILE_NAME) $^ -o $@ 
+	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -replay -trace-file=$(TRACER_FILE_NAME) -trace-format=$(TRACE_FILE_FORMAT) $^ -o $@ 
 
 $(KERN)_cca.ll: $(KERN).bc
 	opt $(OPT_ARGS) -debug-only=ReplayPass,DynamicTrace -replay-cca -trace-file=$(TRACER_FILE_NAME) -cca-max-fus=$(CCA_MAX_FUS) $^ -o $@ 

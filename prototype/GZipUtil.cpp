@@ -1,4 +1,4 @@
-#include "GZUtil.h"
+#include "GZipUtil.h"
 
 #include <stdlib.h>
 
@@ -16,6 +16,7 @@ GZTrace* gzOpenGZTrace(const char* FileName) {
   Trace->File = File;
   Trace->HeadIdx = 0;
   Trace->TailIdx = 0;
+  Trace->LineLen = 0;
 
   return Trace;
 }
@@ -54,6 +55,7 @@ int gzReadNextLine(GZTrace* Trace) {
           // Report the current LineLen.
           break;
         } else {
+          Trace->LineLen = -1;
           return -1;
         }
       }
@@ -62,6 +64,7 @@ int gzReadNextLine(GZTrace* Trace) {
     }
 
     if (LineLen + 1 >= GZ_TRACE_LINE_MAX_LEN) {
+      Trace->LineLen = -1;
       return -1;
     }
 
@@ -78,5 +81,6 @@ int gzReadNextLine(GZTrace* Trace) {
 
   // Add the 0 terminator. Replace the '\n'
   Trace->LineBuf[LineLen] = 0;
+  Trace->LineLen = LineLen;
   return LineLen;
 }

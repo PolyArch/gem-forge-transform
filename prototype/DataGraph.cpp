@@ -1,5 +1,4 @@
-#include "DynamicTrace.h"
-#include "GZUtil.h"
+#include "DataGraph.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -7,18 +6,13 @@
 #include <fstream>
 #include <vector>
 
-#define DEBUG_TYPE "DynamicTrace"
+#define DEBUG_TYPE "DataGraph"
 
 DynamicValue::DynamicValue(const std::string& _Value)
     : Value(_Value), MemBase(""), MemOffset(0) {}
 
-DynamicInstruction::DynamicInstruction(
-    DynamicValue* _DynamicResult, std::vector<DynamicValue*> _DynamicOperands,
-    DynamicInstruction* _Prev, DynamicInstruction* _Next)
-    : DynamicResult(_DynamicResult),
-      DynamicOperands(std::move(_DynamicOperands)),
-      Prev(_Prev),
-      Next(_Next) {}
+DynamicInstruction::DynamicInstruction()
+    : DynamicResult(nullptr), Prev(nullptr), Next(nullptr) {}
 
 DynamicInstruction::~DynamicInstruction() {
   if (this->DynamicResult != nullptr) {
@@ -34,13 +28,19 @@ DynamicInstruction::~DynamicInstruction() {
 }
 
 LLVMDynamicInstruction::LLVMDynamicInstruction(
-    llvm::Instruction* _StaticInstruction, DynamicValue* _DynamicResult,
-    std::vector<DynamicValue*> _DynamicOperands, DynamicInstruction* _Prev,
+    llvm::Instruction* _StaticInstruction, DynamicValue* _Result,
+    std::vector<DynamicValue*> _Operands, DynamicInstruction* _Prev,
     DynamicInstruction* _Next)
-    : DynamicInstruction(_DynamicResult, std::move(_DynamicOperands), _Prev,
-                         _Next),
+    : DynamicInstruction(),
       StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
+  this->DynamicResult = _Result;
+  this->DynamicOperands = std::move(_Operands);
+
+  // Set the _Prev, _Next.
+  this->Prev = _Prev;
+  this->Next = _Next;
+
   assert(this->StaticInstruction != nullptr &&
          "Non null static instruction ptr.");
   if (this->DynamicResult != nullptr) {
@@ -62,63 +62,82 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
   }
 }
 
-DynamicTrace::DynamicTrace(const std::string& _TraceFileName,
-                           llvm::Module* _Module)
+LLVMDynamicInstruction::LLVMDynamicInstruction(
+    llvm::Instruction* _StaticInstruction, TraceParser::TracedInst& _Parsed,
+    DynamicInstruction* _Prev, DynamicInstruction* _Next)
+    : DynamicInstruction(),
+      StaticInstruction(_StaticInstruction),
+      OpName(StaticInstruction->getOpcodeName()) {
+  if (_Parsed.Result != "") {
+    // We do have result.
+    this->DynamicResult = new DynamicValue(_Parsed.Result);
+  }
+
+  for (const auto& Operand : _Parsed.Operands) {
+    this->DynamicOperands.push_back(new DynamicValue(Operand));
+  }
+
+  // Set the _Prev, _Next.
+  this->Prev = _Prev;
+  this->Next = _Next;
+
+  assert(this->StaticInstruction != nullptr &&
+         "Non null static instruction ptr.");
+  if (this->DynamicResult != nullptr) {
+    // Sanity check to make sure that the static instruction do has result.
+    if (this->StaticInstruction->getName() == "") {
+      DEBUG(
+          llvm::errs() << "DynamicResult set for non-result static instruction "
+                       << this->StaticInstruction->getName() << '\n');
+    }
+    assert(this->StaticInstruction->getName() != "" &&
+           "DynamicResult set for non-result static instruction.");
+  } else {
+    // Comment this out as for some call inst, if the callee is traced,
+    // then we donot log the result.
+    if (!llvm::isa<llvm::CallInst>(_StaticInstruction)) {
+      assert(this->StaticInstruction->getName() == "" &&
+             "Missing DynamicResult for non-call instruction.");
+    }
+  }
+}
+
+DataGraph::DataGraph(TraceParser* _Parser, llvm::Module* _Module)
     : DynamicInstructionListHead(nullptr),
       DynamicInstructionListTail(nullptr),
       Module(_Module),
       NumMemDependences(0),
+      Parser(_Parser),
       CurrentFunctionName(""),
       CurrentBasicBlockName(""),
       CurrentIndex(-1) {
   this->DataLayout = new llvm::DataLayout(this->Module);
 
-  // Parse the trace file.
-  GZTrace* TraceFile = gzOpenGZTrace(_TraceFileName.c_str());
-  assert(TraceFile != NULL && "Failed to open trace file.");
-  std::string Line;
-  std::list<std::string> LineBuffer;
-  uint64_t LineCount = 0;
-  // while (std::getline(TraceFile, Line)) {
   while (true) {
-    int LineLen = gzReadNextLine(TraceFile);
-    if (LineLen == 0) {
-      // Reached the end.
+    auto NextType = this->Parser->getNextType();
+    if (NextType == TraceParser::END) {
       break;
     }
-
-    assert(LineLen > 0 && "Something wrong when reading gz trace file.");
-
-    // Copy the new line to "Line" variable.
-    Line = TraceFile->LineBuf;
-    LineCount++;
-    assert(LineLen == Line.size() && "Unmatched LineLen with Line.size().");
-    // DEBUG(llvm::errs() << "Read in line # " << LineCount << ": " << Line
-    //                    << '\n');
-    // DEBUG(llvm::errs() << "Head " << TraceFile->HeadIdx << " Tail "
-    //                    << TraceFile->TailIdx << '\n');
-
-    if (isBreakLine(Line)) {
-      // Time to parse the buffer.
-      this->parseLineBuffer(LineBuffer);
-      // Clear the buffer.
-      LineBuffer.clear();
-    }
-    // Add the new line into the buffer if not empty.
-    if (Line.size() > 0) {
-      LineBuffer.push_back(Line);
+    switch (NextType) {
+      case TraceParser::INST: {
+        auto Parsed = this->Parser->parseLLVMInstruction();
+        this->parseDynamicInstruction(Parsed);
+        break;
+      }
+      case TraceParser::FUNC_ENTER: {
+        auto Parsed = this->Parser->parseFunctionEnter();
+        this->parseFunctionEnter(Parsed);
+        break;
+      }
+      default: {
+        llvm_unreachable("Unknown next type.");
+        break;
+      }
     }
   }
-  // Process the last instruction if there is any.
-  if (LineBuffer.size() != 0) {
-    this->parseLineBuffer(LineBuffer);
-    LineBuffer.clear();
-  }
-  // TraceFile.close();
-  gzCloseGZTrace(TraceFile);
 }
 
-DynamicTrace::~DynamicTrace() {
+DataGraph::~DataGraph() {
   DynamicInstruction* Iter = this->DynamicInstructionListHead;
   while (Iter != nullptr) {
     auto Prev = Iter;
@@ -128,89 +147,23 @@ DynamicTrace::~DynamicTrace() {
   this->DynamicInstructionListHead = nullptr;
   this->DynamicInstructionListTail = nullptr;
   delete this->DataLayout;
+  delete this->Parser;
 }
 
-void DynamicTrace::parseLineBuffer(const std::list<std::string>& LineBuffer) {
-  // Silently ignore empty line buffer.
-  if (LineBuffer.size() == 0) {
-    return;
-  }
-  switch (LineBuffer.front().front()) {
-    case 'i':
-      // This is a dynamic instruction.
-      this->parseDynamicInstruction(LineBuffer);
-      break;
-    case 'e':
-      // Special case for function enter node.
-      this->parseFunctionEnter(LineBuffer);
-      break;
-    default:
-      llvm_unreachable("Unrecognized line buffer.");
-  }
-}
-
-void DynamicTrace::parseDynamicInstruction(
-    const std::list<std::string>& LineBuffer) {
-  assert(LineBuffer.size() > 0 && "Emptry line buffer.");
-
-  auto LineIter = LineBuffer.begin();
-  // Parse the instruction line.
-  auto InstructionLineFields = splitByChar(*LineIter, '|');
-  assert(InstructionLineFields.size() == 5 &&
-         "Incorrect fields for instrunction line.");
-  assert(InstructionLineFields[0] == "i" && "The first filed must be \"i\".");
-  const std::string& FunctionName = InstructionLineFields[1];
-  const std::string& BasicBlockName = InstructionLineFields[2];
-  int Index = std::stoi(InstructionLineFields[3]);
+void DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
   llvm::Instruction* StaticInstruction =
-      this->getLLVMInstruction(FunctionName, BasicBlockName, Index);
-  if (InstructionLineFields[4] != StaticInstruction->getOpcodeName()) {
+      this->getLLVMInstruction(Parsed.Func, Parsed.BB, Parsed.Id);
+  if (Parsed.Op != StaticInstruction->getOpcodeName()) {
     DEBUG(llvm::errs() << "Unmatched static opcode "
                        << StaticInstruction->getOpcodeName()
-                       << " dynamic opcode " << InstructionLineFields[4]);
+                       << " dynamic opcode " << Parsed.Op);
   }
-  assert(InstructionLineFields[4] == StaticInstruction->getOpcodeName() &&
+  assert(Parsed.Op == StaticInstruction->getOpcodeName() &&
          "Unmatched opcode.");
 
-  // Parse the dynamic values.
-  ++LineIter;
-  DynamicValue* DynamicResult = nullptr;
-  std::vector<DynamicValue*> DynamicOperands(
-      StaticInstruction->getNumOperands(), nullptr);
-  unsigned int OperandIndex = 0;
-  while (LineIter != LineBuffer.end()) {
-    switch (LineIter->at(0)) {
-      case 'r': {
-        // This is the result line.
-        assert(DynamicResult == nullptr &&
-               "Multiple results for single instruction.");
-        auto ResultLineFields = splitByChar(*LineIter, '|');
-        DynamicResult = new DynamicValue(ResultLineFields[1]);
-        break;
-      }
-      case 'p': {
-        assert(OperandIndex < StaticInstruction->getNumOperands() &&
-               "Too much operands.");
-        auto OperandLineFields = splitByChar(*LineIter, '|');
-        if (OperandLineFields.size() < 2) {
-          DEBUG(llvm::errs() << *LineIter << '\n');
-        }
-        assert(OperandLineFields.size() >= 2 &&
-               "Too few fields for operand line.");
-        DynamicOperands[OperandIndex++] =
-            new DynamicValue(OperandLineFields[1]);
-        break;
-      }
-      default: {
-        llvm_unreachable("Unknown value line.");
-        break;
-      }
-    }
-    ++LineIter;
-  }
-
-  assert(OperandIndex == StaticInstruction->getNumOperands() &&
-         "Missing dynamic value for operand.");
+  // Check the operands.
+  assert(Parsed.Operands.size() == StaticInstruction->getNumOperands() &&
+         "Unmatched # of dynamic value for operand.");
 
   // Special case: Result of ret instruction.
   // This can only happen when we returned from a traced
@@ -223,17 +176,14 @@ void DynamicTrace::parseDynamicInstruction(
   // callee::ret::param
   // caller::call::result
   // For now simply ignore it.
-  if (llvm::isa<llvm::ReturnInst>(StaticInstruction) &&
-      DynamicResult != nullptr) {
+  if (llvm::isa<llvm::ReturnInst>(StaticInstruction) && Parsed.Result != "") {
     // Free the dynamic result for now.
-    delete DynamicResult;
-    DynamicResult = nullptr;
+    Parsed.Result = "";
   }
 
   // Create the new dynamic instructions.
   DynamicInstruction* DynamicInst = new LLVMDynamicInstruction(
-      StaticInstruction, DynamicResult, std::move(DynamicOperands),
-      this->DynamicInstructionListTail, nullptr);
+      StaticInstruction, Parsed, this->DynamicInstructionListTail, nullptr);
 
   // For now do not handle any dependences.
   this->handleRegisterDependence(DynamicInst, StaticInstruction);
@@ -260,16 +210,16 @@ void DynamicTrace::parseDynamicInstruction(
   this->StaticToDynamicMap.at(StaticInstruction).push_back(DynamicInst);
 }
 
-void DynamicTrace::addRegisterDependence(DynamicInstruction* DynamicInst,
-                                         llvm::Instruction* OperandStaticInst) {
+void DataGraph::addRegisterDependence(DynamicInstruction* DynamicInst,
+                                      llvm::Instruction* OperandStaticInst) {
   // Push the latest dynamic inst of the operand static inst.
   DynamicInstruction* OperandDynamicInst =
       this->getLatestDynamicIdForStaticInstruction(OperandStaticInst);
   this->RegDeps[DynamicInst].insert(OperandDynamicInst);
 }
 
-void DynamicTrace::handleRegisterDependence(
-    DynamicInstruction* DynamicInst, llvm::Instruction* StaticInstruction) {
+void DataGraph::handleRegisterDependence(DynamicInstruction* DynamicInst,
+                                         llvm::Instruction* StaticInstruction) {
   // Handle register dependence.
   assert(this->RegDeps.find(DynamicInst) == this->RegDeps.end() &&
          "This dynamic instruction's register dependence has already been "
@@ -330,7 +280,7 @@ void DynamicTrace::handleRegisterDependence(
   }
 }
 
-llvm::Instruction* DynamicTrace::resolveRegisterDependenceInPhiNode(
+llvm::Instruction* DataGraph::resolveRegisterDependenceInPhiNode(
     llvm::Instruction* OperandStaticInst) {
   // Special rules to remove phi dependence.
   // If the instruction is dependent on a phi node, we set the
@@ -359,7 +309,7 @@ llvm::Instruction* DynamicTrace::resolveRegisterDependenceInPhiNode(
   return OperandStaticInst;
 }
 
-bool DynamicTrace::checkAndAddMemoryDependence(
+bool DataGraph::checkAndAddMemoryDependence(
     std::unordered_map<uint64_t, DynamicInstruction*>& LastMap, uint64_t Addr,
     DynamicInstruction* DynamicInst) {
   auto Iter = LastMap.find(Addr);
@@ -378,7 +328,7 @@ bool DynamicTrace::checkAndAddMemoryDependence(
   return false;
 }
 
-void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
+void DataGraph::handleMemoryDependence(DynamicInstruction* DynamicInst) {
   if (auto LoadStaticInstruction =
           llvm::dyn_cast<llvm::LoadInst>(DynamicInst->getStaticInstruction())) {
     // Handle RAW dependence.
@@ -432,70 +382,49 @@ void DynamicTrace::handleMemoryDependence(DynamicInstruction* DynamicInst) {
   }
 }
 
-void DynamicTrace::parseFunctionEnter(
-    const std::list<std::string>& LineBuffer) {
-  // TODO: Parse function enter. Handle call stack
-
-  assert(LineBuffer.size() > 0 && "Emptry line buffer.");
-
-  auto LineIter = LineBuffer.begin();
-  // Parse the enter line.
-  auto EnterLineFields = splitByChar(*LineIter, '|');
-  assert(EnterLineFields.size() == 2 &&
-         "Incorrect fields for function enter line.");
-  assert(EnterLineFields[0] == "e" && "The first filed must be \"e\".");
-
-  llvm::Function* StaticFunction =
-      this->Module->getFunction(EnterLineFields[1]);
+void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed) {
+  llvm::Function* StaticFunction = this->Module->getFunction(Parsed.Func);
   assert(StaticFunction && "Failed to loop up traced function in module.");
 
   // Handle the frame stack.
   std::unordered_map<llvm::Argument*, DynamicValue*> DynamicFrame;
-  ++LineIter;
+  size_t ParsedArgumentIndex = 0;
   unsigned int ArgumentIndex = 0;
   auto ArgumentIter = StaticFunction->arg_begin();
   auto ArgumentEnd = StaticFunction->arg_end();
-  while (LineIter != LineBuffer.end() && ArgumentIter != ArgumentEnd) {
-    switch (LineIter->at(0)) {
-      case 'p': {
-        auto ArugmentLineFields = splitByChar(*LineIter, '|');
-        assert(ArugmentLineFields.size() >= 2 &&
-               "Too few argument line fields.");
-        DynamicValue* DynamicArgument = new DynamicValue(ArugmentLineFields[1]);
+  while (ParsedArgumentIndex != Parsed.Arguments.size() &&
+         ArgumentIter != ArgumentEnd) {
+    DynamicValue* DynamicArgument =
+        new DynamicValue(Parsed.Arguments[ParsedArgumentIndex]);
 
-        llvm::Argument* StaticArgument = &*ArgumentIter;
-        DynamicFrame.emplace(StaticArgument, DynamicArgument);
+    llvm::Argument* StaticArgument = &*ArgumentIter;
+    DynamicFrame.emplace(StaticArgument, DynamicArgument);
 
-        // If there is a previous call inst, copy the base/offset.
-        // Otherwise, initialize to itself.
-        if (this->DynamicFrameStack.size() == 0) {
-          // There is no caller.
-          DynamicArgument->MemBase = StaticArgument->getName();
-          DynamicArgument->MemOffset = 0;
-        } else {
-          // The previous inst must be a call.
-          DynamicInstruction* PrevDynamicInstruction =
-              this->DynamicInstructionListTail;
-          assert(llvm::isa<llvm::CallInst>(
-                     PrevDynamicInstruction->getStaticInstruction()) &&
-                 "The previous instruction is not a call");
-          DynamicArgument->MemBase =
-              PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemBase;
-          DynamicArgument->MemOffset =
-              PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemOffset;
-        }
-        break;
-      }
-      default: {
-        llvm_unreachable("Unknown value line for function enter.");
-        break;
-      }
+    // If there is a previous call inst, copy the base/offset.
+    // Otherwise, initialize to itself.
+    if (this->DynamicFrameStack.size() == 0) {
+      // There is no caller.
+      DynamicArgument->MemBase = StaticArgument->getName();
+      DynamicArgument->MemOffset = 0;
+    } else {
+      // The previous inst must be a call.
+      DynamicInstruction* PrevDynamicInstruction =
+          this->DynamicInstructionListTail;
+      assert(llvm::isa<llvm::CallInst>(
+                 PrevDynamicInstruction->getStaticInstruction()) &&
+             "The previous instruction is not a call");
+      DynamicArgument->MemBase =
+          PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemBase;
+      DynamicArgument->MemOffset =
+          PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemOffset;
     }
-    ++LineIter;
+
+    ++ParsedArgumentIndex;
     ++ArgumentIter;
     ++ArgumentIndex;
   }
-  assert(ArgumentIter == ArgumentEnd && LineIter == LineBuffer.end() &&
+  assert(ArgumentIter == ArgumentEnd &&
+         ParsedArgumentIndex == Parsed.Arguments.size() &&
          "Unmatched number of arguments and value lines in function enter.");
 
   // ---
@@ -503,7 +432,7 @@ void DynamicTrace::parseFunctionEnter(
   // ---
 
   // Set the current function.
-  this->CurrentFunctionName = EnterLineFields[1];
+  this->CurrentFunctionName = Parsed.Func;
   this->CurrentFunction = StaticFunction;
   this->CurrentBasicBlockName = "";
   this->CurrentIndex = -1;
@@ -512,7 +441,7 @@ void DynamicTrace::parseFunctionEnter(
   this->DynamicFrameStack.push_front(std::move(DynamicFrame));
 }
 
-llvm::Instruction* DynamicTrace::getLLVMInstruction(
+llvm::Instruction* DataGraph::getLLVMInstruction(
     const std::string& FunctionName, const std::string& BasicBlockName,
     const int Index) {
   if (FunctionName != this->CurrentFunctionName) {
@@ -577,7 +506,7 @@ llvm::Instruction* DynamicTrace::getLLVMInstruction(
   return StaticInstruction;
 }
 
-DynamicInstruction* DynamicTrace::getLatestDynamicIdForStaticInstruction(
+DynamicInstruction* DataGraph::getLatestDynamicIdForStaticInstruction(
     llvm::Instruction* StaticInstruction) {
   // Push the latest dynamic inst of the operand static inst.
   if (this->StaticToDynamicMap.find(StaticInstruction) ==
@@ -596,7 +525,7 @@ DynamicInstruction* DynamicTrace::getLatestDynamicIdForStaticInstruction(
   return DynamicInsts.back();
 }
 
-void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
+void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
   llvm::Instruction* StaticInstruction = DynamicInst->getStaticInstruction();
 
   // DEBUG(llvm::errs() << "handle memory base for inst "
@@ -699,19 +628,15 @@ void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
     }
   }
 
-  // Compute the base/offset for the result of the instruction we actually care
-  // about.
-  // NOTE: A complete support to memory base offset computation is not trivial
-  // if we consider the numerious way an memory address can be generated.
-  // Consider the following example:
-  // i64 i = load ...
-  // i64 ii = add i, x
-  // i32* pi = bitcase ii ...
-  // This example is essential impossible to handle if x is also a address or
-  // something.
-  // To make things worse: consider the inter-procedure base/offset computation.
-  // We now only support a few ways of generated address. We hope the
-  // user would not do something crazy in the source code.
+  // Compute the base/offset for the result of the instruction we actually
+  // care about. NOTE: A complete support to memory base offset computation is
+  // not trivial if we consider the numerious way an memory address can be
+  // generated. Consider the following example: i64 i = load ... i64 ii = add
+  // i, x i32* pi = bitcase ii ... This example is essential impossible to
+  // handle if x is also a address or something. To make things worse:
+  // consider the inter-procedure base/offset computation. We now only support
+  // a few ways of generated address. We hope the user would not do something
+  // crazy in the source code.
   if (auto GEPStaticInstruction =
           llvm::dyn_cast<llvm::GetElementPtrInst>(StaticInstruction)) {
     // GEP.
@@ -780,7 +705,7 @@ void DynamicTrace::handleMemoryBase(DynamicInstruction* DynamicInst) {
   }
 }
 
-void DynamicTrace::handleControlDependence(DynamicInstruction* DynamicInst) {
+void DataGraph::handleControlDependence(DynamicInstruction* DynamicInst) {
   auto DepInst = this->getPreviousBranchDynamicInstruction(DynamicInst);
   if (DepInst != nullptr) {
     // DEBUG(llvm::errs() << "Get control dependence!\n");
@@ -792,7 +717,7 @@ void DynamicTrace::handleControlDependence(DynamicInstruction* DynamicInst) {
   }
 }
 
-DynamicInstruction* DynamicTrace::getPreviousDynamicInstruction() {
+DynamicInstruction* DataGraph::getPreviousDynamicInstruction() {
   if (this->DynamicFrameStack.empty()) {
     return nullptr;
   }
@@ -804,7 +729,7 @@ DynamicInstruction* DynamicTrace::getPreviousDynamicInstruction() {
   }
 }
 
-DynamicInstruction* DynamicTrace::getPreviousNonPhiDynamicInstruction(
+DynamicInstruction* DataGraph::getPreviousNonPhiDynamicInstruction(
     DynamicInstruction* DynamicInst) {
   while (DynamicInst != nullptr && DynamicInst->Prev != nullptr) {
     DynamicInstruction* DInstruction = DynamicInst->Prev;
@@ -816,7 +741,7 @@ DynamicInstruction* DynamicTrace::getPreviousNonPhiDynamicInstruction(
   return nullptr;
 }
 
-DynamicInstruction* DynamicTrace::getPreviousBranchDynamicInstruction(
+DynamicInstruction* DataGraph::getPreviousBranchDynamicInstruction(
     DynamicInstruction* DynamicInst) {
   while (DynamicInst != nullptr && DynamicInst->Prev != nullptr) {
     DynamicInstruction* DInstruction = DynamicInst->Prev;
