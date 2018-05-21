@@ -14,7 +14,7 @@ void cleanup();
 inline std::ofstream& getTraceFile() {
   static std::ofstream o;
   if (!o.is_open()) {
-    o.open(TRACE_FILE_NAME);
+    o.open(TRACE_FILE_NAME, std::ios::out | std::ios::binary);
     std::atexit(cleanup);
   }
   assert(o.is_open());
@@ -60,6 +60,7 @@ void printInstImpl(const char* FunctionName, const char* BBName, unsigned Id,
   protobufTraceEntry.mutable_inst()->set_func(FunctionName);
   protobufTraceEntry.mutable_inst()->set_bb(BBName);
   protobufTraceEntry.mutable_inst()->set_id(Id);
+  protobufTraceEntry.mutable_inst()->set_op(OpCodeName);
   protobufTraceEntry.mutable_inst()->clear_params();
   protobufTraceEntry.mutable_inst()->clear_result();
 }
@@ -121,11 +122,24 @@ void printValueUnsupportImpl(const char Tag, const char* Name,
 
 // Serialize to file.
 void printInstEndImpl() {
-  protobufTraceEntry.SerializeToOstream(&getTraceFile());
+  assert(!protobufTraceEntry.has_func_enter() &&
+         "Should not contain func enter for inst.");
+  auto& trace = getTraceFile();
+  uint64_t bytes = protobufTraceEntry.ByteSizeLong();
+  trace.write(reinterpret_cast<char*>(&bytes), sizeof(bytes));
+  protobufTraceEntry.SerializeToOstream(&trace);
   count++;
 }
 
 void printFuncEnterEndImpl() {
-  protobufTraceEntry.SerializeToOstream(&getTraceFile());
+  assert(!protobufTraceEntry.has_inst() &&
+         "Should not contain inst for func enter.");
+  if (count == 0) {
+    std::cout << "The first one is func enter.\n";
+  }
+  auto& trace = getTraceFile();
+  uint64_t bytes = protobufTraceEntry.ByteSizeLong();
+  trace.write(reinterpret_cast<char*>(&bytes), sizeof(bytes));
+  protobufTraceEntry.SerializeToOstream(&trace);
   count++;
 }

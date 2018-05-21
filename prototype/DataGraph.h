@@ -1,6 +1,8 @@
 #ifndef LLVM_TDG_DYNAMIC_TRACE_H
 #define LLVM_TDG_DYNAMIC_TRACE_H
 
+#include "TraceParser.h"
+
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -20,13 +22,18 @@ class DynamicValue {
   uint64_t MemOffset;
 };
 
+class DynamicFunctionEnter {
+ public:
+  std::string FuncName;
+  std::vector<DynamicValue*> DynamicParams;
+  DynamicFunctionEnter(std::string FuncName);
+};
+
 class DynamicInstruction {
  public:
   using DynamicId = uint64_t;
 
-  DynamicInstruction(DynamicValue* _DynamicResult,
-                     std::vector<DynamicValue*> _DynamicOperands,
-                     DynamicInstruction* _Prev, DynamicInstruction* _Next);
+  DynamicInstruction();
   // Not copiable.
   DynamicInstruction(const DynamicInstruction& other) = delete;
   DynamicInstruction& operator=(const DynamicInstruction& other) = delete;
@@ -52,8 +59,11 @@ class DynamicInstruction {
 class LLVMDynamicInstruction : public DynamicInstruction {
  public:
   LLVMDynamicInstruction(llvm::Instruction* _StaticInstruction,
-                         DynamicValue* _DynamicResult,
-                         std::vector<DynamicValue*> _DynamicOperands,
+                         TraceParser::TracedInst& _Parsed,
+                         DynamicInstruction* _Prev, DynamicInstruction* _Next);
+  LLVMDynamicInstruction(llvm::Instruction* _StaticInstruction,
+                         DynamicValue* _Result,
+                         std::vector<DynamicValue*> _Operands,
                          DynamicInstruction* _Prev, DynamicInstruction* _Next);
   // Not copiable.
   LLVMDynamicInstruction(const LLVMDynamicInstruction& other) = delete;
@@ -70,17 +80,18 @@ class LLVMDynamicInstruction : public DynamicInstruction {
   std::string OpName;
 };
 
-class DynamicTrace {
+class DataGraph {
  public:
   using DynamicId = DynamicInstruction::DynamicId;
 
-  DynamicTrace(const std::string& _TraceFileName, llvm::Module* _Module);
-  ~DynamicTrace();
+  // The datagraph owns the parser, but certainly not the module.
+  DataGraph(TraceParser* _Parser, llvm::Module* _Module);
+  ~DataGraph();
 
-  DynamicTrace(const DynamicTrace& other) = delete;
-  DynamicTrace& operator=(const DynamicTrace& other) = delete;
-  DynamicTrace(DynamicTrace&& other) = delete;
-  DynamicTrace& operator=(DynamicTrace&& other) = delete;
+  DataGraph(const DataGraph& other) = delete;
+  DataGraph& operator=(const DataGraph& other) = delete;
+  DataGraph(DataGraph&& other) = delete;
+  DataGraph& operator=(DataGraph&& other) = delete;
 
   DynamicInstruction* DynamicInstructionListHead;
   DynamicInstruction* DynamicInstructionListTail;
@@ -139,9 +150,10 @@ class DynamicTrace {
   /* These are temporary fields used in construnction only.
   /**********************************************************************/
   // Parse the dynamic instruction in the line buffer.
-  void parseLineBuffer(const std::list<std::string>& LineBuffer);
-  void parseDynamicInstruction(const std::list<std::string>& LineBuffer);
-  void parseFunctionEnter(const std::list<std::string>& LineBuffer);
+  void parseDynamicInstruction(TraceParser::TracedInst& Parsed);
+  void parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed);
+
+  TraceParser* Parser;
 
   std::string CurrentFunctionName;
   std::string CurrentBasicBlockName;

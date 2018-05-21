@@ -1,4 +1,6 @@
 #include "Replay.h"
+#include "TraceParserGZip.h"
+#include "TraceParserProtobuf.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
@@ -12,6 +14,8 @@
 
 static llvm::cl::opt<std::string> TraceFileName("trace-file",
                                                 llvm::cl::desc("Trace file."));
+static llvm::cl::opt<std::string> TraceFileFormat(
+    "trace-format", llvm::cl::desc("Trace file format."));
 
 #define DEBUG_TYPE "ReplayPass"
 namespace {
@@ -76,8 +80,17 @@ bool ReplayTrace::doInitialization(llvm::Module& Module) {
 
   assert(TraceFileName.getNumOccurrences() == 1 &&
          "Please specify the trace file.");
-  // For now do not load in the trace.
-  this->Trace = new DynamicTrace(TraceFileName, this->Module);
+
+  if (TraceFileFormat.getNumOccurrences() == 0 ||
+      TraceFileFormat.getValue() == "gzip") {
+    this->Trace =
+        new DataGraph(new TraceParserGZip(TraceFileName), this->Module);
+  } else if (TraceFileFormat.getValue() == "protobuf") {
+    this->Trace =
+        new DataGraph(new TraceParserProtobuf(TraceFileName), this->Module);
+  } else {
+    assert(false && "Unknown trace file format.");
+  }
 
   // DEBUG(llvm::errs() << "Parsed # memory dependences: "
   //                    << this->Trace->NumMemDependences << '\n');
@@ -156,9 +169,12 @@ class FakeDynamicInstruction : public DynamicInstruction {
                          DynamicValue* _DynamicResult,
                          std::vector<DynamicValue*> _DynamicOperands,
                          DynamicInstruction* _Prev, DynamicInstruction* _Next)
-      : DynamicInstruction(_DynamicResult, std::move(_DynamicOperands), _Prev,
-                           _Next),
-        OpName(_OpName) {}
+      : DynamicInstruction(), OpName(_OpName) {
+    this->DynamicResult = _DynamicResult;
+    this->DynamicOperands = std::move(_DynamicOperands);
+    this->Prev = _Prev;
+    this->Next = _Next;
+  }
   const std::string& getOpName() override { return this->OpName; }
   std::string OpName;
 };
@@ -322,7 +338,8 @@ void ReplayTrace::fakeFixRegisterDeps() {
 
 void ReplayTrace::fakeMicroOps() {
   DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
-  while (Iter != nullptr) {;
+  while (Iter != nullptr) {
+    ;
     auto IterPrev = Iter->Prev;
     auto IterNext = Iter->Next;
 

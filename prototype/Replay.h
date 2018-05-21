@@ -2,7 +2,7 @@
 #ifndef LLVM_TDG_REPLAY_TRACE_H
 #define LLVM_TDG_REPLAY_TRACE_H
 
-#include "DynamicTrace.h"
+#include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
 
 #include "llvm/IR/Function.h"
@@ -13,7 +13,7 @@
 
 class ReplayTrace : public llvm::FunctionPass {
  public:
-  using DynamicId = DynamicTrace::DynamicId;
+  using DynamicId = DataGraph::DynamicId;
   static char ID;
   ReplayTrace(char _ID = ID);
   virtual ~ReplayTrace();
@@ -27,7 +27,7 @@ class ReplayTrace : public llvm::FunctionPass {
  protected:
   virtual void TransformTrace();
 
-  DynamicTrace* Trace;
+  DataGraph* Trace;
 
   std::string OutTraceName;
 
