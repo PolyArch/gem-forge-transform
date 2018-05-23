@@ -53,13 +53,8 @@ class ReplayTrace : public llvm::FunctionPass {
   //************************************************************************//
   // Helper function to generate the trace for gem5.
   //************************************************************************//
-  void formatInstruction(
-      DynamicInstruction* DynamicInst, std::ofstream& Out,
-      const std::unordered_map<DynamicInstruction*, DynamicId>&
-          AllocatedDynamicIdMap);
-  void formatDeps(DynamicInstruction* DynamicInst, std::ofstream& Out,
-                  const std::unordered_map<DynamicInstruction*, DynamicId>&
-                      AllocatedDynamicIdMap);
+  void formatInstruction(DynamicInstruction* DynamicInst, std::ofstream& Out);
+  void formatDeps(DynamicInstruction* DynamicInst, std::ofstream& Out);
   void formatOpCode(DynamicInstruction* DynamicInst, std::ofstream& Out);
 };
 

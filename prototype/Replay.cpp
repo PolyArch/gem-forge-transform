@@ -226,73 +226,73 @@ static void insertDynamicInst(DynamicInstruction* NewInst,
 }
 
 void ReplayTrace::fakeRegisterAllocation() {
-  assert(this->Trace != nullptr &&
-         "Must have a trace to be transformed to fake register allocation.");
+  // assert(this->Trace != nullptr &&
+  //        "Must have a trace to be transformed to fake register allocation.");
 
-  const size_t NUM_PHYS_REGS = 8;
+  // const size_t NUM_PHYS_REGS = 8;
 
-  DynamicInstruction* Iter = this->Trace->DynamicInstructionListTail;
-  std::unordered_set<DynamicInstruction*> LiveDynamicInsts;
-  std::list<DynamicInstruction*> InsertedDynamicLoads;
+  // DynamicInstruction* Iter = this->Trace->DynamicInstructionListTail;
+  // std::unordered_set<DynamicInstruction*> LiveDynamicInsts;
+  // std::list<DynamicInstruction*> InsertedDynamicLoads;
 
-  uint64_t FakeSpillCount = 0;
-  while (Iter != nullptr) {
-    // First if Iter is in the live set, remove it.
-    DynamicInstruction* IterPrev = Iter->Prev;
-    InsertedDynamicLoads.clear();
-    if (LiveDynamicInsts.find(Iter) != LiveDynamicInsts.end()) {
-      LiveDynamicInsts.erase(Iter);
-    }
-    // For all the register depedence, add them into the live set.
-    if (this->Trace->RegDeps.find(Iter) != this->Trace->RegDeps.end()) {
-      auto& DepInsts = this->Trace->RegDeps.at(Iter);
-      for (auto& DepInst : DepInsts) {
-        if (LiveDynamicInsts.find(DepInst) != LiveDynamicInsts.end()) {
-          // This value is already live.
-          continue;
-        }
-        if (LiveDynamicInsts.size() + 1 > NUM_PHYS_REGS) {
-          // Spill a random value.
-          DynamicInstruction* SpillInst = nullptr;
-          for (auto& LiveInst : LiveDynamicInsts) {
-            // Do not accidently spill out something we are using.
-            if (DepInsts.find(LiveInst) != DepInsts.end()) {
-              continue;
-            }
-            SpillInst = LiveInst;
-            break;
-          }
-          // Remove the spill inst from the live set.
-          LiveDynamicInsts.erase(SpillInst);
-          FakeSpillCount++;
-          // Simply insert a fake load/store pair of 64 bits to stack.
-          auto FakeDynamicLoad = createFakeDynamicLoad(this->FakeRegisterFill);
-          auto FakeDynamicStore =
-              createFakeDynamicStore(this->FakeRegisterSpill);
-          // Add a simple reg dependence between load and iter.
-          // store
-          // load
-          // iter
-          // Insert into the list.
-          insertDynamicInst(FakeDynamicStore, Iter->Prev, Iter,
-                            &(this->Trace->DynamicInstructionListHead),
-                            &(this->Trace->DynamicInstructionListTail));
-          insertDynamicInst(FakeDynamicLoad, Iter->Prev, Iter,
-                            &(this->Trace->DynamicInstructionListHead),
-                            &(this->Trace->DynamicInstructionListTail));
-          InsertedDynamicLoads.emplace_back(FakeDynamicLoad);
-        }
-        // Add the dep inst into the live set.
-        LiveDynamicInsts.insert(DepInst);
-      }
-      // Insert dependence on the load.
-      for (auto& InsertedDynamicLoad : InsertedDynamicLoads) {
-        this->Trace->RegDeps.at(Iter).insert(InsertedDynamicLoad);
-      }
-    }
-    Iter = IterPrev;
-  }
-  DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount << '\n');
+  // uint64_t FakeSpillCount = 0;
+  // while (Iter != nullptr) {
+  //   // First if Iter is in the live set, remove it.
+  //   DynamicInstruction* IterPrev = Iter->Prev;
+  //   InsertedDynamicLoads.clear();
+  //   if (LiveDynamicInsts.find(Iter) != LiveDynamicInsts.end()) {
+  //     LiveDynamicInsts.erase(Iter);
+  //   }
+  //   // For all the register depedence, add them into the live set.
+  //   if (this->Trace->RegDeps.find(Iter) != this->Trace->RegDeps.end()) {
+  //     auto& DepInsts = this->Trace->RegDeps.at(Iter);
+  //     for (auto& DepInst : DepInsts) {
+  //       if (LiveDynamicInsts.find(DepInst) != LiveDynamicInsts.end()) {
+  //         // This value is already live.
+  //         continue;
+  //       }
+  //       if (LiveDynamicInsts.size() + 1 > NUM_PHYS_REGS) {
+  //         // Spill a random value.
+  //         DynamicInstruction* SpillInst = nullptr;
+  //         for (auto& LiveInst : LiveDynamicInsts) {
+  //           // Do not accidently spill out something we are using.
+  //           if (DepInsts.find(LiveInst) != DepInsts.end()) {
+  //             continue;
+  //           }
+  //           SpillInst = LiveInst;
+  //           break;
+  //         }
+  //         // Remove the spill inst from the live set.
+  //         LiveDynamicInsts.erase(SpillInst);
+  //         FakeSpillCount++;
+  //         // Simply insert a fake load/store pair of 64 bits to stack.
+  //         auto FakeDynamicLoad = createFakeDynamicLoad(this->FakeRegisterFill);
+  //         auto FakeDynamicStore =
+  //             createFakeDynamicStore(this->FakeRegisterSpill);
+  //         // Add a simple reg dependence between load and iter.
+  //         // store
+  //         // load
+  //         // iter
+  //         // Insert into the list.
+  //         insertDynamicInst(FakeDynamicStore, Iter->Prev, Iter,
+  //                           &(this->Trace->DynamicInstructionListHead),
+  //                           &(this->Trace->DynamicInstructionListTail));
+  //         insertDynamicInst(FakeDynamicLoad, Iter->Prev, Iter,
+  //                           &(this->Trace->DynamicInstructionListHead),
+  //                           &(this->Trace->DynamicInstructionListTail));
+  //         InsertedDynamicLoads.emplace_back(FakeDynamicLoad);
+  //       }
+  //       // Add the dep inst into the live set.
+  //       LiveDynamicInsts.insert(DepInst);
+  //     }
+  //     // Insert dependence on the load.
+  //     for (auto& InsertedDynamicLoad : InsertedDynamicLoads) {
+  //       this->Trace->RegDeps.at(Iter).insert(InsertedDynamicLoad);
+  //     }
+  //   }
+  //   Iter = IterPrev;
+  // }
+  // DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount << '\n');
 }
 
 static DynamicInstruction* createFakeDynamicInst(const std::string& OpName) {
@@ -319,11 +319,13 @@ void ReplayTrace::fakeFixRegisterDeps() {
         case llvm::Instruction::SRem: {
           // Add the fake register dependence.
           if (PrevMulDivInst != nullptr) {
-            if (this->Trace->RegDeps.find(Iter) == this->Trace->RegDeps.end()) {
+            if (this->Trace->RegDeps.find(Iter->Id) ==
+                this->Trace->RegDeps.end()) {
               this->Trace->RegDeps.emplace(
-                  Iter, std::unordered_set<DynamicInstruction*>());
+                  Iter->Id,
+                  std::unordered_set<DynamicInstruction::DynamicId>());
             }
-            this->Trace->RegDeps.at(Iter).insert(PrevMulDivInst);
+            this->Trace->RegDeps.at(Iter->Id).insert(PrevMulDivInst->Id);
           }
           PrevMulDivInst = Iter;
           break;
@@ -406,13 +408,13 @@ void ReplayTrace::fakeMicroOps() {
           auto FakeInstruction = FakeOpEntry.first;
           if (FakeOpEntry.second == 1) {
             // If FakeDep, make the micro op dependent on inst's dependence.
-            if (this->Trace->RegDeps.find(Iter) != this->Trace->RegDeps.end()) {
-              this->Trace->RegDeps.emplace(FakeInstruction,
-                                           this->Trace->RegDeps.at(Iter));
+            if (this->Trace->RegDeps.find(Iter->Id) != this->Trace->RegDeps.end()) {
+              this->Trace->RegDeps.emplace(FakeInstruction->Id,
+                                           this->Trace->RegDeps.at(Iter->Id));
             }
-            if (this->Trace->CtrDeps.find(Iter) != this->Trace->CtrDeps.end()) {
-              this->Trace->CtrDeps.emplace(FakeInstruction,
-                                           this->Trace->CtrDeps.at(Iter));
+            if (this->Trace->CtrDeps.find(Iter->Id) != this->Trace->CtrDeps.end()) {
+              this->Trace->CtrDeps.emplace(FakeInstruction->Id,
+                                           this->Trace->CtrDeps.at(Iter->Id));
             }
           }
           Fakes.push_back(FakeInstruction);
@@ -424,11 +426,11 @@ void ReplayTrace::fakeMicroOps() {
                             &(this->Trace->DynamicInstructionListTail));
           // Fix the dependence.
           // Make the inst dependent on the micro op.
-          if (this->Trace->RegDeps.find(Iter) == this->Trace->RegDeps.end()) {
+          if (this->Trace->RegDeps.find(Iter->Id) == this->Trace->RegDeps.end()) {
             this->Trace->RegDeps.emplace(
-                Iter, std::unordered_set<DynamicInstruction*>());
+                Iter->Id, std::unordered_set<DynamicInstruction::DynamicId>());
           }
-          this->Trace->RegDeps.at(Iter).insert(FakeOp);
+          this->Trace->RegDeps.at(Iter->Id).insert(FakeOp->Id);
           IterPrev = FakeOp;
         }
       }
@@ -451,14 +453,10 @@ void ReplayTrace::TransformTrace() {
   // Simply generate the output data graph for gem5 to use.
   std::ofstream OutTrace(this->OutTraceName);
   assert(OutTrace.is_open() && "Failed to open output trace file.");
-  std::unordered_map<DynamicInstruction*, DynamicId> AllocatedDynamicIdMap;
   DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
-  DynamicId Id = 0;
   while (Iter != nullptr) {
-    AllocatedDynamicIdMap.emplace(Iter, Id);
-    this->formatInstruction(Iter, OutTrace, AllocatedDynamicIdMap);
+    this->formatInstruction(Iter, OutTrace);
     OutTrace << '\n';
-    Id++;
     Iter = Iter->Next;
   }
   OutTrace.close();
@@ -503,17 +501,15 @@ void ReplayTrace::registerFunction(llvm::Module& Module) {
 //************************************************************************//
 // Helper function to generate the trace for gem5.
 //************************************************************************//
-void ReplayTrace::formatInstruction(
-    DynamicInstruction* DynamicInst, std::ofstream& Out,
-    const std::unordered_map<DynamicInstruction*, DynamicId>&
-        AllocatedDynamicIdMap) {  // The op_code field.
+void ReplayTrace::formatInstruction(DynamicInstruction* DynamicInst,
+                                    std::ofstream& Out) {  // The op_code field.
   this->formatOpCode(DynamicInst, Out);
   Out << '|';
   // The faked number of micro ops.
   uint32_t FakeNumMicroOps = 1;
-  Out << FakeNumMicroOps << '|';
+  Out << DynamicInst->Id << '|';
   // The dependence field.
-  this->formatDeps(DynamicInst, Out, AllocatedDynamicIdMap);
+  this->formatDeps(DynamicInst, Out);
   Out << '|';
   // Other fields for other insts.
   // If this is a self defined inst.
@@ -609,55 +605,34 @@ void ReplayTrace::formatInstruction(
   }
 }
 
-void ReplayTrace::formatDeps(
-    DynamicInstruction* DynamicInst, std::ofstream& Out,
-    const std::unordered_map<DynamicInstruction*, DynamicId>&
-        AllocatedDynamicIdMap) {
+void ReplayTrace::formatDeps(DynamicInstruction* DynamicInst,
+                             std::ofstream& Out) {
   // if (DynamicInst->getStaticInstruction() != nullptr) {
   //   DEBUG(llvm::errs()
   //               << "Format dependence for "
   //               << DynamicInst->getStaticInstruction()->getName() << '\n');
   // }
   {
-    auto DepIter = this->Trace->RegDeps.find(DynamicInst);
+    auto DepIter = this->Trace->RegDeps.find(DynamicInst->Id);
     if (DepIter != this->Trace->RegDeps.end()) {
-      for (const auto& DepInst : DepIter->second) {
-        if (AllocatedDynamicIdMap.find(DepInst) ==
-            AllocatedDynamicIdMap.end()) {
-          DEBUG(llvm::errs()
-                << "Failed to look up reg dependence's id of "
-                << DepInst->getOpName() << DepInst << " from "
-                << DynamicInst->getOpName() << DynamicInst << '\n');
-          DepInst->dump();
-          DynamicInst->dump();
-        }
-        Out << AllocatedDynamicIdMap.at(DepInst) << ',';
+      for (const auto& DepInstId : DepIter->second) {
+        Out << DepInstId << ',';
       }
     }
   }
   {
-    auto DepIter = this->Trace->MemDeps.find(DynamicInst);
+    auto DepIter = this->Trace->MemDeps.find(DynamicInst->Id);
     if (DepIter != this->Trace->MemDeps.end()) {
-      for (const auto& DepInst : DepIter->second) {
-        if (AllocatedDynamicIdMap.find(DepInst) ==
-            AllocatedDynamicIdMap.end()) {
-          DEBUG(llvm::errs()
-                << "Failed to look up mem dependence from " << '\n');
-        }
-        Out << AllocatedDynamicIdMap.at(DepInst) << ',';
+      for (const auto& DepInstId : DepIter->second) {
+        Out << DepInstId << ',';
       }
     }
   }
   {
-    auto DepIter = this->Trace->CtrDeps.find(DynamicInst);
+    auto DepIter = this->Trace->CtrDeps.find(DynamicInst->Id);
     if (DepIter != this->Trace->CtrDeps.end()) {
-      for (const auto& DepInst : DepIter->second) {
-        if (AllocatedDynamicIdMap.find(DepInst) ==
-            AllocatedDynamicIdMap.end()) {
-          DEBUG(llvm::errs()
-                << "Failed to look up ctr dependence from " << '\n');
-        }
-        Out << AllocatedDynamicIdMap.at(DepInst) << ',';
+      for (const auto& DepInstId : DepIter->second) {
+        Out << DepInstId << ',';
       }
     }
   }
