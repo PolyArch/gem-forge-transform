@@ -31,7 +31,7 @@ add_library(LLVMTDGPass MODULE
     ${PROTOBUF_SRCS}
     DataGraph.cpp
     Replay.cpp
-    CCA.cpp
+    # CCA.cpp
     StreamAnalyzeTrace.cpp
     LocateAccelerableFunctions.cpp
 )
