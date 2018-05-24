@@ -266,8 +266,9 @@ void ReplayTrace::fakeRegisterAllocation() {
   //         LiveDynamicInsts.erase(SpillInst);
   //         FakeSpillCount++;
   //         // Simply insert a fake load/store pair of 64 bits to stack.
-  //         auto FakeDynamicLoad = createFakeDynamicLoad(this->FakeRegisterFill);
-  //         auto FakeDynamicStore =
+  //         auto FakeDynamicLoad =
+  //         createFakeDynamicLoad(this->FakeRegisterFill); auto
+  //         FakeDynamicStore =
   //             createFakeDynamicStore(this->FakeRegisterSpill);
   //         // Add a simple reg dependence between load and iter.
   //         // store
@@ -408,11 +409,13 @@ void ReplayTrace::fakeMicroOps() {
           auto FakeInstruction = FakeOpEntry.first;
           if (FakeOpEntry.second == 1) {
             // If FakeDep, make the micro op dependent on inst's dependence.
-            if (this->Trace->RegDeps.find(Iter->Id) != this->Trace->RegDeps.end()) {
+            if (this->Trace->RegDeps.find(Iter->Id) !=
+                this->Trace->RegDeps.end()) {
               this->Trace->RegDeps.emplace(FakeInstruction->Id,
                                            this->Trace->RegDeps.at(Iter->Id));
             }
-            if (this->Trace->CtrDeps.find(Iter->Id) != this->Trace->CtrDeps.end()) {
+            if (this->Trace->CtrDeps.find(Iter->Id) !=
+                this->Trace->CtrDeps.end()) {
               this->Trace->CtrDeps.emplace(FakeInstruction->Id,
                                            this->Trace->CtrDeps.at(Iter->Id));
             }
@@ -426,7 +429,8 @@ void ReplayTrace::fakeMicroOps() {
                             &(this->Trace->DynamicInstructionListTail));
           // Fix the dependence.
           // Make the inst dependent on the micro op.
-          if (this->Trace->RegDeps.find(Iter->Id) == this->Trace->RegDeps.end()) {
+          if (this->Trace->RegDeps.find(Iter->Id) ==
+              this->Trace->RegDeps.end()) {
             this->Trace->RegDeps.emplace(
                 Iter->Id, std::unordered_set<DynamicInstruction::DynamicId>());
           }
@@ -444,22 +448,58 @@ void ReplayTrace::fakeMicroOps() {
 // Other pass can override this function to perform their own transformation.
 void ReplayTrace::TransformTrace() {
   assert(this->Trace != nullptr && "Must have a trace to be transformed.");
-  // First we fake the register allocation, and then the micro ops.
-  // this->fakeRegisterAllocation();
-  this->fakeFixRegisterDeps();
-  DEBUG(llvm::errs() << "Start fake microops what happend.\n");
-  this->fakeMicroOps();
-  DEBUG(llvm::errs() << "Start outputing.\n");
-  // Simply generate the output data graph for gem5 to use.
+
   std::ofstream OutTrace(this->OutTraceName);
   assert(OutTrace.is_open() && "Failed to open output trace file.");
-  DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
-  while (Iter != nullptr) {
-    this->formatInstruction(Iter, OutTrace);
-    OutTrace << '\n';
-    Iter = Iter->Next;
+
+  // Simple sliding window method.
+  uint64_t Count = 0;
+  bool Ended = false;
+  while (true) {
+    if (!Ended) {
+      auto NewDynamicInst = this->Trace->loadOneDynamicInst();
+      if (NewDynamicInst != nullptr) {
+        Count++;
+      } else {
+        Ended = true;
+      }
+    }
+
+    if (Count == 0 && Ended) {
+      // We are done.
+      break;
+    }
+
+    // Generate the trace for gem5.
+    // Maintain the window size of 10000?
+    const uint64_t Window = 10000;
+    if (Count > Window || Ended) {
+      this->formatInstruction(this->Trace->DynamicInstructionListHead,
+                              OutTrace);
+      OutTrace << '\n';
+      Count--;
+      this->Trace->commitOneDynamicInst();
+    }
   }
+
   OutTrace.close();
+
+  // First we fake the register allocation, and then the micro ops.
+  // this->fakeRegisterAllocation();
+  // this->fakeFixRegisterDeps();
+  // DEBUG(llvm::errs() << "Start fake microops what happend.\n");
+  // this->fakeMicroOps();
+  // DEBUG(llvm::errs() << "Start outputing.\n");
+  // Simply generate the output data graph for gem5 to use.
+  // std::ofstream OutTrace(this->OutTraceName);
+  // assert(OutTrace.is_open() && "Failed to open output trace file.");
+  // DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
+  // while (Iter != nullptr) {
+  //   this->formatInstruction(Iter, OutTrace);
+  //   OutTrace << '\n';
+  //   Iter = Iter->Next;
+  // }
+  // OutTrace.close();
 }
 
 // Insert all the print function declaration into the module.
