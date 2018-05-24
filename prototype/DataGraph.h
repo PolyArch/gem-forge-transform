@@ -105,8 +105,17 @@ class DataGraph {
    * Map from llvm static instructions to the last dynamic instruction id.
    * If missing, then it hasn't appeared in the dynamic trace.
    * Only for non-phi node.
+   * Used for register dependence resolution.
    **/
   std::unordered_map<llvm::Instruction*, DynamicId> StaticToLastDynamicMap;
+
+  /**
+   * Map from llvm static instruction to the latest memory base/offset pair.
+   * Used for base/offset resolution.
+   * For all nodes.
+   **/
+  std::unordered_map<llvm::Instruction*, std::pair<std::string, uint64_t>>
+      StaticToLastMemBaseOffsetMap;
 
   llvm::Module* Module;
 
@@ -137,6 +146,11 @@ class DataGraph {
     DynamicFrame& operator=(DynamicFrame&& other) = delete;
   };
 
+  // Load one more inst from the trace. nullptr if eof.
+  DynamicInstruction* loadOneDynamicInst();
+  // Commit one inst and remove it from the alive set.
+  void commitOneDynamicInst();
+
  private:
   /**********************************************************************/
   /* These are temporary fields used in construnction only.
@@ -153,7 +167,7 @@ class DataGraph {
 
   // To resovle phi node.
   std::unordered_map<llvm::PHINode*, DynamicId> PhiNodeDependenceMap;
-  std::unordered_map<llvm::PHINode*, DynamicValue> PhiNodeValueMap;
+//   std::unordered_map<llvm::PHINode*, DynamicValue> PhiNodeValueMap;
 
   /**
    * Handle phi node and effectively remove it from the graph.
@@ -174,8 +188,8 @@ class DataGraph {
                                         const std::string& BasicBlockName,
                                         const int Index);
 
-  // Loop up the StaticToLastDynamicMap. Assert fails if missing.
-  DynamicInstruction* getLatestForStaticInstruction(
+  const std::pair<std::string, uint64_t>&
+  getLatestMemBaseOffsetForStaticInstruction(
       llvm::Instruction* StaticInstruction);
 
   DynamicInstruction* getPreviousBranchDynamicInstruction(
