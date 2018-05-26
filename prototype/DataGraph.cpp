@@ -622,6 +622,25 @@ DataGraph::getLatestMemBaseOffsetForStaticInstruction(
   return Iter->second;
 }
 
+const std::string& DataGraph::getUniqueNameForStaticInstruction(
+    llvm::Instruction* StaticInst) {
+  // This function will be called a lot, cache the results.
+  auto Iter = this->StaticInstructionUniqueNameMap.find(StaticInst);
+  if (Iter == this->StaticInstructionUniqueNameMap.end()) {
+    assert(StaticInst->getName() != "" &&
+           "The static instruction should have a name to create a unique name "
+           "for it.");
+    auto TempTwine =
+        StaticInst->getFunction()->getName() + "." + StaticInst->getName();
+    Iter = this->StaticInstructionUniqueNameMap
+               .emplace(std::piecewise_construct,
+                        std::forward_as_tuple(StaticInst),
+                        std::forward_as_tuple(TempTwine.str()))
+               .first;
+  }
+  return Iter->second;
+}
+
 void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
   llvm::Instruction* StaticInstruction = DynamicInst->getStaticInstruction();
 
@@ -705,7 +724,8 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
   else if (auto AllocaStaticInstruction =
                llvm::dyn_cast<llvm::AllocaInst>(StaticInstruction)) {
     // Alloca is easy, set the base/offset to itself.
-    DynamicInst->DynamicResult->MemBase = AllocaStaticInstruction->getName();
+    DynamicInst->DynamicResult->MemBase =
+        this->getUniqueNameForStaticInstruction(AllocaStaticInstruction);
     DynamicInst->DynamicResult->MemOffset = 0;
   }
 
@@ -723,7 +743,8 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
     // We only worried about this if we are loading an pointer.
     if (LoadStaticInstruction->getType()->isPointerTy()) {
       // In that case, we init the base to itself, offset to 0.
-      DynamicInst->DynamicResult->MemBase = LoadStaticInstruction->getName();
+      DynamicInst->DynamicResult->MemBase =
+          this->getUniqueNameForStaticInstruction(LoadStaticInstruction);
       DynamicInst->DynamicResult->MemOffset = 0;
 
       {

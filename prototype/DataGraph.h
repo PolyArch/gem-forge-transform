@@ -167,7 +167,6 @@ class DataGraph {
 
   // To resovle phi node.
   std::unordered_map<llvm::PHINode*, DynamicId> PhiNodeDependenceMap;
-//   std::unordered_map<llvm::PHINode*, DynamicValue> PhiNodeValueMap;
 
   /**
    * Handle phi node and effectively remove it from the graph.
@@ -218,6 +217,19 @@ class DataGraph {
   // Handle the memory address base/offset.
   // Very important to be replayable in gem5.
   void handleMemoryBase(DynamicInstruction* DynamicInst);
+
+  /**
+   * Get a unique name for this instruction.
+   * This is typically used for instructions which will create new memory base.
+   * In the replay phase, the simulator does not maintain a frame stack, but
+   * only a unified map for all the memory bases. In order to make sure that the
+   * base is unique to this static instruction and not confused with other
+   * instructions with same name but from different functions, we append the
+   * function name before it.
+   */
+  std::unordered_map<llvm::Instruction*, std::string> StaticInstructionUniqueNameMap;
+  const std::string& getUniqueNameForStaticInstruction(
+      llvm::Instruction* StaticInst);
 };
 
 #endif
