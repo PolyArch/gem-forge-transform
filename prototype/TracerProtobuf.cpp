@@ -57,6 +57,9 @@ void printInstImpl(const char* FunctionName, const char* BBName, unsigned Id,
         new LLVM::TDG::DynamicLLVMInstruction());
   }
 
+  // std::cout << "Trace inst " << FunctionName << "::" << BBName
+  //           << "::" << OpCodeName << std::endl;
+
   protobufTraceEntry.mutable_inst()->set_func(FunctionName);
   protobufTraceEntry.mutable_inst()->set_bb(BBName);
   protobufTraceEntry.mutable_inst()->set_id(Id);
@@ -65,12 +68,13 @@ void printInstImpl(const char* FunctionName, const char* BBName, unsigned Id,
   protobufTraceEntry.mutable_inst()->clear_result();
 }
 
-static const size_t VALUE_BUFFER_SIZE = 256;
+static const size_t VALUE_BUFFER_SIZE = 1024;
 static char valueBuffer[VALUE_BUFFER_SIZE];
 static void addValueToDynamicInst(const char Tag) {
   switch (Tag) {
     case PRINT_VALUE_TAG_PARAMETER: {
       if (protobufTraceEntry.has_inst()) {
+        // std::cout << "Add value to inst " << valueBuffer << std::endl;
         protobufTraceEntry.mutable_inst()->add_params(valueBuffer);
       } else {
         protobufTraceEntry.mutable_func_enter()->add_params(valueBuffer);
@@ -112,6 +116,7 @@ void printValueVectorImpl(const char Tag, const char* Name, unsigned TypeId,
     pos +=
         snprintf(valueBuffer + pos, VALUE_BUFFER_SIZE - pos, "%hhu,", Value[i]);
   }
+  // std::cout << "Print vector " << Size << std::endl;
   addValueToDynamicInst(Tag);
 }
 void printValueUnsupportImpl(const char Tag, const char* Name,
@@ -129,6 +134,7 @@ void printInstEndImpl() {
   trace.write(reinterpret_cast<char*>(&bytes), sizeof(bytes));
   protobufTraceEntry.SerializeToOstream(&trace);
   count++;
+  // std::cout << "printInstEnd" << std::endl;
 }
 
 void printFuncEnterEndImpl() {
