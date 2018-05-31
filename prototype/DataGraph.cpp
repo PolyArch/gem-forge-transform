@@ -1,10 +1,17 @@
 #include "DataGraph.h"
+#include "TraceParserGZip.h"
+#include "TraceParserProtobuf.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <fstream>
 #include <vector>
+
+static llvm::cl::opt<std::string> TraceFileName("trace-file",
+                                                llvm::cl::desc("Trace file."));
+static llvm::cl::opt<std::string> TraceFileFormat(
+    "trace-format", llvm::cl::desc("Trace file format."));
 
 #define DEBUG_TYPE "DataGraph"
 
@@ -131,38 +138,27 @@ DynamicValue* DataGraph::DynamicFrame::getArgValue(llvm::Argument* Arg) const {
   return Iter->second;
 }
 
-DataGraph::DataGraph(TraceParser* _Parser, llvm::Module* _Module)
+DataGraph::DataGraph(llvm::Module* _Module)
     : DynamicInstructionListHead(nullptr),
       DynamicInstructionListTail(nullptr),
       Module(_Module),
       NumMemDependences(0),
-      Parser(_Parser),
+      Parser(nullptr),
       CurrentBasicBlockName(""),
       CurrentIndex(-1) {
-  this->DataLayout = new llvm::DataLayout(this->Module);
+  assert(TraceFileName.getNumOccurrences() == 1 &&
+         "Please specify the trace file.");
 
-  // while (true) {
-  //   auto NextType = this->Parser->getNextType();
-  //   if (NextType == TraceParser::END) {
-  //     break;
-  //   }
-  //   switch (NextType) {
-  //     case TraceParser::INST: {
-  //       auto Parsed = this->Parser->parseLLVMInstruction();
-  //       this->parseDynamicInstruction(Parsed);
-  //       break;
-  //     }
-  //     case TraceParser::FUNC_ENTER: {
-  //       auto Parsed = this->Parser->parseFunctionEnter();
-  //       this->parseFunctionEnter(Parsed);
-  //       break;
-  //     }
-  //     default: {
-  //       llvm_unreachable("Unknown next type.");
-  //       break;
-  //     }
-  //   }
-  // }
+  if (TraceFileFormat.getNumOccurrences() == 0 ||
+      TraceFileFormat.getValue() == "gzip") {
+    this->Parser = new TraceParserGZip(TraceFileName);
+  } else if (TraceFileFormat.getValue() == "protobuf") {
+    this->Parser = new TraceParserProtobuf(TraceFileName);
+  } else {
+    llvm_unreachable("Unknown trace file format.");
+  }
+
+  this->DataLayout = new llvm::DataLayout(this->Module);
 }
 
 DataGraph::~DataGraph() {
@@ -537,6 +533,24 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed) {
   assert(ArgumentIter == ArgumentEnd &&
          ParsedArgumentIndex == Parsed.Arguments.size() &&
          "Unmatched number of arguments and value lines in function enter.");
+
+  // Recursion check.
+  // Currently our framework does not support recursion yet. I just make an
+  // assertion here. It requires a more powerful dynamic frame stack to fully
+  // support recursion.
+  for (const auto& Frame : this->DynamicFrameStack) {
+    if (Frame.Function == StaticFunction) {
+      // There is recursion some where.
+      DEBUG(llvm::errs() << "Recursion detected for "
+                         << StaticFunction->getName() << '\n');
+      DEBUG(llvm::errs() << "Full call stack: ");
+      for (const auto& Dump : this->DynamicFrameStack) {
+        DEBUG(llvm::errs() << Dump.Function->getName() << " -> ");
+      }
+      DEBUG(llvm::errs() << StaticFunction->getName() << '\n');
+    }
+    assert(Frame.Function != StaticFunction && "Recursion detected!");
+  }
 
   // ---
   // Start modification.
