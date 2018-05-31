@@ -89,7 +89,7 @@ class TracePass : public llvm::FunctionPass {
   static char ID;
   TracePass() : llvm::FunctionPass(ID) {}
   void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
-    // We require the loop information.
+    DEBUG(llvm::errs() << "We have required the analysis.\n");
     Info.addRequired<LocateAccelerableFunctions>();
     Info.addPreserved<LocateAccelerableFunctions>();
   }

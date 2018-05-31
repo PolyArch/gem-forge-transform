@@ -107,7 +107,7 @@ void printValueFloatImpl(const char Tag, const char* Name, unsigned TypeId,
 }
 void printValuePointerImpl(const char Tag, const char* Name, unsigned TypeId,
                            void* Value) {
-  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%p", Value);
+  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "0x%llx", (unsigned long long)Value);
   addValueToDynamicInst(Tag);
 }
 void printValueVectorImpl(const char Tag, const char* Name, unsigned TypeId,

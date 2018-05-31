@@ -48,7 +48,7 @@ void printValueFloatImpl(const char Tag, const char* Name, unsigned TypeId,
 }
 void printValuePointerImpl(const char Tag, const char* Name, unsigned TypeId,
                            void* Value) {
-  log("%c|%p|\n", Tag, Value);
+  log("%c|0x%llx|\n", Tag, (unsigned long long)Value);
 }
 void printValueVectorImpl(const char Tag, const char* Name, unsigned TypeId,
                           uint32_t Size, uint8_t* Value) {

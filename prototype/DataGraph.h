@@ -15,7 +15,9 @@
 
 class DynamicValue {
  public:
-  DynamicValue(const std::string& _Value);
+  DynamicValue(const std::string& _Value, const std::string& _MemBase = "",
+               uint64_t _MemOffset = 0);
+  DynamicValue(const DynamicValue& Other);
   std::string Value;
   // Base/Offset of memory address.
   std::string MemBase;
@@ -109,14 +111,6 @@ class DataGraph {
    **/
   std::unordered_map<llvm::Instruction*, DynamicId> StaticToLastDynamicMap;
 
-  /**
-   * Map from llvm static instruction to the latest memory base/offset pair.
-   * Used for base/offset resolution.
-   * For all nodes.
-   **/
-  std::unordered_map<llvm::Instruction*, std::pair<std::string, uint64_t>>
-      StaticToLastMemBaseOffsetMap;
-
   llvm::Module* Module;
 
   llvm::DataLayout* DataLayout;
@@ -129,16 +123,18 @@ class DataGraph {
   class DynamicFrame {
    public:
     llvm::Function* Function;
-    std::unordered_map<llvm::Argument*, DynamicValue*> Arguments;
-    // These fields are constantly updating.
+
+    // A tiny run time environment, basically for memory base/offset
+    // computation.
+    std::unordered_map<llvm::Value*, DynamicValue> RunTimeEnv;
     llvm::BasicBlock* PrevBasicBlock;
-    DynamicId* PrevBranchInstId;
+    llvm::CallInst* PrevCallInst;
     explicit DynamicFrame(
         llvm::Function* _Function,
-        std::unordered_map<llvm::Argument*, DynamicValue*>&& _Arguments);
+        std::unordered_map<llvm::Value*, DynamicValue>&& _Arguments);
     ~DynamicFrame();
 
-    DynamicValue* getArgValue(llvm::Argument* Arg) const;
+    const DynamicValue& getValue(llvm::Value* Value) const;
 
     DynamicFrame(const DynamicFrame& other) = delete;
     DynamicFrame(DynamicFrame&& other) = delete;
@@ -187,10 +183,6 @@ class DataGraph {
                                         const std::string& BasicBlockName,
                                         const int Index);
 
-  const std::pair<std::string, uint64_t>&
-  getLatestMemBaseOffsetForStaticInstruction(
-      llvm::Instruction* StaticInstruction);
-
   DynamicInstruction* getPreviousBranchDynamicInstruction(
       DynamicInstruction* DynamicInst);
 
@@ -227,7 +219,8 @@ class DataGraph {
    * instructions with same name but from different functions, we append the
    * function name before it.
    */
-  std::unordered_map<llvm::Instruction*, std::string> StaticInstructionUniqueNameMap;
+  std::unordered_map<llvm::Instruction*, std::string>
+      StaticInstructionUniqueNameMap;
   const std::string& getUniqueNameForStaticInstruction(
       llvm::Instruction* StaticInst);
 };
