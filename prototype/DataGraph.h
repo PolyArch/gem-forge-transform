@@ -83,7 +83,7 @@ class DataGraph {
   using DynamicId = DynamicInstruction::DynamicId;
 
   // The datagraph owns the parser, but certainly not the module.
-  DataGraph(TraceParser* _Parser, llvm::Module* _Module);
+  DataGraph(llvm::Module* _Module);
   ~DataGraph();
 
   DataGraph(const DataGraph& other) = delete;

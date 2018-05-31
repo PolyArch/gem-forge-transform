@@ -337,8 +337,10 @@ class TracePass : public llvm::FunctionPass {
                        llvm::Constant* FunctionNameValue,
                        llvm::Constant* BBNameValue, unsigned InstId) {
     std::string OpCodeName = Inst->getOpcodeName();
-    // DEBUG(llvm::errs() << "traceNonPhiInst: " << OpCodeName << '\n');
     assert(OpCodeName != "phi" && "traceNonPhiInst can't trace phi inst.");
+
+    // DEBUG(llvm::errs() << "Trace non-phi inst " << Inst->getName() << " op "
+    //                    << Inst->getOpcodeName() << '\n');
 
     std::vector<llvm::Value*> PrintInstArgs =
         getPrintInstArgs(Inst, FunctionNameValue, BBNameValue, InstId);
@@ -362,9 +364,16 @@ class TracePass : public llvm::FunctionPass {
       // Otherwise, we log the result.
       if (shouldTraceResult) {
         if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
-          if (!CallInst->getCalledFunction()->isDeclaration()) {
-            // The callee is traced.
+          auto CalledFunction = CallInst->getCalledFunction();
+          if (CalledFunction == nullptr) {
+            // This is a indirect call...
+            // I just assume the provided handle is traced...
             shouldTraceResult = false;
+          } else {
+            if (!CalledFunction->isDeclaration()) {
+              // The callee is traced.
+              shouldTraceResult = false;
+            }
           }
         }
       }

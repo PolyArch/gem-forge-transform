@@ -1,6 +1,4 @@
 #include "Replay.h"
-#include "TraceParserGZip.h"
-#include "TraceParserProtobuf.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
@@ -11,11 +9,6 @@
 #include "llvm/Transforms/Scalar.h"
 
 #include <fstream>
-
-static llvm::cl::opt<std::string> TraceFileName("trace-file",
-                                                llvm::cl::desc("Trace file."));
-static llvm::cl::opt<std::string> TraceFileFormat(
-    "trace-format", llvm::cl::desc("Trace file format."));
 
 #define DEBUG_TYPE "ReplayPass"
 namespace {
@@ -78,19 +71,7 @@ bool ReplayTrace::doInitialization(llvm::Module& Module) {
   // Register the external ioctl function.
   registerFunction(Module);
 
-  assert(TraceFileName.getNumOccurrences() == 1 &&
-         "Please specify the trace file.");
-
-  if (TraceFileFormat.getNumOccurrences() == 0 ||
-      TraceFileFormat.getValue() == "gzip") {
-    this->Trace =
-        new DataGraph(new TraceParserGZip(TraceFileName), this->Module);
-  } else if (TraceFileFormat.getValue() == "protobuf") {
-    this->Trace =
-        new DataGraph(new TraceParserProtobuf(TraceFileName), this->Module);
-  } else {
-    assert(false && "Unknown trace file format.");
-  }
+  this->Trace = new DataGraph(this->Module);
 
   // DEBUG(llvm::errs() << "Parsed # memory dependences: "
   //                    << this->Trace->NumMemDependences << '\n');
