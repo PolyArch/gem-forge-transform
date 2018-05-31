@@ -15,8 +15,12 @@ static llvm::cl::opt<std::string> TraceFileFormat(
 
 #define DEBUG_TYPE "DataGraph"
 
-DynamicValue::DynamicValue(const std::string& _Value)
-    : Value(_Value), MemBase(""), MemOffset(0) {}
+DynamicValue::DynamicValue(const std::string& _Value,
+                           const std::string& _MemBase, uint64_t _MemOffset)
+    : Value(_Value), MemBase(_MemBase), MemOffset(_MemOffset) {}
+
+DynamicValue::DynamicValue(const DynamicValue& Other)
+    : Value(Other.Value), MemBase(Other.MemBase), MemOffset(Other.MemOffset) {}
 
 DynamicInstruction::DynamicInstruction()
     : Id(allocateId()), DynamicResult(nullptr), Prev(nullptr), Next(nullptr) {}
@@ -117,23 +121,20 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
 
 DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function* _Function,
-    std::unordered_map<llvm::Argument*, DynamicValue*>&& _Arguments)
+    std::unordered_map<llvm::Value*, DynamicValue>&& _Arguments)
     : Function(_Function),
-      Arguments(std::move(_Arguments)),
+      RunTimeEnv(std::move(_Arguments)),
       PrevBasicBlock(nullptr),
-      PrevBranchInstId(0) {}
+      PrevCallInst(nullptr) {}
 
 DataGraph::DynamicFrame::~DynamicFrame() {
-  // Remember to release the dynamic values;
-  for (auto& Entry : this->Arguments) {
-    delete Entry.second;
-    Entry.second = nullptr;
-  }
+  // Nothing to release.
 }
 
-DynamicValue* DataGraph::DynamicFrame::getArgValue(llvm::Argument* Arg) const {
-  auto Iter = this->Arguments.find(Arg);
-  assert(Iter != this->Arguments.end() &&
+const DynamicValue& DataGraph::DynamicFrame::getValue(
+    llvm::Value* Value) const {
+  const auto Iter = this->RunTimeEnv.find(Value);
+  assert(Iter != this->RunTimeEnv.end() &&
          "Failed to find argument in the frame.");
   return Iter->second;
 }
@@ -272,13 +273,31 @@ void DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
   this->handleMemoryDependence(DynamicInst);
   this->handleControlDependence(DynamicInst);
 
+  // Special case for the call instruction.
+  // If the static call instruction has result, but missing from the dynamic
+  // trace, it means that the callee is also traced and we should use the result
+  // from callee's ret instruction. In that case, we have do defer the
+  // processing until the callee returned.
+  bool ShouldDeferMemoryBaseOffset = false;
+  if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInstruction)) {
+    this->DynamicFrameStack.front().PrevCallInst = StaticCall;
+    if (StaticInstruction->getName() != "" &&
+        DynamicInst->DynamicResult == nullptr) {
+      ShouldDeferMemoryBaseOffset = true;
+    }
+  }
+
   // Handle the memory base/offset.
-  this->handleMemoryBase(DynamicInst);
+  if (!ShouldDeferMemoryBaseOffset) {
+    this->handleMemoryBase(DynamicInst);
+  }
 
   /***************************************************************************
    * Insert the instruction into the list.
    * Update the PrevBasicBlock.
-   * If this is a ret, pop the frame stack.
+   * If this is a ret, pop the frame stack
+   *   -- Further more, if there is a call instruction above, update its base
+   *      and offset.
    * Add to the list.
    * Add to the alive map.
    * Add to the static map.
@@ -288,12 +307,29 @@ void DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
       StaticInstruction->getParent();
 
   // If this is a ret, pop the stack.
-  if (llvm::isa<llvm::ReturnInst>(StaticInstruction)) {
+  if (auto StaticRet = llvm::dyn_cast<llvm::ReturnInst>(StaticInstruction)) {
     this->DynamicFrameStack.pop_front();
     // Remember to clear the BB and Index.
     this->CurrentBasicBlock = nullptr;
     this->CurrentBasicBlockName = "";
     this->CurrentIndex = -1;
+    // If the ret has value, we should complete the memory base
+    // and offset for the previous call inst.
+    if (StaticRet->getReturnValue() != nullptr &&
+        !this->DynamicFrameStack.empty()) {
+      // There should be a previous call instruction.
+      auto& Frame = this->DynamicFrameStack.front();
+      assert(Frame.PrevCallInst != nullptr &&
+             "Failed to find paired PrevCallInst for ret.");
+      assert(DynamicInst->DynamicOperands.size() == 1 &&
+             "There should be exactly one dynamic result for ret.");
+      // Update its run time value.
+      Frame.RunTimeEnv.emplace(
+          std::piecewise_construct, std::forward_as_tuple(Frame.PrevCallInst),
+          std::forward_as_tuple(*(DynamicInst->DynamicOperands[0])));
+      // Clear the prev call inst.
+      Frame.PrevCallInst = nullptr;
+    }
   }
 
   // Add to the list.
@@ -350,71 +386,77 @@ void DataGraph::handleRegisterDependence(DynamicInstruction* DynamicInst,
 
 void DataGraph::handlePhiNode(llvm::PHINode* StaticPhi,
                               const TraceParser::TracedInst& Parsed) {
-  // Initialize the dynamic value.
-  this->StaticToLastMemBaseOffsetMap.emplace(std::piecewise_construct,
-                                             std::forward_as_tuple(StaticPhi),
-                                             std::forward_as_tuple("", 0));
-  auto& PhiMemBaseOffset = this->StaticToLastMemBaseOffsetMap.at(StaticPhi);
-
   auto PrevBasicBlock = this->DynamicFrameStack.front().PrevBasicBlock;
   assert(PrevBasicBlock != nullptr && "Invalid previous basic block.");
 
-  // Check all the incoming values.
+  // First find the incoming value.
+  llvm::Value* IncomingValue = nullptr;
   for (unsigned int OperandId = 0,
                     NumOperands = StaticPhi->getNumIncomingValues();
        OperandId != NumOperands; ++OperandId) {
     if (StaticPhi->getIncomingBlock(OperandId) == PrevBasicBlock) {
-      // We found the previous block.
-      // Check if the value is produced by an inst.
-      if (auto OperandStaticInst = llvm::dyn_cast<llvm::Instruction>(
-              StaticPhi->getIncomingValue(OperandId))) {
-        // Update the memory base/offset by copying from the dependent one.
-        PhiMemBaseOffset =
-            this->getLatestMemBaseOffsetForStaticInstruction(OperandStaticInst);
-
-        // Two cases:
-        // 1. If the dependent inst is a phi node, look up the
-        // PhiNodeDependenceMap.
-        // 2. Otherwise, look up the StaticToLastDynamicMap.
-        DynamicId DependentId;
-        bool Found = false;
-        if (auto OperandStaticPhi =
-                llvm::dyn_cast<llvm::PHINode>(OperandStaticInst)) {
-          auto Iter = this->PhiNodeDependenceMap.find(OperandStaticPhi);
-          Found = Iter != this->PhiNodeDependenceMap.end();
-          if (Found) {
-            DependentId = Iter->second;
-          }
-        } else {
-          // There must be a dynamic instance for this.
-          assert(this->StaticToLastDynamicMap.find(OperandStaticInst) !=
-                     this->StaticToLastDynamicMap.end() &&
-                 "Missing dynamic instruction for phi incoming value.");
-          Found = true;
-          DependentId = this->StaticToLastDynamicMap.at(OperandStaticInst);
-        }
-
-        if (Found) {
-          this->PhiNodeDependenceMap[StaticPhi] = DependentId;
-        } else {
-          this->PhiNodeDependenceMap.erase(StaticPhi);
-        }
-      } else if (auto OperandStaticArgument = llvm::dyn_cast<llvm::Argument>(
-                     StaticPhi->getIncomingValue(OperandId))) {
-        // This operand comes from an argument.
-        // Look up into the DynamicFrameStack to get the value.
-        const auto& DynamicFrame = this->DynamicFrameStack.front();
-        auto DynamicValue = DynamicFrame.getArgValue(OperandStaticArgument);
-        PhiMemBaseOffset.first = DynamicValue->MemBase;
-        PhiMemBaseOffset.second = DynamicValue->MemOffset;
-      } else {
-        // Looks like this operand comes from an constant.
-        // Is it OK for us to sliently ignore this case?
-      }
-      return;
+      IncomingValue = StaticPhi->getIncomingValue(OperandId);
+      break;
     }
   }
-  assert(false && "Failed to find an incoming block for phi node.");
+
+  assert(IncomingValue != nullptr &&
+         "Failed looking up the incoming value for phi node.");
+
+  // Handle the memory base/offset.
+  {
+    auto& Frame = this->DynamicFrameStack.front();
+    if (llvm::isa<llvm::Instruction>(IncomingValue) ||
+        llvm::isa<llvm::Argument>(IncomingValue)) {
+      // For the incoming value of instruction and arguments, we look up the run
+      // time env.
+      const auto& DynamicValue = Frame.getValue(IncomingValue);
+      Frame.RunTimeEnv.emplace(std::piecewise_construct,
+                               std::forward_as_tuple(StaticPhi),
+                               std::forward_as_tuple(DynamicValue));
+    } else {
+      // We sliently create the memory base/offset.
+      Frame.RunTimeEnv.emplace(std::piecewise_construct,
+                               std::forward_as_tuple(StaticPhi),
+                               std::forward_as_tuple(Parsed.Result));
+    }
+  }
+
+  // Handle the dependence.
+  {
+    if (auto OperandStaticInst =
+            llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+      // Two cases for incoming instruction
+      // 1. If the incoming value is a phi node, look up the
+      // PhiNodeDependenceMap.
+      // 2. Otherwise, if it , look up the StaticToLastDynamicMap.
+      DynamicId DependentId;
+      bool Found = false;
+      if (auto OperandStaticPhi =
+              llvm::dyn_cast<llvm::PHINode>(IncomingValue)) {
+        auto Iter = this->PhiNodeDependenceMap.find(OperandStaticPhi);
+        Found = Iter != this->PhiNodeDependenceMap.end();
+        if (Found) {
+          DependentId = Iter->second;
+        }
+      } else {
+        // There must be a dynamic instance for this.
+        assert(this->StaticToLastDynamicMap.find(OperandStaticInst) !=
+                   this->StaticToLastDynamicMap.end() &&
+               "Missing dynamic instruction for phi incoming value.");
+        Found = true;
+        DependentId = this->StaticToLastDynamicMap.at(OperandStaticInst);
+      }
+
+      if (Found) {
+        this->PhiNodeDependenceMap[StaticPhi] = DependentId;
+      } else {
+        this->PhiNodeDependenceMap.erase(StaticPhi);
+      }
+    } else {
+      // This is not produced by an instruction, we can silently ignore it.
+    }
+  }
 }
 
 bool DataGraph::checkAndAddMemoryDependence(
@@ -494,25 +536,28 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed) {
   assert(StaticFunction && "Failed to loop up traced function in module.");
 
   // Handle the frame stack.
-  std::unordered_map<llvm::Argument*, DynamicValue*> DynamicArguments;
+  std::unordered_map<llvm::Value*, DynamicValue> DynamicArguments;
   size_t ParsedArgumentIndex = 0;
   unsigned int ArgumentIndex = 0;
   auto ArgumentIter = StaticFunction->arg_begin();
   auto ArgumentEnd = StaticFunction->arg_end();
   while (ParsedArgumentIndex != Parsed.Arguments.size() &&
          ArgumentIter != ArgumentEnd) {
-    DynamicValue* DynamicArgument =
-        new DynamicValue(Parsed.Arguments[ParsedArgumentIndex]);
-
     llvm::Argument* StaticArgument = &*ArgumentIter;
-    DynamicArguments.emplace(StaticArgument, DynamicArgument);
+    // Create the entry in the runtime env and get the reference.
+    auto& DynamicArgument =
+        DynamicArguments
+            .emplace(
+                std::piecewise_construct, std::forward_as_tuple(StaticArgument),
+                std::forward_as_tuple(Parsed.Arguments[ParsedArgumentIndex]))
+            .first->second;
 
     // If there is a previous call inst, copy the base/offset.
     // Otherwise, initialize to itself.
     if (this->DynamicFrameStack.size() == 0) {
       // There is no caller.
-      DynamicArgument->MemBase = StaticArgument->getName();
-      DynamicArgument->MemOffset = 0;
+      DynamicArgument.MemBase = StaticArgument->getName();
+      DynamicArgument.MemOffset = 0;
     } else {
       // The previous inst must be a call.
       DynamicInstruction* PrevDynamicInstruction =
@@ -520,9 +565,9 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed) {
       assert(llvm::isa<llvm::CallInst>(
                  PrevDynamicInstruction->getStaticInstruction()) &&
              "The previous instruction is not a call");
-      DynamicArgument->MemBase =
+      DynamicArgument.MemBase =
           PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemBase;
-      DynamicArgument->MemOffset =
+      DynamicArgument.MemOffset =
           PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemOffset;
     }
 
@@ -621,21 +666,6 @@ DynamicInstruction* DataGraph::getDynamicInstFromId(DynamicId Id) const {
   return Iter->second;
 }
 
-const std::pair<std::string, uint64_t>&
-DataGraph::getLatestMemBaseOffsetForStaticInstruction(
-    llvm::Instruction* StaticInstruction) {
-  auto Iter = this->StaticToLastMemBaseOffsetMap.find(StaticInstruction);
-  if (Iter == this->StaticToLastMemBaseOffsetMap.end()) {
-    DEBUG(llvm::errs() << "operand inst "
-                       << StaticInstruction->getFunction()->getName()
-                       << StaticInstruction->getParent()->getName()
-                       << StaticInstruction->getName() << '\n');
-  }
-  assert((Iter != this->StaticToLastMemBaseOffsetMap.end()) &&
-         "Static inst should have dynamic occurrence.");
-  return Iter->second;
-}
-
 const std::string& DataGraph::getUniqueNameForStaticInstruction(
     llvm::Instruction* StaticInst) {
   // This function will be called a lot, cache the results.
@@ -674,27 +704,18 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
     assert(DynamicInst->DynamicOperands[OperandIndex] != nullptr &&
            "Unknown dynamic value for operand.");
     llvm::Value* Operand = StaticInstruction->getOperand(OperandIndex);
-    if (auto OperandStaticInstruction =
-            llvm::dyn_cast<llvm::Instruction>(Operand)) {
+    DEBUG(llvm::errs() << "Handle memory base/offset for operand "
+                       << Operand->getName() << '\n');
+    if (llvm::isa<llvm::Instruction>(Operand) ||
+        llvm::isa<llvm::Argument>(Operand)) {
       // This operand comes from an instruction.
-      // Simply populates the result from the previous dynamic inst.
-      const auto& OperandMemBaseOffset =
-          this->getLatestMemBaseOffsetForStaticInstruction(
-              OperandStaticInstruction);
-      DynamicInst->DynamicOperands[OperandIndex]->MemBase =
-          OperandMemBaseOffset.first;
-      DynamicInst->DynamicOperands[OperandIndex]->MemOffset =
-          OperandMemBaseOffset.second;
-    } else if (auto OperandStaticArgument =
-                   llvm::dyn_cast<llvm::Argument>(Operand)) {
-      // This operand comes from an argument.
-      // Look up into the DynamicFrameStack to get the value.
+      // Simply populates the result from the tiny run time env.
       const auto& DynamicFrame = this->DynamicFrameStack.front();
-      auto DynamicValue = DynamicFrame.getArgValue(OperandStaticArgument);
+      const auto& DynamicValue = DynamicFrame.getValue(Operand);
       DynamicInst->DynamicOperands[OperandIndex]->MemBase =
-          DynamicValue->MemBase;
+          DynamicValue.MemBase;
       DynamicInst->DynamicOperands[OperandIndex]->MemOffset =
-          DynamicValue->MemOffset;
+          DynamicValue.MemOffset;
     } else {
       // Looks like this operand comes from an constant.
       // Is it OK for us to sliently ignore this case?
@@ -714,6 +735,9 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
           llvm::dyn_cast<llvm::GetElementPtrInst>(StaticInstruction)) {
     // GEP.
     DynamicValue* BaseValue = DynamicInst->DynamicOperands[0];
+
+    DEBUG(llvm::errs() << "GEP " << BaseValue->Value << '\n');
+
     uint64_t OperandAddr = stoull(BaseValue->Value, nullptr, 16);
     uint64_t ResultAddr =
         stoull(DynamicInst->DynamicResult->Value, nullptr, 16);
@@ -774,12 +798,23 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
     }
   }
 
+  else if (auto SelectStaticInstruction =
+               llvm::dyn_cast<llvm::SelectInst>(StaticInstruction)) {
+    // Handle the select instruction.
+    auto SelectedIndex =
+        (stoull(DynamicInst->DynamicOperands[0]->Value) == 1) ? 1 : 2;
+    DynamicInst->DynamicResult->MemBase =
+        DynamicInst->DynamicOperands[SelectedIndex]->MemBase;
+    DynamicInst->DynamicResult->MemOffset =
+        DynamicInst->DynamicOperands[SelectedIndex]->MemOffset;
+  }
+
   if (StaticInstruction->getName() != "") {
     // This inst will produce a result.
-    this->StaticToLastMemBaseOffsetMap.emplace(
+    // Add the result to the tiny run time environment.
+    this->DynamicFrameStack.front().RunTimeEnv.emplace(
         std::piecewise_construct, std::forward_as_tuple(StaticInstruction),
-        std::forward_as_tuple(DynamicInst->DynamicResult->MemBase,
-                              DynamicInst->DynamicResult->MemOffset));
+        std::forward_as_tuple(*(DynamicInst->DynamicResult)));
   }
   return;
 }
