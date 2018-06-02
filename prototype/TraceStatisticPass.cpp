@@ -56,7 +56,7 @@ class TraceStatisticPass : public llvm::FunctionPass {
     uint64_t Count = 0;
     bool Ended = false;
     while (true) {
-      if (this->DynamicInstCount.Val % 10000) {
+      if (this->DynamicInstCount.Val % 10000 == 0) {
         DEBUG(llvm::errs() << "Handled " << this->DynamicInstCount.Val << '\n');
       }
 
@@ -131,6 +131,12 @@ class TraceStatisticPass : public llvm::FunctionPass {
       this->StaticInstCount[StaticInst] = 1;
     } else {
       this->StaticInstCount[StaticInst]++;
+    }
+
+    // Check the calling convention.
+    if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
+      DEBUG(llvm::errs() << "Get calling convention as "
+                         << StaticCall->getCallingConv() << '\n');
     }
   }
 };

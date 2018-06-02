@@ -18,7 +18,7 @@
 #include <set>
 #include <unordered_set>
 
-static llvm::cl::list<std::string> TraceFunctionNames(
+static llvm::cl::opt<std::string> TraceFunctionNames(
     "trace-function", llvm::cl::desc("Trace function names."));
 static llvm::cl::opt<bool> TraceInstructionOnly(
     "trace-inst-only", llvm::cl::desc("Trace instruction only."));
@@ -89,27 +89,40 @@ class TracePass : public llvm::FunctionPass {
   static char ID;
   TracePass() : llvm::FunctionPass(ID) {}
   void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
-    DEBUG(llvm::errs() << "We have required the analysis.\n");
+    // DEBUG(llvm::errs() << "We have required the analysis.\n");
     Info.addRequired<LocateAccelerableFunctions>();
     Info.addPreserved<LocateAccelerableFunctions>();
   }
   bool doInitialization(llvm::Module& Module) override {
     this->Module = &Module;
+
     DEBUG(llvm::errs() << "Initialize TracePass\n");
 
     // Register the external log functions.
     registerPrintFunctions(Module);
 
     // If trace function specified, find all the reachable functions.
-    for (unsigned i = 0; i < TraceFunctionNames.size(); ++i) {
-      this->tracedFunctionNames.insert(TraceFunctionNames[i]);
+    // Parse the comma separated list.
+    if (TraceFunctionNames.getNumOccurrences() == 1) {
+      size_t Prev = 0;
+      // Append a comma to eliminate a corner case.
+      std::string Names = TraceFunctionNames.getValue() + ',';
+      for (size_t Curr = 0; Curr < Names.size(); ++Curr) {
+        if (Names[Curr] == ',') {
+          auto Iter =
+              this->tracedFunctionNames.insert(Names.substr(Prev, Curr - Prev))
+                  .first;
+          Prev = Curr + 1;
+          DEBUG(llvm::errs() << "Add traced function " << *Iter << '\n');
+        }
+      }
     }
 
     return true;
   }
   bool runOnFunction(llvm::Function& Function) override {
     auto FunctionName = Function.getName().str();
-    DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
+    // DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
     // We will instrument all the functions anyway,
     // and let the run time tracer decide if it should be traced or not.
@@ -140,7 +153,8 @@ class TracePass : public llvm::FunctionPass {
 
     for (auto BBIter = Function.begin(), BBEnd = Function.end();
          BBIter != BBEnd; ++BBIter) {
-      DEBUG(llvm::errs() << "Found basic block: " << BBIter->getName() << '\n');
+      // DEBUG(llvm::errs() << "Found basic block: " << BBIter->getName() <<
+      // '\n');
       runOnBasicBlock(*BBIter);
     }
 
@@ -305,7 +319,7 @@ class TracePass : public llvm::FunctionPass {
     std::vector<llvm::Value*> PrintInstArgs =
         getPrintInstArgs(Inst, FunctionNameValue, BBNameValue, InstId);
     // Call printInst. After the instruction.
-    DEBUG(llvm::errs() << "Insert printInst for phi node.\n");
+    // DEBUG(llvm::errs() << "Insert printInst for phi node.\n");
     llvm::IRBuilder<> Builder(InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
@@ -314,7 +328,7 @@ class TracePass : public llvm::FunctionPass {
       for (unsigned IncomingValueId = 0,
                     NumIncomingValues = Inst->getNumIncomingValues();
            IncomingValueId < NumIncomingValues; IncomingValueId++) {
-        DEBUG(llvm::errs() << "Insert printValue for phi node.\n");
+        // DEBUG(llvm::errs() << "Insert printValue for phi node.\n");
         auto PrintValueArgs = getPrintValueArgsForPhiParameter(
             Inst->getIncomingValue(IncomingValueId),
             Inst->getIncomingBlock(IncomingValueId));
@@ -323,7 +337,7 @@ class TracePass : public llvm::FunctionPass {
 
       // Call printResult after the instruction (if it has a result).
       if (Inst->getName() != "") {
-        DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
+        // DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
         auto PrintValueArgs =
             getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
         Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);

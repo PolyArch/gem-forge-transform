@@ -115,6 +115,8 @@ class DataGraph {
 
   llvm::DataLayout* DataLayout;
 
+  bool IsSimpleMode;
+
   // Some statistics.
   uint64_t NumMemDependences;
 
