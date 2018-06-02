@@ -61,8 +61,8 @@ class TraceStatisticPass : public llvm::FunctionPass {
       }
 
       if (!Ended) {
-        auto NewDynamicInst = this->Trace->loadOneDynamicInst();
-        if (NewDynamicInst != nullptr) {
+        auto NewDynamicInstIter = this->Trace->loadOneDynamicInst();
+        if (NewDynamicInstIter != this->Trace->DynamicInstructionList.end()) {
           Count++;
         } else {
           Ended = true;
@@ -78,7 +78,7 @@ class TraceStatisticPass : public llvm::FunctionPass {
       // Maintain the window size of 10000?
       const uint64_t Window = 10000;
       if (Count > Window || Ended) {
-        this->collectStatistics(this->Trace->DynamicInstructionListHead);
+        this->collectStatistics(this->Trace->DynamicInstructionList.front());
         Count--;
         this->Trace->commitOneDynamicInst();
       }

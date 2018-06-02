@@ -25,7 +25,7 @@ DynamicValue::DynamicValue(const DynamicValue& Other)
     : Value(Other.Value), MemBase(Other.MemBase), MemOffset(Other.MemOffset) {}
 
 DynamicInstruction::DynamicInstruction()
-    : Id(allocateId()), DynamicResult(nullptr), Prev(nullptr), Next(nullptr) {}
+    : Id(allocateId()), DynamicResult(nullptr) {}
 
 DynamicInstruction::~DynamicInstruction() {
   if (this->DynamicResult != nullptr) {
@@ -48,17 +48,12 @@ DynamicInstruction::DynamicId DynamicInstruction::allocateId() {
 
 LLVMDynamicInstruction::LLVMDynamicInstruction(
     llvm::Instruction* _StaticInstruction, DynamicValue* _Result,
-    std::vector<DynamicValue*> _Operands, DynamicInstruction* _Prev,
-    DynamicInstruction* _Next)
+    std::vector<DynamicValue*> _Operands)
     : DynamicInstruction(),
       StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
   this->DynamicResult = _Result;
   this->DynamicOperands = std::move(_Operands);
-
-  // Set the _Prev, _Next.
-  this->Prev = _Prev;
-  this->Next = _Next;
 
   assert(this->StaticInstruction != nullptr &&
          "Non null static instruction ptr.");
@@ -82,8 +77,7 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
 }
 
 LLVMDynamicInstruction::LLVMDynamicInstruction(
-    llvm::Instruction* _StaticInstruction, TraceParser::TracedInst& _Parsed,
-    DynamicInstruction* _Prev, DynamicInstruction* _Next)
+    llvm::Instruction* _StaticInstruction, TraceParser::TracedInst& _Parsed)
     : DynamicInstruction(),
       StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
@@ -95,10 +89,6 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
   for (const auto& Operand : _Parsed.Operands) {
     this->DynamicOperands.push_back(new DynamicValue(Operand));
   }
-
-  // Set the _Prev, _Next.
-  this->Prev = _Prev;
-  this->Next = _Next;
 }
 
 DataGraph::DynamicFrame::DynamicFrame(
@@ -122,9 +112,7 @@ const DynamicValue& DataGraph::DynamicFrame::getValue(
 }
 
 DataGraph::DataGraph(llvm::Module* _Module)
-    : DynamicInstructionListHead(nullptr),
-      DynamicInstructionListTail(nullptr),
-      Module(_Module),
+    : Module(_Module),
       DataLayout(nullptr),
       IsSimpleMode(false),
       NumMemDependences(0),
@@ -152,34 +140,29 @@ DataGraph::DataGraph(llvm::Module* _Module)
 }
 
 DataGraph::~DataGraph() {
-  DynamicInstruction* Iter = this->DynamicInstructionListHead;
-  while (Iter != nullptr) {
-    auto Prev = Iter;
-    Iter = Iter->Next;
-    delete Prev;
+  // If there is any remaining inst, release them.
+  while (!this->DynamicInstructionList.empty()) {
+    delete this->DynamicInstructionList.front();
+    this->DynamicInstructionList.pop_front();
   }
-  this->DynamicInstructionListHead = nullptr;
-  this->DynamicInstructionListTail = nullptr;
   delete this->DataLayout;
   delete this->Parser;
 }
 
-DynamicInstruction* DataGraph::loadOneDynamicInst() {
+DataGraph::DynamicInstIter DataGraph::loadOneDynamicInst() {
   while (true) {
     auto NextType = this->Parser->getNextType();
     if (NextType == TraceParser::END) {
-      return nullptr;
+      return this->DynamicInstructionList.end();
     }
     switch (NextType) {
       case TraceParser::INST: {
         // DEBUG(llvm::errs() << "Parse inst.\n");
         auto Parsed = this->Parser->parseLLVMInstruction();
-        auto OldTail = this->DynamicInstructionListTail;
-        this->parseDynamicInstruction(Parsed);
-        if (OldTail != this->DynamicInstructionListTail) {
+        if (this->parseDynamicInstruction(Parsed)) {
           // We have found something new.
-          // return it.
-          return this->DynamicInstructionListTail;
+          // Return a iterator to the back element.
+          return --(this->DynamicInstructionList.end());
         }
         break;
       }
@@ -195,24 +178,22 @@ DynamicInstruction* DataGraph::loadOneDynamicInst() {
       }
     }
   }
-  return nullptr;
+  return this->DynamicInstructionList.end();
 }
 
 void DataGraph::commitOneDynamicInst() {
-  assert(this->DynamicInstructionListHead != nullptr &&
-         "No inst to be committed.");
+  assert(!this->DynamicInstructionList.empty() && "No inst to be committed.");
   // Remove all the dependence information.
-  auto Id = this->DynamicInstructionListHead->Id;
+  auto Id = this->DynamicInstructionList.front()->Id;
   this->RegDeps.erase(Id);
   this->MemDeps.erase(Id);
   this->CtrDeps.erase(Id);
   this->AliveDynamicInstsMap.erase(Id);
-  auto Committed = this->DynamicInstructionListHead;
-  this->DynamicInstructionListHead = this->DynamicInstructionListHead->Next;
-  delete Committed;
+  delete this->DynamicInstructionList.front();
+  this->DynamicInstructionList.pop_front();
 }
 
-void DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
+bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
   llvm::Instruction* StaticInstruction =
       this->getLLVMInstruction(Parsed.Func, Parsed.BB, Parsed.Id);
   if (Parsed.Op != StaticInstruction->getOpcodeName()) {
@@ -245,7 +226,7 @@ void DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
   // Special case for phi node. Resolve it and not add it into the graph.
   if (auto StaticPhi = llvm::dyn_cast<llvm::PHINode>(StaticInstruction)) {
     this->handlePhiNode(StaticPhi, Parsed);
-    return;
+    return false;
   }
 
   // Perform some sanity check if we are not in simple mode.
@@ -276,8 +257,8 @@ void DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
 
   // Guarantee non phi node.
   // Create the new dynamic instructions.
-  DynamicInstruction* DynamicInst = new LLVMDynamicInstruction(
-      StaticInstruction, Parsed, this->DynamicInstructionListTail, nullptr);
+  DynamicInstruction* DynamicInst =
+      new LLVMDynamicInstruction(StaticInstruction, Parsed);
 
   // Handle the dependence.
   this->handleRegisterDependence(DynamicInst, StaticInstruction);
@@ -334,19 +315,15 @@ void DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
   }
 
   // Add to the list.
-  if (this->DynamicInstructionListTail != nullptr) {
-    this->DynamicInstructionListTail->Next = DynamicInst;
-  }
-  this->DynamicInstructionListTail = DynamicInst;
-  if (this->DynamicInstructionListHead == nullptr) {
-    this->DynamicInstructionListHead = DynamicInst;
-  }
+  this->DynamicInstructionList.push_back(DynamicInst);
 
   // Add to the alive map.
   this->AliveDynamicInstsMap[DynamicInst->Id] = DynamicInst;
 
   // Add the map from static instrunction to dynamic.
   this->StaticToLastDynamicMap[StaticInstruction] = DynamicInst->Id;
+
+  return true;
 }
 
 void DataGraph::handleRegisterDependence(DynamicInstruction* DynamicInst,
@@ -567,7 +544,7 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed) {
       } else {
         // The previous inst must be a call.
         DynamicInstruction* PrevDynamicInstruction =
-            this->DynamicInstructionListTail;
+            this->DynamicInstructionList.back();
         assert(llvm::isa<llvm::CallInst>(
                    PrevDynamicInstruction->getStaticInstruction()) &&
                "The previous instruction is not a call");
@@ -880,7 +857,7 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
 }
 
 void DataGraph::handleControlDependence(DynamicInstruction* DynamicInst) {
-  auto DepInst = this->getPreviousBranchDynamicInstruction(DynamicInst);
+  auto DepInst = this->getPreviousBranchDynamicInstruction();
   if (DepInst != nullptr) {
     // DEBUG(llvm::errs() << "Get control dependence!\n");
     if (this->CtrDeps.find(DynamicInst->Id) == this->CtrDeps.end()) {
@@ -890,10 +867,11 @@ void DataGraph::handleControlDependence(DynamicInstruction* DynamicInst) {
   }
 }
 
-DynamicInstruction* DataGraph::getPreviousBranchDynamicInstruction(
-    DynamicInstruction* DynamicInst) {
-  while (DynamicInst != nullptr && DynamicInst->Prev != nullptr) {
-    DynamicInstruction* DInstruction = DynamicInst->Prev;
+DynamicInstruction* DataGraph::getPreviousBranchDynamicInstruction() {
+  for (auto InstIter = this->DynamicInstructionList.rbegin(),
+            InstEnd = this->DynamicInstructionList.rend();
+       InstIter != InstEnd; ++InstIter) {
+    DynamicInstruction* DInstruction = *InstIter;
     switch (DInstruction->getStaticInstruction()->getOpcode()) {
       case llvm::Instruction::Br:
       case llvm::Instruction::Ret:
@@ -902,7 +880,6 @@ DynamicInstruction* DataGraph::getPreviousBranchDynamicInstruction(
       default:
         break;
     }
-    DynamicInst = DynamicInst->Prev;
   }
   return nullptr;
 }
