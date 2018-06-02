@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -37,7 +38,9 @@ const char* TRACE_FILE_NAME = "llvm_trace";
 
 // The tracer will maintain a stack at run time to determine if the
 // inst should be traced.
+static uint64_t count;
 static std::vector<unsigned> stack;
+static std::vector<const char*> stackName;
 static unsigned tracedFunctionsInStack;
 static std::string currentInstOpName;
 
@@ -48,10 +51,11 @@ static bool shouldLog() { return tracedFunctionsInStack > 0; }
 void printFuncEnter(const char* FunctionName, unsigned IsTraced) {
   // Update the stack.
   stack.push_back(IsTraced);
+  stackName.push_back(FunctionName);
   if (stack.back()) {
     tracedFunctionsInStack++;
   }
-  printf("Entering %s\n", FunctionName);
+  // printf("Entering %s, stack depth %lu\n", FunctionName, stack.size());
   if (shouldLog()) {
     printFuncEnterImpl(FunctionName);
   }
@@ -61,6 +65,19 @@ void printInst(const char* FunctionName, const char* BBName, unsigned Id,
                char* OpCodeName) {
   // Update current inst.
   currentInstOpName = OpCodeName;
+  count++;
+  const uint64_t PRINT_INTERVAL = 10000000;
+  if (count % PRINT_INTERVAL < 5) {
+    // Print every PRINT_INTERVAL instructions.
+    printf("%lu:", count);
+    for (size_t i = 0; i < stackName.size(); ++i) {
+      printf("%s (%u) -> ", stackName[i], stack[i]);
+    }
+    printf("\n");
+    if (count % PRINT_INTERVAL == 0) {
+      printf("\n");
+    }
+  }
   if (shouldLog()) {
     printInstImpl(FunctionName, BBName, Id, OpCodeName);
   }
@@ -71,6 +88,13 @@ void printValue(const char Tag, const char* Name, unsigned TypeId,
   if (!shouldLog()) {
     return;
   }
+  // In simplified mode, we ingore printValue call.
+  const char* TraceMode = std::getenv("LLVM_TDG_TRACE_MODE");
+  std::string SIMPLE = "SIMPLE";
+  if (TraceMode && SIMPLE == TraceMode) {
+    return;
+  }
+
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
@@ -117,13 +141,13 @@ void printInstEnd() {
 
   // Update the stack if this is a ret instruction.
   if (currentInstOpName == "ret") {
+    // printf("%s\n", currentInstOpName.c_str());
     assert(stack.size() > 0);
-
-    printf("%s\n", currentInstOpName.c_str());
     if (stack.back()) {
       tracedFunctionsInStack--;
     }
     stack.pop_back();
+    stackName.pop_back();
   }
 }
 

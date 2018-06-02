@@ -464,23 +464,6 @@ void ReplayTrace::TransformTrace() {
   }
 
   OutTrace.close();
-
-  // First we fake the register allocation, and then the micro ops.
-  // this->fakeRegisterAllocation();
-  // this->fakeFixRegisterDeps();
-  // DEBUG(llvm::errs() << "Start fake microops what happend.\n");
-  // this->fakeMicroOps();
-  // DEBUG(llvm::errs() << "Start outputing.\n");
-  // Simply generate the output data graph for gem5 to use.
-  // std::ofstream OutTrace(this->OutTraceName);
-  // assert(OutTrace.is_open() && "Failed to open output trace file.");
-  // DynamicInstruction* Iter = this->Trace->DynamicInstructionListHead;
-  // while (Iter != nullptr) {
-  //   this->formatInstruction(Iter, OutTrace);
-  //   OutTrace << '\n';
-  //   Iter = Iter->Next;
-  // }
-  // OutTrace.close();
 }
 
 // Insert all the print function declaration into the module.
