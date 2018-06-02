@@ -1,6 +1,7 @@
 #ifndef LLVM_TDG_DYNAMIC_TRACE_H
 #define LLVM_TDG_DYNAMIC_TRACE_H
 
+#include "DynamicInstruction.h"
 #include "TraceParser.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -12,68 +13,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-class DynamicValue {
- public:
-  DynamicValue(const std::string& _Value, const std::string& _MemBase = "",
-               uint64_t _MemOffset = 0);
-  DynamicValue(const DynamicValue& Other);
-  std::string Value;
-  // Base/Offset of memory address.
-  std::string MemBase;
-  uint64_t MemOffset;
-};
-
-class DynamicInstruction {
- public:
-  using DynamicId = uint64_t;
-
-  DynamicInstruction();
-  // Not copiable.
-  DynamicInstruction(const DynamicInstruction& other) = delete;
-  DynamicInstruction& operator=(const DynamicInstruction& other) = delete;
-  // Not Movable.
-  DynamicInstruction(DynamicInstruction&& other) = delete;
-  DynamicInstruction& operator=(DynamicInstruction&& other) = delete;
-
-  virtual ~DynamicInstruction();
-  virtual const std::string& getOpName() = 0;
-  virtual llvm::Instruction* getStaticInstruction() { return nullptr; }
-  virtual void dump() {}
-
-  const DynamicId Id;
-
-  DynamicValue* DynamicResult;
-
-  // This is important to store some constant/non-instruction generated
-  // operands
-  std::vector<DynamicValue*> DynamicOperands;
-
- private:
-  static DynamicId allocateId();
-};
-
-class LLVMDynamicInstruction : public DynamicInstruction {
- public:
-  LLVMDynamicInstruction(llvm::Instruction* _StaticInstruction,
-                         TraceParser::TracedInst& _Parsed);
-  LLVMDynamicInstruction(llvm::Instruction* _StaticInstruction,
-                         DynamicValue* _Result,
-                         std::vector<DynamicValue*> _Operands);
-  // Not copiable.
-  LLVMDynamicInstruction(const LLVMDynamicInstruction& other) = delete;
-  LLVMDynamicInstruction& operator=(const LLVMDynamicInstruction& other) =
-      delete;
-  // Not Movable.
-  LLVMDynamicInstruction(LLVMDynamicInstruction&& other) = delete;
-  LLVMDynamicInstruction& operator=(LLVMDynamicInstruction&& other) = delete;
-  const std::string& getOpName() override { return this->OpName; }
-  llvm::Instruction* getStaticInstruction() override {
-    return this->StaticInstruction;
-  }
-  llvm::Instruction* StaticInstruction;
-  std::string OpName;
-};
 
 class DataGraph {
  public:
@@ -92,7 +31,7 @@ class DataGraph {
   using DynamicInstIter = std::list<DynamicInstruction*>::iterator;
 
   // A map from dynamic id to the actual insts.
-  std::unordered_map<DynamicId, DynamicInstruction*> AliveDynamicInstsMap;
+  std::unordered_map<DynamicId, DynamicInstIter> AliveDynamicInstsMap;
 
   std::unordered_map<DynamicId, std::unordered_set<DynamicId>> RegDeps;
   std::unordered_map<DynamicId, std::unordered_set<DynamicId>> CtrDeps;
@@ -115,7 +54,7 @@ class DataGraph {
   // Some statistics.
   uint64_t NumMemDependences;
 
-  DynamicInstruction* getDynamicInstFromId(DynamicId Id) const;
+  DynamicInstIter getDynamicInstFromId(DynamicId Id) const;
 
   class DynamicFrame {
    public:

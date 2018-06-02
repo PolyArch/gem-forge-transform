@@ -153,7 +153,7 @@ class FakeDynamicInstruction : public DynamicInstruction {
     this->DynamicResult = _DynamicResult;
     this->DynamicOperands = std::move(_DynamicOperands);
   }
-  const std::string& getOpName() override { return this->OpName; }
+  std::string getOpName() const override { return this->OpName; }
   std::string OpName;
 };
 
@@ -395,6 +395,41 @@ void ReplayTrace::fakeMicroOps() {
   }
 }
 
+// This function will make external call possible in the datagraph.
+// It only support the C calling convention and set up the stack by
+// alloc
+// store*
+// external-call
+void ReplayTrace::fakeExternalCall(DataGraph::DynamicInstIter InstIter) {
+  auto DynamicInst = *InstIter;
+  auto StaticInst = DynamicInst->getStaticInstruction();
+  if (StaticInst == nullptr) {
+    // This is not a llvm instruction.
+    return;
+  }
+  if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
+    auto Callee = StaticCall->getCalledFunction();
+    if (Callee == nullptr) {
+      // This is indirect call, we assume it's traced.
+      // (This is really bad, it all comes from that we cannot determine the
+      // dynamic dispatch.)
+      // TODO: Improve this?
+      return;
+    }
+    if (!Callee->isDeclaration()) {
+      // We have definition of this function, it will be traced.
+      return;
+    }
+    // This is an untraced call.
+    auto CallingConvention = StaticCall->getCallingConv();
+    assert(CallingConvention == llvm::CallingConv::C &&
+           "We only support C calling convention.");
+    for (unsigned ArgIdx = 0, NumArgs = StaticCall->getNumArgOperands();
+         ArgIdx != NumArgs; ++ArgIdx) {
+    }
+  }
+}
+
 // The default transformation is just an identical transformation.
 // Other pass can override this function to perform their own transformation.
 void ReplayTrace::TransformTrace() {
@@ -425,8 +460,8 @@ void ReplayTrace::TransformTrace() {
     // Maintain the window size of 10000?
     const uint64_t Window = 10000;
     if (Count > Window || Ended) {
-      this->formatInstruction(this->Trace->DynamicInstructionList.begin(),
-                              OutTrace);
+      auto Iter = this->Trace->DynamicInstructionList.begin();
+      (*Iter)->format(OutTrace, this->Trace);
       OutTrace << '\n';
       Count--;
       this->Trace->commitOneDynamicInst();
@@ -470,177 +505,6 @@ void ReplayTrace::registerFunction(llvm::Module& Module) {
                                                 FakeRegisterAllocationAddr);
   DEBUG(llvm::errs() << this->FakeRegisterFill->getName() << '\n');
   Builder.CreateRetVoid();
-}
-
-//************************************************************************//
-// Helper function to generate the trace for gem5.
-//************************************************************************//
-void ReplayTrace::formatInstruction(DataGraph::DynamicInstIter DynamicInstIter,
-                                    std::ofstream& Out) {  // The op_code field.
-  auto DynamicInst = *DynamicInstIter;
-  this->formatOpCode(DynamicInst, Out);
-  Out << '|';
-  // The faked number of micro ops.
-  uint32_t FakeNumMicroOps = 1;
-  Out << DynamicInst->Id << '|';
-  // The dependence field.
-  this->formatDeps(DynamicInst, Out);
-  Out << '|';
-  // Other fields for other insts.
-  // If this is a self defined inst.
-  if (DynamicInst->getStaticInstruction() == nullptr) {
-    // Simply return.
-    return;
-  }
-
-  if (auto LoadStaticInstruction =
-          llvm::dyn_cast<llvm::LoadInst>(DynamicInst->getStaticInstruction())) {
-    // base|offset|trace_vaddr|size|
-    DynamicValue* LoadedAddr = DynamicInst->DynamicOperands[0];
-    uint64_t LoadedSize = this->Trace->DataLayout->getTypeStoreSize(
-        LoadStaticInstruction->getPointerOperandType()
-            ->getPointerElementType());
-    Out << LoadedAddr->MemBase << '|' << LoadedAddr->MemOffset << '|'
-        << LoadedAddr->Value << '|' << LoadedSize << '|';
-    // This load inst will produce some new base for future memory access.
-    Out << DynamicInst->DynamicResult->MemBase << '|';
-    return;
-  }
-
-  if (auto StoreStaticInstruction = llvm::dyn_cast<llvm::StoreInst>(
-          DynamicInst->getStaticInstruction())) {
-    // base|offset|trace_vaddr|size|type_id|type_name|value|
-    DynamicValue* StoredAddr = DynamicInst->DynamicOperands[1];
-    llvm::Type* StoredType = StoreStaticInstruction->getPointerOperandType()
-                                 ->getPointerElementType();
-    uint64_t StoredSize = this->Trace->DataLayout->getTypeStoreSize(StoredType);
-    std::string TypeName;
-    {
-      llvm::raw_string_ostream Stream(TypeName);
-      StoredType->print(Stream);
-    }
-    Out << StoredAddr->MemBase << '|' << StoredAddr->MemOffset << '|'
-        << StoredAddr->Value << '|' << StoredSize << '|'
-        << StoredType->getTypeID() << '|' << TypeName << '|'
-        << DynamicInst->DynamicOperands[0]->Value << '|';
-    return;
-  }
-
-  if (auto AllocaStaticInstruction = llvm::dyn_cast<llvm::AllocaInst>(
-          DynamicInst->getStaticInstruction())) {
-    // base|trace_vaddr|size|
-    uint64_t AllocatedSize = this->Trace->DataLayout->getTypeStoreSize(
-        AllocaStaticInstruction->getAllocatedType());
-    Out << DynamicInst->DynamicResult->MemBase << '|'
-        << DynamicInst->DynamicResult->Value << '|' << AllocatedSize << '|';
-    return;
-  }
-
-  // For conditional branching, we also log the target basic block.
-  if (auto BranchStaticInstruction = llvm::dyn_cast<llvm::BranchInst>(
-          DynamicInst->getStaticInstruction())) {
-    if (BranchStaticInstruction->isConditional()) {
-      auto NextIter = DynamicInstIter;
-      NextIter++;
-      while (NextIter != this->Trace->DynamicInstructionList.end()) {
-        // Check if this is an LLVM inst, i.e. not our inserted.
-        if ((*NextIter)->getStaticInstruction() != nullptr) {
-          break;
-        }
-        NextIter++;
-      }
-      // Log the static instruction's address and target branch name.
-      // Use the memory address as the identifier for static instruction
-      // is very hacky, but it does maintain unique.
-      std::string NextBBName =
-          (*NextIter)->getStaticInstruction()->getParent()->getName();
-      Out << BranchStaticInstruction << '|' << NextBBName << '|';
-    }
-    return;
-  }
-
-  // For switch, do the same.
-  // TODO: Reuse code with branch case.
-  if (auto SwitchStaticInstruction = llvm::dyn_cast<llvm::SwitchInst>(
-          DynamicInst->getStaticInstruction())) {
-    auto NextIter = DynamicInstIter;
-    NextIter++;
-    while (NextIter != this->Trace->DynamicInstructionList.end()) {
-      // Check if this is an LLVM inst, i.e. not our inserted.
-      if ((*NextIter)->getStaticInstruction() != nullptr) {
-        break;
-      }
-      NextIter++;
-    }
-    // Log the static instruction's address and target branch name.
-    // Use the memory address as the identifier for static instruction
-    // is very hacky, but it does maintain unique.
-    std::string NextBBName =
-        (*NextIter)->getStaticInstruction()->getParent()->getName();
-    Out << SwitchStaticInstruction << '|' << NextBBName << '|';
-    return;
-  }
-}
-
-void ReplayTrace::formatDeps(DynamicInstruction* DynamicInst,
-                             std::ofstream& Out) {
-  // if (DynamicInst->getStaticInstruction() != nullptr) {
-  //   DEBUG(llvm::errs()
-  //               << "Format dependence for "
-  //               << DynamicInst->getStaticInstruction()->getName() << '\n');
-  // }
-  {
-    auto DepIter = this->Trace->RegDeps.find(DynamicInst->Id);
-    if (DepIter != this->Trace->RegDeps.end()) {
-      for (const auto& DepInstId : DepIter->second) {
-        Out << DepInstId << ',';
-      }
-    }
-  }
-  {
-    auto DepIter = this->Trace->MemDeps.find(DynamicInst->Id);
-    if (DepIter != this->Trace->MemDeps.end()) {
-      for (const auto& DepInstId : DepIter->second) {
-        Out << DepInstId << ',';
-      }
-    }
-  }
-  {
-    auto DepIter = this->Trace->CtrDeps.find(DynamicInst->Id);
-    if (DepIter != this->Trace->CtrDeps.end()) {
-      for (const auto& DepInstId : DepIter->second) {
-        Out << DepInstId << ',';
-      }
-    }
-  }
-}
-
-void ReplayTrace::formatOpCode(DynamicInstruction* DynamicInst,
-                               std::ofstream& Out) {
-  llvm::Instruction* StaticInstruction = DynamicInst->getStaticInstruction();
-
-  // DEBUG(llvm::errs() << "Format " << DynamicInst->getOpName() << '\n');
-  if (StaticInstruction == nullptr) {
-    // Self defined instruction.
-    Out << DynamicInst->getOpName();
-    return;
-  }
-  if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(StaticInstruction)) {
-    llvm::Function* Callee = CallInst->getCalledFunction();
-    if (Callee->isIntrinsic()) {
-      // For instrinsic, use "call_intrinsic" for now.
-      Out << "call_intrinsic";
-    } else if (Callee->getName() == "sin") {
-      Out << "sin";
-    } else if (Callee->getName() == "cos") {
-      Out << "cos";
-    } else {
-      Out << "call";
-    }
-    return;
-  }
-  // For other inst, just use the original op code.
-  Out << StaticInstruction->getOpcodeName();
 }
 #undef DEBUG_TYPE
 
