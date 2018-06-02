@@ -45,9 +45,6 @@ class DynamicInstruction {
 
   DynamicValue* DynamicResult;
 
-  DynamicInstruction* Prev;
-  DynamicInstruction* Next;
-
   // This is important to store some constant/non-instruction generated
   // operands
   std::vector<DynamicValue*> DynamicOperands;
@@ -59,12 +56,10 @@ class DynamicInstruction {
 class LLVMDynamicInstruction : public DynamicInstruction {
  public:
   LLVMDynamicInstruction(llvm::Instruction* _StaticInstruction,
-                         TraceParser::TracedInst& _Parsed,
-                         DynamicInstruction* _Prev, DynamicInstruction* _Next);
+                         TraceParser::TracedInst& _Parsed);
   LLVMDynamicInstruction(llvm::Instruction* _StaticInstruction,
                          DynamicValue* _Result,
-                         std::vector<DynamicValue*> _Operands,
-                         DynamicInstruction* _Prev, DynamicInstruction* _Next);
+                         std::vector<DynamicValue*> _Operands);
   // Not copiable.
   LLVMDynamicInstruction(const LLVMDynamicInstruction& other) = delete;
   LLVMDynamicInstruction& operator=(const LLVMDynamicInstruction& other) =
@@ -93,8 +88,8 @@ class DataGraph {
   DataGraph(DataGraph&& other) = delete;
   DataGraph& operator=(DataGraph&& other) = delete;
 
-  DynamicInstruction* DynamicInstructionListHead;
-  DynamicInstruction* DynamicInstructionListTail;
+  std::list<DynamicInstruction*> DynamicInstructionList;
+  using DynamicInstIter = std::list<DynamicInstruction*>::iterator;
 
   // A map from dynamic id to the actual insts.
   std::unordered_map<DynamicId, DynamicInstruction*> AliveDynamicInstsMap;
@@ -145,7 +140,7 @@ class DataGraph {
   };
 
   // Load one more inst from the trace. nullptr if eof.
-  DynamicInstruction* loadOneDynamicInst();
+  DynamicInstIter loadOneDynamicInst();
   // Commit one inst and remove it from the alive set.
   void commitOneDynamicInst();
 
@@ -153,8 +148,12 @@ class DataGraph {
   /**********************************************************************/
   /* These are temporary fields used in construnction only.
   /**********************************************************************/
-  // Parse the dynamic instruction in the line buffer.
-  void parseDynamicInstruction(TraceParser::TracedInst& Parsed);
+  /**
+   * Parse the dynamic instruction in the line buffer.
+   * Return true if we get an non-phi instruction, false otherwise.
+   * As phi instruction will not be added to the graph.
+   */
+  bool parseDynamicInstruction(TraceParser::TracedInst& Parsed);
   void parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed);
 
   // Records the information of the dynamic value inter-frame.
@@ -185,8 +184,7 @@ class DataGraph {
                                         const std::string& BasicBlockName,
                                         const int Index);
 
-  DynamicInstruction* getPreviousBranchDynamicInstruction(
-      DynamicInstruction* DynamicInst);
+  DynamicInstruction* getPreviousBranchDynamicInstruction();
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.
