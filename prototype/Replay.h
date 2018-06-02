@@ -43,16 +43,12 @@ class ReplayTrace : public llvm::FunctionPass {
   void registerFunction(llvm::Module& Module);
 
   void fakeRegisterAllocation();
-  void fakeMicroOps();
   void fakeFixRegisterDeps();
-
-  //************************************************************************//
-  // Helper function to generate the trace for gem5.
-  //************************************************************************//
-  void formatInstruction(DataGraph::DynamicInstIter DynamicInstIter,
-                         std::ofstream& Out);
-  void formatDeps(DynamicInstruction* DynamicInst, std::ofstream& Out);
-  void formatOpCode(DynamicInstruction* DynamicInst, std::ofstream& Out);
+  /*************************************************************************
+   * Local transformations, which only require the local information.
+   */
+  void fakeMicroOps();
+  void fakeExternalCall(DataGraph::DynamicInstIter DynamicInstIter);
 };
 
 #endif

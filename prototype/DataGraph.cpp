@@ -17,80 +17,6 @@ static llvm::cl::opt<std::string> TraceMode(
 
 #define DEBUG_TYPE "DataGraph"
 
-DynamicValue::DynamicValue(const std::string& _Value,
-                           const std::string& _MemBase, uint64_t _MemOffset)
-    : Value(_Value), MemBase(_MemBase), MemOffset(_MemOffset) {}
-
-DynamicValue::DynamicValue(const DynamicValue& Other)
-    : Value(Other.Value), MemBase(Other.MemBase), MemOffset(Other.MemOffset) {}
-
-DynamicInstruction::DynamicInstruction()
-    : Id(allocateId()), DynamicResult(nullptr) {}
-
-DynamicInstruction::~DynamicInstruction() {
-  if (this->DynamicResult != nullptr) {
-    delete this->DynamicResult;
-    this->DynamicResult = nullptr;
-  }
-  for (auto& OperandsIter : this->DynamicOperands) {
-    if (OperandsIter != nullptr) {
-      delete OperandsIter;
-      OperandsIter = nullptr;
-    }
-  }
-}
-
-DynamicInstruction::DynamicId DynamicInstruction::allocateId() {
-  // Only consider single thread.
-  static DynamicId CurrentId = 0;
-  return CurrentId++;
-}
-
-LLVMDynamicInstruction::LLVMDynamicInstruction(
-    llvm::Instruction* _StaticInstruction, DynamicValue* _Result,
-    std::vector<DynamicValue*> _Operands)
-    : DynamicInstruction(),
-      StaticInstruction(_StaticInstruction),
-      OpName(StaticInstruction->getOpcodeName()) {
-  this->DynamicResult = _Result;
-  this->DynamicOperands = std::move(_Operands);
-
-  assert(this->StaticInstruction != nullptr &&
-         "Non null static instruction ptr.");
-  if (this->DynamicResult != nullptr) {
-    // Sanity check to make sure that the static instruction do has result.
-    if (this->StaticInstruction->getName() == "") {
-      DEBUG(
-          llvm::errs() << "DynamicResult set for non-result static instruction "
-                       << this->StaticInstruction->getName() << '\n');
-    }
-    assert(this->StaticInstruction->getName() != "" &&
-           "DynamicResult set for non-result static instruction.");
-  } else {
-    // Comment this out as for some call inst, if the callee is traced,
-    // then we donot log the result.
-    if (!llvm::isa<llvm::CallInst>(_StaticInstruction)) {
-      assert(this->StaticInstruction->getName() == "" &&
-             "Missing DynamicResult for non-call instruction.");
-    }
-  }
-}
-
-LLVMDynamicInstruction::LLVMDynamicInstruction(
-    llvm::Instruction* _StaticInstruction, TraceParser::TracedInst& _Parsed)
-    : DynamicInstruction(),
-      StaticInstruction(_StaticInstruction),
-      OpName(StaticInstruction->getOpcodeName()) {
-  if (_Parsed.Result != "") {
-    // We do have result.
-    this->DynamicResult = new DynamicValue(_Parsed.Result);
-  }
-
-  for (const auto& Operand : _Parsed.Operands) {
-    this->DynamicOperands.push_back(new DynamicValue(Operand));
-  }
-}
-
 DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function* _Function,
     std::unordered_map<llvm::Value*, DynamicValue>&& _Arguments)
@@ -315,10 +241,11 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
   }
 
   // Add to the list.
-  this->DynamicInstructionList.push_back(DynamicInst);
+  auto InsertedIter = this->DynamicInstructionList.insert(
+      this->DynamicInstructionList.end(), DynamicInst);
 
   // Add to the alive map.
-  this->AliveDynamicInstsMap[DynamicInst->Id] = DynamicInst;
+  this->AliveDynamicInstsMap[DynamicInst->Id] = InsertedIter;
 
   // Add the map from static instrunction to dynamic.
   this->StaticToLastDynamicMap[StaticInstruction] = DynamicInst->Id;
@@ -643,7 +570,7 @@ llvm::Instruction* DataGraph::getLLVMInstruction(
   return StaticInstruction;
 }
 
-DynamicInstruction* DataGraph::getDynamicInstFromId(DynamicId Id) const {
+DataGraph::DynamicInstIter DataGraph::getDynamicInstFromId(DynamicId Id) const {
   auto Iter = this->AliveDynamicInstsMap.find(Id);
   assert(Iter != this->AliveDynamicInstsMap.end() &&
          "Failed looking up id. Consider increasing window size?");
