@@ -6,11 +6,16 @@
 #include <string>
 #include <vector>
 
+// The tracer will work with two environment variables:
+// 1. LLVM_TDG_TRACE_MODE, if simple, it will not trace value, but instructions
+// only.
+// 2. LLVM_TDG_TRACE_MAXIMUM_INST, if specified, it will exit after tracting
+// this number of instructions.
+
 // Copied from llvm/IR/Type.h.
-// Definitely not the best way to do this, but since it barely changes
-// and we don't want to link llvm to our trace library...
+// Definitely not the best way to do thes, but since it barely changes
+// and imitiveTypes - make sure LastPrimitiveTyID stays up to date.
 enum TypeID {
-  // PrimitiveTypes - make sure LastPrimitiveTyID stays up to date.
   VoidTyID = 0,   ///<  0: type with no size
   HalfTyID,       ///<  1: 16-bit floating point type
   FloatTyID,      ///<  2: 32-bit floating point type
@@ -39,16 +44,39 @@ const char* TRACE_FILE_NAME = "llvm_trace";
 // The tracer will maintain a stack at run time to determine if the
 // inst should be traced.
 static uint64_t count;
+static uint64_t tracedCount = 0;
+static uint64_t MAXIMUM_TRACED_INST = 0;
+static bool isSimpleMode = false;
 static std::vector<unsigned> stack;
 static std::vector<const char*> stackName;
 static unsigned tracedFunctionsInStack;
 static std::string currentInstOpName;
 
 // This serves as the guard.
+
+static void initialize() {
+  static bool initialized = false;
+  if (!initialized) {
+    printf("initializing...\n");
+    // Set the trace mode.
+    const char* TraceMode = std::getenv("LLVM_TDG_TRACE_MODE");
+    std::string SIMPLE = "SIMPLE";
+    isSimpleMode = ((TraceMode) && SIMPLE == TraceMode);
+
+    printf("initializing maximum inst...\n");
+    // Set the maximum trace number.
+    const char* MaximumInst = std::getenv("LLVM_TDG_MAXIMUM_INST");
+    if (MaximumInst) {
+      MAXIMUM_TRACED_INST = std::stoull(std::string(MaximumInst));
+    }
+    initialized = true;
+  }
+}
 // We trace all the IsTraced function and their callees.
 static bool shouldLog() { return tracedFunctionsInStack > 0; }
 
 void printFuncEnter(const char* FunctionName, unsigned IsTraced) {
+  initialize();
   // Update the stack.
   stack.push_back(IsTraced);
   stackName.push_back(FunctionName);
@@ -63,6 +91,7 @@ void printFuncEnter(const char* FunctionName, unsigned IsTraced) {
 
 void printInst(const char* FunctionName, const char* BBName, unsigned Id,
                char* OpCodeName) {
+  initialize();
   // Update current inst.
   currentInstOpName = OpCodeName;
   count++;
@@ -89,9 +118,7 @@ void printValue(const char Tag, const char* Name, unsigned TypeId,
     return;
   }
   // In simplified mode, we ingore printValue call.
-  const char* TraceMode = std::getenv("LLVM_TDG_TRACE_MODE");
-  std::string SIMPLE = "SIMPLE";
-  if (TraceMode && SIMPLE == TraceMode) {
+  if (isSimpleMode) {
     return;
   }
 
@@ -136,10 +163,16 @@ void printValue(const char Tag, const char* Name, unsigned TypeId,
 
 void printInstEnd() {
   if (shouldLog()) {
+    tracedCount++;
     printInstEndImpl();
+    // Check if we are about to exit.
+    if (MAXIMUM_TRACED_INST > 0 && tracedCount == MAXIMUM_TRACED_INST) {
+      // We have reached the limit.
+      std::exit(-1);
+    }
   }
 
-  // Update the stack if this is a ret instruction.
+  // Update the stack
   if (currentInstOpName == "ret") {
     // printf("%s\n", currentInstOpName.c_str());
     assert(stack.size() > 0);
