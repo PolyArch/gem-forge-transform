@@ -47,6 +47,37 @@ llvm::Constant* getOrCreateStringLiteral(
 }
 }  // namespace
 
+// Fake push instruction.
+class PushInstruction : public DynamicInstruction {
+ public:
+  // Let's not worry about the align for now.
+  PushInstruction(const DynamicValue& _Value) : Value(_Value) {}
+  std::string getOpName() const override { return "push"; }
+  void formatCustomizedFields(std::ofstream& Out,
+                              DataGraph* Trace) const override {}
+  DynamicValue Value;
+};
+
+class CallExternalInstruction : public DynamicInstruction {
+ public:
+  // Let's not worry about the align for now.
+  CallExternalInstruction(const std::string& _Symbol) : Symbol(_Symbol) {}
+  std::string getOpName() const override { return "call-external"; }
+  void formatCustomizedFields(std::ofstream& Out,
+                              DataGraph* Trace) const override {}
+  std::string Symbol;
+};
+
+class RetExternalInstruction : public DynamicInstruction {
+ public:
+  // Let's not worry about the align for now.
+  RetExternalInstruction(const DynamicValue& _Result) : Result(_Result) {}
+  std::string getOpName() const override { return "ret-external"; }
+  void formatCustomizedFields(std::ofstream& Out,
+                              DataGraph* Trace) const override {}
+  DynamicValue Result;
+};
+
 ReplayTrace::ReplayTrace(char _ID)
     : llvm::FunctionPass(_ID),
       Trace(nullptr),
@@ -397,9 +428,9 @@ void ReplayTrace::fakeMicroOps() {
 
 // This function will make external call possible in the datagraph.
 // It only support the C calling convention and set up the stack by
-// alloc
-// store*
+// push
 // external-call
+// external-call-clean
 void ReplayTrace::fakeExternalCall(DataGraph::DynamicInstIter InstIter) {
   auto DynamicInst = *InstIter;
   auto StaticInst = DynamicInst->getStaticInstruction();
@@ -424,9 +455,18 @@ void ReplayTrace::fakeExternalCall(DataGraph::DynamicInstIter InstIter) {
     auto CallingConvention = StaticCall->getCallingConv();
     assert(CallingConvention == llvm::CallingConv::C &&
            "We only support C calling convention.");
+    // Create the push instructions.
+    std::vector<DynamicInstruction*> Pushes;
+    Pushes.reserve(StaticCall->getNumArgOperands());
     for (unsigned ArgIdx = 0, NumArgs = StaticCall->getNumArgOperands();
          ArgIdx != NumArgs; ++ArgIdx) {
+      Pushes.push_back(
+          new PushInstruction(*(DynamicInst->DynamicOperands[ArgIdx + 1])));
     }
+    // The push instruction will implicitly wait until the previous one is
+    // committed, so no need to insert dependence edges.
+    // Create the call-external instruction and call-external-clean.
+    // auto CallExternal = new
   }
 }
 
