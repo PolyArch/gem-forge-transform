@@ -1,32 +1,22 @@
 KERN=fft
 ALG=transpose
 
-override CFLAGS:=$(CFLAGS)  -Wall -Wno-unused-label
+CFLAGS?=-O3 -Wall -Wno-unused-label
 
 SRCS=$(KERN).c local_support.c ../../common/support.c
 FILES=$(SRCS) $(KERN).h ../../common/support.h
-INCLUDE_DIR=../../common
-LINK_FLAG=-lm
 
-#####################################################################################
-ROOT_DIR=../../../..
-ALL_SRCS=$(SRCS) ../../common/harness.c
-
-include ../../Makefile.TDG.mk
-
-#####################################################################################
-
-# $(KERN): $(FILES) ../../common/harness.c
-# 	$(CC) $(CFLAGS) -I../../common -o $(KERN) $(SRCS) ../../common/harness.c $(LINK_FLAG)
+$(KERN): $(FILES) ../../common/harness.c
+	$(CC) $(CFLAGS) -I../../common -o $(KERN) $(SRCS) ../../common/harness.c -lm
 
 run: $(KERN) input.data check.data
 	./$(KERN) input.data check.data
 
 generate: $(FILES) generate.c
-	$(CC) $(CFLAGS) -I../../common -o generate $(SRCS) generate.c $(LINK_FLAG)
+	$(CC) $(CFLAGS) -I../../common -o generate $(SRCS) generate.c -lm
 
 hls: $(KERN).c $(KERN).h
 	vivado_hls hls.tcl
 
-clean: clean_replay clean_trace
+clean:
 	rm -f $(KERN) generate output.data

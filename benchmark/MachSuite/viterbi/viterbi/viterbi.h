@@ -18,14 +18,11 @@ typedef int32_t step_t;
 //#define N_STATES 5
 //#define N_OBS 32
 //#define N_TOKENS 9
-// #define N_STATES  64
-// #define N_OBS     140
-// #define N_TOKENS  64
-#define N_STATES 16
-#define N_OBS 35
-#define N_TOKENS 16
+#define N_STATES  64
+#define N_OBS     140
+#define N_TOKENS  64
 
-void viterbi( tok_t obs[N_OBS], prob_t init[N_STATES], prob_t transition[N_STATES*N_STATES], prob_t emission[N_STATES*N_TOKENS], state_t path[N_OBS] );
+int viterbi( tok_t obs[N_OBS], prob_t init[N_STATES], prob_t transition[N_STATES*N_STATES], prob_t emission[N_STATES*N_TOKENS], state_t path[N_OBS] );
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test harness interface code.

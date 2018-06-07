@@ -3,6 +3,7 @@
 #include "DataGraph.h"
 
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/Intrinsics.h"
 
 DynamicValue::DynamicValue(const std::string& _Value,
                            const std::string& _MemBase, uint64_t _MemOffset)
@@ -10,6 +11,11 @@ DynamicValue::DynamicValue(const std::string& _Value,
 
 DynamicValue::DynamicValue(const DynamicValue& Other)
     : Value(Other.Value), MemBase(Other.MemBase), MemOffset(Other.MemOffset) {}
+
+DynamicValue::DynamicValue(DynamicValue&& Other)
+    : Value(std::move(Other.Value)),
+      MemBase(std::move(Other.MemBase)),
+      MemOffset(Other.MemOffset) {}
 
 DynamicInstruction::DynamicInstruction()
     : Id(allocateId()), DynamicResult(nullptr) {}
@@ -127,16 +133,23 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
 
 std::string LLVMDynamicInstruction::getOpName() const {
   if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(this->StaticInstruction)) {
-    llvm::Function* Callee = CallInst->getCalledFunction();
-    if (Callee->isIntrinsic()) {
-      // For instrinsic, use "call_intrinsic" for now.
-      return "call_intrinsic";
-    } else if (Callee->getName() == "sin") {
-      return "sin";
-    } else if (Callee->getName() == "cos") {
-      return "cos";
-    } else {
-      return "call";
+    if (llvm::Function* Callee = CallInst->getCalledFunction()) {
+      // Make sure this is not indirect call.
+      if (Callee->isIntrinsic()) {
+        // If this is a simple memset, translate to a "huge" store instruction.
+        auto IntrinsicId = Callee->getIntrinsicID();
+        if (IntrinsicId == llvm::Intrinsic::ID::memset) {
+          return "memset";
+        }
+        // For instrinsic, use "call_intrinsic" for now.
+        return "call_intrinsic";
+      } else if (Callee->getName() == "sin") {
+        return "sin";
+      } else if (Callee->getName() == "cos") {
+        return "cos";
+      } else {
+        return "call";
+      }
     }
   }
   // For other inst, just use the original op code.
@@ -176,6 +189,32 @@ void LLVMDynamicInstruction::formatCustomizedFields(std::ofstream& Out,
         << StoredType->getTypeID() << '|' << TypeName << '|'
         << this->DynamicOperands[0]->Value << '|';
     return;
+  }
+
+  if (auto CallStaticInstruction =
+          llvm::dyn_cast<llvm::CallInst>(this->StaticInstruction)) {
+    if (auto Callee = CallStaticInstruction->getCalledFunction()) {
+      // Make sure this is no indirect call.
+      if (Callee->isIntrinsic()) {
+        auto IntrinsicId = Callee->getIntrinsicID();
+        if (IntrinsicId == llvm::Intrinsic::ID::memset) {
+          // base|offset|trace_vaddr|size|value|
+
+          /**
+           * Note that for intrinsic function the first operand is
+           * the first argument.
+           * memset(addr, val, size)
+           * Also, make this a giantic vector store.
+           */
+          DynamicValue* StoredAddr = this->DynamicOperands[0];
+          uint64_t StoredSize = std::stoul(this->DynamicOperands[2]->Value);
+          Out << StoredAddr->MemBase << '|' << StoredAddr->MemOffset << '|'
+              << StoredAddr->Value << '|' << StoredSize << '|'
+              << this->DynamicOperands[1]->Value << '|';
+          return;
+        }
+      }
+    }
   }
 
   if (auto AllocaStaticInstruction =

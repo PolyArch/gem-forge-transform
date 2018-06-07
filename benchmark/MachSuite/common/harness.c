@@ -6,10 +6,14 @@
 #include <sys/stat.h>
 #include <assert.h>
 
-// #define WRITE_OUTPUT
-// #define CHECK_OUTPUT
+#define WRITE_OUTPUT
+#define CHECK_OUTPUT
 
 #include "support.h"
+
+#ifdef LLVM_TDG_GEM5_BASELINE
+#include "gem5/m5ops.h"
+#endif
 
 int main(int argc, char **argv)
 {
@@ -40,7 +44,14 @@ int main(int argc, char **argv)
   input_to_data(in_fd, data);
   
   // Unpack and call
+  #ifdef LLVM_TDG_GEM5_BASELINE
+  m5_work_begin(0, 0);
+  m5_reset_stats(0, 0);
+  #endif
   run_benchmark( data );
+  #ifdef LLVM_TDG_GEM5_BASELINE
+  m5_work_end(0, 0);
+  #endif
 
   #ifdef WRITE_OUTPUT
   int out_fd;
@@ -67,9 +78,9 @@ int main(int argc, char **argv)
     fprintf(stderr, "Benchmark results are incorrect\n");
     return -1;
   }
-  free(ref);
   #endif
   free(data);
+  free(ref);
 
   printf("Success.\n");
   return 0;

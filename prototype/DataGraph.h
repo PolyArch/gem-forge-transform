@@ -71,6 +71,7 @@ class DataGraph {
     ~DynamicFrame();
 
     const DynamicValue& getValue(llvm::Value* Value) const;
+    void insertValue(llvm::Value* Value, DynamicValue DValue);
 
     DynamicFrame(const DynamicFrame& other) = delete;
     DynamicFrame(DynamicFrame&& other) = delete;
