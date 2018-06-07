@@ -21,6 +21,7 @@ class DynamicValue {
   DynamicValue(const std::string& _Value, const std::string& _MemBase = "",
                uint64_t _MemOffset = 0);
   DynamicValue(const DynamicValue& Other);
+  explicit DynamicValue(DynamicValue&& Other);
   std::string Value;
   // Base/Offset of memory address.
   std::string MemBase;

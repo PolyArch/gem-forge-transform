@@ -1,0 +1,11 @@
+*.ll
+*.bc
+*.traced
+*.baseline
+*.replay
+*llvm_trace
+*.txt
+*.asm
+*.data
+*.gz
+generate

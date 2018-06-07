@@ -33,8 +33,28 @@ const DynamicValue& DataGraph::DynamicFrame::getValue(
     llvm::Value* Value) const {
   const auto Iter = this->RunTimeEnv.find(Value);
   assert(Iter != this->RunTimeEnv.end() &&
-         "Failed to find argument in the frame.");
+         "Failed to find value in the frame.");
   return Iter->second;
+}
+
+void DataGraph::DynamicFrame::insertValue(llvm::Value* Value,
+                                          DynamicValue DValue) {
+  DEBUG(llvm::errs() << "OFFSET " << DValue.MemOffset << '\n');
+  // !! Emplace does not replace it! Erase it first!
+  this->RunTimeEnv.erase(Value);
+  this->RunTimeEnv.emplace(std::piecewise_construct,
+                           std::forward_as_tuple(Value),
+                           std::forward_as_tuple(std::move(DValue)));
+
+  if (this->getValue(Value).MemOffset != DValue.MemOffset) {
+    const auto& Entry = this->getValue(Value);
+    DEBUG(llvm ::errs() << "Unmatched memory offset current "
+                        << DValue.MemOffset << " run time env " << Entry.Value
+                        << ' ' << Entry.MemBase << ' ' << Entry.MemOffset
+                        << '\n');
+  }
+  assert(this->getValue(Value).MemOffset == DValue.MemOffset &&
+         "Invalid memory offset in run time env.");
 }
 
 DataGraph::DataGraph(llvm::Module* _Module)
@@ -231,9 +251,8 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst& Parsed) {
         assert(DynamicInst->DynamicOperands.size() == 1 &&
                "There should be exactly one dynamic result for ret.");
         // Update its run time value.
-        Frame.RunTimeEnv.emplace(
-            std::piecewise_construct, std::forward_as_tuple(Frame.PrevCallInst),
-            std::forward_as_tuple(*(DynamicInst->DynamicOperands[0])));
+        Frame.insertValue(Frame.PrevCallInst,
+                          *(DynamicInst->DynamicOperands[0]));
         // Clear the prev call inst.
         Frame.PrevCallInst = nullptr;
       }
@@ -316,12 +335,11 @@ void DataGraph::handlePhiNode(llvm::PHINode* StaticPhi,
         llvm::isa<llvm::Argument>(IncomingValue)) {
       // For the incoming value of instruction and arguments, we look up the
       // run time env.
-      const auto& DynamicValue = Frame.getValue(IncomingValue);
-      Frame.RunTimeEnv.emplace(std::piecewise_construct,
-                               std::forward_as_tuple(StaticPhi),
-                               std::forward_as_tuple(DynamicValue));
+      // Make sure to copy it.
+      Frame.insertValue(StaticPhi, Frame.getValue(IncomingValue));
     } else {
       // We sliently create the memory base/offset.
+      Frame.RunTimeEnv.erase(StaticPhi);
       Frame.RunTimeEnv.emplace(std::piecewise_construct,
                                std::forward_as_tuple(StaticPhi),
                                std::forward_as_tuple(Parsed.Result));
@@ -402,7 +420,7 @@ void DataGraph::handleMemoryDependence(DynamicInstruction* DynamicInst) {
         this->NumMemDependences++;
       }
       // Update the latest read map.
-      this->AddrToLastLoadInstMap.emplace(Addr, DynamicInst->Id);
+      this->AddrToLastLoadInstMap[Addr] = DynamicInst->Id;
     }
     return;
   }
@@ -431,7 +449,7 @@ void DataGraph::handleMemoryDependence(DynamicInstruction* DynamicInst) {
         this->NumMemDependences++;
       }
       // Update the last store map.
-      this->AddrToLastStoreInstMap.emplace(Addr, DynamicInst->Id);
+      this->AddrToLastStoreInstMap[Addr] = DynamicInst->Id;
     }
     return;
   }
@@ -672,7 +690,7 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
 
     {
       static int count = 0;
-      if (count < 5) {
+      if (true) {
         DEBUG(llvm::errs() << "GEP " << DynamicInst->DynamicResult->MemBase
                            << ' ' << DynamicInst->DynamicResult->MemOffset
                            << ' ' << DynamicInst->DynamicResult->Value << ' '
@@ -776,9 +794,8 @@ void DataGraph::handleMemoryBase(DynamicInstruction* DynamicInst) {
   if (StaticInstruction->getName() != "") {
     // This inst will produce a result.
     // Add the result to the tiny run time environment.
-    this->DynamicFrameStack.front().RunTimeEnv.emplace(
-        std::piecewise_construct, std::forward_as_tuple(StaticInstruction),
-        std::forward_as_tuple(*(DynamicInst->DynamicResult)));
+    this->DynamicFrameStack.front().insertValue(StaticInstruction,
+                                                *(DynamicInst->DynamicResult));
   }
   return;
 }
