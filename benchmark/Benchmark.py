@@ -127,7 +127,7 @@ class Benchmark:
     The gem5 output directory (abs path).
     """
 
-    def gem5_replay(self):
+    def gem5_replay(self, standalone=0):
         LLVM_TRACE_FN = 'llvm_trace_gem5.txt'
         GEM5_OUT_DIR = '{cpu_type}.replay'.format(cpu_type=C.CPU_TYPE)
         subprocess.check_call(['mkdir', '-p', GEM5_OUT_DIR])
@@ -137,7 +137,7 @@ class Benchmark:
             '--debug-flags=LLVMTraceCPU',
             C.GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=self.replay_bin),
-            '--llvm-standalone=0',
+            '--llvm-standalone={standlone}'.format(standlone=standalone),
             '--llvm-trace-file={trace_file}'.format(trace_file=LLVM_TRACE_FN),
             '--llvm-issue-width={ISSUE_WIDTH}'.format(
                 ISSUE_WIDTH=C.ISSUE_WIDTH),
