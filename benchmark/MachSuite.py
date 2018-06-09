@@ -9,49 +9,49 @@ from Benchmark import Benchmark
 class MachSuiteBenchmarks:
 
     BENCHMARK_PARAMS = {
-        # "bfs": [
-        #     "queue",
-        #     "bulk"
-        # ],
-        # "aes": [
-        #     "aes"
-        # ],
-        # "stencil": [
-        #     "stencil2d",
-        #     "stencil3d"
-        # ],
-        # "md": [
-        #     "grid",
-        #     "knn"
-        # ],
-        # "fft": [
-        #     "strided",
-        #     "transpose"
-        # ],
-        # "viterbi": [
-        #     "viterbi"
-        # ],
-        # "sort": [
-        #     "radix",
-        #     "merge"
-        # ],
-        # "spmv": [
-        #     "ellpack",
-        #     "crs"
-        # ],
-        # "kmp": [
-        #     "kmp"
-        # ],
-        "backprop": [
-            "backprop"
-        ],
-        # "gemm": [
-        #     "blocked",
-        #     "ncubed"
-        # ],
-        # "nw": [
-        #     "nw"
-        # ]
+#         "bfs": [
+#             "queue",
+#             "bulk"
+#         ],
+#         "aes": [
+#             "aes"
+#         ],
+#         "stencil": [
+#             "stencil2d",
+#             "stencil3d"
+#         ],
+#         "md": [
+#             "grid",
+#             "knn"
+#         ],
+#         "fft": [
+#             "strided",
+#             "transpose"
+#         ],
+#         "viterbi": [
+#             "viterbi"
+#         ],
+#         "sort": [
+#             "radix",
+#             "merge"
+#         ],
+#         "spmv": [
+#             "ellpack",
+#             "crs"
+#         ],
+#         "kmp": [
+#             "kmp"
+#         ],
+#         "backprop": [
+#             "backprop"
+#         ],
+#         "gemm": [
+#             "blocked",
+#             "ncubed"
+#         ],
+         "nw": [
+             "nw"
+         ]
     }
 
     COMMON_SOURCES = [
@@ -62,8 +62,14 @@ class MachSuiteBenchmarks:
 
     INCLUDE_DIR = '../../common'
 
-    CFLAGS = ['-O3', '-Wall',
-              '-Wno-unused-label', '-fno-inline-functions']
+    CFLAGS = [
+        '-O1', 
+        '-Wall',
+        '-Wno-unused-label', 
+        '-fno-inline-functions',
+        '-fno-vectorize',
+        '-fno-slp-vectorize'
+    ]
 
     def __init__(self, folder):
         self.folder = folder
@@ -76,7 +82,7 @@ class MachSuiteBenchmarks:
             for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
                 name = self.getName(benchmark, subbenchmark)
                 raw_bc = self.getRawBitcodeName(benchmark, subbenchmark)
-                # self.initBenchmark(benchmark, subbenchmark)
+                self.initBenchmark(benchmark, subbenchmark)
                 self.benchmarks[name] = Benchmark(
                     name=name, raw_bc=raw_bc, links=['-lm'], args=None, trace_func='run_benchmark')
 
@@ -97,7 +103,7 @@ class MachSuiteBenchmarks:
         self.benchmarks[name].trace()
         os.chdir(self.cwd)
 
-    def replay(self, benchmark, subbenchmark):
+    def build_replay(self, benchmark, subbenchmark):
         path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
         name = self.getName(benchmark, subbenchmark)
         os.chdir(path)
@@ -107,6 +113,26 @@ class MachSuiteBenchmarks:
         os.chdir(self.cwd)
         subprocess.check_call(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
             self.cwd, 'result', name + '.replay.txt')])
+
+    def run_replay(self, benchmark, subbenchmark):
+        path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
+        name = self.getName(benchmark, subbenchmark)
+        os.chdir(path)
+        gem5_outdir = self.benchmarks[name].gem5_replay()
+        # Copy the result out.
+        os.chdir(self.cwd)
+        subprocess.check_call(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
+            self.cwd, 'result', name + '.replay.txt')])
+
+    def run_standalone(self, benchmark, subbenchmark):
+        path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
+        name = self.getName(benchmark, subbenchmark)
+        os.chdir(path)
+        gem5_outdir = self.benchmarks[name].gem5_replay(standalone=1)
+        # Copy the result out.
+        os.chdir(self.cwd)
+        subprocess.check_call(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
+            self.cwd, 'result', name + '.standalone.txt')])
 
     """
     Set up the benchmark.
@@ -272,12 +298,15 @@ def main(folder):
     names = list()
     for benchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS:
         for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
-            # benchmarks.baseline(benchmark, subbenchmark)
-            # benchmarks.trace(benchmark, subbenchmark)
-            benchmarks.replay(benchmark, subbenchmark)
+            benchmarks.baseline(benchmark, subbenchmark)
+            benchmarks.trace(benchmark, subbenchmark)
+            benchmarks.build_replay(benchmark, subbenchmark)
+            benchmarks.run_replay(benchmark, subbenchmark)
+            benchmarks.run_standalone(benchmark, subbenchmark)
             names.append(benchmarks.getName(benchmark, subbenchmark))
 
-    benchmarks.draw('MachSuite.pdf', 'baseline', 'replay', names)
+    #benchmarks.draw('MachSuite.baseline.replay.pdf', 'baseline', 'replay', names)
+    #benchmarks.draw('MachSuite.standalone.replay.pdf', 'standalone', 'replay', names)
 
 
 if __name__ == '__main__':

@@ -6,8 +6,8 @@
 #include <sys/stat.h>
 #include <assert.h>
 
-#define WRITE_OUTPUT
-#define CHECK_OUTPUT
+//#define WRITE_OUTPUT
+//#define CHECK_OUTPUT
 
 #include "support.h"
 
@@ -70,18 +70,15 @@ int main(int argc, char **argv)
   check_fd = open( check_file, O_RDONLY );
   assert( check_fd>0 && "Couldn't open check data file");
   output_to_data(check_fd, ref);
-  #endif
-
-  // Validate benchmark results
-  #ifdef CHECK_OUTPUT
+  
   if( !check_data(data, ref) ) {
     fprintf(stderr, "Benchmark results are incorrect\n");
     return -1;
   }
-  #endif
   free(data);
   free(ref);
 
+  #endif
   printf("Success.\n");
   return 0;
 }

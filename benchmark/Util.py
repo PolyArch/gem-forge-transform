@@ -100,5 +100,5 @@ class Results:
         ax.set_ylim([0.0, 1.2])
         plt.xticks(rotation=90)
         plt.savefig(pdf_fn)
-        plt.show()
+        # plt.show()
         plt.gcf().clear()

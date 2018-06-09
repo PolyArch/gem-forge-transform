@@ -1,12 +1,12 @@
 
 import os
 
-LLVM_TDG_DIR = '/home/sean/Documents/LLVM-TDG'
+LLVM_TDG_DIR = '/home/zhengrong/Documents/LLVM-TDG'
 
 """
 GEM5_PATH
 """
-GEM5_DIR = '/home/sean/Public/gem5'
+GEM5_DIR = '/home/zhengrong/Documents/llvm-trace-cpu'
 GEM5_INCLUDE_DIR = os.path.join(GEM5_DIR, 'include')
 GEM5_X86 = os.path.join(GEM5_DIR, 'build/X86/gem5.opt')
 GEM5_LLVM_TRACE_SE_CONFIG = os.path.join(
