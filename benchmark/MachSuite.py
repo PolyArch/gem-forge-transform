@@ -9,49 +9,49 @@ from Benchmark import Benchmark
 class MachSuiteBenchmarks:
 
     BENCHMARK_PARAMS = {
-#         "bfs": [
-#             "queue",
-#             "bulk"
-#         ],
-#         "aes": [
-#             "aes"
-#         ],
-#         "stencil": [
-#             "stencil2d",
-#             "stencil3d"
-#         ],
-#         "md": [
-#             "grid",
-#             "knn"
-#         ],
-#         "fft": [
-#             "strided",
-#             "transpose"
-#         ],
-#         "viterbi": [
-#             "viterbi"
-#         ],
-#         "sort": [
-#             "radix",
-#             "merge"
-#         ],
-#         "spmv": [
-#             "ellpack",
-#             "crs"
-#         ],
-#         "kmp": [
-#             "kmp"
-#         ],
-#         "backprop": [
-#             "backprop"
-#         ],
-#         "gemm": [
-#             "blocked",
-#             "ncubed"
-#         ],
-         "nw": [
-             "nw"
-         ]
+        #  "bfs": [
+        #      "queue",
+        #      # "bulk" # not working
+        #  ],
+        #  "aes": [
+        #      "aes"
+        #  ],
+        #  "stencil": [
+        #      "stencil2d",
+        #      "stencil3d"
+        #  ],
+        #  "md": [
+        #      "grid",
+        #      "knn"
+        #  ],
+        "fft": [
+            "strided",
+            "transpose"
+        ],
+        #  "viterbi": [
+        #      "viterbi"
+        #  ],
+        #  "sort": [
+        #      #"radix",
+        #      "merge"
+        #  ],
+        #  "spmv": [
+        #      "ellpack",
+        #      "crs"
+        #  ],
+        #  "kmp": [
+        #      "kmp"
+        #  ],
+        # #  "backprop": [
+        # #     "backprop" # Not working.
+        # #  ],
+        #  "gemm": [
+        #      "blocked",
+        #      "ncubed"
+        #  ],
+        #  "nw": [
+        #      "nw"
+        #  ]
     }
 
     COMMON_SOURCES = [
@@ -63,9 +63,9 @@ class MachSuiteBenchmarks:
     INCLUDE_DIR = '../../common'
 
     CFLAGS = [
-        '-O1', 
+        '-O3',
         '-Wall',
-        '-Wno-unused-label', 
+        '-Wno-unused-label',
         '-fno-inline-functions',
         '-fno-vectorize',
         '-fno-slp-vectorize'
@@ -100,7 +100,8 @@ class MachSuiteBenchmarks:
         path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
         name = self.getName(benchmark, subbenchmark)
         os.chdir(path)
-        self.benchmarks[name].trace()
+        self.benchmarks[name].build_trace()
+        self.benchmarks[name].run_trace()
         os.chdir(self.cwd)
 
     def build_replay(self, benchmark, subbenchmark):
@@ -108,11 +109,7 @@ class MachSuiteBenchmarks:
         name = self.getName(benchmark, subbenchmark)
         os.chdir(path)
         self.benchmarks[name].build_replay()
-        gem5_outdir = self.benchmarks[name].gem5_replay()
-        # Copy the result out.
         os.chdir(self.cwd)
-        subprocess.check_call(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
-            self.cwd, 'result', name + '.replay.txt')])
 
     def run_replay(self, benchmark, subbenchmark):
         path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
@@ -160,18 +157,31 @@ class MachSuiteBenchmarks:
 
     def buildRaw(self, benchmark, subbenchmark):
         raw_bc = self.getRawBitcodeName(benchmark, subbenchmark)
+        # os.putenv('LLVM_COMPILER_PATH', os.path.join(C.ELLCC_PATH, 'bin'))
+        os.putenv('LLVM_CC_NAME', 'ecc')
+        os.putenv('LLVM_CXX_NAME', 'ecc++')
         build_cmd = [
-            'clang',
+            'gclang',
             '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=MachSuiteBenchmarks.INCLUDE_DIR),
-            '-flto',
-            '-Wl,-plugin-opt=emit-llvm',
+            '-static',
         ]
         build_cmd += MachSuiteBenchmarks.CFLAGS
         build_cmd += MachSuiteBenchmarks.COMMON_SOURCES
         build_cmd.append(benchmark + '.c')
-        build_cmd += ['-o', raw_bc]
-        print('# Building raw llvm bitcode...')
+        build_cmd.append('-lm')
+        build_cmd += ['-o', benchmark]
+        print('# Building...')
         subprocess.check_call(build_cmd)
+        # Extract the bit code.
+        extract_cmd = [
+            'get-bc',
+            '-o',
+            raw_bc,
+            '-b',
+            benchmark,
+        ]
+        print('# Extracting the bitcode...')
+        subprocess.check_call(extract_cmd)
         print('# Naming everything in the llvm bitcode...')
         subprocess.check_call(['opt', '-instnamer', raw_bc, '-o', raw_bc])
 
@@ -187,45 +197,21 @@ class MachSuiteBenchmarks:
         GEM5_PSEUDO_S = os.path.join(
             C.GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
         build_cmd = [
-            'clang',
-            '-DLLVM_TDG_GEM5_BASELINE',
-            '-o',
-            baseline_bc,
-            '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=MachSuiteBenchmarks.INCLUDE_DIR),
-            '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=C.GEM5_INCLUDE_DIR),
-            '-flto',
-            '-Wl,-plugin-opt=emit-llvm',
-        ]
-        build_cmd += MachSuiteBenchmarks.CFLAGS
-        build_cmd += MachSuiteBenchmarks.COMMON_SOURCES
-        build_cmd.append(benchmark + '.c')
-        print('# Compiling baseline llvm bitcode...')
-        subprocess.check_call(build_cmd)
-        # Compile to assembly.
-        baseline_o = name + '.baseline.o'
-        compile_cmd = [
-            'clang',
-            '-O0',
-            '-c',
-            baseline_bc,
-            '-o',
-            baseline_o,
-        ]
-        print('# Compiling baseline object file...')
-        subprocess.check_call(compile_cmd)
-        # Link to baseline binary.
-        link_cmd = [
-            'gcc',
-            '-O0',
-            '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=C.GEM5_INCLUDE_DIR),
-            GEM5_PSEUDO_S,
-            baseline_o,
+            'ecc',
+            '-static',
             '-o',
             self.getBaselineName(benchmark, subbenchmark),
-            '-lm'
+            '-DLLVM_TDG_GEM5_BASELINE',
+            '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=MachSuiteBenchmarks.INCLUDE_DIR),
+            '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=C.GEM5_INCLUDE_DIR),
         ]
-        print('# Linking the baseline binary...')
-        subprocess.check_call(link_cmd)
+        build_cmd += MachSuiteBenchmarks.CFLAGS
+        for source in MachSuiteBenchmarks.COMMON_SOURCES:
+            build_cmd.append(source)
+        build_cmd.append(benchmark + '.c')
+        build_cmd.append(GEM5_PSEUDO_S)
+        print('# Building the baseline binary...')
+        subprocess.check_call(build_cmd)
 
     """
     Run the baseline program.
@@ -298,15 +284,15 @@ def main(folder):
     names = list()
     for benchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS:
         for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
-            benchmarks.baseline(benchmark, subbenchmark)
+            # benchmarks.baseline(benchmark, subbenchmark)
             benchmarks.trace(benchmark, subbenchmark)
             benchmarks.build_replay(benchmark, subbenchmark)
             benchmarks.run_replay(benchmark, subbenchmark)
             benchmarks.run_standalone(benchmark, subbenchmark)
             names.append(benchmarks.getName(benchmark, subbenchmark))
 
-    #benchmarks.draw('MachSuite.baseline.replay.pdf', 'baseline', 'replay', names)
-    #benchmarks.draw('MachSuite.standalone.replay.pdf', 'standalone', 'replay', names)
+    benchmarks.draw('MachSuite.baseline.replay.pdf', 'baseline', 'replay', names)
+    benchmarks.draw('MachSuite.standalone.replay.pdf', 'standalone', 'replay', names)
 
 
 if __name__ == '__main__':

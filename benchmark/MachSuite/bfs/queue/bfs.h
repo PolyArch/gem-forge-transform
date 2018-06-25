@@ -11,10 +11,10 @@ Hong, Oguntebi, Olukotun. "Efficient Parallel Graph Exploration on Multi-Core CP
 
 // Terminology (but not values) from graph500 spec
 //   graph density = 2^-(2*SCALE - EDGE_FACTOR)
-#define SCALE 8
-#define EDGE_FACTOR 16
+#define SCALE 10
+#define EDGE_FACTOR 20
 
-#define N_NODES (1<<SCALE)
+#define N_NODES (1ull<<SCALE)
 #define N_EDGES (N_NODES*EDGE_FACTOR)
 
 // upper limit

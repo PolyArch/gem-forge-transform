@@ -23,34 +23,35 @@
 namespace {
 
 class ScalarUIntVar {
- public:
-  ScalarUIntVar(const std::string& _name) : Val(0), name(_name) {}
+public:
+  ScalarUIntVar(const std::string &_name) : Val(0), name(_name) {}
   uint64_t Val;
   std::string name;
-  void print(llvm::raw_ostream& O) const {
+  void print(llvm::raw_ostream &O) const {
     O << this->name << ": " << this->Val << '\n';
   }
 };
 
 // This is a pass to instrument a function and trace it.
 class TraceStatisticPass : public llvm::FunctionPass {
- public:
+public:
   static char ID;
   TraceStatisticPass()
-      : llvm::FunctionPass(ID),
-        DynamicInstCount("DynamicInstCount"),
+      : llvm::FunctionPass(ID), DynamicInstCount("DynamicInstCount"),
         AccelerableDynamicInstCount("AccelerableDynamicInstCount") {}
 
-  void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
+  void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
     // We require the loop information.
     Info.addRequired<LocateAccelerableFunctions>();
     Info.addPreserved<LocateAccelerableFunctions>();
   }
 
-  bool doInitialization(llvm::Module& Module) override {
+  bool doInitialization(llvm::Module &Module) override {
     this->Module = &Module;
 
-    this->Trace = new DataGraph(this->Module);
+    // It is enough to collect some statistic in simple mode.
+    this->Trace =
+        new DataGraph(this->Module, DataGraph::DataGraphDetailLv::SIMPLE);
 
     // Simple sliding window method to read in the trace.
     uint64_t Count = 0;
@@ -87,8 +88,8 @@ class TraceStatisticPass : public llvm::FunctionPass {
     return false;
   }
 
-  bool runOnFunction(llvm::Function& Function) override {
-    auto& Info = getAnalysis<LocateAccelerableFunctions>();
+  bool runOnFunction(llvm::Function &Function) override {
+    auto &Info = getAnalysis<LocateAccelerableFunctions>();
 
     for (auto BBIter = Function.begin(), BBEnd = Function.end();
          BBIter != BBEnd; ++BBIter) {
@@ -107,21 +108,28 @@ class TraceStatisticPass : public llvm::FunctionPass {
     return false;
   }
 
-  void print(llvm::raw_ostream& O, const llvm::Module* M) const override {
+  void print(llvm::raw_ostream &O, const llvm::Module *M) const override {
     this->DynamicInstCount.print(O);
     this->AccelerableDynamicInstCount.print(O);
+    for (const auto &CalleeName : this->ExternalCallCount) {
+      O << "External call to " << CalleeName.first << ": " << CalleeName.second
+        << '\n';
+    }
   }
 
- private:
-  llvm::Module* Module;
-  DataGraph* Trace;
+private:
+  llvm::Module *Module;
+  DataGraph *Trace;
 
   ScalarUIntVar DynamicInstCount;
   ScalarUIntVar AccelerableDynamicInstCount;
 
-  std::unordered_map<llvm::Instruction*, uint64_t> StaticInstCount;
+  std::unordered_map<llvm::Instruction *, uint64_t> StaticInstCount;
 
-  void collectStatistics(DynamicInstruction* DynamicInst) {
+  // Count the external calls that are un traced.
+  std::unordered_map<std::string, uint64_t> ExternalCallCount;
+
+  void collectStatistics(DynamicInstruction *DynamicInst) {
     auto StaticInst = DynamicInst->getStaticInstruction();
     assert(StaticInst != nullptr &&
            "There should have a static instruction here.");
@@ -133,19 +141,32 @@ class TraceStatisticPass : public llvm::FunctionPass {
       this->StaticInstCount[StaticInst]++;
     }
 
-    // Check the calling convention.
     if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
-      DEBUG(llvm::errs() << "Get calling convention as "
-                         << StaticCall->getCallingConv() << '\n');
+      // DEBUG(llvm::errs() << "Get calling convention as "
+      //                    << StaticCall->getCallingConv() << '\n');
+      auto Callee = StaticCall->getCalledFunction();
+      if (Callee == nullptr) {
+        // This is indirect call. Ignore it.
+      } else {
+        if (Callee->isDeclaration()) {
+          // This is external call
+          std::string CalleeName = Callee->getName();
+          if (this->ExternalCallCount.find(CalleeName) ==
+              this->ExternalCallCount.end()) {
+            this->ExternalCallCount.at(CalleeName)++;
+          } else {
+            this->ExternalCallCount.emplace(CalleeName, 1);
+          }
+        }
+      }
     }
   }
 };
 
-}  // namespace
+} // namespace
 
 #undef DEBUG_TYPE
 
 char TraceStatisticPass::ID = 0;
-static llvm::RegisterPass<TraceStatisticPass> X("trace-statistic-pass",
-                                                "Trace statistic pass", false,
-                                                true);
+static llvm::RegisterPass<TraceStatisticPass>
+    X("trace-statistic-pass", "Trace statistic pass", false, true);

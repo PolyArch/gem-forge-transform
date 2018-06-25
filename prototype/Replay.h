@@ -11,36 +11,38 @@
 #include <map>
 #include <string>
 
+extern llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel;
+
 class ReplayTrace : public llvm::FunctionPass {
- public:
+public:
   using DynamicId = DataGraph::DynamicId;
   static char ID;
   ReplayTrace(char _ID = ID);
   virtual ~ReplayTrace();
 
-  void getAnalysisUsage(llvm::AnalysisUsage& Info) const override;
+  void getAnalysisUsage(llvm::AnalysisUsage &Info) const override;
 
-  bool doInitialization(llvm::Module& Module) override;
+  bool doInitialization(llvm::Module &Module) override;
 
-  bool runOnFunction(llvm::Function& Function) override;
+  bool runOnFunction(llvm::Function &Function) override;
 
- protected:
+protected:
   virtual void TransformTrace();
 
-  DataGraph* Trace;
+  DataGraph *Trace;
 
   std::string OutTraceName;
 
-  llvm::Module* Module;
+  llvm::Module *Module;
 
-  llvm::Value* ReplayFunc;
-  llvm::Instruction* FakeRegisterSpill;
-  llvm::Instruction* FakeRegisterFill;
+  llvm::Value *ReplayFunc;
+  llvm::Instruction *FakeRegisterSpill;
+  llvm::Instruction *FakeRegisterFill;
 
-  std::map<std::string, llvm::Constant*> GlobalStrings;
+  std::map<std::string, llvm::Constant *> GlobalStrings;
 
   // Insert all the print function declaration into the module.
-  void registerFunction(llvm::Module& Module);
+  void registerFunction(llvm::Module &Module);
 
   void fakeRegisterAllocation();
   void fakeFixRegisterDeps();

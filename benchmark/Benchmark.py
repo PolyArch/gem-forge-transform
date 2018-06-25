@@ -2,31 +2,36 @@ import os
 import subprocess
 
 import Constants as C
+import Util
 
 
-class Benchmark:
+class Benchmark(object):
 
-    def __init__(self, name, raw_bc, links, args=None, trace_func=None):
+    def __init__(self, name, raw_bc, links, args=None, trace_func=None,
+                 trace_lib='Protobuf', skip_inst=0):
         self.name = name
         self.raw_bc = raw_bc
         self.links = links
         self.args = args
         self.trace_func = trace_func
+        self.skip_inst = skip_inst
 
         self.pass_so = os.path.join(
-            C.LLVM_TDG_DIR, 'build', 'prototype', 'libLLVMTDGPass.so')
+            C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
 
         self.trace_bin = name + '.traced'
-        # self.trace_links = links + ['-lprotobuf']
-        # self.trace_lib = os.path.join(
-        #     C.LLVM_TDG_DIR, 'build', 'prototype', 'libTracerProtobuf.a'
-        # )
-        # self.trace_format = 'protobuf'
-        self.trace_links = links + ['-lz']
-        self.trace_lib = os.path.join(
-            C.LLVM_TDG_DIR, 'build', 'prototype', 'libTracerGZip.a'
-        )
-        self.trace_format = 'gzip'
+        if trace_lib == 'Protobuf':
+            self.trace_links = links + [C.PROTOBUF_ELLCC_LIB]
+            self.trace_lib = os.path.join(
+                C.LLVM_TDG_BUILD_DIR, 'libTracerProtobuf.a'
+            )
+            self.trace_format = 'protobuf'
+        else:
+            self.trace_links = links + ['-lz']
+            self.trace_lib = os.path.join(
+                C.LLVM_TDG_DIR, 'build', 'prototype', 'libTracerGZip.a'
+            )
+            self.trace_format = 'gzip'
 
         self.gem5_pseudo = os.path.join(
             C.GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
@@ -35,10 +40,25 @@ class Benchmark:
         self.replay_bin = name + '.replay'
 
     """
-    Compile and generate the trace.
+    Generate the trace.
     """
 
-    def trace(self):
+    def run_trace(self):
+        # Remember to set the environment for trace.
+        os.putenv('LLVM_TDG_SKIP_INST', str(self.skip_inst))
+        run_cmd = [
+            './' + self.trace_bin,
+        ]
+        if self.args is not None:
+            run_cmd += self.args
+        print('# Run traced binary...')
+        Util.call_helper(run_cmd)
+
+    """
+    Construct the traced binary.
+    """
+
+    def build_trace(self):
         trace_bc = self.trace_bin + '.bc'
         trace_cmd = [
             'opt',
@@ -51,9 +71,9 @@ class Benchmark:
         if self.trace_func is not None:
             trace_cmd.append('-trace-function=' + self.trace_func)
         print('# Instrumenting tracer...')
-        subprocess.check_call(trace_cmd)
+        Util.call_helper(trace_cmd)
         link_cmd = [
-            'clang++',
+            'ecc++',
             '-O0',
             trace_bc,
             self.trace_lib,
@@ -62,14 +82,7 @@ class Benchmark:
         ]
         link_cmd += self.trace_links
         print('# Link to traced binary...')
-        subprocess.check_call(link_cmd)
-        run_cmd = [
-            './' + self.trace_bin,
-        ]
-        if self.args is not None:
-            run_cmd += self.args
-        print('# Run traced binary...')
-        subprocess.check_call(run_cmd)
+        Util.call_helper(link_cmd)
 
     """
     Construct the replay binary from the trace.
@@ -77,7 +90,7 @@ class Benchmark:
 
     def build_replay(self):
         replay_bc = self.replay_bin + '.bc'
-        build_cmd = [
+        opt_cmd = [
             'opt',
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-replay',
@@ -89,35 +102,20 @@ class Benchmark:
             '-debug-only=DataGraph',
         ]
         print('# Processing trace...')
-        subprocess.check_call(build_cmd)
-        # Compile the bitcode to object file, as gem5's pseudo-inst
-        # can only be linked with gcc.
-        replay_o = self.replay_bin + '.o'
-        compile_replay_bc_cmd = [
-            'clang',
-            '-c',
-            '-O0',
-            replay_bc,
+        Util.call_helper(opt_cmd)
+        build_cmd = [
+            'ecc',
+            '-static',
             '-o',
-            replay_o,
-        ]
-        print('# Compiling bitcode to object file...')
-        subprocess.check_call(compile_replay_bc_cmd)
-        # Link to replay binary.
-        link_cmd = [
-            'gcc',
-            '-O0',
+            self.replay_bin,
             '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
             self.gem5_pseudo,
             self.replay_c,
-            replay_o,
-            '-o',
-            self.replay_bin
+            replay_bc,
         ]
-        link_cmd += self.links
-        print('# Linking the replay binary...')
-        subprocess.check_call(link_cmd)
-
+        build_cmd += self.links
+        print('# Building replay binary...')
+        Util.call_helper(build_cmd)
 
     """
     Replay the binary with gem5.
@@ -130,11 +128,11 @@ class Benchmark:
     def gem5_replay(self, standalone=0):
         LLVM_TRACE_FN = 'llvm_trace_gem5.txt'
         GEM5_OUT_DIR = '{cpu_type}.replay'.format(cpu_type=C.CPU_TYPE)
-        subprocess.check_call(['mkdir', '-p', GEM5_OUT_DIR])
+        Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
         gem5_args = [
             C.GEM5_X86,
             '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
-            '--debug-flags=LLVMTraceCPU',
+            # '--debug-flags=LLVMTraceCPU',
             C.GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=self.replay_bin),
             '--llvm-standalone={standlone}'.format(standlone=standalone),
@@ -155,5 +153,5 @@ class Benchmark:
             gem5_args.append(
                 '--options={binary_args}'.format(binary_args=' '.join(self.args)))
         print('# Replaying the datagraph...')
-        subprocess.check_call(gem5_args)
+        Util.call_helper(gem5_args)
         return os.path.join(os.getcwd(), GEM5_OUT_DIR)
