@@ -27,9 +27,11 @@
 
 int main(int argc, char **argv)
 {
-  struct bench_args_t data;
+  // struct bench_args_t data;
   int fd;
-  node_index_t adjmat[N_NODES][N_NODES]; // This is small enough to be fine.
+  // node_index_t adjmat[N_NODES][N_NODES]; // This is small enough to be fine.
+  struct bench_args_t* data = malloc(sizeof(struct bench_args_t));
+  node_index_t (*adjmat)[N_NODES] = malloc(N_NODES * sizeof(*adjmat));
   node_index_t r,c,s,temp;
   edge_index_t e;
   int scale;
@@ -48,9 +50,9 @@ int main(int argc, char **argv)
     for( scale=SCALE; scale>0; scale-- ) { // each level of the quadtree
       rint = prng_rand(&state)%100;
       if( rint>=(A+B) ) // C or D (bottom half)
-        r += 1<<(scale-1);
+        r += 1ull<<(scale-1);
       if( (rint>=A && rint<A+B) || (rint>=A+B+C) ) // B or D (right half)
-        c += 1<<(scale-1);
+        c += 1ull<<(scale-1);
     }
     if( adjmat[r][c]==0 && r!=c ) { // ignore self-edges, they're irrelevant
       // We make undirected edges
@@ -84,33 +86,35 @@ int main(int argc, char **argv)
   // Scan rows for edge list lengths, and fill edges while we're at it
   e = 0;
   for( r=0; r<N_NODES; r++ ) { // count first
-    data.nodes[r].edge_begin = 0;
-    data.nodes[r].edge_end = 0;
+    data->nodes[r].edge_begin = 0;
+    data->nodes[r].edge_end = 0;
     for( c=0; c<N_NODES; c++ ) {
       if( adjmat[r][c] ) {
-        ++data.nodes[r].edge_end;
-        data.edges[e].dst = c;
-        //data.edges[e].weight = prng_rand(&state)%(MAX_WEIGHT-MIN_WEIGHT)+MIN_WEIGHT;
+        ++data->nodes[r].edge_end;
+        data->edges[e].dst = c;
+        //data->edges[e].weight = prng_rand(&state)%(MAX_WEIGHT-MIN_WEIGHT)+MIN_WEIGHT;
         ++e;
       }
     }
   }
 
   for( r=1; r<N_NODES; r++ ) { // now scan
-    data.nodes[r].edge_begin = data.nodes[r-1].edge_end;
-    data.nodes[r].edge_end += data.nodes[r-1].edge_end;
+    data->nodes[r].edge_begin = data->nodes[r-1].edge_end;
+    data->nodes[r].edge_end += data->nodes[r-1].edge_end;
   }
 
   // Pick starting node
   do {
     rint = prng_rand(&state)%N_NODES;
-  } while( (data.nodes[rint].edge_end-data.nodes[rint].edge_begin)<2 );
-  data.starting_node = rint;
+  } while( (data->nodes[rint].edge_end-data->nodes[rint].edge_begin)<2 );
+  data->starting_node = rint;
 
   // Open and write
   fd = open("input.data", O_WRONLY|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
   assert( fd>0 && "Couldn't open input data file" );
-  data_to_input(fd, &data);
+  data_to_input(fd, data);
+
+  free(adjmat);
 
   return 0;
 }

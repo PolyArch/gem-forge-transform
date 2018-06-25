@@ -3,6 +3,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy
 
+import subprocess
+
 
 class Gem5Stats:
     def __init__(self, benchmark, fn):
@@ -32,6 +34,17 @@ class Variable:
         self.baseline_key = baseline_key
         self.test_key = test_key
         self.color = color
+
+
+def call_helper(cmd):
+    """
+    Helper function to call a command and print the actual command when failed.
+    """
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError as e:
+        print('Error when executing {cmd}'.format(cmd=' '.join(cmd)))
+        raise e
 
 
 class Results:

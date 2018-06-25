@@ -15,20 +15,27 @@
 #include <vector>
 
 class DataGraph {
- public:
+public:
   using DynamicId = DynamicInstruction::DynamicId;
 
+  enum DataGraphDetailLv {
+    SIMPLE,
+    STANDALONE,
+    INTEGRATED,
+  };
+
   // The datagraph owns the parser, but certainly not the module.
-  DataGraph(llvm::Module* _Module);
+  // You can also control if its detail level.
+  DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel);
   ~DataGraph();
 
-  DataGraph(const DataGraph& other) = delete;
-  DataGraph& operator=(const DataGraph& other) = delete;
-  DataGraph(DataGraph&& other) = delete;
-  DataGraph& operator=(DataGraph&& other) = delete;
+  DataGraph(const DataGraph &other) = delete;
+  DataGraph &operator=(const DataGraph &other) = delete;
+  DataGraph(DataGraph &&other) = delete;
+  DataGraph &operator=(DataGraph &&other) = delete;
 
-  std::list<DynamicInstruction*> DynamicInstructionList;
-  using DynamicInstIter = std::list<DynamicInstruction*>::iterator;
+  std::list<DynamicInstruction *> DynamicInstructionList;
+  using DynamicInstIter = std::list<DynamicInstruction *>::iterator;
 
   // A map from dynamic id to the actual insts.
   std::unordered_map<DynamicId, DynamicInstIter> AliveDynamicInstsMap;
@@ -43,13 +50,13 @@ class DataGraph {
    * Only for non-phi node.
    * Used for register dependence resolution.
    **/
-  std::unordered_map<llvm::Instruction*, DynamicId> StaticToLastDynamicMap;
+  std::unordered_map<llvm::Instruction *, DynamicId> StaticToLastDynamicMap;
 
-  llvm::Module* Module;
+  llvm::Module *Module;
 
-  llvm::DataLayout* DataLayout;
+  llvm::DataLayout *DataLayout;
 
-  bool IsSimpleMode;
+  DataGraphDetailLv DetailLevel;
 
   // Some statistics.
   uint64_t NumMemDependences;
@@ -57,26 +64,26 @@ class DataGraph {
   DynamicInstIter getDynamicInstFromId(DynamicId Id) const;
 
   class DynamicFrame {
-   public:
-    llvm::Function* Function;
+  public:
+    llvm::Function *Function;
 
     // A tiny run time environment, basically for memory base/offset
     // computation.
-    std::unordered_map<llvm::Value*, DynamicValue> RunTimeEnv;
-    llvm::BasicBlock* PrevBasicBlock;
-    llvm::CallInst* PrevCallInst;
+    std::unordered_map<llvm::Value *, DynamicValue> RunTimeEnv;
+    llvm::BasicBlock *PrevBasicBlock;
+    llvm::CallInst *PrevCallInst;
     explicit DynamicFrame(
-        llvm::Function* _Function,
-        std::unordered_map<llvm::Value*, DynamicValue>&& _Arguments);
+        llvm::Function *_Function,
+        std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments);
     ~DynamicFrame();
 
-    const DynamicValue& getValue(llvm::Value* Value) const;
-    void insertValue(llvm::Value* Value, DynamicValue DValue);
+    const DynamicValue &getValue(llvm::Value *Value) const;
+    void insertValue(llvm::Value *Value, DynamicValue DValue);
 
-    DynamicFrame(const DynamicFrame& other) = delete;
-    DynamicFrame(DynamicFrame&& other) = delete;
-    DynamicFrame& operator=(const DynamicFrame& other) = delete;
-    DynamicFrame& operator=(DynamicFrame&& other) = delete;
+    DynamicFrame(const DynamicFrame &other) = delete;
+    DynamicFrame(DynamicFrame &&other) = delete;
+    DynamicFrame &operator=(const DynamicFrame &other) = delete;
+    DynamicFrame &operator=(DynamicFrame &&other) = delete;
   };
 
   // Load one more inst from the trace. nullptr if eof.
@@ -84,26 +91,28 @@ class DataGraph {
   // Commit one inst and remove it from the alive set.
   void commitOneDynamicInst();
 
- private:
-  /**********************************************************************/
-  /* These are temporary fields used in construnction only.
-  /**********************************************************************/
-  /**
+private:
+  /**********************************************************************
+   * These are temporary fields used in construnction only.
+   */
+
+  /**********************************************************************
+   *
    * Parse the dynamic instruction in the line buffer.
    * Return true if we get an non-phi instruction, false otherwise.
    * As phi instruction will not be added to the graph.
    */
-  bool parseDynamicInstruction(TraceParser::TracedInst& Parsed);
-  void parseFunctionEnter(TraceParser::TracedFuncEnter& Parsed);
+  bool parseDynamicInstruction(TraceParser::TracedInst &Parsed);
+  void parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed);
 
   // Records the information of the dynamic value inter-frame.
   // Especially used for mem/base initialization.
   std::list<DynamicFrame> DynamicFrameStack;
 
-  TraceParser* Parser;
+  TraceParser *Parser;
 
   // To resovle phi node.
-  std::unordered_map<llvm::PHINode*, DynamicId> PhiNodeDependenceMap;
+  std::unordered_map<llvm::PHINode *, DynamicId> PhiNodeDependenceMap;
 
   /**
    * Handle phi node and effectively remove it from the graph.
@@ -111,20 +120,20 @@ class DataGraph {
    * 2. Determine the incoming non-phi instruction, if any.
    * 3. Initialize the dynamic value, handle the memory base/offset for it.
    */
-  void handlePhiNode(llvm::PHINode* StaticPhi,
-                     const TraceParser::TracedInst& Parsed);
+  void handlePhiNode(llvm::PHINode *StaticPhi,
+                     const TraceParser::TracedInst &Parsed);
 
   std::string CurrentBasicBlockName;
   int CurrentIndex;
 
-  llvm::BasicBlock* CurrentBasicBlock;
+  llvm::BasicBlock *CurrentBasicBlock;
   llvm::BasicBlock::iterator CurrentStaticInstruction;
 
-  llvm::Instruction* getLLVMInstruction(const std::string& FunctionName,
-                                        const std::string& BasicBlockName,
+  llvm::Instruction *getLLVMInstruction(const std::string &FunctionName,
+                                        const std::string &BasicBlockName,
                                         const int Index);
 
-  DynamicInstruction* getPreviousBranchDynamicInstruction();
+  DynamicInstruction *getPreviousBranchDynamicInstruction();
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.
@@ -134,21 +143,21 @@ class DataGraph {
   std::unordered_map<uint64_t, DynamicId> AddrToLastLoadInstMap;
 
   // Handle the RAW, WAW, WAR dependence.
-  void handleMemoryDependence(DynamicInstruction* DynamicInst);
+  void handleMemoryDependence(DynamicInstruction *DynamicInst);
 
-  void handleControlDependence(DynamicInstruction* DynamicInst);
+  void handleControlDependence(DynamicInstruction *DynamicInst);
 
   // Return true if there is a dependence.
-  bool checkAndAddMemoryDependence(
-      std::unordered_map<uint64_t, DynamicId>& LastMap, uint64_t Addr,
-      DynamicInstruction* DynamicInst);
+  bool
+  checkAndAddMemoryDependence(std::unordered_map<uint64_t, DynamicId> &LastMap,
+                              uint64_t Addr, DynamicInstruction *DynamicInst);
 
-  void handleRegisterDependence(DynamicInstruction* DynamicInst,
-                                llvm::Instruction* StaticInstruction);
+  void handleRegisterDependence(DynamicInstruction *DynamicInst,
+                                llvm::Instruction *StaticInstruction);
 
   // Handle the memory address base/offset.
   // Very important to be replayable in gem5.
-  void handleMemoryBase(DynamicInstruction* DynamicInst);
+  void handleMemoryBase(DynamicInstruction *DynamicInst);
 
   /**
    * Get a unique name for this instruction.
@@ -159,10 +168,10 @@ class DataGraph {
    * instructions with same name but from different functions, we append the
    * function name before it.
    */
-  std::unordered_map<llvm::Instruction*, std::string>
+  std::unordered_map<llvm::Instruction *, std::string>
       StaticInstructionUniqueNameMap;
-  const std::string& getUniqueNameForStaticInstruction(
-      llvm::Instruction* StaticInst);
+  const std::string &
+  getUniqueNameForStaticInstruction(llvm::Instruction *StaticInst);
 };
 
 #endif

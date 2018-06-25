@@ -10,12 +10,23 @@
 
 #include <fstream>
 
+llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel(
+    "datagraph-detail",
+    llvm::cl::desc("Choose how detail the datagraph should be:"),
+    llvm::cl::values(
+        clEnumValN(DataGraph::DataGraphDetailLv::SIMPLE, "simple",
+                   "Only instruction, without dynamic values"),
+        clEnumValN(DataGraph::DataGraphDetailLv::STANDALONE, "standalone",
+                   "With dynamic values, without memory base/offset"),
+        clEnumValN(DataGraph::DataGraphDetailLv::INTEGRATED, "integrated",
+                   "All")));
+
 #define DEBUG_TYPE "ReplayPass"
 namespace {
 
-llvm::Constant* getOrCreateStringLiteral(
-    std::map<std::string, llvm::Constant*>& GlobalStrings, llvm::Module* Module,
-    const std::string& Str) {
+llvm::Constant *
+getOrCreateStringLiteral(std::map<std::string, llvm::Constant *> &GlobalStrings,
+                         llvm::Module *Module, const std::string &Str) {
   if (GlobalStrings.find(Str) == GlobalStrings.end()) {
     // Create the constant array.
     auto Array =
@@ -37,7 +48,7 @@ llvm::Constant* getOrCreateStringLiteral(
     //  llvm::APInt(32, 0));
     auto ConstantZero = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(Module->getContext()), 0, false);
-    std::vector<llvm::Constant*> Indexes;
+    std::vector<llvm::Constant *> Indexes;
     Indexes.push_back(ConstantZero);
     Indexes.push_back(ConstantZero);
     GlobalStrings[Str] = llvm::ConstantExpr::getGetElementPtr(
@@ -45,42 +56,41 @@ llvm::Constant* getOrCreateStringLiteral(
   }
   return GlobalStrings.at(Str);
 }
-}  // namespace
+} // namespace
 
 // Fake push instruction.
 class PushInstruction : public DynamicInstruction {
- public:
+public:
   // Let's not worry about the align for now.
-  PushInstruction(const DynamicValue& _Value) : Value(_Value) {}
+  PushInstruction(const DynamicValue &_Value) : Value(_Value) {}
   std::string getOpName() const override { return "push"; }
-  void formatCustomizedFields(std::ofstream& Out,
-                              DataGraph* Trace) const override {}
+  void formatCustomizedFields(std::ofstream &Out,
+                              DataGraph *Trace) const override {}
   DynamicValue Value;
 };
 
 class CallExternalInstruction : public DynamicInstruction {
- public:
+public:
   // Let's not worry about the align for now.
-  CallExternalInstruction(const std::string& _Symbol) : Symbol(_Symbol) {}
+  CallExternalInstruction(const std::string &_Symbol) : Symbol(_Symbol) {}
   std::string getOpName() const override { return "call-external"; }
-  void formatCustomizedFields(std::ofstream& Out,
-                              DataGraph* Trace) const override {}
+  void formatCustomizedFields(std::ofstream &Out,
+                              DataGraph *Trace) const override {}
   std::string Symbol;
 };
 
 class RetExternalInstruction : public DynamicInstruction {
- public:
+public:
   // Let's not worry about the align for now.
-  RetExternalInstruction(const DynamicValue& _Result) : Result(_Result) {}
+  RetExternalInstruction(const DynamicValue &_Result) : Result(_Result) {}
   std::string getOpName() const override { return "ret-external"; }
-  void formatCustomizedFields(std::ofstream& Out,
-                              DataGraph* Trace) const override {}
+  void formatCustomizedFields(std::ofstream &Out,
+                              DataGraph *Trace) const override {}
   DynamicValue Result;
 };
 
 ReplayTrace::ReplayTrace(char _ID)
-    : llvm::FunctionPass(_ID),
-      Trace(nullptr),
+    : llvm::FunctionPass(_ID), Trace(nullptr),
       OutTraceName("llvm_trace_gem5.txt") {}
 
 ReplayTrace::~ReplayTrace() {
@@ -91,18 +101,28 @@ ReplayTrace::~ReplayTrace() {
   }
 }
 
-void ReplayTrace::getAnalysisUsage(llvm::AnalysisUsage& Info) const {
+void ReplayTrace::getAnalysisUsage(llvm::AnalysisUsage &Info) const {
   Info.addRequired<LocateAccelerableFunctions>();
   Info.addPreserved<LocateAccelerableFunctions>();
 }
 
-bool ReplayTrace::doInitialization(llvm::Module& Module) {
+bool ReplayTrace::doInitialization(llvm::Module &Module) {
   this->Module = &Module;
 
   // Register the external ioctl function.
   registerFunction(Module);
 
-  this->Trace = new DataGraph(this->Module);
+  // For replay, the datagraph should be at least standalone mode.
+
+  // If user specify the detail level, we only allow
+  // it upgrades.
+  auto DetailLevel = DataGraph::DataGraphDetailLv::STANDALONE;
+  if (DataGraphDetailLevel.getNumOccurrences() == 1) {
+    assert(DataGraphDetailLevel >= DataGraph::DataGraphDetailLv::STANDALONE &&
+           "User specified detail level is lower than standalone.");
+    DetailLevel = DataGraphDetailLevel;
+  }
+  this->Trace = new DataGraph(this->Module, DetailLevel);
 
   // DEBUG(llvm::errs() << "Parsed # memory dependences: "
   //                    << this->Trace->NumMemDependences << '\n');
@@ -113,7 +133,7 @@ bool ReplayTrace::doInitialization(llvm::Module& Module) {
   return true;
 }
 
-bool ReplayTrace::runOnFunction(llvm::Function& Function) {
+bool ReplayTrace::runOnFunction(llvm::Function &Function) {
   auto FunctionName = Function.getName().str();
   DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
@@ -141,7 +161,7 @@ bool ReplayTrace::runOnFunction(llvm::Function& Function) {
       llvm::BasicBlock::Create(this->Module->getContext(), "entry", &Function);
   llvm::IRBuilder<> Builder(NewBB);
 
-  std::vector<llvm::Value*> ReplayArgs;
+  std::vector<llvm::Value *> ReplayArgs;
   for (auto ArgIter = Function.arg_begin(), ArgEnd = Function.arg_end();
        ArgIter != ArgEnd; ArgIter++) {
     if (ArgIter->getType()->getTypeID() != llvm::Type::TypeID::PointerTyID) {
@@ -176,10 +196,10 @@ bool ReplayTrace::runOnFunction(llvm::Function& Function) {
 }
 
 class FakeDynamicInstruction : public DynamicInstruction {
- public:
-  FakeDynamicInstruction(const std::string& _OpName,
-                         DynamicValue* _DynamicResult,
-                         std::vector<DynamicValue*> _DynamicOperands)
+public:
+  FakeDynamicInstruction(const std::string &_OpName,
+                         DynamicValue *_DynamicResult,
+                         std::vector<DynamicValue *> _DynamicOperands)
       : DynamicInstruction(), OpName(_OpName) {
     this->DynamicResult = _DynamicResult;
     this->DynamicOperands = std::move(_DynamicOperands);
@@ -188,24 +208,24 @@ class FakeDynamicInstruction : public DynamicInstruction {
   std::string OpName;
 };
 
-static DynamicInstruction* createFakeDynamicLoad(
-    llvm::Instruction* StaticInst) {
+static DynamicInstruction *
+createFakeDynamicLoad(llvm::Instruction *StaticInst) {
   assert(StaticInst != nullptr && "Null static instruction.");
-  DynamicValue* Result = new DynamicValue("0");
-  DynamicValue* Operand = new DynamicValue("0");
+  DynamicValue *Result = new DynamicValue("0");
+  DynamicValue *Operand = new DynamicValue("0");
   Operand->MemBase = "$sp";
   Operand->MemOffset = 0;
-  auto Operands = std::vector<DynamicValue*>{Operand};
+  auto Operands = std::vector<DynamicValue *>{Operand};
   return new LLVMDynamicInstruction(StaticInst, Result, std::move(Operands));
 }
 
-static DynamicInstruction* createFakeDynamicStore(
-    llvm::Instruction* StaticInst) {
-  DynamicValue* StoreValue = new DynamicValue("0");
-  DynamicValue* Operand = new DynamicValue("0");
+static DynamicInstruction *
+createFakeDynamicStore(llvm::Instruction *StaticInst) {
+  DynamicValue *StoreValue = new DynamicValue("0");
+  DynamicValue *Operand = new DynamicValue("0");
   Operand->MemBase = "$sp";
   Operand->MemOffset = 0;
-  auto Operands = std::vector<DynamicValue*>{StoreValue, Operand};
+  auto Operands = std::vector<DynamicValue *>{StoreValue, Operand};
   return new LLVMDynamicInstruction(StaticInst, nullptr, std::move(Operands));
 }
 
@@ -280,43 +300,43 @@ void ReplayTrace::fakeRegisterAllocation() {
   // DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount << '\n');
 }
 
-static DynamicInstruction* createFakeDynamicInst(const std::string& OpName) {
-  auto Operands = std::vector<DynamicValue*>();
+static DynamicInstruction *createFakeDynamicInst(const std::string &OpName) {
+  auto Operands = std::vector<DynamicValue *>();
   return new FakeDynamicInstruction(OpName, nullptr, std::move(Operands));
 }
 
 void ReplayTrace::fakeFixRegisterDeps() {
   // In gem5, mul/div is fixed to write to rax.
   // We fake this dependence.
-  DynamicInstruction* PrevMulDivInst = nullptr;
+  DynamicInstruction *PrevMulDivInst = nullptr;
   for (auto Iter = this->Trace->DynamicInstructionList.begin(),
             End = this->Trace->DynamicInstructionList.end();
        Iter != End; ++Iter) {
-    DynamicInstruction* DynamicInst = *Iter;
+    DynamicInstruction *DynamicInst = *Iter;
     auto StaticInstruction = DynamicInst->getStaticInstruction();
     switch (StaticInstruction->getOpcode()) {
-      // case llvm::Instruction::FDiv:
-      case llvm::Instruction::FMul:
-      case llvm::Instruction::Mul:
-      case llvm::Instruction::UDiv:
-      case llvm::Instruction::SDiv:
-      case llvm::Instruction::URem:
-      case llvm::Instruction::SRem: {
-        // Add the fake register dependence.
-        if (PrevMulDivInst != nullptr) {
-          if (this->Trace->RegDeps.find(DynamicInst->Id) ==
-              this->Trace->RegDeps.end()) {
-            this->Trace->RegDeps.emplace(
-                DynamicInst->Id,
-                std::unordered_set<DynamicInstruction::DynamicId>());
-          }
-          this->Trace->RegDeps.at(DynamicInst->Id).insert(PrevMulDivInst->Id);
+    // case llvm::Instruction::FDiv:
+    case llvm::Instruction::FMul:
+    case llvm::Instruction::Mul:
+    case llvm::Instruction::UDiv:
+    case llvm::Instruction::SDiv:
+    case llvm::Instruction::URem:
+    case llvm::Instruction::SRem: {
+      // Add the fake register dependence.
+      if (PrevMulDivInst != nullptr) {
+        if (this->Trace->RegDeps.find(DynamicInst->Id) ==
+            this->Trace->RegDeps.end()) {
+          this->Trace->RegDeps.emplace(
+              DynamicInst->Id,
+              std::unordered_set<DynamicInstruction::DynamicId>());
         }
-        PrevMulDivInst = DynamicInst;
-        break;
+        this->Trace->RegDeps.at(DynamicInst->Id).insert(PrevMulDivInst->Id);
       }
-      default:
-        break;
+      PrevMulDivInst = DynamicInst;
+      break;
+    }
+    default:
+      break;
     }
   }
 }
@@ -325,7 +345,7 @@ void ReplayTrace::fakeMicroOps() {
   for (auto Iter = this->Trace->DynamicInstructionList.begin(),
             End = this->Trace->DynamicInstructionList.end();
        Iter != End; ++Iter) {
-    DynamicInstruction* DynamicInst = *Iter;
+    DynamicInstruction *DynamicInst = *Iter;
 
     auto StaticInstruction = DynamicInst->getStaticInstruction();
 
@@ -337,7 +357,7 @@ void ReplayTrace::fakeMicroOps() {
         // Fake micro ops pending to be inserted.
         // If 1, means that the fake micro op should be inserted
         // into the dependent path.
-        std::vector<std::pair<DynamicInstruction*, int>> FakeNumMicroOps;
+        std::vector<std::pair<DynamicInstruction *, int>> FakeNumMicroOps;
         for (unsigned int Idx = 0,
                           NumOperands = StaticInstruction->getNumOperands();
              Idx != NumOperands; ++Idx) {
@@ -352,41 +372,41 @@ void ReplayTrace::fakeMicroOps() {
         //                    << StaticInstruction->getOpcodeName() << '\n');
 
         switch (StaticInstruction->getOpcode()) {
-          case llvm::Instruction::FMul: {
-            auto Operand = StaticInstruction->getOperand(0);
-            if (Operand->getType()->isVectorTy()) {
-              FakeNumMicroOps.emplace_back(createFakeDynamicInst("fmul"), 1);
-            }
-            break;
+        case llvm::Instruction::FMul: {
+          auto Operand = StaticInstruction->getOperand(0);
+          if (Operand->getType()->isVectorTy()) {
+            FakeNumMicroOps.emplace_back(createFakeDynamicInst("fmul"), 1);
           }
-          case llvm::Instruction::Mul: {
-            // Add mulel and muleh op.
-            // Normally this should be
-            // mulix
-            // mulel
-            // mules
-            // But now we fake it as:
-            // limm
-            // limm
-            // mul
-            FakeNumMicroOps.emplace_back(createFakeDynamicInst("mul"), 1);
-            break;
-          }
-          case llvm::Instruction::Switch:
-          case llvm::Instruction::Br: {
-            // rdip
-            // wrip
-            FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
-            FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
-            break;
-          }
-          default:
-            break;
+          break;
+        }
+        case llvm::Instruction::Mul: {
+          // Add mulel and muleh op.
+          // Normally this should be
+          // mulix
+          // mulel
+          // mules
+          // But now we fake it as:
+          // limm
+          // limm
+          // mul
+          FakeNumMicroOps.emplace_back(createFakeDynamicInst("mul"), 1);
+          break;
+        }
+        case llvm::Instruction::Switch:
+        case llvm::Instruction::Br: {
+          // rdip
+          // wrip
+          FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
+          FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
+          break;
+        }
+        default:
+          break;
         }
 
-        std::vector<DynamicInstruction*> Fakes;
+        std::vector<DynamicInstruction *> Fakes;
         Fakes.reserve(FakeNumMicroOps.size());
-        for (const auto& FakeOpEntry : FakeNumMicroOps) {
+        for (const auto &FakeOpEntry : FakeNumMicroOps) {
           auto FakeInstruction = FakeOpEntry.first;
           if (FakeOpEntry.second == 1) {
             // If FakeDep, make the micro op dependent on inst's dependence.
@@ -456,7 +476,7 @@ void ReplayTrace::fakeExternalCall(DataGraph::DynamicInstIter InstIter) {
     assert(CallingConvention == llvm::CallingConv::C &&
            "We only support C calling convention.");
     // Create the push instructions.
-    std::vector<DynamicInstruction*> Pushes;
+    std::vector<DynamicInstruction *> Pushes;
     Pushes.reserve(StaticCall->getNumArgOperands());
     for (unsigned ArgIdx = 0, NumArgs = StaticCall->getNumArgOperands();
          ArgIdx != NumArgs; ++ArgIdx) {
@@ -512,13 +532,13 @@ void ReplayTrace::TransformTrace() {
 }
 
 // Insert all the print function declaration into the module.
-void ReplayTrace::registerFunction(llvm::Module& Module) {
-  auto& Context = Module.getContext();
+void ReplayTrace::registerFunction(llvm::Module &Module) {
+  auto &Context = Module.getContext();
   auto Int8PtrTy = llvm::Type::getInt8PtrTy(Context);
   auto VoidTy = llvm::Type::getVoidTy(Context);
   auto Int64Ty = llvm::Type::getInt64Ty(Context);
 
-  std::vector<llvm::Type*> ReplayArgs{
+  std::vector<llvm::Type *> ReplayArgs{
       Int8PtrTy,
       Int64Ty,
   };

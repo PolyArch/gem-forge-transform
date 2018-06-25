@@ -2,7 +2,8 @@
 
 #include <iostream>
 
-TraceParserProtobuf::TraceParserProtobuf(const std::string& TraceFileName) {
+TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName)
+    : Count(0) {
   this->TraceFile.open(TraceFileName, std::ios::in | std::ios::binary);
   assert(this->TraceFile.is_open() && "Failed openning trace file.");
   this->IStream =
@@ -72,9 +73,9 @@ void TraceParserProtobuf::readNextEntry() {
   this->TraceEntry.Clear();
   int ReadSize = 0;
   char Data[sizeof(uint64_t)];
-  const char* Buffer;
+  const char *Buffer;
   int Size;
-  while (this->IStream->Next((const void**)&Buffer, &Size)) {
+  while (this->IStream->Next((const void **)&Buffer, &Size)) {
     // We got something.
     int Idx = 0;
     while (ReadSize < sizeof(uint64_t) && Idx < Size) {
@@ -89,9 +90,9 @@ void TraceParserProtobuf::readNextEntry() {
     if (ReadSize == sizeof(uint64_t)) {
       // We have read in the size field.
       bool Success = this->TraceEntry.ParseFromBoundedZeroCopyStream(
-          this->IStream, *(uint64_t*)(Data));
+          this->IStream, *(uint64_t *)(Data));
       if (!Success) {
-        std::cerr << "Failed parsing " << *(uint64_t*)Data << std::endl;
+        std::cerr << "Failed parsing " << *(uint64_t *)Data << std::endl;
       }
       assert(Success && "Failed parsing protobuf.");
       Count++;

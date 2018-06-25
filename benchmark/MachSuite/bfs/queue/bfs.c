@@ -31,6 +31,8 @@ void bfs(node_t nodes[N_NODES], edge_t edges[N_EDGES],
   level_counts[0] = 1;
   Q_PUSH(starting_node);
 
+  // printf("bfs called\n");
+
   loop_queue: for( dummy=0; dummy<N_NODES; dummy++ ) { // Typically while(not_empty(queue)){
     if( Q_EMPTY() )
       break;
@@ -40,14 +42,13 @@ void bfs(node_t nodes[N_NODES], edge_t edges[N_EDGES],
     edge_index_t tmp_end = nodes[n].edge_end;
     loop_neighbors: for( e=tmp_begin; e<tmp_end; e++ ) {
       node_index_t tmp_dst = edges[e].dst;
-      level_t tmp_level = level[tmp_dst];
-
-      if( tmp_level ==MAX_LEVEL ) { // Unmarked
+      // level_t tmp_level = level[tmp_dst];
+      // if( tmp_level ==MAX_LEVEL ) { // Unmarked
         level_t tmp_level = level[n]+1;
         level[tmp_dst] = tmp_level;
         ++level_counts[tmp_level];
         Q_PUSH(tmp_dst);
-      }
+      // }
     }
   }
 

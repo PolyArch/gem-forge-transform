@@ -24,6 +24,7 @@ class TraceParser {
     std::string Func;
     std::vector<std::string> Arguments;
   };
+  virtual ~TraceParser() {}
   virtual Type getNextType() = 0;
   virtual TracedInst parseLLVMInstruction() = 0;
   virtual TracedFuncEnter parseFunctionEnter() = 0;
