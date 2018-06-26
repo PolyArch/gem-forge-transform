@@ -27,13 +27,20 @@ public:
   bool runOnFunction(llvm::Function &Function) override;
 
 protected:
-  virtual void TransformTrace();
+  virtual void transform();
 
   DataGraph *Trace;
 
   std::string OutTraceName;
 
   llvm::Module *Module;
+
+  /**
+   * The analysis can only be used in run* methods, so we will
+   * use Transformed guard and call transform in runOnFunction
+   * only once.
+   */
+  bool Transformed;
 
   llvm::Value *ReplayFunc;
   llvm::Instruction *FakeRegisterSpill;

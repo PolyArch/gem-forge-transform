@@ -91,7 +91,8 @@ public:
 
 ReplayTrace::ReplayTrace(char _ID)
     : llvm::FunctionPass(_ID), Trace(nullptr),
-      OutTraceName("llvm_trace_gem5.txt") {}
+      OutTraceName("llvm_trace_gem5.txt"),
+      Transformed(false) {}
 
 ReplayTrace::~ReplayTrace() {
   // Remember to release the trace.
@@ -127,13 +128,19 @@ bool ReplayTrace::doInitialization(llvm::Module &Module) {
   // DEBUG(llvm::errs() << "Parsed # memory dependences: "
   //                    << this->Trace->NumMemDependences << '\n');
 
-  // Generate the transformation of the trace.
-  this->TransformTrace();
+  this->Transformed = false;
 
   return true;
 }
 
 bool ReplayTrace::runOnFunction(llvm::Function &Function) {
+
+  // Do the trasformation only once.
+  if (!this->Transformed) {
+    this->transform();
+    this->Transformed = true;
+  }
+
   auto FunctionName = Function.getName().str();
   DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
@@ -492,7 +499,7 @@ void ReplayTrace::fakeExternalCall(DataGraph::DynamicInstIter InstIter) {
 
 // The default transformation is just an identical transformation.
 // Other pass can override this function to perform their own transformation.
-void ReplayTrace::TransformTrace() {
+void ReplayTrace::transform() {
   assert(this->Trace != nullptr && "Must have a trace to be transformed.");
 
   std::ofstream OutTrace(this->OutTraceName);

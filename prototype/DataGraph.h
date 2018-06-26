@@ -70,6 +70,9 @@ public:
     // A tiny run time environment, basically for memory base/offset
     // computation.
     std::unordered_map<llvm::Value *, DynamicValue> RunTimeEnv;
+    // Stores the dynamic value of CallInst.
+    // Could be consumed by parseFuncEnter.
+    std::vector<DynamicValue> CallStack;
     llvm::BasicBlock *PrevBasicBlock;
     llvm::CallInst *PrevCallInst;
     explicit DynamicFrame(
