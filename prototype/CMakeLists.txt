@@ -35,6 +35,7 @@ add_library(LLVMTDGPass MODULE
     DataGraph.cpp
     Replay.cpp
     TraceStatisticPass.cpp
+    SIMDPass.cpp
     # CCA.cpp
     StreamAnalyzeTrace.cpp
     LocateAccelerableFunctions.cpp

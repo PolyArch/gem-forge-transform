@@ -90,7 +90,7 @@ DataGraph::DynamicInstIter DataGraph::loadOneDynamicInst() {
     }
     switch (NextType) {
     case TraceParser::INST: {
-      // DEBUG(llvm::errs() << "Parse inst.\n");
+      DEBUG(llvm::errs() << "Parse inst.\n");
       auto Parsed = this->Parser->parseLLVMInstruction();
       if (this->parseDynamicInstruction(Parsed)) {
         // We have found something new.
@@ -100,7 +100,7 @@ DataGraph::DynamicInstIter DataGraph::loadOneDynamicInst() {
       break;
     }
     case TraceParser::FUNC_ENTER: {
-      // DEBUG(llvm::errs() << "Parse func enter.\n");
+      DEBUG(llvm::errs() << "Parse func enter.\n");
       auto Parsed = this->Parser->parseFunctionEnter();
       this->parseFunctionEnter(Parsed);
       break;
@@ -210,6 +210,7 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
    * If this is a ret, pop the frame stack
    *   -- Further more, if there is a call instruction above, update its base
    *      and offset.
+   * If this is a call, set up CallStack of DynamicFrame.
    * Add to the list.
    * Add to the alive map.
    * Add to the static map.
@@ -242,6 +243,19 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
                           *(DynamicInst->DynamicOperands[0]));
         // Clear the prev call inst.
         Frame.PrevCallInst = nullptr;
+      }
+    }
+  }
+
+  // Set up the call stack if this is a call.
+  if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInstruction)) {
+    auto &CallStack = this->DynamicFrameStack.front().CallStack;
+    CallStack.clear();
+    if (this->DetailLevel != SIMPLE) {
+      // The last operand is the callee.
+      for (size_t OperandIdx = 0;
+           OperandIdx + 1 < DynamicInst->DynamicOperands.size(); ++OperandIdx) {
+        CallStack.emplace_back(*(DynamicInst->DynamicOperands[OperandIdx]));
       }
     }
   }
@@ -474,16 +488,22 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed) {
         DynamicArgument.MemBase = StaticArgument->getName();
         DynamicArgument.MemOffset = 0;
       } else {
-        // The previous inst must be a call.
-        DynamicInstruction *PrevDynamicInstruction =
-            this->DynamicInstructionList.back();
-        assert(llvm::isa<llvm::CallInst>(
-                   PrevDynamicInstruction->getStaticInstruction()) &&
-               "The previous instruction is not a call");
-        DynamicArgument.MemBase =
-            PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemBase;
-        DynamicArgument.MemOffset =
-            PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemOffset;
+        // Get the dynamic value of calling stack.
+        const auto &CallStack = this->DynamicFrameStack.front().CallStack;
+        assert(ArgumentIndex < CallStack.size() &&
+               "Invalid call stack, too small.");
+        DynamicArgument.MemBase = CallStack[ArgumentIndex].MemBase;
+        DynamicArgument.MemOffset = CallStack[ArgumentIndex].MemOffset;
+        // // The previous inst must be a call.
+        // DynamicInstruction *PrevDynamicInstruction =
+        //     this->DynamicInstructionList.back();
+        // assert(llvm::isa<llvm::CallInst>(
+        //            PrevDynamicInstruction->getStaticInstruction()) &&
+        //        "The previous instruction is not a call");
+        // DynamicArgument.MemBase =
+        //     PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemBase;
+        // DynamicArgument.MemOffset =
+        //     PrevDynamicInstruction->DynamicOperands[ArgumentIndex]->MemOffset;
       }
 
       ++ParsedArgumentIndex;
