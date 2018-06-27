@@ -12,7 +12,7 @@
 #include "llvm/Transforms/Scalar.h"
 
 #include "LocateAccelerableFunctions.h"
-#include "Tracer.h"
+#include "trace/Tracer.h"
 
 #include <map>
 #include <set>

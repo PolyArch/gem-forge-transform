@@ -2,7 +2,7 @@
 #ifndef LLVM_TDG_DYNAMIC_INSTRUCTION_H
 #define LLVM_TDG_DYNAMIC_INSTRUCTION_H
 
-#include "TraceParser.h"
+#include "trace/TraceParser.h"
 
 #include "llvm/IR/Instructions.h"
 

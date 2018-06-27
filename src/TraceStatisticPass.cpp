@@ -2,6 +2,7 @@
 // some useful statistics from the trace.
 
 #include "DataGraph.h"
+#include "LocateAccelerableFunctions.h"
 
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
@@ -12,8 +13,6 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 
-#include "LocateAccelerableFunctions.h"
-#include "Tracer.h"
 
 #include <map>
 #include <set>

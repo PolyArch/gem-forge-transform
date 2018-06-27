@@ -1,8 +1,8 @@
 #ifndef LLVM_TDG_TRACE_PARSER_GZIP_H
 #define LLVM_TDG_TRACE_PARSER_GZIP_H
 
-#include "GZipUtil.h"
-#include "TraceParser.h"
+#include "trace/GZipUtil.h"
+#include "trace/TraceParser.h"
 
 class TraceParserGZip : public TraceParser {
  public:

@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package LLVM.TDG;
+
+message TDGInstruction {
+  string op = 1;
+  uint64 id = 2;
+  repeated uint64 deps = 3;
+  oneof extra {
+    StoreExtra store = 8;
+    LoadExtra load = 9;
+    AllocExtra alloc = 10;
+    BranchExtra branch = 11;
+  }
+
+  message StoreExtra {
+    uint64 addr = 1;
+    string base = 2;
+    uint64 offset = 3;
+    bytes value = 4;
+  }
+
+  message LoadExtra {
+    uint64 addr = 1;
+    string base = 2;
+    uint64 offset = 3;
+  }
+
+  message AllocExtra {
+    uint64 addr = 1;
+    uint64 size = 2;
+  }
+
+  message BranchExtra {
+    uint64 static_id = 1;
+    uint64 next_bb = 2;
+  }
+}
+
+message TDG {
+  repeated TDGInstruction instructions = 1;
+}

@@ -1,5 +1,5 @@
 
-#include "TraceParserGZip.h"
+#include "trace/TraceParserGZip.h"
 
 #include <iostream>
 #include <cassert>

@@ -1,14 +1,14 @@
-#include "GZipUtil.h"
+#include "trace/GZipUtil.h"
 
 #include <stdlib.h>
 
-GZTrace* gzOpenGZTrace(const char* FileName) {
+GZTrace *gzOpenGZTrace(const char *FileName) {
   gzFile File = gzopen(FileName, "r");
   if (File == NULL) {
     return NULL;
   }
 
-  GZTrace* Trace = (GZTrace*)malloc(sizeof(GZTrace));
+  GZTrace *Trace = (GZTrace *)malloc(sizeof(GZTrace));
   if (Trace == NULL) {
     return NULL;
   }
@@ -21,7 +21,7 @@ GZTrace* gzOpenGZTrace(const char* FileName) {
   return Trace;
 }
 
-void gzCloseGZTrace(GZTrace* Trace) {
+void gzCloseGZTrace(GZTrace *Trace) {
   gzclose(Trace->File);
   free(Trace);
 }
@@ -34,11 +34,11 @@ static uint64_t gzComputeRealOffset(uint64_t VIdx) {
   return VIdx % (2 * GZ_TRACE_BUF_LEN);
 }
 
-static char gzGetChar(GZTrace* Trace, uint64_t VIdx) {
+static char gzGetChar(GZTrace *Trace, uint64_t VIdx) {
   return Trace->PingPongBuffer[gzComputeRealOffset(VIdx)];
 }
 
-int gzReadNextLine(GZTrace* Trace) {
+int gzReadNextLine(GZTrace *Trace) {
   // Check if we still have a line in the current buffer.
   int LineLen = 0;
   while (1) {

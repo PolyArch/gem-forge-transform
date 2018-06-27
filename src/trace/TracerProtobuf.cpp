@@ -1,6 +1,6 @@
 // Implement the tracer interface with protobuf.
 #include "TraceMessage.pb.h"
-#include "Tracer.h"
+#include "trace/Tracer.h"
 
 #include <cassert>
 #include <cinttypes>
@@ -11,7 +11,7 @@
 void cleanup();
 
 // Single thread singleton.
-inline std::ofstream& getTraceFile() {
+inline std::ofstream &getTraceFile() {
   static std::ofstream o;
   if (!o.is_open()) {
     o.open(TRACE_FILE_NAME, std::ios::out | std::ios::binary);
@@ -24,14 +24,14 @@ inline std::ofstream& getTraceFile() {
 static uint64_t count = 0;
 
 void cleanup() {
-  std::ofstream& o = getTraceFile();
+  std::ofstream &o = getTraceFile();
   o.close();
   std::cout << "Traced #" << count << std::endl;
 }
 
 static LLVM::TDG::DynamicLLVMTraceEntry protobufTraceEntry;
 
-void printFuncEnterImpl(const char* FunctionName) {
+void printFuncEnterImpl(const char *FunctionName) {
   if (protobufTraceEntry.has_inst()) {
     // The previous one is inst.
     // Clear it and allocate a new func enter.
@@ -45,8 +45,8 @@ void printFuncEnterImpl(const char* FunctionName) {
   protobufTraceEntry.mutable_func_enter()->set_func(FunctionName);
 }
 
-void printInstImpl(const char* FunctionName, const char* BBName, unsigned Id,
-                   char* OpCodeName) {
+void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
+                   char *OpCodeName) {
   if (protobufTraceEntry.has_func_enter()) {
     // The previous one is func enter.
     // Clear it and allocate a new func enter.
@@ -72,46 +72,46 @@ static const size_t VALUE_BUFFER_SIZE = 1024;
 static char valueBuffer[VALUE_BUFFER_SIZE];
 static void addValueToDynamicInst(const char Tag) {
   switch (Tag) {
-    case PRINT_VALUE_TAG_PARAMETER: {
-      if (protobufTraceEntry.has_inst()) {
-        // std::cout << "Add value to inst " << valueBuffer << std::endl;
-        protobufTraceEntry.mutable_inst()->add_params(valueBuffer);
-      } else {
-        protobufTraceEntry.mutable_func_enter()->add_params(valueBuffer);
-      }
-      break;
+  case PRINT_VALUE_TAG_PARAMETER: {
+    if (protobufTraceEntry.has_inst()) {
+      // std::cout << "Add value to inst " << valueBuffer << std::endl;
+      protobufTraceEntry.mutable_inst()->add_params(valueBuffer);
+    } else {
+      protobufTraceEntry.mutable_func_enter()->add_params(valueBuffer);
     }
-    case PRINT_VALUE_TAG_RESULT: {
-      // Only dynamic inst may have result.
-      assert(protobufTraceEntry.has_inst());
-      protobufTraceEntry.mutable_inst()->set_result(valueBuffer);
-      break;
-    }
-    default: { assert(false); }
+    break;
+  }
+  case PRINT_VALUE_TAG_RESULT: {
+    // Only dynamic inst may have result.
+    assert(protobufTraceEntry.has_inst());
+    protobufTraceEntry.mutable_inst()->set_result(valueBuffer);
+    break;
+  }
+  default: { assert(false); }
   }
 }
 
-void printValueLabelImpl(const char Tag, const char* Name, unsigned TypeId) {
+void printValueLabelImpl(const char Tag, const char *Name, unsigned TypeId) {
   snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%s", Name);
   addValueToDynamicInst(Tag);
 }
-void printValueIntImpl(const char Tag, const char* Name, unsigned TypeId,
+void printValueIntImpl(const char Tag, const char *Name, unsigned TypeId,
                        uint64_t Value) {
   snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%" PRIu64, Value);
   addValueToDynamicInst(Tag);
 }
-void printValueFloatImpl(const char Tag, const char* Name, unsigned TypeId,
+void printValueFloatImpl(const char Tag, const char *Name, unsigned TypeId,
                          double Value) {
   snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%f", Value);
   addValueToDynamicInst(Tag);
 }
-void printValuePointerImpl(const char Tag, const char* Name, unsigned TypeId,
-                           void* Value) {
+void printValuePointerImpl(const char Tag, const char *Name, unsigned TypeId,
+                           void *Value) {
   snprintf(valueBuffer, VALUE_BUFFER_SIZE, "0x%llx", (unsigned long long)Value);
   addValueToDynamicInst(Tag);
 }
-void printValueVectorImpl(const char Tag, const char* Name, unsigned TypeId,
-                          uint32_t Size, uint8_t* Value) {
+void printValueVectorImpl(const char Tag, const char *Name, unsigned TypeId,
+                          uint32_t Size, uint8_t *Value) {
   for (uint32_t i = 0, pos = 0; i < Size; ++i) {
     pos +=
         snprintf(valueBuffer + pos, VALUE_BUFFER_SIZE - pos, "%hhu,", Value[i]);
@@ -119,7 +119,7 @@ void printValueVectorImpl(const char Tag, const char* Name, unsigned TypeId,
   // std::cout << "Print vector " << Size << std::endl;
   addValueToDynamicInst(Tag);
 }
-void printValueUnsupportImpl(const char Tag, const char* Name,
+void printValueUnsupportImpl(const char Tag, const char *Name,
                              unsigned TypeId) {
   snprintf(valueBuffer, VALUE_BUFFER_SIZE, "UnsupportedType(%u)", TypeId);
   addValueToDynamicInst(Tag);
@@ -129,9 +129,9 @@ void printValueUnsupportImpl(const char Tag, const char* Name,
 void printInstEndImpl() {
   assert(!protobufTraceEntry.has_func_enter() &&
          "Should not contain func enter for inst.");
-  auto& trace = getTraceFile();
+  auto &trace = getTraceFile();
   uint64_t bytes = protobufTraceEntry.ByteSizeLong();
-  trace.write(reinterpret_cast<char*>(&bytes), sizeof(bytes));
+  trace.write(reinterpret_cast<char *>(&bytes), sizeof(bytes));
   protobufTraceEntry.SerializeToOstream(&trace);
   count++;
   // std::cout << "printInstEnd" << std::endl;
@@ -143,9 +143,9 @@ void printFuncEnterEndImpl() {
   if (count == 0) {
     std::cout << "The first one is func enter.\n";
   }
-  auto& trace = getTraceFile();
+  auto &trace = getTraceFile();
   uint64_t bytes = protobufTraceEntry.ByteSizeLong();
-  trace.write(reinterpret_cast<char*>(&bytes), sizeof(bytes));
+  trace.write(reinterpret_cast<char *>(&bytes), sizeof(bytes));
   protobufTraceEntry.SerializeToOstream(&trace);
   count++;
 }

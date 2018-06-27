@@ -1,6 +1,6 @@
 #include "DataGraph.h"
-#include "TraceParserGZip.h"
-#include "TraceParserProtobuf.h"
+#include "trace/TraceParserGZip.h"
+#include "trace/TraceParserProtobuf.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"

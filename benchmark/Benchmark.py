@@ -29,7 +29,7 @@ class Benchmark(object):
         else:
             self.trace_links = links + ['-lz']
             self.trace_lib = os.path.join(
-                C.LLVM_TDG_DIR, 'build', 'prototype', 'libTracerGZip.a'
+                C.LLVM_TDG_DIR, 'build', 'src', 'libTracerGZip.a'
             )
             self.trace_format = 'gzip'
 

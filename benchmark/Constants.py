@@ -2,7 +2,7 @@
 import os
 
 LLVM_TDG_DIR = '/home/zhengrong/Documents/LLVM-TDG'
-LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'prototype')
+LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'src')
 
 """
 ellcc path.
