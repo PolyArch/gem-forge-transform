@@ -49,7 +49,7 @@ public:
    * If missing, then it hasn't appeared in the dynamic trace.
    * Only for non-phi node.
    * Used for register dependence resolution.
-   **/
+   */
   std::unordered_map<llvm::Instruction *, DynamicId> StaticToLastDynamicMap;
 
   llvm::Module *Module;
