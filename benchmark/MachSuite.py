@@ -24,10 +24,10 @@ class MachSuiteBenchmarks:
         #      "grid",
         #      "knn"
         #  ],
-        "fft": [
-            "strided",
-            "transpose"
-        ],
+        # "fft": [
+        #     "strided",
+        #     "transpose"
+        # ],
         #  "viterbi": [
         #      "viterbi"
         #  ],
@@ -45,10 +45,10 @@ class MachSuiteBenchmarks:
         # #  "backprop": [
         # #     "backprop" # Not working.
         # #  ],
-        #  "gemm": [
-        #      "blocked",
-        #      "ncubed"
-        #  ],
+         "gemm": [
+             "blocked",
+            #  "ncubed"
+         ],
         #  "nw": [
         #      "nw"
         #  ]
@@ -286,9 +286,9 @@ def main(folder):
         for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
             # benchmarks.baseline(benchmark, subbenchmark)
             benchmarks.trace(benchmark, subbenchmark)
-            benchmarks.build_replay(benchmark, subbenchmark)
-            benchmarks.run_replay(benchmark, subbenchmark)
-            benchmarks.run_standalone(benchmark, subbenchmark)
+            # benchmarks.build_replay(benchmark, subbenchmark)
+            # benchmarks.run_replay(benchmark, subbenchmark)
+            # benchmarks.run_standalone(benchmark, subbenchmark)
             names.append(benchmarks.getName(benchmark, subbenchmark))
 
     benchmarks.draw('MachSuite.baseline.replay.pdf', 'baseline', 'replay', names)

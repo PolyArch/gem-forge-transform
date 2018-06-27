@@ -2,19 +2,18 @@
 #include "DynamicInstruction.h"
 #include "DataGraph.h"
 
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/Support/raw_ostream.h"
 
-DynamicValue::DynamicValue(const std::string& _Value,
-                           const std::string& _MemBase, uint64_t _MemOffset)
+DynamicValue::DynamicValue(const std::string &_Value,
+                           const std::string &_MemBase, uint64_t _MemOffset)
     : Value(_Value), MemBase(_MemBase), MemOffset(_MemOffset) {}
 
-DynamicValue::DynamicValue(const DynamicValue& Other)
+DynamicValue::DynamicValue(const DynamicValue &Other)
     : Value(Other.Value), MemBase(Other.MemBase), MemOffset(Other.MemOffset) {}
 
-DynamicValue::DynamicValue(DynamicValue&& Other)
-    : Value(std::move(Other.Value)),
-      MemBase(std::move(Other.MemBase)),
+DynamicValue::DynamicValue(DynamicValue &&Other)
+    : Value(std::move(Other.Value)), MemBase(std::move(Other.MemBase)),
       MemOffset(Other.MemOffset) {}
 
 DynamicInstruction::DynamicInstruction()
@@ -25,7 +24,7 @@ DynamicInstruction::~DynamicInstruction() {
     delete this->DynamicResult;
     this->DynamicResult = nullptr;
   }
-  for (auto& OperandsIter : this->DynamicOperands) {
+  for (auto &OperandsIter : this->DynamicOperands) {
     if (OperandsIter != nullptr) {
       delete OperandsIter;
       OperandsIter = nullptr;
@@ -33,13 +32,15 @@ DynamicInstruction::~DynamicInstruction() {
   }
 }
 
+DynamicInstruction::DynamicId DynamicInstruction::InvalidId = 0;
+
 DynamicInstruction::DynamicId DynamicInstruction::allocateId() {
-  // Only consider single thread.
+  // Only consider single thread. 0 is reserved.
   static DynamicId CurrentId = 0;
-  return CurrentId++;
+  return ++CurrentId;
 }
 
-void DynamicInstruction::format(std::ofstream& Out, DataGraph* Trace) const {
+void DynamicInstruction::format(std::ofstream &Out, DataGraph *Trace) const {
   this->formatOpCode(Out);
   Out << '|';
   // The faked number of micro ops.
@@ -52,10 +53,10 @@ void DynamicInstruction::format(std::ofstream& Out, DataGraph* Trace) const {
   this->formatCustomizedFields(Out, Trace);
 }
 
-void DynamicInstruction::formatDeps(std::ofstream& Out,
-                                    const DependentMap& RegDeps,
-                                    const DependentMap& MemDeps,
-                                    const DependentMap& CtrDeps) const {
+void DynamicInstruction::formatDeps(std::ofstream &Out,
+                                    const DependentMap &RegDeps,
+                                    const DependentMap &MemDeps,
+                                    const DependentMap &CtrDeps) const {
   // if (this->StaticInstruction != nullptr) {
   //   DEBUG(llvm::errs()
   //               << "Format dependence for "
@@ -64,7 +65,7 @@ void DynamicInstruction::formatDeps(std::ofstream& Out,
   {
     auto DepIter = RegDeps.find(this->Id);
     if (DepIter != RegDeps.end()) {
-      for (const auto& DepInstId : DepIter->second) {
+      for (const auto &DepInstId : DepIter->second) {
         Out << DepInstId << ',';
       }
     }
@@ -72,7 +73,7 @@ void DynamicInstruction::formatDeps(std::ofstream& Out,
   {
     auto DepIter = MemDeps.find(this->Id);
     if (DepIter != MemDeps.end()) {
-      for (const auto& DepInstId : DepIter->second) {
+      for (const auto &DepInstId : DepIter->second) {
         Out << DepInstId << ',';
       }
     }
@@ -80,22 +81,21 @@ void DynamicInstruction::formatDeps(std::ofstream& Out,
   {
     auto DepIter = CtrDeps.find(this->Id);
     if (DepIter != CtrDeps.end()) {
-      for (const auto& DepInstId : DepIter->second) {
+      for (const auto &DepInstId : DepIter->second) {
         Out << DepInstId << ',';
       }
     }
   }
 }
 
-void DynamicInstruction::formatOpCode(std::ofstream& Out) const {
+void DynamicInstruction::formatOpCode(std::ofstream &Out) const {
   Out << this->getOpName();
 }
 
 LLVMDynamicInstruction::LLVMDynamicInstruction(
-    llvm::Instruction* _StaticInstruction, DynamicValue* _Result,
-    std::vector<DynamicValue*> _Operands)
-    : DynamicInstruction(),
-      StaticInstruction(_StaticInstruction),
+    llvm::Instruction *_StaticInstruction, DynamicValue *_Result,
+    std::vector<DynamicValue *> _Operands)
+    : DynamicInstruction(), StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
   this->DynamicResult = _Result;
   this->DynamicOperands = std::move(_Operands);
@@ -117,23 +117,22 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
 }
 
 LLVMDynamicInstruction::LLVMDynamicInstruction(
-    llvm::Instruction* _StaticInstruction, TraceParser::TracedInst& _Parsed)
-    : DynamicInstruction(),
-      StaticInstruction(_StaticInstruction),
+    llvm::Instruction *_StaticInstruction, TraceParser::TracedInst &_Parsed)
+    : DynamicInstruction(), StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
   if (_Parsed.Result != "") {
     // We do have result.
     this->DynamicResult = new DynamicValue(_Parsed.Result);
   }
 
-  for (const auto& Operand : _Parsed.Operands) {
+  for (const auto &Operand : _Parsed.Operands) {
     this->DynamicOperands.push_back(new DynamicValue(Operand));
   }
 }
 
 std::string LLVMDynamicInstruction::getOpName() const {
   if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(this->StaticInstruction)) {
-    if (llvm::Function* Callee = CallInst->getCalledFunction()) {
+    if (llvm::Function *Callee = CallInst->getCalledFunction()) {
       // Make sure this is not indirect call.
       if (Callee->isIntrinsic()) {
         // If this is a simple memset, translate to a "huge" store instruction.
@@ -156,12 +155,12 @@ std::string LLVMDynamicInstruction::getOpName() const {
   return StaticInstruction->getOpcodeName();
 }
 
-void LLVMDynamicInstruction::formatCustomizedFields(std::ofstream& Out,
-                                                    DataGraph* Trace) const {
+void LLVMDynamicInstruction::formatCustomizedFields(std::ofstream &Out,
+                                                    DataGraph *Trace) const {
   if (auto LoadStaticInstruction =
           llvm::dyn_cast<llvm::LoadInst>(this->StaticInstruction)) {
     // base|offset|trace_vaddr|size|
-    DynamicValue* LoadedAddr = this->DynamicOperands[0];
+    DynamicValue *LoadedAddr = this->DynamicOperands[0];
     uint64_t LoadedSize = Trace->DataLayout->getTypeStoreSize(
         LoadStaticInstruction->getPointerOperandType()
             ->getPointerElementType());
@@ -175,8 +174,8 @@ void LLVMDynamicInstruction::formatCustomizedFields(std::ofstream& Out,
   if (auto StoreStaticInstruction =
           llvm::dyn_cast<llvm::StoreInst>(this->StaticInstruction)) {
     // base|offset|trace_vaddr|size|type_id|type_name|value|
-    DynamicValue* StoredAddr = this->DynamicOperands[1];
-    llvm::Type* StoredType = StoreStaticInstruction->getPointerOperandType()
+    DynamicValue *StoredAddr = this->DynamicOperands[1];
+    llvm::Type *StoredType = StoreStaticInstruction->getPointerOperandType()
                                  ->getPointerElementType();
     uint64_t StoredSize = Trace->DataLayout->getTypeStoreSize(StoredType);
     std::string TypeName;
@@ -206,7 +205,7 @@ void LLVMDynamicInstruction::formatCustomizedFields(std::ofstream& Out,
            * memset(addr, val, size)
            * Also, make this a giantic vector store.
            */
-          DynamicValue* StoredAddr = this->DynamicOperands[0];
+          DynamicValue *StoredAddr = this->DynamicOperands[0];
           uint64_t StoredSize = std::stoul(this->DynamicOperands[2]->Value);
           Out << StoredAddr->MemBase << '|' << StoredAddr->MemOffset << '|'
               << StoredAddr->Value << '|' << StoredSize << '|'
