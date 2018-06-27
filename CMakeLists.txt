@@ -19,7 +19,11 @@ find_package(Protobuf
 )
 
 add_definitions(${LLVM_DEFINITIONS})
-include_directories(${LLVM_INCLUDE_DIRS} ${PROTOBUF_INCLUDE_DIRS})
+include_directories(
+    ${LLVM_INCLUDE_DIRS} 
+    ${PROTOBUF_INCLUDE_DIRS}
+    src
+    )
 link_directories(${LLVM_LIBRARY_DIRS})
 
-add_subdirectory(prototype)
+add_subdirectory(src)

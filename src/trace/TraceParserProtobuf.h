@@ -2,7 +2,7 @@
 #define LLVM_TDG_TRACE_PARSER_PROTOBUF_H
 
 #include "TraceMessage.pb.h"
-#include "TraceParser.h"
+#include "trace/TraceParser.h"
 
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 

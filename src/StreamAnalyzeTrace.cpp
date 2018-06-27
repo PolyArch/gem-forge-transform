@@ -1,4 +1,4 @@
-#include "TraceParserGZip.h"
+#include "trace/TraceParserGZip.h"
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -10,6 +10,8 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+
+// NOT WORKING FOR NOW!!
 
 static llvm::cl::opt<std::string> TraceFileName("stream-trace-file",
                                                 llvm::cl::desc("Trace file."));

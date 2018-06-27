@@ -1,4 +1,4 @@
-#include "TraceParserProtobuf.h"
+#include "trace/TraceParserProtobuf.h"
 
 #include <iostream>
 
