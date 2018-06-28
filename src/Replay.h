@@ -4,6 +4,7 @@
 
 #include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
+#include "TDGSerializer.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Pass.h"
@@ -26,12 +27,16 @@ public:
 
   bool runOnFunction(llvm::Function &Function) override;
 
+  bool doFinalization(llvm::Module &Module) override;
+
 protected:
   virtual void transform();
 
   DataGraph *Trace;
 
   std::string OutTraceName;
+
+  TDGSerializer *Serializer;
 
   llvm::Module *Module;
 

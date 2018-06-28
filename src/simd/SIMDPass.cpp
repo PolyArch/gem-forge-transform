@@ -178,14 +178,11 @@ protected:
    * information. Commit all the buffered instructions EXCEPT THE LAST ONE,
    * which either belongs to next iteration or other regions.
    */
-  void processBuffer(std::ofstream &OutTrace);
+  void processBuffer();
 };
 
 void SIMDPass::transform() {
   assert(this->Trace != nullptr && "Must have a trace to be transformed.");
-
-  std::ofstream OutTrace(this->OutTraceName);
-  assert(OutTrace.is_open() && "Failed to open output trace file.");
 
   // Get the loop info.
   auto &LoopInfo = getAnalysis<llvm::LoopInfoWrapperPass>().getLoopInfo();
@@ -234,9 +231,8 @@ void SIMDPass::transform() {
     } else {
       // Commit any remaining buffered instructions when hitting the end.
       while (!this->Trace->DynamicInstructionList.empty()) {
-        this->Trace->DynamicInstructionList.front()->format(OutTrace,
-                                                            this->Trace);
-        OutTrace << '\n';
+        this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                    this->Trace);
         this->Trace->commitOneDynamicInst();
       }
       break;
@@ -262,9 +258,8 @@ void SIMDPass::transform() {
 
       if (this->Trace->DynamicInstructionList.size() == 2) {
         // We can commit the previous one.
-        this->Trace->DynamicInstructionList.front()->format(OutTrace,
-                                                            this->Trace);
-        OutTrace << '\n';
+        this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                    this->Trace);
         this->Trace->commitOneDynamicInst();
       }
 
@@ -297,7 +292,7 @@ void SIMDPass::transform() {
        */
       if (this->LoopIter == this->VectorizeWidth) {
         // DEBUG(llvm::errs() << "SIMD Pass: Vectorizing.\n");
-        this->processBuffer(OutTrace);
+        this->processBuffer();
         // Clear the loop iter.
         this->LoopIter = 0;
       }
@@ -317,9 +312,8 @@ void SIMDPass::transform() {
         // Case 2
         // Commit remaining insts.
         while (this->Trace->DynamicInstructionList.size() > 1) {
-          this->Trace->DynamicInstructionList.front()->format(OutTrace,
-                                                              this->Trace);
-          OutTrace << '\n';
+          this->Serializer->serialize(
+              this->Trace->DynamicInstructionList.front(), this->Trace);
           this->Trace->commitOneDynamicInst();
         }
         if (IsAtHeaderOfVectorizable) {
@@ -343,8 +337,6 @@ void SIMDPass::transform() {
   }
 
   DEBUG(llvm::errs() << "SIMD Pass end.\n");
-
-  OutTrace.close();
 }
 
 bool SIMDPass::isLoopStaticVectorizable(llvm::Loop *Loop) {
@@ -596,7 +588,7 @@ bool SIMDPass::isLoopDynamicVectorizable(DynamicInnerMostLoop &DynamicLoop) {
   return true;
 }
 
-void SIMDPass::processBuffer(std::ofstream &OutTrace) {
+void SIMDPass::processBuffer() {
 
   assert(this->Trace->DynamicInstructionList.size() > 1 &&
          "Should be at least 2 dynamic instruction.");
@@ -612,9 +604,8 @@ void SIMDPass::processBuffer(std::ofstream &OutTrace) {
     DEBUG(llvm::errs() << "SIMD Pass: Loop is not dynamically vectorizable.\n");
     DEBUG(DynamicLoop.print(llvm::errs()));
     while (this->Trace->DynamicInstructionList.size() > 1) {
-      this->Trace->DynamicInstructionList.front()->format(OutTrace,
-                                                          this->Trace);
-      OutTrace << '\n';
+      this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                  this->Trace);
       this->Trace->commitOneDynamicInst();
     }
     return;
@@ -625,8 +616,8 @@ void SIMDPass::processBuffer(std::ofstream &OutTrace) {
 
   // For now simply commit everything.
   while (this->Trace->DynamicInstructionList.size() > 1) {
-    this->Trace->DynamicInstructionList.front()->format(OutTrace, this->Trace);
-    OutTrace << '\n';
+    this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                this->Trace);
     this->Trace->commitOneDynamicInst();
   }
 }

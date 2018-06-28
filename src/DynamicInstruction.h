@@ -2,9 +2,11 @@
 #ifndef LLVM_TDG_DYNAMIC_INSTRUCTION_H
 #define LLVM_TDG_DYNAMIC_INSTRUCTION_H
 
+#include "TDGInstruction.pb.h"
 #include "trace/TraceParser.h"
 
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Type.h"
 
 #include <fstream>
 #include <list>
@@ -22,6 +24,8 @@ public:
                uint64_t _MemOffset = 0);
   DynamicValue(const DynamicValue &Other);
   explicit DynamicValue(DynamicValue &&Other);
+  // Serialize to bytes according to the type.
+  std::string serializeToBytes(llvm::Type *Type) const;
   std::string Value;
   // Base/Offset of memory address.
   std::string MemBase;
@@ -59,7 +63,10 @@ public:
 
   void format(std::ofstream &Out, DataGraph *Trace) const;
 
-private:
+  void serializeToProtobuf(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                           DataGraph *DG) const;
+
+protected:
   /**
    * 0 IS RESERVED FOR INVALID DYNAMIC ID.
    */
@@ -72,6 +79,10 @@ private:
 
   virtual void formatCustomizedFields(std::ofstream &Out,
                                       DataGraph *Trace) const {}
+
+  virtual void
+  serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                           DataGraph *DG) const {}
 };
 
 class LLVMDynamicInstruction : public DynamicInstruction {
@@ -97,6 +108,9 @@ public:
 
   void formatCustomizedFields(std::ofstream &Out,
                               DataGraph *Trace) const override;
+
+  void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                                DataGraph *DG) const override;
 };
 
 #endif

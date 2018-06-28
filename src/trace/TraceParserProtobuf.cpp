@@ -1,10 +1,14 @@
 #include "trace/TraceParserProtobuf.h"
 
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <iostream>
 
+#define DEBUG_TYPE "ParserProtobuf"
+
 TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName)
-    : Count(0) {
-  this->TraceFile.open(TraceFileName, std::ios::in | std::ios::binary);
+    : TraceFile(TraceFileName, std::ios::in | std::ios::binary), Count(0) {
   assert(this->TraceFile.is_open() && "Failed openning trace file.");
   this->IStream =
       new google::protobuf::io::IstreamInputStream(&this->TraceFile);
@@ -100,3 +104,5 @@ void TraceParserProtobuf::readNextEntry() {
     }
   }
 }
+
+#undef DEBUG_TYPE
