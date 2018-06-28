@@ -57,6 +57,8 @@ DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
     : Module(_Module), DataLayout(nullptr), DetailLevel(_DetailLevel),
       NumMemDependences(0), Parser(nullptr), CurrentBasicBlockName(""),
       CurrentIndex(-1) {
+
+  DEBUG(llvm::errs() << "Intializing datagraph.\n");
   assert(TraceFileName.getNumOccurrences() == 1 &&
          "Please specify the trace file.");
 
@@ -64,11 +66,14 @@ DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
       TraceFileFormat.getValue() == "gzip") {
     this->Parser = new TraceParserGZip(TraceFileName);
   } else if (TraceFileFormat.getValue() == "protobuf") {
+    DEBUG(llvm::errs() << "Creating parser.\n");
     this->Parser = new TraceParserProtobuf(TraceFileName);
+    DEBUG(llvm::errs() << "Creating parser. Done\n");
   } else {
     llvm_unreachable("Unknown trace file format.");
   }
 
+  DEBUG(llvm::errs() << "Create data layout.\n");
   this->DataLayout = new llvm::DataLayout(this->Module);
 }
 

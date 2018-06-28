@@ -91,7 +91,7 @@ public:
 
 ReplayTrace::ReplayTrace(char _ID)
     : llvm::FunctionPass(_ID), Trace(nullptr),
-      OutTraceName("llvm_trace_gem5.txt"),
+      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr),
       Transformed(false) {}
 
 ReplayTrace::~ReplayTrace() {
@@ -108,6 +108,7 @@ void ReplayTrace::getAnalysisUsage(llvm::AnalysisUsage &Info) const {
 }
 
 bool ReplayTrace::doInitialization(llvm::Module &Module) {
+  DEBUG(llvm::errs() << "ReplayTrace::doInitialization.\n");
   this->Module = &Module;
 
   // Register the external ioctl function.
@@ -117,19 +118,29 @@ bool ReplayTrace::doInitialization(llvm::Module &Module) {
 
   // If user specify the detail level, we only allow
   // it upgrades.
+
   auto DetailLevel = DataGraph::DataGraphDetailLv::STANDALONE;
   if (DataGraphDetailLevel.getNumOccurrences() == 1) {
     assert(DataGraphDetailLevel >= DataGraph::DataGraphDetailLv::STANDALONE &&
            "User specified detail level is lower than standalone.");
     DetailLevel = DataGraphDetailLevel;
   }
+
+
   this->Trace = new DataGraph(this->Module, DetailLevel);
 
-  // DEBUG(llvm::errs() << "Parsed # memory dependences: "
-  //                    << this->Trace->NumMemDependences << '\n');
+  this->Serializer = new TDGSerializer(this->OutTraceName);
 
   this->Transformed = false;
 
+  return true;
+}
+
+bool ReplayTrace::doFinalization(llvm::Module &Module) {
+  delete this->Serializer;
+  this->Serializer = nullptr;
+  delete this->Trace;
+  this->Trace = nullptr;
   return true;
 }
 
@@ -502,9 +513,6 @@ void ReplayTrace::fakeExternalCall(DataGraph::DynamicInstIter InstIter) {
 void ReplayTrace::transform() {
   assert(this->Trace != nullptr && "Must have a trace to be transformed.");
 
-  std::ofstream OutTrace(this->OutTraceName);
-  assert(OutTrace.is_open() && "Failed to open output trace file.");
-
   // Simple sliding window method.
   uint64_t Count = 0;
   bool Ended = false;
@@ -528,14 +536,11 @@ void ReplayTrace::transform() {
     const uint64_t Window = 10000;
     if (Count > Window || Ended) {
       auto Iter = this->Trace->DynamicInstructionList.begin();
-      (*Iter)->format(OutTrace, this->Trace);
-      OutTrace << '\n';
+      this->Serializer->serialize(*Iter, this->Trace);
       Count--;
       this->Trace->commitOneDynamicInst();
     }
   }
-
-  OutTrace.close();
 }
 
 // Insert all the print function declaration into the module.

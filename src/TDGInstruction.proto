@@ -15,25 +15,29 @@ message TDGInstruction {
 
   message StoreExtra {
     uint64 addr = 1;
-    string base = 2;
-    uint64 offset = 3;
-    bytes value = 4;
+    uint64 size = 2;
+    string base = 3;
+    uint64 offset = 4;
+    bytes value = 5;
   }
 
   message LoadExtra {
     uint64 addr = 1;
-    string base = 2;
-    uint64 offset = 3;
+    uint64 size = 2;
+    string base = 3;
+    uint64 offset = 4;
+    string new_base = 5;
   }
 
   message AllocExtra {
     uint64 addr = 1;
     uint64 size = 2;
+    string new_base = 3;
   }
 
   message BranchExtra {
     uint64 static_id = 1;
-    uint64 next_bb = 2;
+    string next_bb = 2;
   }
 }
 
