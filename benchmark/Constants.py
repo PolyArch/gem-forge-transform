@@ -49,7 +49,7 @@ GEM5_SE_CONFIG = os.path.join(
 Gem5 parameters.
 """
 CPU_TYPE = 'DerivO3CPU'
-ISSUE_WIDTH = 1
+ISSUE_WIDTH = 4
 STORE_QUEUE_SIZE = 32
 GEM5_L1D_SIZE = '32kB'
 GEM5_L1I_SIZE = '32kB'
