@@ -97,6 +97,7 @@ DataGraph::DynamicInstIter DataGraph::loadOneDynamicInst() {
     case TraceParser::INST: {
       DEBUG(llvm::errs() << "Parse inst.\n");
       auto Parsed = this->Parser->parseLLVMInstruction();
+      DEBUG(llvm::errs() << "Parsed inst.\n");
       if (this->parseDynamicInstruction(Parsed)) {
         // We have found something new.
         // Return a iterator to the back element.

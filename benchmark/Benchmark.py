@@ -23,13 +23,13 @@ class Benchmark(object):
         if trace_lib == 'Protobuf':
             self.trace_links = links + [C.PROTOBUF_ELLCC_LIB]
             self.trace_lib = os.path.join(
-                C.LLVM_TDG_BUILD_DIR, 'libTracerProtobuf.a'
+                C.LLVM_TDG_BUILD_DIR, 'trace/libTracerProtobuf.a'
             )
             self.trace_format = 'protobuf'
         else:
             self.trace_links = links + ['-lz']
             self.trace_lib = os.path.join(
-                C.LLVM_TDG_DIR, 'build', 'src', 'libTracerGZip.a'
+                C.LLVM_TDG_BUILD_DIR, 'trace/libTracerGZip.a'
             )
             self.trace_format = 'gzip'
 
@@ -99,7 +99,7 @@ class Benchmark(object):
             self.raw_bc,
             '-o',
             replay_bc,
-            '-debug-only=DataGraph',
+            '-debug-only=DynamicInstruction',
         ]
         print('# Processing trace...')
         Util.call_helper(opt_cmd)

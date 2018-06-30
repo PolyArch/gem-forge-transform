@@ -20,8 +20,9 @@ V. Volkov and B. Kazian. Fitting fft onto the g80 architecture. 2008.
 #define cm_fl_mul_x(a_x, b) (b*a_x)
 #define cm_fl_mul_y(a_y, b) (b*a_y)
 
+int reversed8[8] = {0,4,2,6,1,5,3,7};
+
 void twiddles8(TYPE a_x[8], TYPE a_y[8], int i, int n){
-    int reversed8[8] = {0,4,2,6,1,5,3,7};
     int j;
     TYPE phi, tmp, phi_x, phi_y;
 

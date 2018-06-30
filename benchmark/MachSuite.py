@@ -25,7 +25,7 @@ class MachSuiteBenchmarks:
         #      "knn"
         #  ],
         # "fft": [
-        #     "strided",
+        #     # "strided",
         #     "transpose"
         # ],
         #  "viterbi": [
@@ -42,13 +42,13 @@ class MachSuiteBenchmarks:
         #  "kmp": [
         #      "kmp"
         #  ],
-        # #  "backprop": [
-        # #     "backprop" # Not working.
-        # #  ],
-         "gemm": [
-             "blocked",
+        #  "backprop": [
+        #     "backprop" # Not working.
+        #  ],
+        "gemm": [
+            "blocked",
             #  "ncubed"
-         ],
+        ],
         #  "nw": [
         #      "nw"
         #  ]
@@ -63,19 +63,23 @@ class MachSuiteBenchmarks:
     INCLUDE_DIR = '../../common'
 
     CFLAGS = [
-        '-O3',
+        # Be careful, we do not support integrated mode with private global variable,
+        # as there is no symbol for these variables and we can not find them during
+        # replay.
+        '-O1',
         '-Wall',
         '-Wno-unused-label',
         '-fno-inline-functions',
         '-fno-vectorize',
-        '-fno-slp-vectorize'
+        '-fno-slp-vectorize',
+        '-fno-unroll-loops'
     ]
 
     def __init__(self, folder):
         self.folder = folder
         self.cwd = os.getcwd()
 
-        subprocess.check_call(['mkdir', '-p', 'result'])
+        Util.call_helper(['mkdir', '-p', 'result'])
 
         self.benchmarks = dict()
         for benchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS:
@@ -89,12 +93,32 @@ class MachSuiteBenchmarks:
     def baseline(self, benchmark, subbenchmark):
         path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
         os.chdir(path)
-        self.buildBaseline(benchmark, subbenchmark)
-        gem5_outdir = self.gem5Baseline(benchmark, subbenchmark)
+        baseline_binary = self.getBaselineName(benchmark, subbenchmark)
+        baseline_bc = self.getBaselineBitcodeName(benchmark, subbenchmark)
+        self.buildGem5Binary(benchmark=benchmark, cflags=MachSuiteBenchmarks.CFLAGS,
+                             output_binary=baseline_binary, output_bc=baseline_bc)
+        gem5_outdir = self.gem5Baseline(
+            benchmark, subbenchmark, baseline_binary)
         # Copy the result out.
         os.chdir(self.cwd)
-        subprocess.check_call(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
+        Util.call_helper(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
             self.cwd, 'result', self.getName(benchmark, subbenchmark) + '.baseline.txt')])
+
+    def baseline_simd(self, benchmark, subbenchmark):
+        path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
+        os.chdir(path)
+        cflags = list(MachSuiteBenchmarks.CFLAGS)
+        cflags.remove('-fno-vectorize')
+        cflags.append('-DLLVM_TDG_SIMD')
+        binary = self.getName(benchmark, subbenchmark) + '.baseline.simd'
+        bc = self.getName(benchmark, subbenchmark) + '.baseline.simd.bc'
+        self.buildGem5Binary(benchmark=benchmark, cflags=cflags,
+                             output_binary=binary, output_bc=bc)
+        gem5_outdir = self.gem5Baseline(benchmark, subbenchmark, binary)
+        # Copy the result out.
+        os.chdir(self.cwd)
+        Util.call_helper(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
+            self.cwd, 'result', self.getName(benchmark, subbenchmark) + '.baseline.simd.txt')])
 
     def trace(self, benchmark, subbenchmark):
         path = os.path.join(self.cwd, self.folder, benchmark, subbenchmark)
@@ -118,7 +142,7 @@ class MachSuiteBenchmarks:
         gem5_outdir = self.benchmarks[name].gem5_replay()
         # Copy the result out.
         os.chdir(self.cwd)
-        subprocess.check_call(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
+        Util.call_helper(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
             self.cwd, 'result', name + '.replay.txt')])
 
     def run_standalone(self, benchmark, subbenchmark):
@@ -128,11 +152,13 @@ class MachSuiteBenchmarks:
         gem5_outdir = self.benchmarks[name].gem5_replay(standalone=1)
         # Copy the result out.
         os.chdir(self.cwd)
-        subprocess.check_call(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
+        Util.call_helper(['cp', os.path.join(gem5_outdir, 'stats.txt'), os.path.join(
             self.cwd, 'result', name + '.standalone.txt')])
 
     """
     Set up the benchmark.
+    1. Build the raw bc.
+    2. Build the baseline bc for gem5.
     """
 
     def initBenchmark(self, benchmark, subbenchmark):
@@ -140,10 +166,10 @@ class MachSuiteBenchmarks:
         os.chdir(path)
         # Generate the input. Backprop doesnot require generating the input.
         if benchmark != 'backprop':
-            subprocess.check_call(['make', 'generate'])
-            subprocess.check_call(['./generate'])
+            Util.call_helper(['make', 'generate'])
+            Util.call_helper(['./generate'])
         # Build the raw bitcode.
-        self.buildRaw(benchmark, subbenchmark)
+        self.buildRawBC(benchmark, subbenchmark)
         os.chdir(self.cwd)
 
     def getName(self, benchmark, subbenchmark):
@@ -152,66 +178,112 @@ class MachSuiteBenchmarks:
     def getRawBitcodeName(self, benchmark, subbenchmark):
         return self.getName(benchmark, subbenchmark) + '.bc'
 
+    def getBaselineBitcodeName(self, benchmark, subbenchmark):
+        return self.getName(benchmark, subbenchmark) + '.baseline.bc'
+
     def getBaselineName(self, benchmark, subbenchmark):
         return self.getName(benchmark, subbenchmark) + '.baseline'
 
-    def buildRaw(self, benchmark, subbenchmark):
-        raw_bc = self.getRawBitcodeName(benchmark, subbenchmark)
-        # os.putenv('LLVM_COMPILER_PATH', os.path.join(C.ELLCC_PATH, 'bin'))
-        os.putenv('LLVM_CC_NAME', 'ecc')
-        os.putenv('LLVM_CXX_NAME', 'ecc++')
-        build_cmd = [
-            'gclang',
-            '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=MachSuiteBenchmarks.INCLUDE_DIR),
-            '-static',
-        ]
-        build_cmd += MachSuiteBenchmarks.CFLAGS
-        build_cmd += MachSuiteBenchmarks.COMMON_SOURCES
-        build_cmd.append(benchmark + '.c')
-        build_cmd.append('-lm')
-        build_cmd += ['-o', benchmark]
-        print('# Building...')
-        subprocess.check_call(build_cmd)
-        # Extract the bit code.
-        extract_cmd = [
-            'get-bc',
+    """
+    Build the bit code. This is done by first compile every source file 
+    into llvm and then link together.
+    Paramter
+    ========
+    benchmark: the name of the benchmark.
+    output_bc: the name of the output bc.
+    cflags: cflags for this build.
+
+    Returns
+    =======
+    void
+    """
+
+    def buildBC(self, benchmark, output_bc, cflags):
+
+        sources = list(MachSuiteBenchmarks.COMMON_SOURCES)
+        sources.append(benchmark + '.c')
+        bcs = list()
+        for source in sources:
+            assert(source[-2:] == '.c')
+            bc = source.replace('.c', '.bc')
+            compile_cmd = [
+                'ecc',
+                '-emit-llvm',
+                '-o',
+                bc,
+                '-c',
+                '-I{INCLUDE_DIR}'.format(
+                    INCLUDE_DIR=MachSuiteBenchmarks.INCLUDE_DIR),
+                source,
+            ]
+            compile_cmd += cflags
+            print('# buildBC: Compiling {source}...'.format(source=source))
+            # print(' '.join(compile_cmd))
+            Util.call_helper(compile_cmd)
+            bcs.append(bc)
+
+        link_cmd = [
+            'llvm-link',
             '-o',
-            raw_bc,
-            '-b',
-            benchmark,
+            output_bc,
         ]
-        print('# Extracting the bitcode...')
-        subprocess.check_call(extract_cmd)
-        print('# Naming everything in the llvm bitcode...')
-        subprocess.check_call(['opt', '-instnamer', raw_bc, '-o', raw_bc])
+        link_cmd += bcs
+        print('# buildBC: Linking...')
+        Util.call_helper(link_cmd)
+        print('# buildBC: Naming everthing...')
+        Util.call_helper(['opt', '-instnamer', output_bc, '-o', output_bc])
+        clean_cmd = ['rm'] + bcs
+        print('# buildBC: Cleaning...')
+        Util.call_helper(clean_cmd)
 
     """
-    Build the baseline binary for gem5.
-    This will define LLVM_TDG_BASELINE and enable the m5_work_begin/m5_work_end 
-    pseudo instructions.
+    Build the raw bit code.
     """
 
-    def buildBaseline(self, benchmark, subbenchmark):
-        name = self.getName(benchmark, subbenchmark)
-        baseline_bc = name + '.baseline.bc'
+    def buildRawBC(self, benchmark, subbenchmark):
+        raw_bc = self.getRawBitcodeName(benchmark, subbenchmark)
+        self.buildBC(benchmark=benchmark, output_bc=raw_bc,
+                     cflags=MachSuiteBenchmarks.CFLAGS)
+
+    """
+    Link a binary from bitcode. This binary can be run directly in gem5.
+    This will define LLVM_TDG_GEM5_BASELINE and include some m5op,
+    so that we only get statistics of ROI.
+    """
+
+    def linkGem5BinaryFromBC(self, input_bc, output_binary):
         GEM5_PSEUDO_S = os.path.join(
             C.GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
         build_cmd = [
             'ecc',
             '-static',
             '-o',
-            self.getBaselineName(benchmark, subbenchmark),
-            '-DLLVM_TDG_GEM5_BASELINE',
-            '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=MachSuiteBenchmarks.INCLUDE_DIR),
+            output_binary,
             '-I{INCLUDE_DIR}'.format(INCLUDE_DIR=C.GEM5_INCLUDE_DIR),
+            input_bc,
+            GEM5_PSEUDO_S,
+            '-lm',
         ]
-        build_cmd += MachSuiteBenchmarks.CFLAGS
-        for source in MachSuiteBenchmarks.COMMON_SOURCES:
-            build_cmd.append(source)
-        build_cmd.append(benchmark + '.c')
-        build_cmd.append(GEM5_PSEUDO_S)
-        print('# Building the baseline binary...')
-        subprocess.check_call(build_cmd)
+        print('# Building the gem5 binary...')
+        Util.call_helper(build_cmd)
+
+    """
+    Build the baseline.
+    A baseline bc is different than a raw bc because it use m5ops to 
+    communicate with gem5 so that we only collect statistics from 
+    ROI.
+    """
+
+    def buildGem5Binary(self, benchmark, cflags, output_binary, output_bc):
+        # Make a copy of the lists.
+        cflags = list(cflags)
+        cflags.append('-DLLVM_TDG_GEM5_BASELINE')
+        cflags.append('-I{INCLUDE_DIR}'.format(INCLUDE_DIR=C.GEM5_INCLUDE_DIR))
+
+        self.buildBC(benchmark=benchmark, output_bc=output_bc, cflags=cflags)
+
+        # Link the m5op into a binary.
+        self.linkGem5BinaryFromBC(output_bc, output_binary)
 
     """
     Run the baseline program.
@@ -221,15 +293,14 @@ class MachSuiteBenchmarks:
     The absolute address to the gem5 output directory.
     """
 
-    def gem5Baseline(self, benchmark, subbenchmark):
+    def gem5Baseline(self, benchmark, subbenchmark, binary):
         GEM5_OUT_DIR = '{cpu_type}.baseline'.format(cpu_type=C.CPU_TYPE)
-        subprocess.check_call(['mkdir', '-p', GEM5_OUT_DIR])
+        Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
         gem5_args = [
             C.GEM5_X86,
             '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
             C.GEM5_LLVM_TRACE_SE_CONFIG,
-            '--cmd={cmd}'.format(cmd=self.getBaselineName(benchmark,
-                                                          subbenchmark)),
+            '--cmd={cmd}'.format(cmd=binary),
             '--llvm-standalone=0',
             '--llvm-issue-width={ISSUE_WIDTH}'.format(
                 ISSUE_WIDTH=C.ISSUE_WIDTH),
@@ -246,7 +317,7 @@ class MachSuiteBenchmarks:
             '--work-end-exit-count=1',
         ]
         print('# Running the baseline...')
-        subprocess.check_call(gem5_args)
+        Util.call_helper(gem5_args)
         return os.path.join(os.getcwd(), GEM5_OUT_DIR)
 
     def draw(self, pdf_fn, baseline, test, names):
@@ -284,15 +355,18 @@ def main(folder):
     names = list()
     for benchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS:
         for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
-            # benchmarks.baseline(benchmark, subbenchmark)
+            benchmarks.baseline(benchmark, subbenchmark)
+            benchmarks.baseline_simd(benchmark, subbenchmark)
             benchmarks.trace(benchmark, subbenchmark)
-            # benchmarks.build_replay(benchmark, subbenchmark)
-            # benchmarks.run_replay(benchmark, subbenchmark)
-            # benchmarks.run_standalone(benchmark, subbenchmark)
+            benchmarks.build_replay(benchmark, subbenchmark)
+            benchmarks.run_replay(benchmark, subbenchmark)
+            benchmarks.run_standalone(benchmark, subbenchmark)
             names.append(benchmarks.getName(benchmark, subbenchmark))
 
-    benchmarks.draw('MachSuite.baseline.replay.pdf', 'baseline', 'replay', names)
-    benchmarks.draw('MachSuite.standalone.replay.pdf', 'standalone', 'replay', names)
+    # benchmarks.draw('MachSuite.baseline.replay.pdf',
+    #                 'baseline', 'replay', names)
+    # benchmarks.draw('MachSuite.standalone.replay.pdf',
+    #                 'standalone', 'replay', names)
 
 
 if __name__ == '__main__':
