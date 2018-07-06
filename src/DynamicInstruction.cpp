@@ -115,7 +115,8 @@ DynamicInstruction::DynamicId DynamicInstruction::allocateId() {
   return ++CurrentId;
 }
 
-void DynamicInstruction::format(std::ofstream &Out, DataGraph *Trace) const {
+void DynamicInstruction::format(llvm::raw_ostream &Out,
+                                DataGraph *Trace) const {
   this->formatOpCode(Out);
   Out << '|';
   // The faked number of micro ops.
@@ -126,6 +127,7 @@ void DynamicInstruction::format(std::ofstream &Out, DataGraph *Trace) const {
   Out << '|';
   // Other fields for other insts.
   this->formatCustomizedFields(Out, Trace);
+  Out << '\n';
 }
 
 void DynamicInstruction::serializeToProtobuf(
@@ -159,7 +161,7 @@ void DynamicInstruction::serializeToProtobuf(
   this->serializeToProtobufExtra(ProtobufEntry, DG);
 }
 
-void DynamicInstruction::formatDeps(std::ofstream &Out,
+void DynamicInstruction::formatDeps(llvm::raw_ostream &Out,
                                     const DependentMap &RegDeps,
                                     const DependentMap &MemDeps,
                                     const DependentMap &CtrDeps) const {
@@ -194,7 +196,7 @@ void DynamicInstruction::formatDeps(std::ofstream &Out,
   }
 }
 
-void DynamicInstruction::formatOpCode(std::ofstream &Out) const {
+void DynamicInstruction::formatOpCode(llvm::raw_ostream &Out) const {
   Out << this->getOpName();
 }
 
@@ -261,7 +263,7 @@ std::string LLVMDynamicInstruction::getOpName() const {
   return StaticInstruction->getOpcodeName();
 }
 
-void LLVMDynamicInstruction::formatCustomizedFields(std::ofstream &Out,
+void LLVMDynamicInstruction::formatCustomizedFields(llvm::raw_ostream &Out,
                                                     DataGraph *Trace) const {
   if (auto LoadStaticInstruction =
           llvm::dyn_cast<llvm::LoadInst>(this->StaticInstruction)) {
@@ -474,8 +476,8 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     AllocExtra->set_size(AllocatedSize);
     AllocExtra->set_new_base(this->DynamicResult->MemBase);
     // This load inst will produce some new base for future memory access.
-    DEBUG(llvm::errs() << "Set new base for alloc "
-                       << AllocExtra->new_base() << '\n');
+    DEBUG(llvm::errs() << "Set new base for alloc " << AllocExtra->new_base()
+                       << '\n');
     return;
   }
 

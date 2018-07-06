@@ -40,6 +40,11 @@ public:
   // A map from dynamic id to the actual insts.
   std::unordered_map<DynamicId, DynamicInstIter> AliveDynamicInstsMap;
 
+  /**
+   * These maps hols the dependence for *ALIVE* instructions.
+   * We guarantee that there is always an empty set to represent no dependence.
+   * Make sure you maintain this property.
+   */
   std::unordered_map<DynamicId, std::unordered_set<DynamicId>> RegDeps;
   std::unordered_map<DynamicId, std::unordered_set<DynamicId>> CtrDeps;
   std::unordered_map<DynamicId, std::unordered_set<DynamicId>> MemDeps;
@@ -93,6 +98,9 @@ public:
   DynamicInstIter loadOneDynamicInst();
   // Commit one inst and remove it from the alive set.
   void commitOneDynamicInst();
+
+  void updateAddrToLastMemoryAccessMap(uint64_t Addr, DynamicId Id,
+                                       bool loadOrStore);
 
 private:
   /**********************************************************************
@@ -175,6 +183,12 @@ private:
       StaticInstructionUniqueNameMap;
   const std::string &
   getUniqueNameForStaticInstruction(llvm::Instruction *StaticInst);
+
+  /**
+   * Utility function to print a static instructions.
+   */
+  void printStaticInst(llvm::raw_ostream &O,
+                       llvm::Instruction *StaticInst) const;
 };
 
 #endif

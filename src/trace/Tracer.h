@@ -10,7 +10,7 @@
 // Interface for the traced binary, so we need C ABI to avoid mangling names.
 extern "C" {
 
-extern const char* TRACE_FILE_NAME;
+const char* getTraceFileName();
 
 /************************************************************************/
 // Interface for the traced binary.

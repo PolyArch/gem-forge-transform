@@ -64,7 +64,7 @@ public:
   // Let's not worry about the align for now.
   PushInstruction(const DynamicValue &_Value) : Value(_Value) {}
   std::string getOpName() const override { return "push"; }
-  void formatCustomizedFields(std::ofstream &Out,
+  void formatCustomizedFields(llvm::raw_ostream &Out,
                               DataGraph *Trace) const override {}
   DynamicValue Value;
 };
@@ -74,7 +74,7 @@ public:
   // Let's not worry about the align for now.
   CallExternalInstruction(const std::string &_Symbol) : Symbol(_Symbol) {}
   std::string getOpName() const override { return "call-external"; }
-  void formatCustomizedFields(std::ofstream &Out,
+  void formatCustomizedFields(llvm::raw_ostream &Out,
                               DataGraph *Trace) const override {}
   std::string Symbol;
 };
@@ -84,30 +84,43 @@ public:
   // Let's not worry about the align for now.
   RetExternalInstruction(const DynamicValue &_Result) : Result(_Result) {}
   std::string getOpName() const override { return "ret-external"; }
-  void formatCustomizedFields(std::ofstream &Out,
+  void formatCustomizedFields(llvm::raw_ostream &Out,
                               DataGraph *Trace) const override {}
   DynamicValue Result;
 };
 
 ReplayTrace::ReplayTrace(char _ID)
-    : llvm::FunctionPass(_ID), Trace(nullptr),
-      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr),
-      Transformed(false) {}
+    : llvm::ModulePass(_ID), Trace(nullptr),
+      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr) {}
 
-ReplayTrace::~ReplayTrace() {
-  // Remember to release the trace.
-  if (this->Trace != nullptr) {
-    delete this->Trace;
-    this->Trace = nullptr;
-  }
-}
+ReplayTrace::~ReplayTrace() {}
 
 void ReplayTrace::getAnalysisUsage(llvm::AnalysisUsage &Info) const {
   Info.addRequired<LocateAccelerableFunctions>();
   Info.addPreserved<LocateAccelerableFunctions>();
 }
 
-bool ReplayTrace::doInitialization(llvm::Module &Module) {
+bool ReplayTrace::runOnModule(llvm::Module &Module) {
+  this->initialize(Module);
+
+  // Do the trasformation only once.
+  this->transform();
+
+  bool Modified = false;
+  if (this->Trace->DetailLevel == DataGraph::DataGraphDetailLv::INTEGRATED) {
+    for (auto FuncIter = Module.begin(), FuncEnd = Module.end();
+         FuncIter != FuncEnd; ++FuncIter) {
+      llvm::Function &Function = *FuncIter;
+      Modified |= this->processFunction(Function);
+    }
+  }
+
+  this->finalize(Module);
+
+  return Modified;
+}
+
+bool ReplayTrace::initialize(llvm::Module &Module) {
   DEBUG(llvm::errs() << "ReplayTrace::doInitialization.\n");
   this->Module = &Module;
 
@@ -126,34 +139,40 @@ bool ReplayTrace::doInitialization(llvm::Module &Module) {
     DetailLevel = DataGraphDetailLevel;
   }
 
-
+  DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
+                     << DetailLevel << ".\n");
   this->Trace = new DataGraph(this->Module, DetailLevel);
-
   this->Serializer = new TDGSerializer(this->OutTraceName);
-
-  this->Transformed = false;
 
   return true;
 }
 
-bool ReplayTrace::doFinalization(llvm::Module &Module) {
+bool ReplayTrace::finalize(llvm::Module &Module) {
+  DEBUG(llvm::errs() << "Releasing serializer at " << this->Serializer << '\n');
   delete this->Serializer;
   this->Serializer = nullptr;
+  DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
   delete this->Trace;
   this->Trace = nullptr;
   return true;
 }
 
-bool ReplayTrace::runOnFunction(llvm::Function &Function) {
-
-  // Do the trasformation only once.
-  if (!this->Transformed) {
-    this->transform();
-    this->Transformed = true;
-  }
+bool ReplayTrace::processFunction(llvm::Function &Function) {
 
   auto FunctionName = Function.getName().str();
   DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
+
+  if (Function.isIntrinsic()) {
+    return false;
+  }
+
+  if (Function.isDeclaration()) {
+    return false;
+  }
+
+  if (Function.getName() == "replay") {
+    return false;
+  }
 
   // Check if this function is accelerable.
   bool Accelerable =

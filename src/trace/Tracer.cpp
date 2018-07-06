@@ -39,7 +39,15 @@ enum TypeID {
 };
 
 // Contain some common definitions
-const char *TRACE_FILE_NAME = "llvm_trace";
+const char *DEFAULT_TRACE_FILE_NAME = "llvm_trace";
+const char *getTraceFileName() {
+  const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
+  if (traceFileName) {
+    return traceFileName;
+  } else {
+    return DEFAULT_TRACE_FILE_NAME;
+  }
+}
 
 // This flag controls if I am already inside myself.
 // This helps to solve the problem when the runtime called some function
@@ -137,8 +145,8 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     insideMyself = true;
   }
   initialize();
-  // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__, __LINE__, insideMyself, count);
-  // Update current inst.
+  // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
+  // __LINE__, insideMyself, count); Update current inst.
   currentInstOpName = OpCodeName;
   count++;
   const uint64_t PRINT_INTERVAL = 10000000;

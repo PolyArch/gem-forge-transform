@@ -14,7 +14,7 @@
 
 extern llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel;
 
-class ReplayTrace : public llvm::FunctionPass {
+class ReplayTrace : public llvm::ModulePass {
 public:
   using DynamicId = DataGraph::DynamicId;
   static char ID;
@@ -23,14 +23,14 @@ public:
 
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override;
 
-  bool doInitialization(llvm::Module &Module) override;
+  bool runOnModule(llvm::Module &Module) override;
 
-  bool runOnFunction(llvm::Function &Function) override;
-
-  bool doFinalization(llvm::Module &Module) override;
+  bool processFunction(llvm::Function &Function);
 
 protected:
+  virtual bool initialize(llvm::Module &Module);
   virtual void transform();
+  virtual bool finalize(llvm::Module &Module);
 
   DataGraph *Trace;
 
@@ -39,13 +39,6 @@ protected:
   TDGSerializer *Serializer;
 
   llvm::Module *Module;
-
-  /**
-   * The analysis can only be used in run* methods, so we will
-   * use Transformed guard and call transform in runOnFunction
-   * only once.
-   */
-  bool Transformed;
 
   llvm::Value *ReplayFunc;
   llvm::Instruction *FakeRegisterSpill;

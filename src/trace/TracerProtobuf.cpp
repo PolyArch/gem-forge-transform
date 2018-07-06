@@ -14,7 +14,7 @@ void cleanup();
 inline std::ofstream &getTraceFile() {
   static std::ofstream o;
   if (!o.is_open()) {
-    o.open(TRACE_FILE_NAME, std::ios::out | std::ios::binary);
+    o.open(getTraceFileName(), std::ios::out | std::ios::binary);
     std::atexit(cleanup);
   }
   assert(o.is_open());
