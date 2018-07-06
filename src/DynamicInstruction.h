@@ -7,6 +7,7 @@
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <fstream>
 #include <list>
@@ -61,7 +62,7 @@ public:
   // operands
   std::vector<DynamicValue *> DynamicOperands;
 
-  void format(std::ofstream &Out, DataGraph *Trace) const;
+  void format(llvm::raw_ostream &Out, DataGraph *Trace) const;
 
   void serializeToProtobuf(LLVM::TDG::TDGInstruction *ProtobufEntry,
                            DataGraph *DG) const;
@@ -72,12 +73,12 @@ protected:
    */
   static DynamicId allocateId();
 
-  void formatDeps(std::ofstream &Out, const DependentMap &RegDeps,
+  void formatDeps(llvm::raw_ostream &Out, const DependentMap &RegDeps,
                   const DependentMap &MemDeps,
                   const DependentMap &CtrDeps) const;
-  void formatOpCode(std::ofstream &Out) const;
+  void formatOpCode(llvm::raw_ostream &Out) const;
 
-  virtual void formatCustomizedFields(std::ofstream &Out,
+  virtual void formatCustomizedFields(llvm::raw_ostream &Out,
                                       DataGraph *Trace) const {}
 
   virtual void
@@ -106,7 +107,7 @@ public:
   llvm::Instruction *StaticInstruction;
   std::string OpName;
 
-  void formatCustomizedFields(std::ofstream &Out,
+  void formatCustomizedFields(llvm::raw_ostream &Out,
                               DataGraph *Trace) const override;
 
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,

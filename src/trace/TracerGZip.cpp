@@ -19,7 +19,7 @@ void cleanup() {
 #define log(...)                             \
   {                                          \
     if (p == NULL) {                         \
-      p = gzopen(TRACE_FILE_NAME, OpenMode); \
+      p = gzopen(getTraceFileName(), OpenMode); \
       atexit(&cleanup);                      \
     }                                        \
     assert(p != NULL);                       \

@@ -9,39 +9,39 @@ from Benchmark import Benchmark
 class MachSuiteBenchmarks:
 
     BENCHMARK_PARAMS = {
-        #  "bfs": [
-        #      "queue",
-        #      # "bulk" # not working
-        #  ],
-        #  "aes": [
-        #      "aes"
-        #  ],
-        #  "stencil": [
-        #      "stencil2d",
-        #      "stencil3d"
-        #  ],
-        #  "md": [
-        #      "grid",
-        #      "knn"
-        #  ],
-        # "fft": [
-        #     # "strided",
-        #     "transpose"
-        # ],
-        #  "viterbi": [
-        #      "viterbi"
-        #  ],
-        #  "sort": [
-        #      #"radix",
-        #      "merge"
-        #  ],
-        #  "spmv": [
-        #      "ellpack",
-        #      "crs"
-        #  ],
-        #  "kmp": [
-        #      "kmp"
-        #  ],
+         "bfs": [
+             "queue",
+             # "bulk" # not working
+         ],
+         "aes": [
+             "aes"
+         ],
+         "stencil": [
+             "stencil2d",
+             "stencil3d"
+         ],
+         "md": [
+             "grid",
+             "knn"
+         ],
+        "fft": [
+            "strided",
+            "transpose"
+        ],
+         "viterbi": [
+             "viterbi"
+         ],
+         "sort": [
+             #"radix",
+             "merge"
+         ],
+         "spmv": [
+             "ellpack",
+             "crs"
+         ],
+         "kmp": [
+             "kmp"
+         ],
         #  "backprop": [
         #     "backprop" # Not working.
         #  ],
@@ -49,9 +49,9 @@ class MachSuiteBenchmarks:
             "blocked",
             #  "ncubed"
         ],
-        #  "nw": [
-        #      "nw"
-        #  ]
+         "nw": [
+             "nw"
+         ]
     }
 
     COMMON_SOURCES = [
@@ -66,7 +66,7 @@ class MachSuiteBenchmarks:
         # Be careful, we do not support integrated mode with private global variable,
         # as there is no symbol for these variables and we can not find them during
         # replay.
-        '-O1',
+        '-O2',
         '-Wall',
         '-Wno-unused-label',
         '-fno-inline-functions',
@@ -356,17 +356,17 @@ def main(folder):
     for benchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS:
         for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
             benchmarks.baseline(benchmark, subbenchmark)
-            benchmarks.baseline_simd(benchmark, subbenchmark)
+            # benchmarks.baseline_simd(benchmark, subbenchmark)
             benchmarks.trace(benchmark, subbenchmark)
             benchmarks.build_replay(benchmark, subbenchmark)
             benchmarks.run_replay(benchmark, subbenchmark)
             benchmarks.run_standalone(benchmark, subbenchmark)
             names.append(benchmarks.getName(benchmark, subbenchmark))
 
-    # benchmarks.draw('MachSuite.baseline.replay.pdf',
-    #                 'baseline', 'replay', names)
-    # benchmarks.draw('MachSuite.standalone.replay.pdf',
-    #                 'standalone', 'replay', names)
+    benchmarks.draw('MachSuite.baseline.replay.pdf',
+                    'baseline', 'replay', names)
+    benchmarks.draw('MachSuite.standalone.replay.pdf',
+                    'standalone', 'replay', names)
 
 
 if __name__ == '__main__':

@@ -43,9 +43,10 @@ class Benchmark(object):
     Generate the trace.
     """
 
-    def run_trace(self):
+    def run_trace(self, trace_file='llvm_trace'):
         # Remember to set the environment for trace.
         os.putenv('LLVM_TDG_SKIP_INST', str(self.skip_inst))
+        os.putenv('LLVM_TDG_TRACE_FILE', trace_file)
         run_cmd = [
             './' + self.trace_bin,
         ]
@@ -88,18 +89,19 @@ class Benchmark(object):
     Construct the replay binary from the trace.
     """
 
-    def build_replay(self):
+    def build_replay(self, pass_name='replay', trace_file='llvm_trace', tdg_detail='integrated'):
         replay_bc = self.replay_bin + '.bc'
         opt_cmd = [
             'opt',
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
-            '-replay',
-            '-trace-file=llvm_trace',
+            '-{pass_name}'.format(pass_name=pass_name),
+            '-trace-file={trace_file}'.format(trace_file=trace_file),
             '-trace-format={format}'.format(format=self.trace_format),
+            '-datagraph-detail={detail}'.format(detail=tdg_detail),
             self.raw_bc,
             '-o',
             replay_bc,
-            '-debug-only=DynamicInstruction',
+            '-debug-only=ReplayPass',
         ]
         print('# Processing trace...')
         Util.call_helper(opt_cmd)
