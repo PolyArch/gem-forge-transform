@@ -37,6 +37,11 @@ public:
   std::list<DynamicInstruction *> DynamicInstructionList;
   using DynamicInstIter = std::list<DynamicInstruction *>::iterator;
 
+  /**
+   * Returns a pointer to the alive dynamic instruction.
+   * nullptr if not found.
+   */
+  DynamicInstruction *getAliveDynamicInst(DynamicId Id);
   // A map from dynamic id to the actual insts.
   std::unordered_map<DynamicId, DynamicInstIter> AliveDynamicInstsMap;
 
@@ -45,9 +50,11 @@ public:
    * We guarantee that there is always an empty set to represent no dependence.
    * Make sure you maintain this property.
    */
-  std::unordered_map<DynamicId, std::unordered_set<DynamicId>> RegDeps;
-  std::unordered_map<DynamicId, std::unordered_set<DynamicId>> CtrDeps;
-  std::unordered_map<DynamicId, std::unordered_set<DynamicId>> MemDeps;
+  using DependenceSet = std::unordered_set<DynamicId>;
+  using DependenceMap = std::unordered_map<DynamicId, DependenceSet>;
+  DependenceMap RegDeps;
+  DependenceMap CtrDeps;
+  DependenceMap MemDeps;
 
   /**
    * Map from llvm static instructions to the last dynamic instruction id.
@@ -80,6 +87,9 @@ public:
     std::vector<DynamicValue> CallStack;
     llvm::BasicBlock *PrevBasicBlock;
     llvm::CallInst *PrevCallInst;
+    // Store the dynamic id of the previous control instructions.
+    // Used to handle the control dependence.
+    DynamicId PrevControlInstId;
     explicit DynamicFrame(
         llvm::Function *_Function,
         std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments);
@@ -88,11 +98,17 @@ public:
     const DynamicValue &getValue(llvm::Value *Value) const;
     void insertValue(llvm::Value *Value, DynamicValue DValue);
 
+    void updatePrevControlInstId(DynamicInstruction *DInstruction);
+
     DynamicFrame(const DynamicFrame &other) = delete;
     DynamicFrame(DynamicFrame &&other) = delete;
     DynamicFrame &operator=(const DynamicFrame &other) = delete;
     DynamicFrame &operator=(DynamicFrame &&other) = delete;
   };
+
+  // Records the information of the dynamic value inter-frame.
+  // Especially used for mem/base initialization.
+  std::list<DynamicFrame> DynamicFrameStack;
 
   // Load one more inst from the trace. nullptr if eof.
   DynamicInstIter loadOneDynamicInst();
@@ -115,10 +131,6 @@ private:
    */
   bool parseDynamicInstruction(TraceParser::TracedInst &Parsed);
   void parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed);
-
-  // Records the information of the dynamic value inter-frame.
-  // Especially used for mem/base initialization.
-  std::list<DynamicFrame> DynamicFrameStack;
 
   TraceParser *Parser;
 
@@ -143,8 +155,6 @@ private:
   llvm::Instruction *getLLVMInstruction(const std::string &FunctionName,
                                         const std::string &BasicBlockName,
                                         const int Index);
-
-  DynamicInstruction *getPreviousBranchDynamicInstruction();
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.

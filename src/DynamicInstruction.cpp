@@ -15,6 +15,16 @@ DynamicValue::DynamicValue(const std::string &_Value,
 DynamicValue::DynamicValue(const DynamicValue &Other)
     : Value(Other.Value), MemBase(Other.MemBase), MemOffset(Other.MemOffset) {}
 
+DynamicValue &DynamicValue::operator=(const DynamicValue &Other) {
+  if (this == &Other) {
+    return *this;
+  }
+  this->Value = Other.Value;
+  this->MemBase = Other.MemBase;
+  this->MemOffset = Other.MemOffset;
+  return *this;
+}
+
 DynamicValue::DynamicValue(DynamicValue &&Other)
     : Value(std::move(Other.Value)), MemBase(std::move(Other.MemBase)),
       MemOffset(Other.MemOffset) {}
@@ -390,7 +400,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
         LoadStaticInstruction->getPointerOperandType()
             ->getPointerElementType());
     auto LoadExtra = ProtobufEntry->mutable_load();
-    LoadExtra->set_addr(std::stoul(LoadedAddr->Value));
+    LoadExtra->set_addr(std::stoul(LoadedAddr->Value, nullptr, 16));
     LoadExtra->set_size(LoadedSize);
     LoadExtra->set_base(LoadedAddr->MemBase);
     LoadExtra->set_offset(LoadedAddr->MemOffset);
@@ -411,7 +421,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
                                  ->getPointerElementType();
     uint64_t StoredSize = DG->DataLayout->getTypeStoreSize(StoredType);
     auto StoreExtra = ProtobufEntry->mutable_store();
-    StoreExtra->set_addr(std::stoul(StoredAddr->Value));
+    StoreExtra->set_addr(std::stoul(StoredAddr->Value, nullptr, 16));
     StoreExtra->set_size(StoredSize);
     StoreExtra->set_value(
         this->DynamicOperands[0]->serializeToBytes(StoredType));
@@ -453,7 +463,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
           DynamicValue *StoredAddr = this->DynamicOperands[0];
           uint64_t StoredSize = std::stoul(this->DynamicOperands[2]->Value);
           auto StoreExtra = ProtobufEntry->mutable_store();
-          StoreExtra->set_addr(std::stoul(StoredAddr->Value));
+          StoreExtra->set_addr(std::stoul(StoredAddr->Value, nullptr, 16));
           StoreExtra->set_size(StoredSize);
           StoreExtra->set_value(this->DynamicOperands[1]->serializeToBytes(
               CallStaticInstruction->getFunctionType()->getParamType(1)));
@@ -472,7 +482,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     uint64_t AllocatedSize = DG->DataLayout->getTypeStoreSize(
         AllocaStaticInstruction->getAllocatedType());
     auto AllocExtra = ProtobufEntry->mutable_alloc();
-    AllocExtra->set_addr(std::stoul(this->DynamicResult->Value));
+    AllocExtra->set_addr(std::stoul(this->DynamicResult->Value, nullptr, 16));
     AllocExtra->set_size(AllocatedSize);
     AllocExtra->set_new_base(this->DynamicResult->MemBase);
     // This load inst will produce some new base for future memory access.

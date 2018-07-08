@@ -29,8 +29,10 @@ LLVM Compiler run time path.
 Provide the compiler run time library.
 """
 LLVM_BUILD_PATH = '/home/zhengrong/Documents/llvm-6.0/llvm/build'
-LLVM_COMPILER_RT_PATH = os.path.join(LLVM_BUILD_PATH, 'lib/clang/6.0.0/lib/linux')
-LLVM_COMPILER_RT_BUILTIN_LIB = os.path.join(LLVM_COMPILER_RT_PATH, 'libclang_rt.builtins-x86_64.a')
+LLVM_COMPILER_RT_PATH = os.path.join(
+    LLVM_BUILD_PATH, 'lib/clang/6.0.0/lib/linux')
+LLVM_COMPILER_RT_BUILTIN_LIB = os.path.join(
+    LLVM_COMPILER_RT_PATH, 'libclang_rt.builtins-x86_64.a')
 LLVM_UNWIND_STATIC_LIB = os.path.join(LLVM_BUILD_PATH, 'lib/libunwind.a')
 
 """
@@ -43,6 +45,7 @@ GEM5_LLVM_TRACE_SE_CONFIG = os.path.join(
     GEM5_DIR, 'configs/example/llvm_trace_replay.py')
 GEM5_SE_CONFIG = os.path.join(
     GEM5_DIR, 'configs/example/se.py')
+GEM5_M5OPS_X86 = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
 
 
 """
