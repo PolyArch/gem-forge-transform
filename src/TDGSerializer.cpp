@@ -2,6 +2,12 @@
 
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/text_format.h>
+
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
+
+#define DEBUG_TYPE "TDGSerializer"
 
 TDGSerializer::TDGSerializer(const std::string &FileName)
     : OutFileStream(FileName, std::ios::out | std::ios::binary),
@@ -43,10 +49,34 @@ void TDGSerializer::serialize(DynamicInstruction *DynamicInst, DataGraph *DG) {
 void TDGSerializer::write() {
   assert(this->TDG.instructions_size() > 0 &&
          "Nothing to write for TDG serializer.");
-  this->SerializedInsts += this->TDG.instructions_size();
   // Create the coded stream every time due to its size limit.
   google::protobuf::io::CodedOutputStream CodedStream(this->OutZeroCopyStream);
   CodedStream.WriteVarint32(this->TDG.ByteSize());
   this->TDG.SerializeWithCachedSizes(&CodedStream);
+
+  // Hacky to dump some serialized instructions for debug.
+  const uint64_t DUMP_START = 1000;
+  const uint64_t DUMP_END = 1100;
+  if (this->SerializedInsts < DUMP_END ||
+      this->SerializedInsts + this->TDG.instructions_size() >= DUMP_START) {
+    for (uint64_t DUMPED = 0; DUMPED < this->TDG.instructions_size();
+         ++DUMPED) {
+      auto Id = DUMPED + this->SerializedInsts;
+      if (Id < DUMP_START) {
+        continue;
+      }
+      if (Id >= DUMP_END) {
+        break;
+      }
+      std::string OutString;
+      DEBUG(google::protobuf::TextFormat::PrintToString(
+          this->TDG.instructions(DUMPED), &OutString));
+      DEBUG(llvm::errs() << OutString << '\n');
+    }
+  }
+
+  this->SerializedInsts += this->TDG.instructions_size();
   this->TDG.clear_instructions();
 }
+
+#undef DEBUG_TYPE

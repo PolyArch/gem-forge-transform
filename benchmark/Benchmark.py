@@ -20,6 +20,7 @@ class Benchmark(object):
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
 
         self.trace_bin = name + '.traced'
+        self.trace_bc = self.trace_bin + '.bc'
         if trace_lib == 'Protobuf':
             self.trace_links = links + [C.PROTOBUF_ELLCC_LIB]
             self.trace_lib = os.path.join(
@@ -38,6 +39,18 @@ class Benchmark(object):
         self.replay_c = os.path.join(
             C.LLVM_TDG_DIR, 'benchmark', 'replay.c')
         self.replay_bin = name + '.replay'
+        self.replay_bc = self.replay_bin + '.bc'
+
+    def clean(self):
+        clean_cmd = [
+            'rm',
+            '-f',
+            self.trace_bin,
+            self.trace_bc,
+            self.replay_bin,
+            self.replay_bc,
+        ]
+        Util.call_helper(clean_cmd)
 
     """
     Generate the trace.
@@ -60,14 +73,13 @@ class Benchmark(object):
     """
 
     def build_trace(self):
-        trace_bc = self.trace_bin + '.bc'
         trace_cmd = [
             'opt',
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-trace-pass',
             self.raw_bc,
             '-o',
-            trace_bc,
+            self.trace_bc,
         ]
         if self.trace_func is not None:
             trace_cmd.append('-trace-function=' + self.trace_func)
@@ -76,7 +88,7 @@ class Benchmark(object):
         link_cmd = [
             'ecc++',
             '-O0',
-            trace_bc,
+            self.trace_bc,
             self.trace_lib,
             '-o',
             self.trace_bin,
@@ -89,8 +101,7 @@ class Benchmark(object):
     Construct the replay binary from the trace.
     """
 
-    def build_replay(self, pass_name='replay', trace_file='llvm_trace', tdg_detail='integrated'):
-        replay_bc = self.replay_bin + '.bc'
+    def build_replay(self, pass_name='replay', trace_file='llvm_trace', tdg_detail='integrated', debugs=[]):
         opt_cmd = [
             'opt',
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
@@ -100,9 +111,11 @@ class Benchmark(object):
             '-datagraph-detail={detail}'.format(detail=tdg_detail),
             self.raw_bc,
             '-o',
-            replay_bc,
-            '-debug-only=ReplayPass',
+            self.replay_bc,
         ]
+        if debugs:
+            opt_cmd.append(
+                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
         print('# Processing trace...')
         Util.call_helper(opt_cmd)
         build_cmd = [
@@ -113,7 +126,7 @@ class Benchmark(object):
             '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
             self.gem5_pseudo,
             self.replay_c,
-            replay_bc,
+            self.replay_bc,
         ]
         build_cmd += self.links
         print('# Building replay binary...')

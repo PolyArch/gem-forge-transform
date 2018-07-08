@@ -19,7 +19,8 @@ DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function *_Function,
     std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments)
     : Function(_Function), RunTimeEnv(std::move(_Arguments)),
-      PrevBasicBlock(nullptr), PrevCallInst(nullptr) {}
+      PrevBasicBlock(nullptr), PrevCallInst(nullptr),
+      PrevControlInstId(DynamicInstruction::InvalidId) {}
 
 DataGraph::DynamicFrame::~DynamicFrame() {
   // Nothing to release.
@@ -51,6 +52,21 @@ void DataGraph::DynamicFrame::insertValue(llvm::Value *Value,
   }
   assert(this->getValue(Value).MemOffset == DValue.MemOffset &&
          "Invalid memory offset in run time env.");
+}
+
+void DataGraph::DynamicFrame::updatePrevControlInstId(
+    DynamicInstruction *DInstruction) {
+  switch (DInstruction->getStaticInstruction()->getOpcode()) {
+  case llvm::Instruction::Switch:
+  case llvm::Instruction::Br:
+  case llvm::Instruction::Ret:
+  case llvm::Instruction::Call: {
+    this->PrevControlInstId = DInstruction->Id;
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
@@ -224,6 +240,7 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
   /***************************************************************************
    * Maintain the run time environment.
    * Insert the instruction into the list.
+   * Update the PrevControlInstId.
    * Update the PrevBasicBlock.
    * If this is a ret, pop the frame stack
    *   -- Further more, if there is a call instruction above, update its base
@@ -252,6 +269,9 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
       }
     }
   }
+
+  // Update the PrevControlInstId.
+  this->DynamicFrameStack.front().updatePrevControlInstId(DynamicInst);
 
   // Update the previous block.
   this->DynamicFrameStack.front().PrevBasicBlock =
@@ -891,28 +911,18 @@ void DataGraph::handleControlDependence(DynamicInstruction *DynamicInst) {
                             std::forward_as_tuple(DynamicInst->Id),
                             std::forward_as_tuple())
                    .first->second;
-  auto DepInst = this->getPreviousBranchDynamicInstruction();
-  if (DepInst != nullptr) {
-    // DEBUG(llvm::errs() << "Get control dependence!\n");
-    Deps.insert(DepInst->Id);
+  if (this->DynamicFrameStack.front().PrevControlInstId !=
+      DynamicInstruction::InvalidId) {
+    Deps.insert(this->DynamicFrameStack.front().PrevControlInstId);
   }
 }
 
-DynamicInstruction *DataGraph::getPreviousBranchDynamicInstruction() {
-  for (auto InstIter = this->DynamicInstructionList.rbegin(),
-            InstEnd = this->DynamicInstructionList.rend();
-       InstIter != InstEnd; ++InstIter) {
-    DynamicInstruction *DInstruction = *InstIter;
-    switch (DInstruction->getStaticInstruction()->getOpcode()) {
-    case llvm::Instruction::Br:
-    case llvm::Instruction::Ret:
-    case llvm::Instruction::Call:
-      return DInstruction;
-    default:
-      break;
-    }
+DynamicInstruction *DataGraph::getAliveDynamicInst(DynamicId Id) {
+  auto AliveMapIter = this->AliveDynamicInstsMap.find(Id);
+  if (AliveMapIter == this->AliveDynamicInstsMap.end()) {
+    return nullptr;
   }
-  return nullptr;
+  return *(AliveMapIter->second);
 }
 
 void DataGraph::printStaticInst(llvm::raw_ostream &O,

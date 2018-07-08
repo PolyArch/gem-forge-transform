@@ -69,6 +69,12 @@ public:
    */
   std::list<llvm::BasicBlock *> BBList;
 
+  /**
+   * Store the order of memory access instructions in this loop.
+   * This is used to implement relaxed memory dependence constraints.
+   */
+  std::unordered_map<llvm::Instruction*, uint32_t> LoadStoreOrderMap;
+
   std::string print() const {
     return std::string(this->getHeader()->getParent()->getName()) +
            "::" + std::string(this->getHeader()->getName());
@@ -99,7 +105,8 @@ public:
       StaticInnerMostLoop *_StaticLoop, uint8_t _LoopIter,
       const std::unordered_map<llvm::BasicBlock *, StaticInnerMostLoop *>
           &_BBToStaticLoopMap,
-      DataGraph::DynamicInstIter _Begin, DataGraph::DynamicInstIter _End);
+      DataGraph *_DG, DataGraph::DynamicInstIter _Begin,
+      DataGraph::DynamicInstIter _End);
   DynamicInnerMostLoop(const DynamicInnerMostLoop &Other) = delete;
   DynamicInnerMostLoop(DynamicInnerMostLoop &&Other) = delete;
   DynamicInnerMostLoop &operator=(const DynamicInnerMostLoop &Other) = delete;
@@ -128,6 +135,14 @@ public:
       StaticToDynamicMap;
 
   /**
+   * Data structure holding the computed stride for load/store.
+   * If there is no constant stride, or this is a conditional load/store,
+   * use INT64_MAX as an invalid value.
+   * NOTICE: Only query this loop when you are sure it is a load/store.
+   */
+  std::unordered_map<llvm::Instruction *, int64_t> StaticToStrideMap;
+
+  /**
    * When we creating new vectorize instructions, we have to record the
    * map from static instructions to newly created dynamic ones.
    */
@@ -144,13 +159,23 @@ private:
    */
   const std::unordered_map<llvm::BasicBlock *, StaticInnerMostLoop *>
       &BBToStaticLoopMap;
+
+  /**
+   * Pointer to the datagraph.
+   */
+  DataGraph *DG;
+
+  /**
+   * Compute and fill in the StaticToStrideMap.
+   */
+  void computeStride(llvm::Instruction *StaticInst);
 };
 
 class SIMDPass : public ReplayTrace {
 public:
   static char ID;
   SIMDPass()
-      : ReplayTrace(ID), State(SEARCHING), VectorizeWidth(2),
+      : ReplayTrace(ID), State(SEARCHING), VectorizeWidth(4),
         VectorizeEfficiencyThreshold(0.8f) {
     if (::VectorizeWidth.getNumOccurrences() > 0) {
       this->VectorizeWidth = ::VectorizeWidth.getValue();
@@ -282,6 +307,35 @@ protected:
    * 3. No inter-iter data dependency.
    */
   bool isLoopDynamicVectorizable(DynamicInnerMostLoop &DynamicLoop);
+
+  /**
+   * Helper function to get the load/store type size.
+   */
+  uint64_t getTypeSizeForLoadStore(llvm::Instruction* StaticInst) const;
+
+  /**
+   * Helper function to transfer outside iteration dependence from OldDeps to NewDeps.
+   */
+  void transferOutsideDeps(
+    DynamicInnerMostLoop& DynamicLoop,
+    DataGraph::DependenceSet& NewDeps, 
+    const DataGraph::DependenceSet& OldDeps) const;
+
+  /**
+   * Helper function to transfer inside memory dependence.
+   */
+  void transferInsideMemDeps(
+    DynamicInnerMostLoop& DynamicLoop,
+    DataGraph::DependenceSet& NewMemDeps, 
+    const DataGraph::DependenceSet& OldMemDeps) const;
+
+  /**
+   * Helper function to transfer inside register dependence.
+   */
+  void transferInsideRegDeps(
+    DynamicInnerMostLoop& DynamicLoop,
+    DataGraph::DependenceSet& NewRegDeps, 
+    llvm::Instruction* NewStaticInst) const;
 
   /**
    * Handle scatter (incontinuous) load instruction.
@@ -597,13 +651,15 @@ bool SIMDPass::isLoopInterIterMemDependent(DynamicInnerMostLoop &DynamicLoop) {
         }
         for (auto MemDepId : MemDepsIter->second) {
           /**
-           * Two cases:
+           * Three cases:
            * 1. If the dependent dynamic id is not alive, then it falls out of
            *    the current vectorization width, ignore it. This is very
            *    optimistic.
            * 2. If the dependent dynamic id is alive, check which iteration
            *    it is. If the same iteration, ignore it. Otherwise, this is
-           *    an iter-iter memory dependence and we have to bail out.
+           *    an inter-iter memory dependence.
+           * 3. Even for inter-iter memory dependence, we also check the memory 
+           *    access order for a relaxed constraint.
            */
           auto AliveDynamicInstsMapIter =
               this->Trace->AliveDynamicInstsMap.find(MemDepId);
@@ -633,6 +689,13 @@ bool SIMDPass::isLoopInterIterMemDependent(DynamicInnerMostLoop &DynamicLoop) {
 
           // This is a memory dependence for previous iterations within the
           // vectorization width.
+          // Check the memory access order.
+          auto ThisMemAccessOrder = DynamicLoop.StaticLoop->LoadStoreOrderMap.at(StaticInst);
+          auto DepMemAccessOrder = DynamicLoop.StaticLoop->LoadStoreOrderMap.at(MemDepStaticInst);
+          if (ThisMemAccessOrder > DepMemAccessOrder) {
+            // The order is fine.
+            continue;
+          }
 
           DEBUG(llvm::errs() << "Iter mem dependence for iter " << CurrentIter
                              << " inst " << StaticInst->getName() << '\n');
@@ -684,32 +747,7 @@ bool SIMDPass::isLoopInterIterDataDependent(DynamicInnerMostLoop &DynamicLoop) {
 
       // Case 2. Check the dynamic stride.
       {
-        auto &DynamicIds = DynamicLoop.StaticToDynamicMap.at(StaticInst);
-        // Use INT64_MAX as an invalid value.
-        int64_t Stride = INT64_MAX;
-        for (size_t Iter = 1; Iter < DynamicIds.size(); ++Iter) {
-          auto ThisIterDynamicId = DynamicIds[Iter];
-          auto PrevIterDynamicId = DynamicIds[Iter - 1];
-          int64_t NewStride = INT64_MAX;
-          // If both are valid ids, we compute the new stride.
-          if ((ThisIterDynamicId != DynamicInstruction::InvalidId) &&
-              (PrevIterDynamicId != DynamicInstruction::InvalidId)) {
-            DynamicInstruction *ThisIterDynamicInst =
-                *(this->Trace->AliveDynamicInstsMap.at(ThisIterDynamicId));
-            DynamicInstruction *PrevIterDynamicInst =
-                *(this->Trace->AliveDynamicInstsMap.at(PrevIterDynamicId));
-            uint64_t ThisIterDynamicAddr = std::stoul(
-                ThisIterDynamicInst->DynamicOperands[AddrOperandIdx]->Value);
-            uint64_t PrevIterDynamicAddr = std::stoul(
-                PrevIterDynamicInst->DynamicOperands[AddrOperandIdx]->Value);
-            NewStride = ThisIterDynamicAddr - PrevIterDynamicAddr;
-          }
-          if (NewStride != Stride) {
-            // Failed computing stride. Reset Stride and break.
-            Stride = INT64_MAX;
-            break;
-          }
-        }
+        int64_t Stride = DynamicLoop.StaticToStrideMap.at(StaticInst);
         // Check if we have found a valid stride.
         if (Stride != INT64_MAX) {
           continue;
@@ -780,8 +818,26 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         continue;
       }
 
-      // For now, simply all the basic case.
-      this->createDynamicInsts(StaticInst, DynamicLoop);
+      // Check for scattered load/store.
+      bool IsScatteredMemoryAccess = false;
+      if (llvm::isa<llvm::LoadInst>(StaticInst) || llvm::isa<llvm::StoreInst>(StaticInst)) {
+        auto TypeSize = this->getTypeSizeForLoadStore(StaticInst);
+        auto Stride = DynamicLoop.StaticToStrideMap.at(StaticInst);
+        if (std::abs(Stride) > TypeSize) {
+          IsScatteredMemoryAccess = true;
+        }
+      }
+
+      if (IsScatteredMemoryAccess) {
+        if (auto StaticLoad = llvm::dyn_cast<llvm::LoadInst>(StaticInst)) {
+          this->createDynamicInstsForScatterLoad(StaticLoad, DynamicLoop); 
+        } else {
+          assert(false && "Can not handle scattered store for now.");
+        }
+      } else {
+        // Basic case.
+        this->createDynamicInsts(StaticInst, DynamicLoop);
+      }
     }
   }
 
@@ -851,6 +907,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
    * 1. Insert into the dynamic instruction list.
    * 2. Insert into the alive map.
    * 3. Update the StaticToLastDynamicMap.
+   * 4. Update the DynamicFrame::PrevControlInstId.
    */
   auto InsertionPoint = this->Trace->DynamicInstructionList.end();
   --InsertionPoint;
@@ -862,6 +919,8 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
     this->Trace
         ->StaticToLastDynamicMap[NewDynamicInst->getStaticInstruction()] =
         NewDynamicInst->Id;
+    this->Trace->DynamicFrameStack.front().updatePrevControlInstId(
+        NewDynamicInst);
   }
 
   DEBUG(DynamicLoop.print(llvm::errs()));
@@ -928,20 +987,207 @@ public:
     assert(ProtobufEntry->has_load() && "LoadExtra not set.");
     // Set the actual load size.
     auto LoadExtra = ProtobufEntry->mutable_load();
+    DEBUG(llvm::errs() << "Load addr " << LoadExtra->addr() << '\n');
     LoadExtra->set_size(this->VecSize * LoadExtra->size());
   }
 
   const size_t VecSize;
 };
 
+/**
+ * Although this is really not an llvm instructions, we store the actual llvm
+ * instruction it packs, to not break down the code when we insert it into the
+ * datagraph. This should be handled more gracefully.
+ */
+class SIMDPackInst : public DynamicInstruction {
+public:
+  SIMDPackInst(llvm::Instruction* _StaticInst) : StaticInst(_StaticInst) {}
+  std::string getOpName() const override {
+    return "pack";
+  }
+  llvm::Instruction* getStaticInstruction() override {
+    return this->StaticInst;
+  }
+  llvm::Instruction* StaticInst;
+  // No customized fields for pack.
+};
+
+uint64_t SIMDPass::getTypeSizeForLoadStore(llvm::Instruction* StaticInst) const {
+
+  assert((llvm::isa<llvm::LoadInst>(StaticInst) || llvm::isa<llvm::StoreInst>(StaticInst)) 
+    && "getTypeSizeForLoadStore can not handle non-memory access instruction.");
+
+  unsigned PointerOperandIdx = 0;
+  if (llvm::isa<llvm::StoreInst>(StaticInst)) {
+    PointerOperandIdx = 1;
+  }
+
+  llvm::Type* Type = StaticInst->getOperand(PointerOperandIdx)
+    ->getType()->getPointerElementType();
+  return this->Trace->DataLayout->getTypeStoreSize(Type);
+}
+
+void SIMDPass::transferOutsideDeps(DynamicInnerMostLoop& DynamicLoop, 
+  DataGraph::DependenceSet& NewDeps, 
+  const DataGraph::DependenceSet& OldDeps) const {
+  for (auto DepId : OldDeps) {
+    // If the dependent id is not alive, it is from outside the loop.
+    // We should probabily handle this more elegantly.
+    if (this->Trace->getAliveDynamicInst(DepId) == nullptr) {
+      // Outside dependence, transfer directly.
+      NewDeps.insert(DepId);
+    }
+  }
+}
+
+void SIMDPass::transferInsideMemDeps(DynamicInnerMostLoop& DynamicLoop, 
+  DataGraph::DependenceSet& NewMemDeps, 
+  const DataGraph::DependenceSet& OldMemDeps) const {
+  for (auto MemDepId : OldMemDeps) {
+    auto MemDepDynamicInst = 
+      this->Trace->getAliveDynamicInst(MemDepId);
+    if (MemDepDynamicInst == nullptr) {
+      // Outside memory dependence, ignore it.
+      continue;
+    }
+    auto MemDepStaticInst = MemDepDynamicInst->getStaticInstruction();
+    auto NewMemDepDynamicInstIter =
+        DynamicLoop.StaticToNewDynamicMap.find(MemDepStaticInst);
+    assert(NewMemDepDynamicInstIter !=
+                DynamicLoop.StaticToNewDynamicMap.end() &&
+            "Missing new dynamic simd instruction for memory dependence.");
+    NewMemDeps.insert(NewMemDepDynamicInstIter->second);
+  }
+}
+
+void SIMDPass::transferInsideRegDeps(DynamicInnerMostLoop& DynamicLoop, 
+  DataGraph::DependenceSet& NewRegDeps, llvm::Instruction* NewStaticInst) const {
+  for (unsigned OperandId = 0, NumOperands = NewStaticInst->getNumOperands();
+       OperandId != NumOperands; ++OperandId) {
+    auto Operand = NewStaticInst->getOperand(OperandId);
+    if (auto OpInst = llvm::dyn_cast<llvm::Instruction>(Operand)) {
+      // There is register dependence.
+      if (!DynamicLoop.contains(OpInst->getParent())) {
+        // Outside loop register dependence.
+        continue;
+      }
+      auto NewOpDynamicInstIter =
+          DynamicLoop.StaticToNewDynamicMap.find(OpInst);
+      if (NewOpDynamicInstIter != DynamicLoop.StaticToNewDynamicMap.end()) {
+        NewRegDeps.insert(NewOpDynamicInstIter->second);
+      } else {
+        // Otherwise, it should be dependent on some un transformed phi node,
+        // which means it is actually an induction variable and should be
+        // actually outside dependence. Here I just check it's a phi node.
+        assert(llvm::isa<llvm::PHINode>(OpInst) &&
+               "Missing new simd instrunction for non-phi node.");
+      }
+    }
+  }
+}
+
 size_t
 SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
                                            DynamicInnerMostLoop &DynamicLoop) {
-  return 0;
+  const auto& DynamicIds = DynamicLoop.StaticToDynamicMap.at(StaticLoad);
+  std::vector<DynamicInstruction::DynamicId> NewDynamicIds;
+
+  size_t CreatedInstCount = 0;
+  // Scalarize the instruction.
+  for (auto DynamicId : DynamicIds) {
+    assert(DynamicId != LLVMDynamicInstruction::InvalidId && "Conditional memory access found.");
+    auto DynamicInst = this->Trace->getAliveDynamicInst(DynamicId);
+    // Copy all the operands and result.
+    std::vector<DynamicValue*> NewDynamicOperands;
+    for (auto DynamicOperand : DynamicInst->DynamicOperands) {
+      NewDynamicOperands.push_back(new DynamicValue(*DynamicOperand));
+    }
+    DynamicValue* NewDynamicResult = nullptr;
+    if (DynamicInst->DynamicResult != nullptr) {
+      NewDynamicResult = new DynamicValue(*(DynamicInst->DynamicResult));
+    }
+    auto NewDynamicInst = new LLVMDynamicInstruction(
+      StaticLoad,
+      NewDynamicResult,
+      std::move(NewDynamicOperands)
+    );
+
+    // Remember to fix the AddrToLastMemoryAccess map in datagraph.
+    auto Addr = DynamicInst->DynamicOperands[0]->getAddr();
+    uint64_t LoadedTypeSizeInByte = this->getTypeSizeForLoadStore(StaticLoad);
+    for (size_t I = 0; I < LoadedTypeSizeInByte; ++I) {
+      this->Trace->updateAddrToLastMemoryAccessMap(Addr + I, NewDynamicInst->Id,
+                                                   true /* true for load*/);
+    }
+
+    // Fix the dependence.
+    auto &NewRegDeps = this->Trace->RegDeps
+                          .emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple())
+                          .first->second;
+    auto &NewMemDeps = this->Trace->MemDeps
+                          .emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple())
+                          .first->second;
+    auto &NewCtrDeps = this->Trace->CtrDeps
+                          .emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple())
+                          .first->second;
+    this->transferOutsideDeps(DynamicLoop, NewRegDeps, this->Trace->RegDeps.at(DynamicId));
+    this->transferOutsideDeps(DynamicLoop, NewMemDeps, this->Trace->MemDeps.at(DynamicId));
+    // For outside control dependence, only the first iteration has the currect control dependence.
+    this->transferOutsideDeps(DynamicLoop, NewCtrDeps, this->Trace->CtrDeps.at(DynamicIds[0]));
+
+    this->transferInsideMemDeps(DynamicLoop, NewMemDeps, this->Trace->MemDeps.at(DynamicId));
+    this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticLoad);
+
+    NewDynamicIds.push_back(NewDynamicInst->Id);
+    DynamicLoop.NewDynamicInstList.push_back(NewDynamicInst);
+    ++CreatedInstCount;
+  }
+
+  // Create a fake pack instruction for these loads.
+  // NOTE: although there is no memory dependence for pack, we have to create the set to
+  // maintain the property that no dependence <-> empty set.
+  auto NewDynamicPackInst = new SIMDPackInst(StaticLoad);
+  auto &NewPackRegDeps = this->Trace->RegDeps
+                        .emplace(std::piecewise_construct,
+                                  std::forward_as_tuple(NewDynamicPackInst->Id),
+                                  std::forward_as_tuple())
+                        .first->second;
+  auto &NewPackMemDeps = this->Trace->MemDeps
+                        .emplace(std::piecewise_construct,
+                                  std::forward_as_tuple(NewDynamicPackInst->Id),
+                                  std::forward_as_tuple())
+                        .first->second;
+  auto &NewPackCtrDeps = this->Trace->CtrDeps
+                        .emplace(std::piecewise_construct,
+                                  std::forward_as_tuple(NewDynamicPackInst->Id),
+                                  std::forward_as_tuple())
+                        .first->second;
+  for (auto NewDynamicId : NewDynamicIds) {
+    // Make this pack dependent on all the loads.
+    NewPackRegDeps.insert(NewDynamicId);
+    // Copy all the loads control dependence to the pack.
+    auto& NewLoadCtrDeps = this->Trace->CtrDeps.at(NewDynamicId);
+    NewPackCtrDeps.insert(NewLoadCtrDeps.begin(), NewLoadCtrDeps.end());
+  }
+
+  // Make the static instruction map to the pack instruction, so that all the user of
+  // this load will dependent on this pack.
+  DynamicLoop.StaticToNewDynamicMap.emplace(StaticLoad, NewDynamicPackInst->Id);
+  DynamicLoop.NewDynamicInstList.push_back(NewDynamicPackInst);
+  ++CreatedInstCount;
+
+  return CreatedInstCount;
 }
 size_t
 SIMDPass::createDynamicInstsForScatterStore(llvm::LoadInst *StaticStore,
                                             DynamicInnerMostLoop &DynamicLoop) {
+  assert(false && "Scattered store is not supported yet.");
   return 0;
 }
 
@@ -968,47 +1214,85 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
 
   DynamicInstruction *NewDynamicInst = nullptr;
 
+  /**
+   * Helper function to choose the base for continuous load/store.
+   * If increasing, take the first one, otherwise the last one.
+   */
+  auto PickBaseForLoadStore =
+      [this,
+       &DynamicLoop](llvm::Instruction *StaticInst) -> DynamicInstruction * {
+    assert((llvm::isa<llvm::LoadInst>(StaticInst) ||
+            llvm::isa<llvm::StoreInst>(StaticInst)) &&
+           "Trying to compute simd addr for non load/store instruction.");
+
+    auto StrideMapIter = DynamicLoop.StaticToStrideMap.find(StaticInst);
+    assert(StrideMapIter != DynamicLoop.StaticToStrideMap.end() &&
+           "Missing stride in the map.");
+    auto Stride = StrideMapIter->second;
+    auto PickedId = DynamicInstruction::InvalidId;
+    if (Stride > 0) {
+      // Increasing address. Pick the first one.
+      PickedId = DynamicLoop.StaticToDynamicMap.at(StaticInst).front();
+    } else {
+      // Decreasing address. Pick the last one.
+      PickedId = DynamicLoop.StaticToDynamicMap.at(StaticInst).back();
+    }
+    DynamicInstruction *PickedInst = this->Trace->getAliveDynamicInst(PickedId);
+    return PickedInst;
+  };
+
   // Create the new dynamic instruction.
   // For load and store, we will update the AddrToLastLoad/StoreMap
   if (auto StaticLoad = llvm::dyn_cast<llvm::LoadInst>(StaticInst)) {
     // Continuous load.
+    auto PickedInst = PickBaseForLoadStore(StaticInst);
+    // Copy the new addr.
+    *DynamicOperands[0] = *PickedInst->DynamicOperands[0];
+
     NewDynamicInst =
         new SIMDLoadInst(StaticInst, DynamicResult, std::move(DynamicOperands),
                          DynamicLoop.LoopIter);
-    size_t Addr =
-        std::stoul(NewDynamicInst->DynamicOperands[0]->Value, nullptr, 16);
-    llvm::Type *LoadedType =
-        StaticLoad->getPointerOperandType()->getPointerElementType();
-    uint64_t LoadedTypeSizeInByte =
-        this->Trace->DataLayout->getTypeStoreSize(LoadedType);
+    size_t Addr = NewDynamicInst->DynamicOperands[0]->getAddr();
+    uint64_t LoadedTypeSizeInByte = this->getTypeSizeForLoadStore(StaticLoad);
     for (size_t I = 0; I < DynamicLoop.LoopIter * LoadedTypeSizeInByte; ++I) {
       this->Trace->updateAddrToLastMemoryAccessMap(Addr + I, NewDynamicInst->Id,
                                                    true /* true for load*/);
     }
-
   } else if (auto StaticStore = llvm::dyn_cast<llvm::StoreInst>(StaticInst)) {
     // Continuous store, simply use the first store's address.
+    // Copy the new addr.
+    auto PickedInst = PickBaseForLoadStore(StaticInst);
+    // Copy the new addr.
+    *DynamicOperands[1] = *PickedInst->DynamicOperands[1];
+
     // Pack the store data.
     std::string StoredData;
     auto Type = StaticStore->getPointerOperandType()->getPointerElementType();
+    auto Stride = DynamicLoop.StaticToStrideMap.at(StaticInst);
     for (auto DynamicId : DynamicIds) {
       assert(DynamicId != DynamicInstruction::InvalidId && "Missing store.");
       auto DynamicStoreIter = this->Trace->AliveDynamicInstsMap.at(DynamicId);
       // Concatenate the store value for all stores.
-      StoredData +=
-          (*DynamicStoreIter)->DynamicOperands[0]->serializeToBytes(Type);
+      // Take care for negative stride.
+      if (Stride > 0) {
+        StoredData +=
+            (*DynamicStoreIter)->DynamicOperands[0]->serializeToBytes(Type);
+      } else {
+        // Reverse concatenate.
+        StoredData =
+            (*DynamicStoreIter)->DynamicOperands[0]->serializeToBytes(Type) +
+            StoredData;
+      }
     }
 
     NewDynamicInst = new SIMDStoreInst(StaticInst, DynamicResult,
                                        std::move(DynamicOperands), StoredData);
 
-    size_t Addr =
-        std::stoul(NewDynamicInst->DynamicOperands[1]->Value, nullptr, 16);
+    size_t Addr = NewDynamicInst->DynamicOperands[1]->getAddr();
     for (size_t I = 0; I < StoredData.size(); ++I) {
       this->Trace->updateAddrToLastMemoryAccessMap(Addr + I, NewDynamicInst->Id,
                                                    false /*false for store*/);
     }
-
   } else {
     // Normal instruction.
     NewDynamicInst = new LLVMDynamicInstruction(StaticInst, DynamicResult,
@@ -1042,72 +1326,20 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
     if (DynamicId == DynamicInstruction::InvalidId) {
       continue;
     }
-    // We transfer the dependence from outside these iterations directly into
-    // the new set.
-    auto TransferDepIds =
-        [this](const std::unordered_set<DynamicInstruction::DynamicId> &Deps,
-               std::unordered_set<DynamicInstruction::DynamicId> &NewDeps)
-        -> void {
-      for (auto DepId : Deps) {
-        // If the dependent id is not alive, it is from outside the loop.
-        // We should probabily handle this more elegantly.
-        if (this->Trace->AliveDynamicInstsMap.find(DepId) ==
-            this->Trace->AliveDynamicInstsMap.end()) {
-          // Outside dependence, transfer directly.
-          NewDeps.insert(DepId);
-        }
-      }
-    };
     // DEBUG(llvm::errs() << "Transferring outside loop dependence.\n");
-    TransferDepIds(this->Trace->RegDeps.at(DynamicId), NewRegDeps);
-    TransferDepIds(this->Trace->MemDeps.at(DynamicId), NewMemDeps);
-    TransferDepIds(this->Trace->CtrDeps.at(DynamicId), NewCtrDeps);
+    this->transferOutsideDeps(DynamicLoop, NewRegDeps, this->Trace->RegDeps.at(DynamicId));
+    this->transferOutsideDeps(DynamicLoop, NewMemDeps, this->Trace->MemDeps.at(DynamicId));
+    this->transferOutsideDeps(DynamicLoop, NewCtrDeps, this->Trace->CtrDeps.at(DynamicId));
 
     // Fix the memory dependence within the loop.
     // DEBUG(llvm::errs() << "Fixing inside loop memory dependence.\n");
-    for (auto MemDepId : this->Trace->MemDeps.at(DynamicId)) {
-      auto MemDepDynamicInstIter =
-          this->Trace->AliveDynamicInstsMap.find(MemDepId);
-      if (MemDepDynamicInstIter == this->Trace->AliveDynamicInstsMap.end()) {
-        continue;
-      }
-      auto MemDepStaticInst =
-          (*(MemDepDynamicInstIter->second))->getStaticInstruction();
-
-      auto NewMemDepDynamicInstIter =
-          DynamicLoop.StaticToNewDynamicMap.find(MemDepStaticInst);
-      assert(NewMemDepDynamicInstIter !=
-                 DynamicLoop.StaticToNewDynamicMap.end() &&
-             "Missing new dynamic simd instruction for memory dependence.");
-      NewMemDeps.insert(NewMemDepDynamicInstIter->second);
-    }
+    this->transferInsideMemDeps(DynamicLoop, NewMemDeps, this->Trace->MemDeps.at(DynamicId));
   }
 
   // We fix the register dependence within the loop.
   // DEBUG(llvm::errs() << "Fixing the register dependence within the
   // loop.\n");
-  for (unsigned OperandId = 0, NumOperands = StaticInst->getNumOperands();
-       OperandId != NumOperands; ++OperandId) {
-    auto Operand = StaticInst->getOperand(OperandId);
-    if (auto OpInst = llvm::dyn_cast<llvm::Instruction>(Operand)) {
-      // There is register dependence.
-      if (!DynamicLoop.contains(OpInst->getParent())) {
-        // Outside loop register dependence.
-        continue;
-      }
-      auto NewOpDynamicInstIter =
-          DynamicLoop.StaticToNewDynamicMap.find(OpInst);
-      if (NewOpDynamicInstIter != DynamicLoop.StaticToNewDynamicMap.end()) {
-        NewRegDeps.insert(NewOpDynamicInstIter->second);
-      } else {
-        // Otherwise, it should be dependent on some un transformed phi node,
-        // which means it is actually an induction variable and should be
-        // actually outside dependence. Here I just check it's a phi node.
-        assert(llvm::isa<llvm::PHINode>(OpInst) &&
-               "Missing new simd instrunction for non-phi node.");
-      }
-    }
-  }
+  this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticInst);
 
   // Add this dynamic instruction into DynamicLoop.
   DynamicLoop.StaticToNewDynamicMap.emplace(StaticInst, NewDynamicInst->Id);
@@ -1126,8 +1358,8 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
   auto Begin = this->Trace->DynamicInstructionList.begin();
   auto End = this->Trace->DynamicInstructionList.end();
   --End;
-  DynamicInnerMostLoop DynamicLoop(StaticLoop, LoopIter,
-                                   this->BBToStaticLoopMap, Begin, End);
+  DynamicInnerMostLoop DynamicLoop(
+      StaticLoop, LoopIter, this->BBToStaticLoopMap, this->Trace, Begin, End);
 
   DEBUG(llvm::errs() << DynamicLoop.StaticLoop->print() << '\n');
 
@@ -1159,6 +1391,17 @@ StaticInnerMostLoop::StaticInnerMostLoop(llvm::Loop *Loop)
     auto PHIs = BB->phis();
     this->StaticInstCount +=
         BB->size() - std::distance(PHIs.begin(), PHIs.end());
+  }
+
+  // Create the load/store order map.
+  uint32_t LoadStoreIdx = 0;
+  for (auto BB : this->BBList) {
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd; ++InstIter) {
+      auto Inst = &*InstIter;
+      if (llvm::isa<llvm::LoadInst>(Inst) || llvm::isa<llvm::StoreInst>(Inst)) {
+        this->LoadStoreOrderMap.emplace(Inst, LoadStoreIdx++);
+      }
+    }
   }
 }
 
@@ -1218,9 +1461,10 @@ DynamicInnerMostLoop::DynamicInnerMostLoop(
     StaticInnerMostLoop *_StaticLoop, uint8_t _LoopIter,
     const std::unordered_map<llvm::BasicBlock *, StaticInnerMostLoop *>
         &_BBToStaticLoopMap,
-    DataGraph::DynamicInstIter _Begin, DataGraph::DynamicInstIter _End)
+    DataGraph *_DG, DataGraph::DynamicInstIter _Begin,
+    DataGraph::DynamicInstIter _End)
     : StaticLoop(_StaticLoop), LoopIter(_LoopIter),
-      BBToStaticLoopMap(_BBToStaticLoopMap) {
+      BBToStaticLoopMap(_BBToStaticLoopMap), DG(_DG) {
 
   assert(this->StaticLoop != nullptr && "DynamicInnerMostLoop: Null loop.");
 
@@ -1276,6 +1520,62 @@ DynamicInnerMostLoop::DynamicInnerMostLoop(
     // Finally insert into the vector.
     DynamicIdVec[CurrentIter - 1] = (*Iter)->Id;
   }
+
+  // Compute the stride for load/store.
+  for (auto BB : this->StaticLoop->BBList) {
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto StaticInst = &*InstIter;
+      if (llvm::isa<llvm::LoadInst>(StaticInst) ||
+          llvm::isa<llvm::StoreInst>(StaticInst)) {
+        this->computeStride(StaticInst);
+      }
+    }
+  }
+}
+
+void DynamicInnerMostLoop::computeStride(llvm::Instruction *StaticInst) {
+  assert((llvm::isa<llvm::LoadInst>(StaticInst) ||
+          llvm::isa<llvm::StoreInst>(StaticInst)) &&
+         "Trying to compute stride for non load/store instruction.");
+
+  size_t AddrOperandIdx = 0;
+  if (llvm::isa<llvm::StoreInst>(StaticInst)) {
+    AddrOperandIdx = 1;
+  }
+
+  auto &DynamicIds = this->StaticToDynamicMap.at(StaticInst);
+  // Use INT64_MAX as an invalid value.
+  int64_t Stride = INT64_MAX;
+  bool Initialized = false;
+  for (size_t Iter = 1; Iter < DynamicIds.size(); ++Iter) {
+    auto ThisIterDynamicId = DynamicIds[Iter];
+    auto PrevIterDynamicId = DynamicIds[Iter - 1];
+    int64_t NewStride = INT64_MAX;
+    // If both are valid ids, we compute the new stride.
+    if ((ThisIterDynamicId != DynamicInstruction::InvalidId) &&
+        (PrevIterDynamicId != DynamicInstruction::InvalidId)) {
+      DynamicInstruction *ThisIterDynamicInst =
+          *(this->DG->AliveDynamicInstsMap.at(ThisIterDynamicId));
+      DynamicInstruction *PrevIterDynamicInst =
+          *(this->DG->AliveDynamicInstsMap.at(PrevIterDynamicId));
+      uint64_t ThisIterDynamicAddr =
+          ThisIterDynamicInst->DynamicOperands[AddrOperandIdx]->getAddr();
+      uint64_t PrevIterDynamicAddr =
+          PrevIterDynamicInst->DynamicOperands[AddrOperandIdx]->getAddr();
+      NewStride = ThisIterDynamicAddr - PrevIterDynamicAddr;
+    }
+    if (!Initialized) {
+      Stride = NewStride;
+      Initialized = true;
+    } else if (NewStride != Stride) {
+      // Failed computing stride. Reset Stride and break.
+      Stride = INT64_MAX;
+      break;
+    }
+  }
+  bool Inserted = this->StaticToStrideMap.emplace(StaticInst, Stride).second;
+  assert(Inserted && "There is already a stride for this instruction.");
 }
 
 void DynamicInnerMostLoop::print(llvm::raw_ostream &OStream) const {

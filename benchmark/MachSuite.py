@@ -252,8 +252,7 @@ class MachSuiteBenchmarks:
     """
 
     def linkGem5BinaryFromBC(self, input_bc, output_binary):
-        GEM5_PSEUDO_S = os.path.join(
-            C.GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
+        GEM5_PSEUDO_S = C.GEM5_M5OPS_X86
         build_cmd = [
             'ecc',
             '-static',
@@ -355,12 +354,12 @@ def main(folder):
     names = list()
     for benchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS:
         for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
-            benchmarks.baseline(benchmark, subbenchmark)
+            # benchmarks.baseline(benchmark, subbenchmark)
             # benchmarks.baseline_simd(benchmark, subbenchmark)
-            benchmarks.trace(benchmark, subbenchmark)
-            benchmarks.build_replay(benchmark, subbenchmark)
-            benchmarks.run_replay(benchmark, subbenchmark)
-            benchmarks.run_standalone(benchmark, subbenchmark)
+            # benchmarks.trace(benchmark, subbenchmark)
+            # benchmarks.build_replay(benchmark, subbenchmark)
+            # benchmarks.run_replay(benchmark, subbenchmark)
+            # benchmarks.run_standalone(benchmark, subbenchmark)
             names.append(benchmarks.getName(benchmark, subbenchmark))
 
     benchmarks.draw('MachSuite.baseline.replay.pdf',

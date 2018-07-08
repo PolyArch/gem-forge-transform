@@ -24,9 +24,12 @@ public:
   DynamicValue(const std::string &_Value, const std::string &_MemBase = "",
                uint64_t _MemOffset = 0);
   DynamicValue(const DynamicValue &Other);
+  DynamicValue &operator=(const DynamicValue &Other);
   explicit DynamicValue(DynamicValue &&Other);
   // Serialize to bytes according to the type.
   std::string serializeToBytes(llvm::Type *Type) const;
+  // Interpret the value as an address.
+  uint64_t getAddr() const { return std::stoul(this->Value, nullptr, 16); }
   std::string Value;
   // Base/Offset of memory address.
   std::string MemBase;
