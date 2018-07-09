@@ -29,6 +29,7 @@ add_library(LLVMTDGPass MODULE
     ${TDG_PROTOBUF_SRCS}
     DynamicInstruction.cpp
     DataGraph.cpp
+    LoopUtils.cpp
     LocateAccelerableFunctions.cpp
     Replay.cpp
     TraceStatisticPass.cpp
