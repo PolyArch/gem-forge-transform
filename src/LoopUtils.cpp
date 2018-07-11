@@ -41,6 +41,9 @@ StaticInnerMostLoop::StaticInnerMostLoop(llvm::Loop *Loop)
       }
     }
   }
+
+  // Compute the live in and out.
+  this->computeLiveInOutValues(Loop);
 }
 
 llvm::Instruction *StaticInnerMostLoop::getHeaderNonPhiInst() {
@@ -93,6 +96,40 @@ void StaticInnerMostLoop::scheduleBasicBlocksInLoop(llvm::Loop *Loop) {
   }
 
   return;
+}
+
+void StaticInnerMostLoop::computeLiveInOutValues(llvm::Loop *Loop) {
+  for (auto BB : this->BBList) {
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        auto Op = Inst->getOperand(OperandIdx);
+        if (auto OpInst = llvm::dyn_cast<llvm::Instruction>(Op)) {
+          // This is a register value.
+          if (Loop->contains(OpInst)) {
+            // This value is generated with in the loop.
+            continue;
+          }
+        }
+        // This value is either a global value, function parameter, or outside
+        // instruction.
+        this->LiveIns.insert(Op);
+      }
+
+      // Check the user of this inst.
+      for (auto User : Inst->users()) {
+        if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
+          if (!Loop->contains(UserInst)) {
+            this->LiveOuts.insert(UserInst);
+          }
+        } else {
+          assert(false && "Other user than instructions?");
+        }
+      }
+    }
+  }
 }
 
 CachedLoopInfo::CachedLoopInfo(GetLoopInfoT _GetLoopInfo, CareAboutT _CareAbout)

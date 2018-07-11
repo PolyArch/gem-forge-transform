@@ -30,12 +30,15 @@ add_library(LLVMTDGPass MODULE
     DynamicInstruction.cpp
     DataGraph.cpp
     LoopUtils.cpp
+    PostDominanceFrontier.cpp
     LocateAccelerableFunctions.cpp
     Replay.cpp
     TraceStatisticPass.cpp
     TDGSerializer.cpp
     # SIMD
     simd/SIMDPass.cpp
+    # Abstract data flow accelerator
+    adfa/AbstractDataFlowAcceleratorPass.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
 )

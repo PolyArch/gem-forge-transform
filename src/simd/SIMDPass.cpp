@@ -148,6 +148,7 @@ protected:
   bool finalize(llvm::Module &Module) override {
     // Release the cached static loops.
     delete this->CachedLI;
+    this->CachedLI = nullptr;
     return ReplayTrace::finalize(Module);
   }
 
