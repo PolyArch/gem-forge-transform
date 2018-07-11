@@ -56,12 +56,27 @@ public:
 
   size_t StaticInstCount;
 
+  /**
+   * Store the live in values when the loop started.
+   */
+  std::unordered_set<llvm::Value *> LiveIns;
+
+  /**
+   * Stores the value used outside the loop.
+   */
+  std::unordered_set<llvm::Instruction *> LiveOuts;
+
 private:
   /**
    * Sort all the basic blocks in topological order and store the result in
    * BBList.
    */
   void scheduleBasicBlocksInLoop(llvm::Loop *Loop);
+
+  /**
+   * Identify live in and out values.
+   */
+  void computeLiveInOutValues(llvm::Loop *Loop);
 };
 
 /**
