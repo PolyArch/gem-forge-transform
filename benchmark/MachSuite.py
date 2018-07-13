@@ -217,37 +217,41 @@ class MachSuiteBenchmark:
             debugs=debugs,
         )
 
-    def run_replay(self):
-        return self.benchmark.gem5_replay(standalone=0)
+    def run_replay(self, debugs):
+        return self.benchmark.gem5_replay(standalone=1, debugs=debugs)
 
     def replay(self):
         os.chdir(self.work_path)
         # Basic replay.
         # self.build_replay()
-        # gem5_outdir = self.run_replay()
+        # debugs = []
+        # gem5_outdir = self.run_replay(debugs=debugs)
         # Util.call_helper([
         #     'cp',
         #     os.path.join(gem5_outdir, 'stats.txt'),
         #     self.get_replay_result(),
         # ])
         # Abstract data flow replay.
-        self.build_replay_abs_data_flow()
-        # gem5_outdir = self.run_replay()
-        # Util.call_helper([
-        #     'cp',
-        #     os.path.join(gem5_outdir, 'stats.txt'),
-        #     self.get_abs_data_flow_result(),
-        # ])
+        # self.build_replay_abs_data_flow()
+        debugs = [
+            'AbstractDataFlowAccelerator'
+        ]
+        gem5_outdir = self.run_replay(debugs=debugs)
+        Util.call_helper([
+            'cp',
+            os.path.join(gem5_outdir, 'stats.txt'),
+            self.get_abs_data_flow_result(),
+        ])
         os.chdir(self.cwd)
 
 
 class MachSuiteBenchmarks:
 
     BENCHMARK_PARAMS = {
-        # "bfs": [
-        #     "queue",
+        "bfs": [
+            "queue",
         #     # "bulk" # not working
-        # ],
+        ],
         # "aes": [
         #     "aes"
         # ],
@@ -280,10 +284,10 @@ class MachSuiteBenchmarks:
         # #  "backprop": [
         # #     "backprop" # Not working.
         # #  ],
-        "gemm": [
-            "blocked",
+        # "gemm": [
+            # "blocked",
             #  "ncubed"
-        ],
+        # ],
         # "nw": [
         #     "nw"
         # ]
