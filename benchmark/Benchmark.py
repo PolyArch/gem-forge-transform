@@ -140,14 +140,13 @@ class Benchmark(object):
     The gem5 output directory (abs path).
     """
 
-    def gem5_replay(self, standalone=0):
+    def gem5_replay(self, standalone=0, debugs=[]):
         LLVM_TRACE_FN = 'llvm_trace_gem5.txt'
         GEM5_OUT_DIR = '{cpu_type}.replay'.format(cpu_type=C.CPU_TYPE)
         Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
         gem5_args = [
             C.GEM5_X86,
             '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
-            # '--debug-flags=LLVMTraceCPU',
             C.GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=self.replay_bin),
             '--llvm-standalone={standlone}'.format(standlone=standalone),
@@ -164,6 +163,9 @@ class Benchmark(object):
             '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
             '--l2_size={l2_size}'.format(l2_size=C.GEM5_L2_SIZE),
         ]
+        if debugs:
+            gem5_args.insert(
+                1, '--debug-flags={flags}'.format(flags=','.join(debugs)))
         if self.args is not None:
             gem5_args.append(
                 '--options={binary_args}'.format(binary_args=' '.join(self.args)))

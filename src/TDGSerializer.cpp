@@ -49,11 +49,6 @@ void TDGSerializer::serialize(DynamicInstruction *DynamicInst, DataGraph *DG) {
 void TDGSerializer::write() {
   assert(this->TDG.instructions_size() > 0 &&
          "Nothing to write for TDG serializer.");
-  // Create the coded stream every time due to its size limit.
-  google::protobuf::io::CodedOutputStream CodedStream(this->OutZeroCopyStream);
-  CodedStream.WriteVarint32(this->TDG.ByteSize());
-  this->TDG.SerializeWithCachedSizes(&CodedStream);
-
   // Hacky to dump some serialized instructions for debug.
   const uint64_t DUMP_START = 1000;
   const uint64_t DUMP_END = 1100;
@@ -73,6 +68,17 @@ void TDGSerializer::write() {
           this->TDG.instructions(DUMPED), &OutString));
       DEBUG(llvm::errs() << OutString << '\n');
     }
+  }
+  // Create the coded stream every time due to its size limit.
+  google::protobuf::io::CodedOutputStream CodedStream(this->OutZeroCopyStream);
+  // CodedStream.WriteVarint32(this->TDG.ByteSize());
+  // this->TDG.SerializeWithCachedSizes(&CodedStream);
+
+  // Instead of writing them together, let's write one by one.
+  for (size_t I = 0; I < this->TDG.instructions_size(); ++I) {
+    auto &TDGInstruction = this->TDG.instructions(I);
+    CodedStream.WriteVarint32(TDGInstruction.ByteSize());
+    TDGInstruction.SerializeWithCachedSizes(&CodedStream);
   }
 
   this->SerializedInsts += this->TDG.instructions_size();

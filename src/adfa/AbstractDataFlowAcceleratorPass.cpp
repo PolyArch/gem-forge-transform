@@ -51,6 +51,7 @@ public:
 private:
   /**
    * An entry contains the dynamic id and the age.
+   * This is used to find the oldest real control dependence.
    */
   using Age = uint64_t;
   using DynamicEntry = std::pair<DynamicInstruction::DynamicId, Age>;
@@ -424,6 +425,14 @@ public:
   AbsDataFlowConfigInst() {}
   std::string getOpName() const override { return "df-config"; }
   // There should be some customized fields in the future.
+  void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                                DataGraph *DG) const override {
+    // Calling mutable_adfa_config should set this field.
+    auto ConfigExtra = ProtobufEntry->mutable_adfa_config();
+    assert(ProtobufEntry->has_adfa_config() &&
+           "The protobuf entry should have adfa config extra struct.");
+    ConfigExtra->set_data_flow("abs-data-flow");
+  }
 };
 
 /**

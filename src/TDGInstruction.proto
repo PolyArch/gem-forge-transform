@@ -11,6 +11,7 @@ message TDGInstruction {
     LoadExtra load = 9;
     AllocExtra alloc = 10;
     BranchExtra branch = 11;
+    ADFAConfigExtra adfa_config = 20;
   }
 
   message StoreExtra {
@@ -38,6 +39,11 @@ message TDGInstruction {
   message BranchExtra {
     uint64 static_id = 1;
     string next_bb = 2;
+  }
+
+  // ADFA instructions.
+  message ADFAConfigExtra {
+    string data_flow = 1;
   }
 }
 
