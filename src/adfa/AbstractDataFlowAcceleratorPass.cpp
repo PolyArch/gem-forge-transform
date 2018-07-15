@@ -41,11 +41,10 @@ public:
 
   void addDynamicInst(DynamicInstruction *DynamicInst);
 
-  void configure(StaticInnerMostLoop *_StaticLoop,
-                 const PostDominanceFrontier *_PDF);
+  void configure(llvm::Loop *_Loop, const PostDominanceFrontier *_PDF);
   void start();
 
-  StaticInnerMostLoop *StaticLoop;
+  llvm::Loop *Loop;
   const PostDominanceFrontier *PDF;
 
 private:
@@ -143,7 +142,7 @@ protected:
    * No matter what, the buffered instructions will be committed (except the
    * last one).
    */
-  bool processBuffer(StaticInnerMostLoop *StaticLoop, uint32_t LoopIter);
+  bool processBuffer(llvm::Loop *Loop, uint32_t LoopIter);
 
   /**
    * Serialize to the normal instruction stream.
@@ -201,7 +200,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
   uint64_t Count = 0;
 
   // Varaibles valid only for BUFFERING state.
-  StaticInnerMostLoop *CurrentStaticLoop;
+  llvm::Loop *CurrentLoop;
   uint32_t LoopIter;
 
   DEBUG(llvm::errs() << "ADFA: start.\n");
@@ -211,7 +210,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
     auto NewDynamicInst = this->Trace->loadOneDynamicInst();
 
     llvm::Instruction *NewStaticInst = nullptr;
-    StaticInnerMostLoop *NewStaticLoop = nullptr;
+    llvm::Loop *NewLoop = nullptr;
     // If we are at the header of some candidate loop, can be the same loop or
     // some other loop.
     bool IsAtHeaderOfCandidate = false;
@@ -223,17 +222,16 @@ void AbstractDataFlowAcceleratorPass::transform() {
       assert(NewStaticInst != nullptr && "Invalid static llvm instructions.");
 
       auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
-      auto NewLoop = LI->getLoopFor(NewStaticInst->getParent());
+      NewLoop = LI->getLoopFor(NewStaticInst->getParent());
 
-      if (NewLoop != nullptr && this->isLoopDataFlow(NewLoop)) {
-        // This loop is possible for dataflow.
-        if (this->CachedStaticInnerMostLoop.find(NewLoop) ==
-            this->CachedStaticInnerMostLoop.end()) {
-          this->CachedStaticInnerMostLoop.emplace(
-              NewLoop, new StaticInnerMostLoop(NewLoop));
+      if (NewLoop != nullptr) {
+        if (this->isLoopDataFlow(NewLoop)) {
+          // This loop is possible for dataflow.
+          IsAtHeaderOfCandidate = isStaticInstLoopHead(NewLoop, NewStaticInst);
+        } else {
+          // This is not a candidate.
+          NewLoop = nullptr;
         }
-        NewStaticLoop = this->CachedStaticInnerMostLoop.at(NewLoop);
-        IsAtHeaderOfCandidate = isStaticInstLoopHead(NewLoop, NewStaticInst);
       }
 
       // if (IsAtHeaderOfCandidate) {
@@ -279,7 +277,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
       if (IsAtHeaderOfCandidate) {
         this->State = BUFFERING;
         LoopIter = 0;
-        CurrentStaticLoop = NewStaticLoop;
+        CurrentLoop = NewLoop;
         // DEBUG(llvm::errs() << "ADFA: SEARCHING -> BUFFERING.\n");
       }
 
@@ -297,14 +295,14 @@ void AbstractDataFlowAcceleratorPass::transform() {
         this->Trace->commitOneDynamicInst();
       }
 
-      if (NewStaticLoop != CurrentStaticLoop) {
+      if (!CurrentLoop->contains(NewLoop)) {
         // We are outside of the current loop.
         this->serializeDataFlowEnd();
         if (IsAtHeaderOfCandidate) {
           // We are at the header of some new candidate loop, switch to
           // BUFFERING.
           LoopIter = 0;
-          CurrentStaticLoop = NewStaticLoop;
+          CurrentLoop = NewLoop;
           this->State = BUFFERING;
           // DEBUG(llvm::errs() << "ADFA: DATAFLOW -> BUFFERING.\n");
         } else {
@@ -325,13 +323,17 @@ void AbstractDataFlowAcceleratorPass::transform() {
        * count.
        */
       bool IsAtBoundary = false;
-      if (NewStaticLoop != CurrentStaticLoop) {
+      if (!CurrentLoop->contains(NewLoop)) {
         // We are out of the current loop.
         LoopIter++;
         IsAtBoundary = true;
-      } else if (IsAtHeaderOfCandidate) {
-        LoopIter++;
-        IsAtBoundary = true;
+      } else {
+        // We are still in the same loop.
+        if (CurrentLoop == NewLoop && IsAtHeaderOfCandidate) {
+          // We are back at the header of the current loop.
+          LoopIter++;
+          IsAtBoundary = true;
+        }
       }
 
       if (!IsAtBoundary) {
@@ -347,7 +349,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
       bool DataFlowStarted = false;
       if (this->Trace->DynamicInstructionList.size() > this->BufferThreshold) {
         // DEBUG(llvm::errs() << "ADFA: Processing buffer.\n");
-        DataFlowStarted = this->processBuffer(CurrentStaticLoop, LoopIter);
+        DataFlowStarted = this->processBuffer(CurrentLoop, LoopIter);
         // Clear the loop iter.
         LoopIter = 0;
       }
@@ -358,14 +360,13 @@ void AbstractDataFlowAcceleratorPass::transform() {
        *  1.1 If the data flow has already started, then switch to DATAFLOW.
        *  2.2 Otherwise, keep buffering. (Not sure about this).
        * 2. If we are outside the current loop,
-       *  2.1 If we are at the header, and if the new loop is
-       *      also a candidate. If so, keep buffering the new loop.
-       *  2.2. Otherwise, go back to search.
-       * In case 2, we should also commit remaining buffered iters
-       * in case the number of total iters is not a multiple of vectorize
-       * width.
+       *  2.1 If we are at the header of a new candidate, keep buffering the new
+       * loop.
+       *  2.2. Otherwise, go back to search. In case 2, we should also
+       * commit remaining buffered iters in case the buffered number of
+       * instructions is not big enough.
        */
-      if (NewStaticLoop != CurrentStaticLoop) {
+      if (!CurrentLoop->contains(NewLoop)) {
         // Case 2
         // Commit remaining insts.
         while (this->Trace->DynamicInstructionList.size() > 1) {
@@ -380,7 +381,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
           // Case 2.1.
           // Update the loop and loop iter.
           LoopIter = 0;
-          CurrentStaticLoop = NewStaticLoop;
+          CurrentLoop = NewLoop;
         } else {
           // Case 2.2.
           // DEBUG(llvm::errs() << "ADFA: BUFFERING -> SEARCHING.\n");
@@ -469,8 +470,8 @@ void AbstractDataFlowAcceleratorPass::serializeDataFlowEnd() {
   delete EndToken;
 }
 
-bool AbstractDataFlowAcceleratorPass::processBuffer(
-    StaticInnerMostLoop *StaticLoop, uint32_t LoopIter) {
+bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
+                                                    uint32_t LoopIter) {
 
   // Simply serialize to data flow stream for now.
   if (true) {
@@ -481,15 +482,15 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(
      * information.
      */
     // Check if we need to configure the accelerator.
-    if (StaticLoop != this->CurrentConfiguredDataFlow.StaticLoop) {
+    if (Loop != this->CurrentConfiguredDataFlow.Loop) {
       AbsDataFlowConfigInst ConfigInst;
       this->serializeInstStream(&ConfigInst);
       DEBUG(llvm::errs() << "ADFA: configure the accelerator to loop "
-                         << StaticLoop->print() << '\n');
+                         << printLoop(Loop) << '\n');
       // Configure the dynamic data flow.
       this->CurrentConfiguredDataFlow.configure(
-          StaticLoop, this->CachedPDF->getPostDominanceFrontier(
-                          StaticLoop->getHeader()->getParent()));
+          Loop, this->CachedPDF->getPostDominanceFrontier(
+                    Loop->getHeader()->getParent()));
     }
 
     // Serialize the start inst.
@@ -526,14 +527,15 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
 
   assert(Loop != nullptr && "Loop should not be nullptr.");
 
-  if (!Loop->empty()) {
-    // This is not the inner most loop.
-    DEBUG(llvm::errs() << "AbstractDataFlowAcceleratorPass: Loop "
-                       << printLoop(Loop)
-                       << " is statically not dataflow because it is not "
-                          "inner most loop.\n");
-    return false;
-  }
+  // We allow nested loops.
+  // if (!Loop->empty()) {
+  //   // This is not the inner most loop.
+  //   DEBUG(llvm::errs() << "AbstractDataFlowAcceleratorPass: Loop "
+  //                      << printLoop(Loop)
+  //                      << " is statically not dataflow because it is not "
+  //                         "inner most loop.\n");
+  //   return false;
+  // }
 
   // Check if there is any calls to unsupported function.
   for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
@@ -570,11 +572,11 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
 }
 
 DynamicDataFlow::DynamicDataFlow()
-    : StaticLoop(nullptr), PDF(nullptr), CurrentAge(0) {}
+    : Loop(nullptr), PDF(nullptr), CurrentAge(0) {}
 
-void DynamicDataFlow::configure(StaticInnerMostLoop *_StaticLoop,
+void DynamicDataFlow::configure(llvm::Loop *_Loop,
                                 const PostDominanceFrontier *_PDF) {
-  this->StaticLoop = _StaticLoop;
+  this->Loop = _Loop;
   this->PDF = _PDF;
   this->CurrentAge = 0;
 }
