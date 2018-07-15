@@ -18,10 +18,10 @@ std::string printLoop(llvm::Loop *Loop) {
          "::" + std::string(Loop->getName());
 }
 
-StaticInnerMostLoop::StaticInnerMostLoop(llvm::Loop *Loop)
-    : StaticInstCount(0) {
+StaticInnerMostLoop::StaticInnerMostLoop(llvm::Loop *_Loop)
+    : StaticInstCount(0), Loop(_Loop) {
   assert(Loop->empty() && "Should be inner most loops.");
-  this->scheduleBasicBlocksInLoop(Loop);
+  this->scheduleBasicBlocksInLoop(this->Loop);
   assert(!this->BBList.empty() && "Empty loops.");
 
   for (auto BB : this->BBList) {
@@ -43,7 +43,7 @@ StaticInnerMostLoop::StaticInnerMostLoop(llvm::Loop *Loop)
   }
 
   // Compute the live in and out.
-  this->computeLiveInOutValues(Loop);
+  this->computeLiveInOutValues(this->Loop);
 }
 
 llvm::Instruction *StaticInnerMostLoop::getHeaderNonPhiInst() {
@@ -62,35 +62,35 @@ void StaticInnerMostLoop::scheduleBasicBlocksInLoop(llvm::Loop *Loop) {
   auto &Schedule = this->BBList;
 
   std::list<std::pair<llvm::BasicBlock *, bool>> Stack;
+  std::unordered_set<llvm::BasicBlock *> Visited;
   std::unordered_set<llvm::BasicBlock *> Scheduled;
 
   Stack.emplace_back(Loop->getHeader(), false);
   while (!Stack.empty()) {
     auto &Entry = Stack.back();
     auto BB = Entry.first;
-    if (Scheduled.find(BB) != Scheduled.end()) {
-      // This BB has already been scheduled.
-      Stack.pop_back();
-      continue;
-    }
     if (Entry.second) {
       // This is the second time we visit BB.
       // We can schedule it.
-      Schedule.push_front(BB);
-      Scheduled.insert(BB);
+      if (Scheduled.find(BB) == Scheduled.end()) {
+        Schedule.push_front(BB);
+        Scheduled.insert(BB);
+        DEBUG(llvm::errs() << "Schedule " << BB->getName() << '\n');
+      }
       Stack.pop_back();
       continue;
     }
     // This is the first time we visit BB, do DFS.
     Entry.second = true;
+    Visited.insert(BB);
     for (auto Succ : llvm::successors(BB)) {
       if (!Loop->contains(Succ)) {
         continue;
       }
-      if (Succ == BB) {
-        // Ignore myself.
+      if (Visited.find(Succ) != Visited.end()) {
         continue;
       }
+      DEBUG(llvm::errs() << "Explore " << Succ->getName() << '\n');
       Stack.emplace_back(Succ, false);
     }
   }
@@ -132,51 +132,36 @@ void StaticInnerMostLoop::computeLiveInOutValues(llvm::Loop *Loop) {
   }
 }
 
-CachedLoopInfo::CachedLoopInfo(GetLoopInfoT _GetLoopInfo, CareAboutT _CareAbout)
-    : GetLoopInfo(std::move(_GetLoopInfo)), CareAbout(std::move(_CareAbout)) {}
-
 CachedLoopInfo::~CachedLoopInfo() {
   // Release the cached static loops.
-  std::unordered_set<StaticInnerMostLoop *> Released;
-  for (const auto &Iter : this->BBToStaticLoopMap) {
-    if (Released.find(Iter.second) == Released.end()) {
-      Released.insert(Iter.second);
-      DEBUG(llvm::errs() << "Releasing StaticInnerMostLoop at " << Iter.second
-                         << '\n');
-      delete Iter.second;
-    }
+  for (auto &Entry : this->LICache) {
+    delete Entry.second;
   }
-  this->BBToStaticLoopMap.clear();
-  this->FunctionsWithCachedStaticLoop.clear();
+  this->LICache.clear();
+  for (auto &Entry : this->DTCache) {
+    delete Entry.second;
+  }
+  this->DTCache.clear();
 }
 
-StaticInnerMostLoop *CachedLoopInfo::getStaticLoopForBB(llvm::BasicBlock *BB) {
-  this->buildStaticLoopsIfNecessary(BB->getParent());
-  auto Iter = this->BBToStaticLoopMap.find(BB);
-  if (Iter == this->BBToStaticLoopMap.end()) {
-    return nullptr;
+llvm::LoopInfo *CachedLoopInfo::getLoopInfo(llvm::Function *Func) {
+  auto Iter = this->LICache.find(Func);
+  if (Iter == this->LICache.end()) {
+    Iter = this->LICache
+               .emplace(Func, new llvm::LoopInfo(*this->getDominatorTree(Func)))
+               .first;
   }
   return Iter->second;
 }
 
-void CachedLoopInfo::buildStaticLoopsIfNecessary(llvm::Function *Function) {
-  if (this->FunctionsWithCachedStaticLoop.find(Function) !=
-      this->FunctionsWithCachedStaticLoop.end()) {
-    // This function has already been processed.
-    return;
+llvm::DominatorTree *CachedLoopInfo::getDominatorTree(llvm::Function *Func) {
+  auto Iter = this->DTCache.find(Func);
+  if (Iter == this->DTCache.end()) {
+    auto DT = new llvm::DominatorTree();
+    DT->recalculate(*Func);
+    Iter = this->DTCache.emplace(Func, DT).first;
   }
-  auto &LoopInfo = this->GetLoopInfo(*Function);
-  for (auto Loop : LoopInfo.getLoopsInPreorder()) {
-    if (this->CareAbout(Loop)) {
-      // We only cache the statically vectorizable loops.
-      auto StaticLoop = new StaticInnerMostLoop(Loop);
-      for (auto BB : StaticLoop->BBList) {
-        auto Inserted = this->BBToStaticLoopMap.emplace(BB, StaticLoop).second;
-        assert(Inserted && "The bb has already been inserted.");
-      }
-    }
-  }
-  this->FunctionsWithCachedStaticLoop.insert(Function);
+  return Iter->second;
 }
 
 #undef DEBUG_TYPE
