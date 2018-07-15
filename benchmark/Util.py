@@ -24,6 +24,12 @@ class Gem5Stats:
                     pass
                     # print('ignore line {line}'.format(line=line))
 
+    def get_default(self, key, default):
+        if key in self.stats:
+            return self.stats[key]
+        else:
+            return default
+
     def __getitem__(self, key):
         return self.stats[key]
 

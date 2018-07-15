@@ -41,8 +41,7 @@ public:
    * Construct the map from [_Begin, _End).
    */
   DynamicInnerMostLoop(StaticInnerMostLoop *_StaticLoop, uint8_t _LoopIter,
-                       CachedLoopInfo *_CachedLI, DataGraph *_DG,
-                       DataGraph::DynamicInstIter _Begin,
+                       DataGraph *_DG, DataGraph::DynamicInstIter _Begin,
                        DataGraph::DynamicInstIter _End);
   DynamicInnerMostLoop(const DynamicInnerMostLoop &Other) = delete;
   DynamicInnerMostLoop(DynamicInnerMostLoop &&Other) = delete;
@@ -92,11 +91,6 @@ public:
 
 private:
   /**
-   * Contains the map from bb to static loop. Used to implement contains.
-   */
-  CachedLoopInfo *CachedLI;
-
-  /**
    * Pointer to the datagraph.
    */
   DataGraph *DG;
@@ -131,21 +125,21 @@ public:
 protected:
   bool initialize(llvm::Module &Module) override {
     // Reset memorization.
-    this->CachedLI = new CachedLoopInfo(
-        [this](llvm::Function &Func) -> llvm::LoopInfo & {
-          return this->getAnalysis<llvm::LoopInfoWrapperPass>(Func)
-              .getLoopInfo();
-        },
-        [this](llvm::Loop *Loop) -> bool {
-          return this->isLoopStaticVectorizable(Loop);
-        });
+    this->CachedLI = new CachedLoopInfo();
     // Reset other variables.
     this->State = SEARCHING;
+    // Reset the StaticInnerMostLoop cache.
+    this->CachedStaticInnerMostLoop.clear();
     // Call the base initialization.
     return ReplayTrace::initialize(Module);
   }
 
   bool finalize(llvm::Module &Module) override {
+    // Remember to release the static inner most loop first.
+    for (auto &Entry : this->CachedStaticInnerMostLoop) {
+      delete Entry.second;
+    }
+    this->CachedStaticInnerMostLoop.clear();
     // Release the cached static loops.
     delete this->CachedLI;
     this->CachedLI = nullptr;
@@ -164,6 +158,12 @@ protected:
    * This class contains the cached loop info.
    */
   CachedLoopInfo *CachedLI;
+
+  /**
+   * Contains caches StaticInnerMostLoop.
+   */
+  std::unordered_map<llvm::Loop *, StaticInnerMostLoop *>
+      CachedStaticInnerMostLoop;
 
   void transform() override;
 
@@ -321,16 +321,23 @@ void SIMDPass::transform() {
       NewStaticInst = (*NewDynamicInst)->getStaticInstruction();
       assert(NewStaticInst != nullptr && "Invalid static llvm instructions.");
 
-      NewStaticLoop =
-          this->CachedLI->getStaticLoopForBB(NewStaticInst->getParent());
-      if (NewStaticLoop) {
-        IsAtHeaderOfVectorizable =
-            NewStaticInst == NewStaticLoop->getHeaderNonPhiInst();
+      auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
+      auto NewLoop = LI->getLoopFor(NewStaticInst->getParent());
+
+      if (NewLoop != nullptr && this->isLoopStaticVectorizable(NewLoop)) {
+        // This loop is vectorizable.
+        if (this->CachedStaticInnerMostLoop.find(NewLoop) ==
+            this->CachedStaticInnerMostLoop.end()) {
+          this->CachedStaticInnerMostLoop.emplace(
+              NewLoop, new StaticInnerMostLoop(NewLoop));
+        }
+        NewStaticLoop = this->CachedStaticInnerMostLoop.at(NewLoop);
+        IsAtHeaderOfVectorizable = isStaticInstLoopHead(NewLoop, NewStaticInst);
       }
 
       if (IsAtHeaderOfVectorizable) {
         DEBUG(llvm::errs() << "Hitting header of new candidate loop "
-                           << NewStaticLoop->print() << "\n");
+                           << printLoop(NewLoop) << "\n");
       }
 
     } else {
@@ -1251,8 +1258,8 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
   auto Begin = this->Trace->DynamicInstructionList.begin();
   auto End = this->Trace->DynamicInstructionList.end();
   --End;
-  DynamicInnerMostLoop DynamicLoop(StaticLoop, LoopIter, this->CachedLI,
-                                   this->Trace, Begin, End);
+  DynamicInnerMostLoop DynamicLoop(StaticLoop, LoopIter, this->Trace, Begin,
+                                   End);
 
   DEBUG(llvm::errs() << DynamicLoop.StaticLoop->print() << '\n');
 
@@ -1275,13 +1282,10 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
 }
 
 DynamicInnerMostLoop::DynamicInnerMostLoop(StaticInnerMostLoop *_StaticLoop,
-                                           uint8_t _LoopIter,
-                                           CachedLoopInfo *_CachedLI,
-                                           DataGraph *_DG,
+                                           uint8_t _LoopIter, DataGraph *_DG,
                                            DataGraph::DynamicInstIter _Begin,
                                            DataGraph::DynamicInstIter _End)
-    : StaticLoop(_StaticLoop), LoopIter(_LoopIter), CachedLI(_CachedLI),
-      DG(_DG) {
+    : StaticLoop(_StaticLoop), LoopIter(_LoopIter), DG(_DG) {
 
   assert(this->StaticLoop != nullptr && "DynamicInnerMostLoop: Null loop.");
 
@@ -1401,8 +1405,7 @@ void DynamicInnerMostLoop::print(llvm::raw_ostream &OStream) const {
 }
 
 bool DynamicInnerMostLoop::contains(llvm::BasicBlock *BB) const {
-  auto StaticLoop = this->CachedLI->getStaticLoopForBB(BB);
-  return StaticLoop != nullptr && StaticLoop == this->StaticLoop;
+  return this->StaticLoop->Loop->contains(BB);
 }
 
 } // namespace

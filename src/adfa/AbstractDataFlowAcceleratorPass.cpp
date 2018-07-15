@@ -74,19 +74,14 @@ public:
 protected:
   bool initialize(llvm::Module &Module) override {
     this->DataFlowSerializer = new TDGSerializer("abs-data-flow");
-    this->CachedLI = new CachedLoopInfo(
-        [this](llvm::Function &Func) -> llvm::LoopInfo & {
-          return this->getAnalysis<llvm::LoopInfoWrapperPass>(Func)
-              .getLoopInfo();
-        },
-        [this](llvm::Loop *Loop) -> bool {
-          return this->isLoopDataFlow(Loop);
-        });
+    this->CachedLI = new CachedLoopInfo();
     this->CachedPDF = new CachedPostDominanceFrontier(
         [this](llvm::Function &Func) -> llvm::PostDominatorTree & {
           return this->getAnalysis<llvm::PostDominatorTreeWrapperPass>(Func)
               .getPostDomTree();
         });
+    // Reset the cached static inner most loop.
+    this->CachedStaticInnerMostLoop.clear();
     // Reset other variables.
     this->State = SEARCHING;
     // A window of one thousand instructions is profitable for dataflow?
@@ -99,6 +94,11 @@ protected:
     // Release the data flow serializer.
     delete this->DataFlowSerializer;
     this->DataFlowSerializer = nullptr;
+    // Remember to release the static inner most loop first.
+    for (auto &Entry : this->CachedStaticInnerMostLoop) {
+      delete Entry.second;
+    }
+    this->CachedStaticInnerMostLoop.clear();
     // Release the cached static loops.
     delete this->CachedLI;
     this->CachedLI = nullptr;
@@ -120,6 +120,12 @@ protected:
 
   CachedLoopInfo *CachedLI;
   CachedPostDominanceFrontier *CachedPDF;
+
+  /**
+   * Contains caches StaticInnerMostLoop.
+   */
+  std::unordered_map<llvm::Loop *, StaticInnerMostLoop *>
+      CachedStaticInnerMostLoop;
 
   size_t BufferThreshold;
 
@@ -212,14 +218,22 @@ void AbstractDataFlowAcceleratorPass::transform() {
 
     if (NewDynamicInst != this->Trace->DynamicInstructionList.end()) {
       // This is a new instruction.
+      // DEBUG(llvm::errs() << "Loaded new instruction.\n");
       NewStaticInst = (*NewDynamicInst)->getStaticInstruction();
       assert(NewStaticInst != nullptr && "Invalid static llvm instructions.");
 
-      NewStaticLoop =
-          this->CachedLI->getStaticLoopForBB(NewStaticInst->getParent());
-      if (NewStaticLoop) {
-        IsAtHeaderOfCandidate =
-            NewStaticInst == NewStaticLoop->getHeaderNonPhiInst();
+      auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
+      auto NewLoop = LI->getLoopFor(NewStaticInst->getParent());
+
+      if (NewLoop != nullptr && this->isLoopDataFlow(NewLoop)) {
+        // This loop is possible for dataflow.
+        if (this->CachedStaticInnerMostLoop.find(NewLoop) ==
+            this->CachedStaticInnerMostLoop.end()) {
+          this->CachedStaticInnerMostLoop.emplace(
+              NewLoop, new StaticInnerMostLoop(NewLoop));
+        }
+        NewStaticLoop = this->CachedStaticInnerMostLoop.at(NewLoop);
+        IsAtHeaderOfCandidate = isStaticInstLoopHead(NewLoop, NewStaticInst);
       }
 
       // if (IsAtHeaderOfCandidate) {
@@ -254,8 +268,11 @@ void AbstractDataFlowAcceleratorPass::transform() {
 
       if (this->Trace->DynamicInstructionList.size() == 2) {
         // We can commit the previous one.
+        // DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize.\n");
         this->serializeInstStream(this->Trace->DynamicInstructionList.front());
         this->Trace->commitOneDynamicInst();
+
+        // DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize: Done.\n");
       }
 
       // If we are at the head of some candidate loop, switch to BUFFERING.
@@ -513,7 +530,7 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
     // This is not the inner most loop.
     DEBUG(llvm::errs() << "AbstractDataFlowAcceleratorPass: Loop "
                        << printLoop(Loop)
-                       << " is statically not vectorizable because it is not "
+                       << " is statically not dataflow because it is not "
                           "inner most loop.\n");
     return false;
   }
@@ -530,7 +547,7 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
           // Indirect call, not vectorizable.
           DEBUG(llvm::errs()
                 << "AbstractDataFlowAcceleratorPass: Loop " << printLoop(Loop)
-                << " is statically not vectorizable because it "
+                << " is statically not dataflow because it "
                    "contains indirect call.\n");
           return false;
         }
@@ -539,7 +556,7 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
           // TODO: add a set for supported functions.
           DEBUG(llvm::errs()
                 << "AbstractDataFlowAcceleratorPass: Loop " << printLoop(Loop)
-                << " is statically not vectorizable because it "
+                << " is statically not dataflow because it "
                    "contains unsupported call.\n");
           return false;
         }
@@ -548,6 +565,7 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
   }
 
   // Done: this loop can be represented as data flow.
+  // DEBUG(llvm::errs() << "isLoopDataFlow returned true.\n");
   return true;
 }
 
