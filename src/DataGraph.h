@@ -14,6 +14,45 @@
 #include <unordered_set>
 #include <vector>
 
+/**
+ * AddrToMemAccessMap maintains a map from memory address to the last access
+ * instruction's id.
+ * This is used to calculate the memory dependence.
+ * It maintains an update log and when the log's size grows above a threshold,
+ * it will erase the oldest update to release space.
+ * This assumes that the user will not care about long range memory dependence,
+ * e.g. 1000000 instruction distance.
+ */
+class AddrToMemAccessMap {
+public:
+  AddrToMemAccessMap() = default;
+  AddrToMemAccessMap(const AddrToMemAccessMap &Other) = delete;
+  AddrToMemAccessMap(AddrToMemAccessMap &&Other) = delete;
+  AddrToMemAccessMap &operator=(const AddrToMemAccessMap &Other) = delete;
+  AddrToMemAccessMap &operator=(AddrToMemAccessMap &&Other) = delete;
+
+  using DynamicId = DynamicInstruction::DynamicId;
+  using Address = uint64_t;
+
+  void update(Address Addr, DynamicId Id);
+
+  /**
+   * Get the last instruction's id which accessed Addr.
+   * Return InvalidId if there has not been any.
+   */
+  DynamicId getLastAccess(Address Addr) const;
+
+  size_t size() const { return this->Map.size(); }
+
+private:
+  using LogEntry = std::pair<Address, DynamicId>;
+  std::list<LogEntry> Log;
+  std::unordered_map<Address, DynamicId> Map;
+  static const size_t LOG_THRESHOLD = 10000000;
+
+  void release();
+};
+
 class DataGraph {
 public:
   using DynamicId = DynamicInstruction::DynamicId;
@@ -158,20 +197,15 @@ private:
 
   // A map from virtual address to the last dynamic store instructions that
   // writes to it.
-  std::unordered_map<uint64_t, DynamicId> AddrToLastStoreInstMap;
+  AddrToMemAccessMap AddrToLastStoreInstMap;
   // A map from virtual address to the last dynamic load instructions that
   // reads from it.
-  std::unordered_map<uint64_t, DynamicId> AddrToLastLoadInstMap;
+  AddrToMemAccessMap AddrToLastLoadInstMap;
 
   // Handle the RAW, WAW, WAR dependence.
   void handleMemoryDependence(DynamicInstruction *DynamicInst);
 
   void handleControlDependence(DynamicInstruction *DynamicInst);
-
-  // Return true if there is a dependence.
-  bool
-  checkAndAddMemoryDependence(std::unordered_map<uint64_t, DynamicId> &LastMap,
-                              uint64_t Addr, DynamicInstruction *DynamicInst);
 
   void handleRegisterDependence(DynamicInstruction *DynamicInst,
                                 llvm::Instruction *StaticInstruction);
@@ -199,6 +233,12 @@ private:
    */
   void printStaticInst(llvm::raw_ostream &O,
                        llvm::Instruction *StaticInst) const;
+
+  /**
+   * Print the memory usage so far.
+   * This is used to debug memory leak...
+   */
+  void printMemoryUsage() const;
 };
 
 #endif

@@ -232,7 +232,7 @@ class MachSuiteBenchmark:
     def replay(self):
         os.chdir(self.work_path)
         # Basic replay.
-        # self.build_replay()
+        self.build_replay()
         # debugs = []
         # gem5_outdir = self.run_replay(debugs=debugs)
         # Util.call_helper([
@@ -241,65 +241,65 @@ class MachSuiteBenchmark:
         #     self.get_replay_result(),
         # ])
         # Abstract data flow replay.
-        self.build_replay_abs_data_flow()
-        debugs = [
-            # 'AbstractDataFlowAccelerator'
-        ]
-        gem5_outdir = self.run_replay(debugs=debugs)
-        Util.call_helper([
-            'cp',
-            os.path.join(gem5_outdir, 'stats.txt'),
-            self.get_adfa_result(),
-        ])
+        # self.build_replay_abs_data_flow()
+        # debugs = [
+        #     # 'AbstractDataFlowAccelerator'
+        # ]
+        # gem5_outdir = self.run_replay(debugs=debugs)
+        # Util.call_helper([
+        #     'cp',
+        #     os.path.join(gem5_outdir, 'stats.txt'),
+        #     self.get_adfa_result(),
+        # ])
         os.chdir(self.cwd)
 
 
 class MachSuiteBenchmarks:
 
     BENCHMARK_PARAMS = {
-        "bfs": [
-            "queue",
-            #     # "bulk" # not working
-        ],
-        "aes": [
-            "aes"
-        ],
-        "stencil": [
-            "stencil2d",
-            "stencil3d"
-        ],
-        "md": [
-            "grid",
-            "knn"
-        ],
-        "fft": [
-            "strided",
-            "transpose"
-        ],
-        "viterbi": [
-            "viterbi"
-        ],
-        "sort": [
-            # "radix",
-            "merge"
-        ],
-        "spmv": [
-            "ellpack",
-            "crs"
-        ],
-        "kmp": [
-            "kmp"
-        ],
+        # "bfs": [
+        #     "queue",
+        #     #     # "bulk" # not working
+        # ],
+        # "aes": [
+        #     "aes"
+        # ],
+        # "stencil": [
+        #     "stencil2d",
+        #     "stencil3d"
+        # ],
+        # "md": [
+        #     "grid",
+        #     "knn"
+        # ],
+        # "fft": [
+        #     "strided",
+        #     "transpose"
+        # ],
+        # "viterbi": [
+        #     "viterbi"
+        # ],
+        # "sort": [
+        #     # "radix",
+        #     "merge"
+        # ],
+        # "spmv": [
+        #     "ellpack",
+        #     "crs"
+        # ],
+        # "kmp": [
+        #     "kmp"
+        # ],
         # #  "backprop": [
         # #     "backprop" # Not working.
         # #  ],
         "gemm": [
             "blocked",
-            "ncubed"
+            # "ncubed"
         ],
-        "nw": [
-            "nw"
-        ]
+        # "nw": [
+        #     "nw"
+        # ]
     }
 
     def __init__(self, folder):
@@ -493,7 +493,7 @@ def main(folder):
 
     # We start 4 processes each time until we are done.
     prev = 0
-    issue_width = 4
+    issue_width = 8
     for i in xrange(len(processes)):
         processes[i].start()
         if (i + 1) % issue_width == 0:

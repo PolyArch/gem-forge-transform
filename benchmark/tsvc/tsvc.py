@@ -691,10 +691,10 @@ def main():
         tsvc_benchmarks[test_name] = dict()
         for test_func in TSVCBenchmark.TESTS_SINGLE_TEST[test_name]:
             benchmark = TSVCBenchmark(test_name, test_func)
-            # benchmark.baseline()
-            # benchmark.build_raw_bc()
-            # benchmark.trace()
-            # benchmark.replay()
+            benchmark.baseline()
+            benchmark.build_raw_bc()
+            benchmark.trace()
+            benchmark.replay()
             benchmark.clean()
             tsvc_benchmarks[test_name][test_func] = benchmark
 
