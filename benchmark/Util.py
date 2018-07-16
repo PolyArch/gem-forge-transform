@@ -46,6 +46,7 @@ def call_helper(cmd):
     """
     Helper function to call a command and print the actual command when failed.
     """
+    print(' '.join(cmd))
     try:
         subprocess.check_call(cmd)
     except subprocess.CalledProcessError as e:

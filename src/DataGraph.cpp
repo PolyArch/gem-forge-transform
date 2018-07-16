@@ -15,6 +15,39 @@ static llvm::cl::opt<std::string>
 
 #define DEBUG_TYPE "DataGraph"
 
+void AddrToMemAccessMap::update(Address Addr, DynamicId Id) {
+  this->Log.emplace_back(Addr, Id);
+  this->Map[Addr] = Id;
+  this->release();
+}
+
+AddrToMemAccessMap::DynamicId
+AddrToMemAccessMap::getLastAccess(Address Addr) const {
+  auto Iter = this->Map.find(Addr);
+  if (Iter != this->Map.end()) {
+    return Iter->second;
+  }
+  return DynamicInstruction::InvalidId;
+}
+
+void AddrToMemAccessMap::release() {
+  while (this->Log.size() > AddrToMemAccessMap::LOG_THRESHOLD) {
+    auto &Entry = this->Log.front();
+    // Since we never erase entries in the map, this address should still be
+    // there.
+    auto Iter = this->Map.find(Entry.first);
+    assert(Iter != this->Map.end() &&
+           "This address has already been released.");
+    if (Iter->second == Entry.second) {
+      // This address has not been accessed by other instruction, it is
+      // considered old and safe to remove it.
+      this->Map.erase(Iter);
+    }
+    // Release the log.
+    this->Log.pop_front();
+  }
+}
+
 DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function *_Function,
     std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments)
@@ -146,6 +179,16 @@ void DataGraph::commitOneDynamicInst() {
   this->AliveDynamicInstsMap.erase(Id);
   delete this->DynamicInstructionList.front();
   this->DynamicInstructionList.pop_front();
+
+#define DUMP_MEM_USAGE
+#ifdef DUMP_MEM_USAGE
+  static int Count = 0;
+  Count++;
+  if (Count % 100000 == 0) {
+    Count = 0;
+    this->printMemoryUsage();
+  }
+#endif
 }
 
 bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
@@ -455,30 +498,12 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
   }
 }
 
-bool DataGraph::checkAndAddMemoryDependence(
-    std::unordered_map<uint64_t, DynamicId> &LastMap, uint64_t Addr,
-    DynamicInstruction *DynamicInst) {
-  auto Iter = LastMap.find(Addr);
-  if (Iter != LastMap.end()) {
-    // There is a dependence.
-    auto DepIter = this->MemDeps.find(DynamicInst->Id);
-    if (DepIter == this->MemDeps.end()) {
-      DepIter = this->MemDeps
-                    .emplace(DynamicInst->Id, std::unordered_set<DynamicId>())
-                    .first;
-    }
-    DepIter->second.insert(Iter->second);
-    return true;
-  }
-  return false;
-}
-
 void DataGraph::updateAddrToLastMemoryAccessMap(uint64_t Addr, DynamicId Id,
                                                 bool loadOrStore) {
   if (loadOrStore) {
-    this->AddrToLastLoadInstMap[Addr] = Id;
+    this->AddrToLastLoadInstMap.update(Addr, Id);
   } else {
-    this->AddrToLastStoreInstMap[Addr] = Id;
+    this->AddrToLastStoreInstMap.update(Addr, Id);
   }
 }
 
@@ -491,9 +516,11 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
 
   // Remember to create the dependence set before hand to ensure there is
   // always a set.
-  this->MemDeps.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(DynamicInst->Id),
-                        std::forward_as_tuple());
+  auto &MemDep = this->MemDeps
+                     .emplace(std::piecewise_construct,
+                              std::forward_as_tuple(DynamicInst->Id),
+                              std::forward_as_tuple())
+                     .first->second;
 
   if (auto LoadStaticInstruction =
           llvm::dyn_cast<llvm::LoadInst>(DynamicInst->getStaticInstruction())) {
@@ -509,12 +536,13 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
         this->DataLayout->getTypeStoreSize(LoadedType);
     for (uint64_t ByteIter = 0; ByteIter < LoadedTypeSizeInByte; ++ByteIter) {
       uint64_t Addr = BaseAddr + ByteIter;
-      if (this->checkAndAddMemoryDependence(this->AddrToLastStoreInstMap, Addr,
-                                            DynamicInst)) {
+      auto DepId = this->AddrToLastStoreInstMap.getLastAccess(Addr);
+      if (DepId != DynamicInstruction::InvalidId) {
+        MemDep.insert(DepId);
         this->NumMemDependences++;
       }
-      // Update the latest read map.
-      this->AddrToLastLoadInstMap[Addr] = DynamicInst->Id;
+      // Update the latest load map.
+      this->AddrToLastLoadInstMap.update(Addr, DynamicInst->Id);
     }
     return;
   }
@@ -533,17 +561,19 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
     for (uint64_t ByteIter = 0; ByteIter < StoredTypeSizeInByte; ++ByteIter) {
       uint64_t Addr = BaseAddr + ByteIter;
       // WAW.
-      if (this->checkAndAddMemoryDependence(this->AddrToLastStoreInstMap, Addr,
-                                            DynamicInst)) {
+      auto DepStoreId = this->AddrToLastStoreInstMap.getLastAccess(Addr);
+      if (DepStoreId != DynamicInstruction::InvalidId) {
+        MemDep.insert(DepStoreId);
         this->NumMemDependences++;
       }
       // WAR.
-      if (this->checkAndAddMemoryDependence(this->AddrToLastLoadInstMap, Addr,
-                                            DynamicInst)) {
+      auto DepLoadId = this->AddrToLastLoadInstMap.getLastAccess(Addr);
+      if (DepLoadId != DynamicInstruction::InvalidId) {
+        MemDep.insert(DepLoadId);
         this->NumMemDependences++;
       }
       // Update the last store map.
-      this->AddrToLastStoreInstMap[Addr] = DynamicInst->Id;
+      this->AddrToLastStoreInstMap.update(Addr, DynamicInst->Id);
     }
     return;
   }
@@ -931,6 +961,28 @@ void DataGraph::printStaticInst(llvm::raw_ostream &O,
     << "::" << StaticInst->getParent()->getName()
     << "::" << StaticInst->getName() << '(' << StaticInst->getOpcodeName()
     << ')';
+}
+
+void DataGraph::printMemoryUsage() const {
+  llvm::errs() << "====================================================\n";
+
+  llvm::errs() << "DynamicInstructionList: "
+               << this->DynamicInstructionList.size() << '\n';
+  llvm::errs() << "AliveDynamicInstsMap:   "
+               << this->AliveDynamicInstsMap.size() << '\n';
+  llvm::errs() << "RegDeps:                " << this->RegDeps.size() << '\n';
+  llvm::errs() << "CtrDeps:                " << this->CtrDeps.size() << '\n';
+  llvm::errs() << "MemDeps:                " << this->MemDeps.size() << '\n';
+  llvm::errs() << "StaticToLastDynamicMap: "
+               << this->StaticToLastDynamicMap.size() << '\n';
+  llvm::errs() << "DynamicFrameStack:      " << this->DynamicFrameStack.size()
+               << '\n';
+  llvm::errs() << "AddrToLastStoreInstMap: "
+               << this->AddrToLastStoreInstMap.size() << '\n';
+  llvm::errs() << "AddrToLastLoadInstMap:  "
+               << this->AddrToLastLoadInstMap.size() << '\n';
+
+  llvm::errs() << "====================================================\n";
 }
 
 #undef DEBUG_TYPE
