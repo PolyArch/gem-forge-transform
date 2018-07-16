@@ -2,6 +2,7 @@
 #define LLVM_TDG_POST_DOMINANCE_FRONTIER_H
 
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -12,6 +13,8 @@ public:
 
   using SetT = std::unordered_set<llvm::BasicBlock *>;
   const SetT &getFrontier(llvm::BasicBlock *BB) const;
+
+  void print(llvm::raw_ostream &O) const;
 
 private:
   std::unordered_map<llvm::BasicBlock *, SetT> BBFrontierMap;

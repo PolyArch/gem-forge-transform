@@ -21,7 +21,7 @@ PostDominanceFrontier::calculate(const llvm::PostDominatorTree &Tree,
             .first->second;
     // Compute DF_local.
     for (auto Pred : llvm::predecessors(BB)) {
-      auto PredNode = Tree.getNode(BB);
+      auto PredNode = Tree.getNode(Pred);
       if (PredNode->getIDom() != Node) {
         Frontier.insert(Pred);
       }
@@ -40,6 +40,16 @@ PostDominanceFrontier::calculate(const llvm::PostDominatorTree &Tree,
     return Frontier;
   }
   return Iter->second;
+}
+
+void PostDominanceFrontier::print(llvm::raw_ostream &O) const {
+  for (const auto &Iter : this->BBFrontierMap) {
+    O << "BB " << Iter.first->getName() << ": \n";
+    for (const auto BB : Iter.second) {
+      O << "  " << BB->getName() << ", ";
+    }
+    O << '\n';
+  }
 }
 
 const PostDominanceFrontier::SetT &
