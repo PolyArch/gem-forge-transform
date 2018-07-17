@@ -387,7 +387,11 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
 
   assert(StaticInstruction->getOpcode() != llvm::Instruction::PHI &&
          "Can only handle register dependence for non phi node.");
-  this->RegDeps.emplace(DynamicInst->Id, std::unordered_set<DynamicId>());
+  auto &RegDeps = this->RegDeps
+                      .emplace(std::piecewise_construct,
+                               std::forward_as_tuple(DynamicInst->Id),
+                               std::forward_as_tuple())
+                      .first->second;
 
   for (unsigned int OperandId = 0,
                     NumOperands = StaticInstruction->getNumOperands();
@@ -401,14 +405,14 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
         auto Iter = this->PhiNodeDependenceMap.find(OperandStaticPhi);
         if (Iter != this->PhiNodeDependenceMap.end()) {
           // We have found a dependence.
-          this->RegDeps.at(DynamicInst->Id).insert(Iter->second);
+          RegDeps.emplace_back(OperandStaticInst, Iter->second);
         }
       } else {
         // non phi node dependence.
         auto Iter = this->StaticToLastDynamicMap.find(OperandStaticInst);
         assert(Iter != this->StaticToLastDynamicMap.end() &&
                "Failed to look up last dynamic for register dependence.");
-        this->RegDeps.at(DynamicInst->Id).insert(Iter->second);
+        RegDeps.emplace_back(OperandStaticInst, Iter->second);
       }
     }
   }

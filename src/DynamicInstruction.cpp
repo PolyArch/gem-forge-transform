@@ -125,18 +125,17 @@ DynamicInstruction::DynamicId DynamicInstruction::allocateId() {
   return ++CurrentId;
 }
 
-void DynamicInstruction::format(llvm::raw_ostream &Out,
-                                DataGraph *Trace) const {
+void DynamicInstruction::format(llvm::raw_ostream &Out, DataGraph *DG) const {
   this->formatOpCode(Out);
   Out << '|';
   // The faked number of micro ops.
   uint32_t FakeNumMicroOps = 1;
   Out << this->Id << '|';
   // The dependence field.
-  this->formatDeps(Out, Trace->RegDeps, Trace->MemDeps, Trace->CtrDeps);
+  this->formatDeps(Out, DG);
   Out << '|';
   // Other fields for other insts.
-  this->formatCustomizedFields(Out, Trace);
+  this->formatCustomizedFields(Out, DG);
   Out << '\n';
 }
 
@@ -145,10 +144,17 @@ void DynamicInstruction::serializeToProtobuf(
   ProtobufEntry->set_op(this->getOpName());
   ProtobufEntry->set_id(this->Id);
   {
+    /**
+     * A simple deduplication on the register deps.
+     */
+    std::unordered_set<DynamicId> RegDepsSeen;
     auto DepIter = DG->RegDeps.find(this->Id);
     if (DepIter != DG->RegDeps.end()) {
-      for (const auto &DepInstId : DepIter->second) {
-        ProtobufEntry->add_deps(DepInstId);
+      for (const auto &RegDep : DepIter->second) {
+        if (RegDepsSeen.find(RegDep.second) == RegDepsSeen.end()) {
+          ProtobufEntry->add_deps(RegDep.second);
+          RegDepsSeen.insert(RegDep.second);
+        }
       }
     }
   }
@@ -172,33 +178,31 @@ void DynamicInstruction::serializeToProtobuf(
 }
 
 void DynamicInstruction::formatDeps(llvm::raw_ostream &Out,
-                                    const DependentMap &RegDeps,
-                                    const DependentMap &MemDeps,
-                                    const DependentMap &CtrDeps) const {
+                                    DataGraph *DG) const {
   // if (this->StaticInstruction != nullptr) {
   //   DEBUG(llvm::errs()
   //               << "Format dependence for "
   //               << this->StaticInstruction->getName() << '\n');
   // }
   {
-    auto DepIter = RegDeps.find(this->Id);
-    if (DepIter != RegDeps.end()) {
+    auto DepIter = DG->RegDeps.find(this->Id);
+    if (DepIter != DG->RegDeps.end()) {
+      for (const auto &RegDep : DepIter->second) {
+        Out << RegDep.second << ',';
+      }
+    }
+  }
+  {
+    auto DepIter = DG->MemDeps.find(this->Id);
+    if (DepIter != DG->MemDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
         Out << DepInstId << ',';
       }
     }
   }
   {
-    auto DepIter = MemDeps.find(this->Id);
-    if (DepIter != MemDeps.end()) {
-      for (const auto &DepInstId : DepIter->second) {
-        Out << DepInstId << ',';
-      }
-    }
-  }
-  {
-    auto DepIter = CtrDeps.find(this->Id);
-    if (DepIter != CtrDeps.end()) {
+    auto DepIter = DG->CtrDeps.find(this->Id);
+    if (DepIter != DG->CtrDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
         Out << DepInstId << ',';
       }

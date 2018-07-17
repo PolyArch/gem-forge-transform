@@ -65,7 +65,7 @@ public:
   // operands
   std::vector<DynamicValue *> DynamicOperands;
 
-  void format(llvm::raw_ostream &Out, DataGraph *Trace) const;
+  void format(llvm::raw_ostream &Out, DataGraph *DG) const;
 
   void serializeToProtobuf(LLVM::TDG::TDGInstruction *ProtobufEntry,
                            DataGraph *DG) const;
@@ -76,9 +76,7 @@ protected:
    */
   static DynamicId allocateId();
 
-  void formatDeps(llvm::raw_ostream &Out, const DependentMap &RegDeps,
-                  const DependentMap &MemDeps,
-                  const DependentMap &CtrDeps) const;
+  void formatDeps(llvm::raw_ostream &Out, DataGraph *DG) const;
   void formatOpCode(llvm::raw_ostream &Out) const;
 
   virtual void formatCustomizedFields(llvm::raw_ostream &Out,

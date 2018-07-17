@@ -21,6 +21,10 @@ llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel(
         clEnumValN(DataGraph::DataGraphDetailLv::INTEGRATED, "integrated",
                    "All")));
 
+static llvm::cl::opt<std::string>
+    OutputDataGraphFileName("output-datagraph",
+                            llvm::cl::desc("Output datagraph file name."));
+
 #define DEBUG_TYPE "ReplayPass"
 namespace {
 
@@ -91,7 +95,11 @@ public:
 
 ReplayTrace::ReplayTrace(char _ID)
     : llvm::ModulePass(_ID), Trace(nullptr),
-      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr) {}
+      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr) {
+  if (OutputDataGraphFileName.getNumOccurrences() == 1) {
+    this->OutTraceName = OutputDataGraphFileName.getValue();
+  }
+}
 
 ReplayTrace::~ReplayTrace() {}
 
@@ -363,11 +371,12 @@ void ReplayTrace::fakeFixRegisterDeps() {
       if (PrevMulDivInst != nullptr) {
         if (this->Trace->RegDeps.find(DynamicInst->Id) ==
             this->Trace->RegDeps.end()) {
-          this->Trace->RegDeps.emplace(
-              DynamicInst->Id,
-              std::unordered_set<DynamicInstruction::DynamicId>());
+          this->Trace->RegDeps.emplace(std::piecewise_construct,
+                                       std::forward_as_tuple(DynamicInst->Id),
+                                       std::forward_as_tuple());
         }
-        this->Trace->RegDeps.at(DynamicInst->Id).insert(PrevMulDivInst->Id);
+        this->Trace->RegDeps.at(DynamicInst->Id)
+            .emplace_back(PrevMulDivInst->getStaticInstruction(), PrevMulDivInst->Id);
       }
       PrevMulDivInst = DynamicInst;
       break;
@@ -379,108 +388,109 @@ void ReplayTrace::fakeFixRegisterDeps() {
 }
 
 void ReplayTrace::fakeMicroOps() {
-  for (auto Iter = this->Trace->DynamicInstructionList.begin(),
-            End = this->Trace->DynamicInstructionList.end();
-       Iter != End; ++Iter) {
-    DynamicInstruction *DynamicInst = *Iter;
+  // for (auto Iter = this->Trace->DynamicInstructionList.begin(),
+  //           End = this->Trace->DynamicInstructionList.end();
+  //      Iter != End; ++Iter) {
+  //   DynamicInstruction *DynamicInst = *Iter;
 
-    auto StaticInstruction = DynamicInst->getStaticInstruction();
+  //   auto StaticInstruction = DynamicInst->getStaticInstruction();
 
-    if (StaticInstruction != nullptr) {
-      // This is an llvm instruction.
-      // Ignore all the phi node and switch.
-      if (StaticInstruction->getOpcode() != llvm::Instruction::PHI &&
-          StaticInstruction->getOpcode() != llvm::Instruction::Switch) {
-        // Fake micro ops pending to be inserted.
-        // If 1, means that the fake micro op should be inserted
-        // into the dependent path.
-        std::vector<std::pair<DynamicInstruction *, int>> FakeNumMicroOps;
-        for (unsigned int Idx = 0,
-                          NumOperands = StaticInstruction->getNumOperands();
-             Idx != NumOperands; ++Idx) {
-          if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx))) {
-            // This is an immediate number.
-            // No dependency for loading an immediate.
-            FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
-          }
-        }
+  //   if (StaticInstruction != nullptr) {
+  //     // This is an llvm instruction.
+  //     // Ignore all the phi node and switch.
+  //     if (StaticInstruction->getOpcode() != llvm::Instruction::PHI &&
+  //         StaticInstruction->getOpcode() != llvm::Instruction::Switch) {
+  //       // Fake micro ops pending to be inserted.
+  //       // If 1, means that the fake micro op should be inserted
+  //       // into the dependent path.
+  //       std::vector<std::pair<DynamicInstruction *, int>> FakeNumMicroOps;
+  //       for (unsigned int Idx = 0,
+  //                         NumOperands = StaticInstruction->getNumOperands();
+  //            Idx != NumOperands; ++Idx) {
+  //         if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx))) {
+  //           // This is an immediate number.
+  //           // No dependency for loading an immediate.
+  //           FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
+  //         }
+  //       }
 
-        // DEBUG(llvm::errs() << StaticInstruction->getName() << ' '
-        //                    << StaticInstruction->getOpcodeName() << '\n');
+  //       // DEBUG(llvm::errs() << StaticInstruction->getName() << ' '
+  //       //                    << StaticInstruction->getOpcodeName() << '\n');
 
-        switch (StaticInstruction->getOpcode()) {
-        case llvm::Instruction::FMul: {
-          auto Operand = StaticInstruction->getOperand(0);
-          if (Operand->getType()->isVectorTy()) {
-            FakeNumMicroOps.emplace_back(createFakeDynamicInst("fmul"), 1);
-          }
-          break;
-        }
-        case llvm::Instruction::Mul: {
-          // Add mulel and muleh op.
-          // Normally this should be
-          // mulix
-          // mulel
-          // mules
-          // But now we fake it as:
-          // limm
-          // limm
-          // mul
-          FakeNumMicroOps.emplace_back(createFakeDynamicInst("mul"), 1);
-          break;
-        }
-        case llvm::Instruction::Switch:
-        case llvm::Instruction::Br: {
-          // rdip
-          // wrip
-          FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
-          FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
-          break;
-        }
-        default:
-          break;
-        }
+  //       switch (StaticInstruction->getOpcode()) {
+  //       case llvm::Instruction::FMul: {
+  //         auto Operand = StaticInstruction->getOperand(0);
+  //         if (Operand->getType()->isVectorTy()) {
+  //           FakeNumMicroOps.emplace_back(createFakeDynamicInst("fmul"), 1);
+  //         }
+  //         break;
+  //       }
+  //       case llvm::Instruction::Mul: {
+  //         // Add mulel and muleh op.
+  //         // Normally this should be
+  //         // mulix
+  //         // mulel
+  //         // mules
+  //         // But now we fake it as:
+  //         // limm
+  //         // limm
+  //         // mul
+  //         FakeNumMicroOps.emplace_back(createFakeDynamicInst("mul"), 1);
+  //         break;
+  //       }
+  //       case llvm::Instruction::Switch:
+  //       case llvm::Instruction::Br: {
+  //         // rdip
+  //         // wrip
+  //         FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
+  //         FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);
+  //         break;
+  //       }
+  //       default:
+  //         break;
+  //       }
 
-        std::vector<DynamicInstruction *> Fakes;
-        Fakes.reserve(FakeNumMicroOps.size());
-        for (const auto &FakeOpEntry : FakeNumMicroOps) {
-          auto FakeInstruction = FakeOpEntry.first;
-          if (FakeOpEntry.second == 1) {
-            // If FakeDep, make the micro op dependent on inst's dependence.
-            if (this->Trace->RegDeps.find(DynamicInst->Id) !=
-                this->Trace->RegDeps.end()) {
-              this->Trace->RegDeps.emplace(
-                  FakeInstruction->Id,
-                  this->Trace->RegDeps.at(DynamicInst->Id));
-            }
-            if (this->Trace->CtrDeps.find(DynamicInst->Id) !=
-                this->Trace->CtrDeps.end()) {
-              this->Trace->CtrDeps.emplace(
-                  FakeInstruction->Id,
-                  this->Trace->CtrDeps.at(DynamicInst->Id));
-            }
-          }
-          Fakes.push_back(FakeInstruction);
-        }
+  //       std::vector<DynamicInstruction *> Fakes;
+  //       Fakes.reserve(FakeNumMicroOps.size());
+  //       for (const auto &FakeOpEntry : FakeNumMicroOps) {
+  //         auto FakeInstruction = FakeOpEntry.first;
+  //         if (FakeOpEntry.second == 1) {
+  //           // If FakeDep, make the micro op dependent on inst's dependence.
+  //           if (this->Trace->RegDeps.find(DynamicInst->Id) !=
+  //               this->Trace->RegDeps.end()) {
+  //             this->Trace->RegDeps.emplace(
+  //                 FakeInstruction->Id,
+  //                 this->Trace->RegDeps.at(DynamicInst->Id));
+  //           }
+  //           if (this->Trace->CtrDeps.find(DynamicInst->Id) !=
+  //               this->Trace->CtrDeps.end()) {
+  //             this->Trace->CtrDeps.emplace(
+  //                 FakeInstruction->Id,
+  //                 this->Trace->CtrDeps.at(DynamicInst->Id));
+  //           }
+  //         }
+  //         Fakes.push_back(FakeInstruction);
+  //       }
 
-        // Insert all the fake operations.
-        this->Trace->DynamicInstructionList.insert(Iter, Fakes.begin(),
-                                                   Fakes.end());
+  //       // Insert all the fake operations.
+  //       this->Trace->DynamicInstructionList.insert(Iter, Fakes.begin(),
+  //                                                  Fakes.end());
 
-        for (auto FakeOp : Fakes) {
-          // Fix the dependence.
-          // Make the inst dependent on the micro op.
-          if (this->Trace->RegDeps.find(DynamicInst->Id) ==
-              this->Trace->RegDeps.end()) {
-            this->Trace->RegDeps.emplace(
-                DynamicInst->Id,
-                std::unordered_set<DynamicInstruction::DynamicId>());
-          }
-          this->Trace->RegDeps.at(DynamicInst->Id).insert(FakeOp->Id);
-        }
-      }
-    }
-  }
+  //       for (auto FakeOp : Fakes) {
+  //         // Fix the dependence.
+  //         // Make the inst dependent on the micro op.
+  //         if (this->Trace->RegDeps.find(DynamicInst->Id) ==
+  //             this->Trace->RegDeps.end()) {
+  //           this->Trace->RegDeps.emplace(std::piecewise_construct,
+  //                                        std::forward_as_tuple(DynamicInst->Id),
+  //                                        std::forward_as_tuple());
+  //         }
+  //         this->Trace->RegDeps.at(DynamicInst->Id)
+  //             .emplace_back(nullptr, FakeOp->Id);
+  //       }
+  //     }
+  //   }
+  // }
 }
 
 // This function will make external call possible in the datagraph.
@@ -489,42 +499,42 @@ void ReplayTrace::fakeMicroOps() {
 // external-call
 // external-call-clean
 void ReplayTrace::fakeExternalCall(DataGraph::DynamicInstIter InstIter) {
-  auto DynamicInst = *InstIter;
-  auto StaticInst = DynamicInst->getStaticInstruction();
-  if (StaticInst == nullptr) {
-    // This is not a llvm instruction.
-    return;
-  }
-  if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
-    auto Callee = StaticCall->getCalledFunction();
-    if (Callee == nullptr) {
-      // This is indirect call, we assume it's traced.
-      // (This is really bad, it all comes from that we cannot determine the
-      // dynamic dispatch.)
-      // TODO: Improve this?
-      return;
-    }
-    if (!Callee->isDeclaration()) {
-      // We have definition of this function, it will be traced.
-      return;
-    }
-    // This is an untraced call.
-    auto CallingConvention = StaticCall->getCallingConv();
-    assert(CallingConvention == llvm::CallingConv::C &&
-           "We only support C calling convention.");
-    // Create the push instructions.
-    std::vector<DynamicInstruction *> Pushes;
-    Pushes.reserve(StaticCall->getNumArgOperands());
-    for (unsigned ArgIdx = 0, NumArgs = StaticCall->getNumArgOperands();
-         ArgIdx != NumArgs; ++ArgIdx) {
-      Pushes.push_back(
-          new PushInstruction(*(DynamicInst->DynamicOperands[ArgIdx + 1])));
-    }
-    // The push instruction will implicitly wait until the previous one is
-    // committed, so no need to insert dependence edges.
-    // Create the call-external instruction and call-external-clean.
-    // auto CallExternal = new
-  }
+  // auto DynamicInst = *InstIter;
+  // auto StaticInst = DynamicInst->getStaticInstruction();
+  // if (StaticInst == nullptr) {
+  //   // This is not a llvm instruction.
+  //   return;
+  // }
+  // if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
+  //   auto Callee = StaticCall->getCalledFunction();
+  //   if (Callee == nullptr) {
+  //     // This is indirect call, we assume it's traced.
+  //     // (This is really bad, it all comes from that we cannot determine the
+  //     // dynamic dispatch.)
+  //     // TODO: Improve this?
+  //     return;
+  //   }
+  //   if (!Callee->isDeclaration()) {
+  //     // We have definition of this function, it will be traced.
+  //     return;
+  //   }
+  //   // This is an untraced call.
+  //   auto CallingConvention = StaticCall->getCallingConv();
+  //   assert(CallingConvention == llvm::CallingConv::C &&
+  //          "We only support C calling convention.");
+  //   // Create the push instructions.
+  //   std::vector<DynamicInstruction *> Pushes;
+  //   Pushes.reserve(StaticCall->getNumArgOperands());
+  //   for (unsigned ArgIdx = 0, NumArgs = StaticCall->getNumArgOperands();
+  //        ArgIdx != NumArgs; ++ArgIdx) {
+  //     Pushes.push_back(
+  //         new PushInstruction(*(DynamicInst->DynamicOperands[ArgIdx + 1])));
+  //   }
+  //   // The push instruction will implicitly wait until the previous one is
+  //   // committed, so no need to insert dependence edges.
+  //   // Create the call-external instruction and call-external-clean.
+  //   // auto CallExternal = new
+  // }
 }
 
 // The default transformation is just an identical transformation.

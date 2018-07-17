@@ -528,14 +528,6 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
   assert(Loop != nullptr && "Loop should not be nullptr.");
 
   // We allow nested loops.
-  // if (!Loop->empty()) {
-  //   // This is not the inner most loop.
-  //   DEBUG(llvm::errs() << "AbstractDataFlowAcceleratorPass: Loop "
-  //                      << printLoop(Loop)
-  //                      << " is statically not dataflow because it is not "
-  //                         "inner most loop.\n");
-  //   return false;
-  // }
 
   // Check if there is any calls to unsupported function.
   for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
@@ -579,6 +571,10 @@ void DynamicDataFlow::configure(llvm::Loop *_Loop,
   this->Loop = _Loop;
   this->PDF = _PDF;
   this->CurrentAge = 0;
+  DEBUG(llvm::errs() << "Config the dynamic data flow for loop "
+                     << this->Loop->getName() << '\n');
+  DEBUG(llvm::errs() << "Post Dominance Frontier:\n");
+  DEBUG(this->PDF->print(llvm::errs()));
 }
 
 void DynamicDataFlow::fixDependence(DynamicInstruction *DynamicInst,
