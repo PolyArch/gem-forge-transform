@@ -223,12 +223,21 @@ protected:
   uint64_t getTypeSizeForLoadStore(llvm::Instruction *StaticInst) const;
 
   /**
-   * Helper function to transfer outside iteration dependence from OldDeps to
-   * NewDeps.
+   * Helper function to transfer outside iteration register dependence from
+   * OldDeps to NewDeps.
    */
-  void transferOutsideDeps(DynamicInnerMostLoop &DynamicLoop,
-                           DataGraph::DependenceSet &NewDeps,
-                           const DataGraph::DependenceSet &OldDeps) const;
+  void
+  transferOutsideRegDeps(DynamicInnerMostLoop &DynamicLoop,
+                         DataGraph::RegDependenceList &NewDeps,
+                         const DataGraph::RegDependenceList &OldDeps) const;
+
+  /**
+   * Helper function to transfer outside iteration register dependence from
+   * OldDeps to NewDeps.
+   */
+  void transferOutsideNonRegDeps(DynamicInnerMostLoop &DynamicLoop,
+                                 DataGraph::DependenceSet &NewDeps,
+                                 const DataGraph::DependenceSet &OldDeps) const;
 
   /**
    * Helper function to transfer inside memory dependence.
@@ -241,7 +250,7 @@ protected:
    * Helper function to transfer inside register dependence.
    */
   void transferInsideRegDeps(DynamicInnerMostLoop &DynamicLoop,
-                             DataGraph::DependenceSet &NewRegDeps,
+                             DataGraph::RegDependenceList &NewRegDeps,
                              llvm::Instruction *NewStaticInst) const;
 
   /**
@@ -744,7 +753,6 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         [this, &ConstDynamicLoop](
             std::unordered_set<DynamicInstruction::DynamicId> &Deps) -> void {
       std::unordered_set<DynamicInstruction::DynamicId> NewDeps;
-      DEBUG(llvm::errs() << "Deps size " << Deps.size() << '\n');
       for (auto DepIter = Deps.begin(); DepIter != Deps.end();) {
         auto DepId = *DepIter;
         auto DepDynamicInstIter = this->Trace->AliveDynamicInstsMap.find(DepId);
@@ -771,7 +779,31 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
       // Insert the new dependence.
       Deps.insert(NewDeps.begin(), NewDeps.end());
     };
-    FixDependence(this->Trace->RegDeps.at(
+    auto FixRegDependence =
+        [this, &ConstDynamicLoop](DataGraph::RegDependenceList &Deps) -> void {
+      for (auto &RegDep : Deps) {
+        auto DepId = RegDep.second;
+        auto DepDynamicInstIter = this->Trace->AliveDynamicInstsMap.find(DepId);
+        if (DepDynamicInstIter == this->Trace->AliveDynamicInstsMap.end()) {
+          // This is outside loop dependence, keep it.
+          DEBUG(llvm::errs() << "Keep dependence " << DepId
+                             << " for last outside instruction.\n");
+          continue;
+        }
+        // The dependent inst is simd transformed.
+        auto DepStaticInst =
+            (*(DepDynamicInstIter->second))->getStaticInstruction();
+        const auto DepNewDynamicInstIter =
+            ConstDynamicLoop.StaticToNewDynamicMap.find(DepStaticInst);
+        assert(DepNewDynamicInstIter !=
+                   ConstDynamicLoop.StaticToNewDynamicMap.end() &&
+               "Missing simd transformed dependent instruction.");
+        DEBUG(llvm::errs() << "Replacing dependence " << DepId << " with "
+                           << DepNewDynamicInstIter->second << '\n');
+        RegDep.second = DepNewDynamicInstIter->second;
+      }
+    };
+    FixRegDependence(this->Trace->RegDeps.at(
         this->Trace->DynamicInstructionList.back()->Id));
     FixDependence(this->Trace->MemDeps.at(
         this->Trace->DynamicInstructionList.back()->Id));
@@ -917,10 +949,24 @@ SIMDPass::getTypeSizeForLoadStore(llvm::Instruction *StaticInst) const {
   return this->Trace->DataLayout->getTypeStoreSize(Type);
 }
 
-void SIMDPass::transferOutsideDeps(
+void SIMDPass::transferOutsideRegDeps(
+    DynamicInnerMostLoop &DynamicLoop, DataGraph::RegDependenceList &NewDeps,
+    const DataGraph::RegDependenceList &OldDeps) const {
+  for (const auto &RegDep : OldDeps) {
+    // If the dependent id is not alive, it is from outside the loop.
+    // We should probabily handle this more elegantly.
+    auto DepId = RegDep.second;
+    if (this->Trace->getAliveDynamicInst(DepId) == nullptr) {
+      // Outside dependence, transfer directly.
+      NewDeps.emplace_back(RegDep.first, DepId);
+    }
+  }
+}
+
+void SIMDPass::transferOutsideNonRegDeps(
     DynamicInnerMostLoop &DynamicLoop, DataGraph::DependenceSet &NewDeps,
     const DataGraph::DependenceSet &OldDeps) const {
-  for (auto DepId : OldDeps) {
+  for (const auto &DepId : OldDeps) {
     // If the dependent id is not alive, it is from outside the loop.
     // We should probabily handle this more elegantly.
     if (this->Trace->getAliveDynamicInst(DepId) == nullptr) {
@@ -950,7 +996,7 @@ void SIMDPass::transferInsideMemDeps(
 }
 
 void SIMDPass::transferInsideRegDeps(DynamicInnerMostLoop &DynamicLoop,
-                                     DataGraph::DependenceSet &NewRegDeps,
+                                     DataGraph::RegDependenceList &NewRegDeps,
                                      llvm::Instruction *NewStaticInst) const {
   for (unsigned OperandId = 0, NumOperands = NewStaticInst->getNumOperands();
        OperandId != NumOperands; ++OperandId) {
@@ -964,7 +1010,7 @@ void SIMDPass::transferInsideRegDeps(DynamicInnerMostLoop &DynamicLoop,
       auto NewOpDynamicInstIter =
           DynamicLoop.StaticToNewDynamicMap.find(OpInst);
       if (NewOpDynamicInstIter != DynamicLoop.StaticToNewDynamicMap.end()) {
-        NewRegDeps.insert(NewOpDynamicInstIter->second);
+        NewRegDeps.emplace_back(OpInst, NewOpDynamicInstIter->second);
       } else {
         // Otherwise, it should be dependent on some un transformed phi node,
         // which means it is actually an induction variable and should be
@@ -1024,14 +1070,14 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
                                     std::forward_as_tuple(NewDynamicInst->Id),
                                     std::forward_as_tuple())
                            .first->second;
-    this->transferOutsideDeps(DynamicLoop, NewRegDeps,
-                              this->Trace->RegDeps.at(DynamicId));
-    this->transferOutsideDeps(DynamicLoop, NewMemDeps,
-                              this->Trace->MemDeps.at(DynamicId));
+    this->transferOutsideRegDeps(DynamicLoop, NewRegDeps,
+                                 this->Trace->RegDeps.at(DynamicId));
+    this->transferOutsideNonRegDeps(DynamicLoop, NewMemDeps,
+                                    this->Trace->MemDeps.at(DynamicId));
     // For outside control dependence, only the first iteration has the currect
     // control dependence.
-    this->transferOutsideDeps(DynamicLoop, NewCtrDeps,
-                              this->Trace->CtrDeps.at(DynamicIds[0]));
+    this->transferOutsideNonRegDeps(DynamicLoop, NewCtrDeps,
+                                    this->Trace->CtrDeps.at(DynamicIds[0]));
 
     this->transferInsideMemDeps(DynamicLoop, NewMemDeps,
                                 this->Trace->MemDeps.at(DynamicId));
@@ -1066,7 +1112,7 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
           .first->second;
   for (auto NewDynamicId : NewDynamicIds) {
     // Make this pack dependent on all the loads.
-    NewPackRegDeps.insert(NewDynamicId);
+    NewPackRegDeps.emplace_back(StaticLoad, NewDynamicId);
     // Copy all the loads control dependence to the pack.
     auto &NewLoadCtrDeps = this->Trace->CtrDeps.at(NewDynamicId);
     NewPackCtrDeps.insert(NewLoadCtrDeps.begin(), NewLoadCtrDeps.end());
@@ -1223,12 +1269,12 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
       continue;
     }
     // DEBUG(llvm::errs() << "Transferring outside loop dependence.\n");
-    this->transferOutsideDeps(DynamicLoop, NewRegDeps,
-                              this->Trace->RegDeps.at(DynamicId));
-    this->transferOutsideDeps(DynamicLoop, NewMemDeps,
-                              this->Trace->MemDeps.at(DynamicId));
-    this->transferOutsideDeps(DynamicLoop, NewCtrDeps,
-                              this->Trace->CtrDeps.at(DynamicId));
+    this->transferOutsideRegDeps(DynamicLoop, NewRegDeps,
+                                 this->Trace->RegDeps.at(DynamicId));
+    this->transferOutsideNonRegDeps(DynamicLoop, NewMemDeps,
+                                    this->Trace->MemDeps.at(DynamicId));
+    this->transferOutsideNonRegDeps(DynamicLoop, NewCtrDeps,
+                                    this->Trace->CtrDeps.at(DynamicId));
 
     // Fix the memory dependence within the loop.
     // DEBUG(llvm::errs() << "Fixing inside loop memory dependence.\n");

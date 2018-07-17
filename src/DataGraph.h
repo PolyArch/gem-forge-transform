@@ -88,10 +88,19 @@ public:
    * These maps hols the dependence for *ALIVE* instructions.
    * We guarantee that there is always an empty set to represent no dependence.
    * Make sure you maintain this property.
+   *
+   * For the register dependence, we use list<pair<>> to store the corresponding
+   * operand. This is handy for many transformations, e.g. loop unroll to break
+   * dependence on induction variable.
+   * This is not a set, as for SIMD instruction is is possible that one operand
+   * has multiple dependence. For those non-llvm-inst dependence, the static
+   * instruction pointer can be nullptr.
    */
   using DependenceSet = std::unordered_set<DynamicId>;
   using DependenceMap = std::unordered_map<DynamicId, DependenceSet>;
-  DependenceMap RegDeps;
+  using RegDependence = std::pair<llvm::Instruction *, DynamicId>;
+  using RegDependenceList = std::list<RegDependence>;
+  std::unordered_map<DynamicId, RegDependenceList> RegDeps;
   DependenceMap CtrDeps;
   DependenceMap MemDeps;
 

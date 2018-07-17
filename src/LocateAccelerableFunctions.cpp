@@ -50,8 +50,12 @@ bool LocateAccelerableFunctions::runOnModule(llvm::Module &Module) {
     auto Node = Queue.front();
     Queue.pop_front();
     Visited.insert(Node);
-    assert(ReverseCG.find(Node) != ReverseCG.end() &&
-           "Missing node in reverse call graph.");
+    if (ReverseCG.find(Node) == ReverseCG.end()) {
+      DEBUG(llvm::errs() << "Missing node in reverse CG for " << '\n');
+      continue;
+    }
+    // assert(ReverseCG.find(Node) != ReverseCG.end() &&
+    //        "Missing node in reverse call graph.");
     for (auto Caller : ReverseCG.at(Node)) {
       if (Visited.find(Caller) != Visited.end()) {
         continue;
