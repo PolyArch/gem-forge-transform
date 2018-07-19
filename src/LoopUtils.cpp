@@ -18,6 +18,28 @@ std::string printLoop(llvm::Loop *Loop) {
          "::" + std::string(Loop->getName());
 }
 
+void LoopIterCounter::configure(llvm::Loop *_Loop) {
+  this->Loop = _Loop;
+  this->Iter = -1;
+}
+
+LoopIterCounter::Status LoopIterCounter::count(llvm::Instruction *StaticInst, int &Iter) {
+  assert(this->isConfigured() && "LoopIterCounter is not configured.");
+  if (StaticInst == nullptr || (!this->Loop->contains(StaticInst))) {
+    // Outside instruction.
+    Iter = this->Iter + 1;
+    this->Iter = -1;
+    return OUT;
+  }
+  if (isStaticInstLoopHead(this->Loop, StaticInst)) {
+    this->Iter++;
+    Iter = this->Iter;
+    return NEW_ITER;
+  }
+  Iter = this->Iter;
+  return SAME_ITER;
+}
+
 StaticInnerMostLoop::StaticInnerMostLoop(llvm::Loop *_Loop)
     : StaticInstCount(0), Loop(_Loop) {
   assert(Loop->empty() && "Should be inner most loops.");
@@ -133,6 +155,12 @@ void StaticInnerMostLoop::computeLiveInOutValues(llvm::Loop *Loop) {
 }
 
 CachedLoopInfo::~CachedLoopInfo() {
+
+  for (auto &Entry : this->SECache) {
+    delete Entry.second;
+  }
+  this->SECache.clear();
+
   // Release the cached static loops.
   for (auto &Entry : this->LICache) {
     delete Entry.second;
@@ -160,6 +188,18 @@ llvm::DominatorTree *CachedLoopInfo::getDominatorTree(llvm::Function *Func) {
     auto DT = new llvm::DominatorTree();
     DT->recalculate(*Func);
     Iter = this->DTCache.emplace(Func, DT).first;
+  }
+  return Iter->second;
+}
+
+llvm::ScalarEvolution *
+CachedLoopInfo::getScalarEvolution(llvm::Function *Func) {
+  auto Iter = this->SECache.find(Func);
+  if (Iter == this->SECache.end()) {
+    auto SE = new llvm::ScalarEvolution(
+        *Func, this->GetTLI(), this->GetAC(*Func),
+        *this->getDominatorTree(Func), *this->getLoopInfo(Func));
+    Iter = this->SECache.emplace(Func, SE).first;
   }
   return Iter->second;
 }

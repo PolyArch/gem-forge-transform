@@ -50,7 +50,7 @@ void TDGSerializer::write() {
   assert(this->TDG.instructions_size() > 0 &&
          "Nothing to write for TDG serializer.");
   // Hacky to dump some serialized instructions for debug.
-  const uint64_t DUMP_START = 1000;
+  const uint64_t DUMP_START = 0;
   const uint64_t DUMP_END = 1100;
   if (this->SerializedInsts < DUMP_END ||
       this->SerializedInsts + this->TDG.instructions_size() >= DUMP_START) {

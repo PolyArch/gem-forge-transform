@@ -30,6 +30,7 @@ add_library(LLVMTDGPass MODULE
     DynamicInstruction.cpp
     DataGraph.cpp
     LoopUtils.cpp
+    LoopUnroller.cpp
     PostDominanceFrontier.cpp
     LocateAccelerableFunctions.cpp
     Replay.cpp
