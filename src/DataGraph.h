@@ -162,6 +162,7 @@ public:
   DynamicInstIter loadOneDynamicInst();
   // Commit one inst and remove it from the alive set.
   void commitOneDynamicInst();
+  void commitDynamicInst(DynamicId Id);
 
   void updateAddrToLastMemoryAccessMap(uint64_t Addr, DynamicId Id,
                                        bool loadOrStore);

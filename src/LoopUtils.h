@@ -1,7 +1,10 @@
 #ifndef LLVM_TDG_LOOP_UTILS_H
 #define LLVM_TDG_LOOP_UTILS_H
 
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/Dominators.h"
 
 #include <functional>
@@ -16,6 +19,43 @@
 bool isStaticInstLoopHead(llvm::Loop *Loop, llvm::Instruction *StaticInst);
 
 std::string printLoop(llvm::Loop *Loop);
+
+class LoopIterCounter {
+public:
+  enum Status {
+    SAME_ITER, // We are still in the previous iteration.
+    NEW_ITER,  // We just entered a new iteration.
+    OUT,       // We just jumped outside the loop.
+  };
+
+  LoopIterCounter() : Loop(nullptr) {}
+
+  void configure(llvm::Loop *_Loop);
+  void reset() {
+    this->Loop = nullptr;
+    this->Iter = -1;
+  }
+  bool isConfigured() const { return this->Loop != nullptr; }
+
+  llvm::Loop *getLoop() { return this->Loop; }
+
+  /**
+   * Returns the status after considering the new static instruction.
+   * Also returns the iteration count BEFORE the new static instruction.
+   * Example,
+   * 1. We are in iteration 3, and StaticInst is the header, it will return
+   *    NEW_ITER, with Iter set to 3 (just completed iter 3).
+   * 2. We are in iteration 4, and StaticInst is nullptr/outside inst, it will
+   *    return OUT, with Iter set to 4 (just completed iter 4).
+   * 3. We are in iteration 2, and StaticInst is in loop body (except the header),
+   *    it will return SAME_ITER, with Iter set to 2.
+   */
+  Status count(llvm::Instruction *StaticInst, int &Iter);
+
+private:
+  llvm::Loop *Loop;
+  int Iter;
+};
 
 /**
  * A wrapper of llvm::Loop, but with more information calculated:
@@ -98,15 +138,25 @@ private:
  */
 class CachedLoopInfo {
 public:
-  CachedLoopInfo() = default;
+  using GetTLIFunc = std::function<llvm::TargetLibraryInfo &()>;
+  using GetACFunc =
+      std::function<llvm::AssumptionCache &(llvm::Function &Func)>;
+
+  CachedLoopInfo(GetTLIFunc _GetTLI, GetACFunc _GetAC)
+      : GetTLI(_GetTLI), GetAC(_GetAC) {}
   ~CachedLoopInfo();
 
   llvm::LoopInfo *getLoopInfo(llvm::Function *Func);
   llvm::DominatorTree *getDominatorTree(llvm::Function *Func);
+  llvm::ScalarEvolution *getScalarEvolution(llvm::Function *Func);
 
 private:
   std::unordered_map<llvm::Function *, llvm::LoopInfo *> LICache;
   std::unordered_map<llvm::Function *, llvm::DominatorTree *> DTCache;
+  std::unordered_map<llvm::Function *, llvm::ScalarEvolution *> SECache;
+
+  GetTLIFunc GetTLI;
+  GetACFunc GetAC;
 };
 
 #endif

@@ -169,16 +169,19 @@ DataGraph::DynamicInstIter DataGraph::loadOneDynamicInst() {
   return this->DynamicInstructionList.end();
 }
 
-void DataGraph::commitOneDynamicInst() {
-  assert(!this->DynamicInstructionList.empty() && "No inst to be committed.");
+void DataGraph::commitDynamicInst(DynamicId Id) {
+  auto DynamicInst = this->getAliveDynamicInst(Id);
+  assert(DynamicInst != nullptr && "This dynamic inst is not alive.");
   // Remove all the dependence information.
-  auto Id = this->DynamicInstructionList.front()->Id;
+  DEBUG(llvm::errs() << "Committing dynamic instruction " << Id
+                     << " Op: " << DynamicInst->getOpName() << '\n');
   this->RegDeps.erase(Id);
   this->MemDeps.erase(Id);
   this->CtrDeps.erase(Id);
   this->AliveDynamicInstsMap.erase(Id);
-  delete this->DynamicInstructionList.front();
-  this->DynamicInstructionList.pop_front();
+  DEBUG(llvm::errs() << "Committing dynamic instruction "
+                     << DynamicInst->getOpName() << '\n');
+  delete DynamicInst;
 
 #define DUMP_MEM_USAGE
 #ifdef DUMP_MEM_USAGE
@@ -189,6 +192,14 @@ void DataGraph::commitOneDynamicInst() {
     this->printMemoryUsage();
   }
 #endif
+}
+
+void DataGraph::commitOneDynamicInst() {
+  assert(!this->DynamicInstructionList.empty() && "No inst to be committed.");
+  // Remove all the dependence information.
+  auto Id = this->DynamicInstructionList.front()->Id;
+  this->commitDynamicInst(Id);
+  this->DynamicInstructionList.pop_front();
 }
 
 bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {

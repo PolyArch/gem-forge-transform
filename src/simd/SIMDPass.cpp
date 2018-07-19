@@ -5,7 +5,6 @@
 #include "LoopUtils.h"
 #include "Replay.h"
 
-#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/CFG.h"
@@ -118,14 +117,22 @@ public:
 
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
     ReplayTrace::getAnalysisUsage(Info);
-    Info.addRequired<llvm::LoopInfoWrapperPass>();
-    Info.addRequired<llvm::ScalarEvolutionWrapperPass>();
+    Info.addRequired<llvm::TargetLibraryInfoWrapperPass>();
+    Info.addRequired<llvm::AssumptionCacheTracker>();
   }
 
 protected:
   bool initialize(llvm::Module &Module) override {
     // Reset memorization.
-    this->CachedLI = new CachedLoopInfo();
+    this->CachedLI = new CachedLoopInfo(
+        [this]() -> llvm::TargetLibraryInfo & {
+          return this->getAnalysis<llvm::TargetLibraryInfoWrapperPass>()
+              .getTLI();
+        },
+        [this](llvm::Function &Func) -> llvm::AssumptionCache & {
+          return this->getAnalysis<llvm::AssumptionCacheTracker>()
+              .getAssumptionCache(Func);
+        });
     // Reset other variables.
     this->State = SEARCHING;
     // Reset the StaticInnerMostLoop cache.
@@ -611,7 +618,7 @@ bool SIMDPass::isLoopInterIterDataDependent(DynamicInnerMostLoop &DynamicLoop) {
          "Should be at least 2 dynamic instruction.");
 
   auto Function = DynamicLoop.StaticLoop->getHeader()->getParent();
-  auto &SE = getAnalysis<llvm::ScalarEvolutionWrapperPass>(*Function).getSE();
+  auto SE = this->CachedLI->getScalarEvolution(Function);
 
   // Iterate through all the store/load instructions.
   for (auto BB : DynamicLoop.StaticLoop->BBList) {
@@ -633,7 +640,7 @@ bool SIMDPass::isLoopInterIterDataDependent(DynamicInnerMostLoop &DynamicLoop) {
 
       // Case 1. SECV Affine AddRec.
       {
-        const llvm::SCEV *SCEV = SE.getSCEV(StaticAddr);
+        const llvm::SCEV *SCEV = SE->getSCEV(StaticAddr);
         if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
           if (AddRecSCEV->isAffine()) {
             continue;
@@ -729,6 +736,10 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         if (auto StaticLoad = llvm::dyn_cast<llvm::LoadInst>(StaticInst)) {
           this->createDynamicInstsForScatterLoad(StaticLoad, DynamicLoop);
         } else {
+          DEBUG(llvm::errs()
+                << "Store stride "
+                << DynamicLoop.StaticToStrideMap.at(StaticInst) << " type size "
+                << this->getTypeSizeForLoadStore(StaticInst) << '\n');
           assert(false && "Can not handle scattered store for now.");
         }
       } else {

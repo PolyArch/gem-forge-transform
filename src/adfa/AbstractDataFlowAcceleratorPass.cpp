@@ -10,11 +10,11 @@
  * reached the end of one invoke and switch back to GPP.
  */
 
+#include "LoopUnroller.h"
 #include "LoopUtils.h"
 #include "PostDominanceFrontier.h"
 #include "Replay.h"
 
-#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/CFG.h"
@@ -37,15 +37,26 @@ class DynamicDataFlow {
 public:
   DynamicDataFlow();
 
-  void fixDependence(DynamicInstruction *DynamicInst, DataGraph *DG);
-
+  /**
+   * Add one dynamic instruction to the data flow.
+   * This instruction must be alive in the data graph.
+   * If DynamicInst is nullptr, we will put an end to the dataflow.
+   */
   void addDynamicInst(DynamicInstruction *DynamicInst);
 
-  void configure(llvm::Loop *_Loop, const PostDominanceFrontier *_PDF);
+  void configure(llvm::Loop *_Loop, llvm::LoopInfo *LI,
+                 const PostDominanceFrontier *_PDF, DataGraph *_DG,
+                 TDGSerializer *_Serializer, CachedLoopUnroller *_CachedLU,
+                 llvm::ScalarEvolution *_SE);
   void start();
 
   llvm::Loop *Loop;
+  llvm::LoopInfo *LI;
   const PostDominanceFrontier *PDF;
+  DataGraph *DG;
+  TDGSerializer *Serializer;
+  CachedLoopUnroller *CachedLU;
+  llvm::ScalarEvolution *SE;
 
 private:
   /**
@@ -56,6 +67,14 @@ private:
   using DynamicEntry = std::pair<DynamicInstruction::DynamicId, Age>;
   std::unordered_map<llvm::Instruction *, DynamicEntry> StaticToDynamicMap;
   Age CurrentAge = 0;
+
+  std::list<DynamicInstruction *> Buffer;
+
+  LoopIterCounter InnerMostLoopCounter;
+
+  const int UnrollWidth = 4;
+
+  void fixCtrDependence(DynamicInstruction *DynamicInst);
 };
 
 class AbstractDataFlowAcceleratorPass : public ReplayTrace {
@@ -65,22 +84,29 @@ public:
 
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
     ReplayTrace::getAnalysisUsage(Info);
-    Info.addRequired<llvm::LoopInfoWrapperPass>();
-    Info.addRequired<llvm::ScalarEvolutionWrapperPass>();
     Info.addRequired<llvm::PostDominatorTreeWrapperPass>();
+    Info.addRequired<llvm::TargetLibraryInfoWrapperPass>();
+    Info.addRequired<llvm::AssumptionCacheTracker>();
   }
 
 protected:
   bool initialize(llvm::Module &Module) override {
     this->DataFlowSerializer = new TDGSerializer("abs-data-flow");
-    this->CachedLI = new CachedLoopInfo();
+    this->CachedLI = new CachedLoopInfo(
+        [this]() -> llvm::TargetLibraryInfo & {
+          return this->getAnalysis<llvm::TargetLibraryInfoWrapperPass>()
+              .getTLI();
+        },
+        [this](llvm::Function &Func) -> llvm::AssumptionCache & {
+          return this->getAnalysis<llvm::AssumptionCacheTracker>()
+              .getAssumptionCache(Func);
+        });
     this->CachedPDF = new CachedPostDominanceFrontier(
         [this](llvm::Function &Func) -> llvm::PostDominatorTree & {
           return this->getAnalysis<llvm::PostDominatorTreeWrapperPass>(Func)
               .getPostDomTree();
         });
-    // Reset the cached static inner most loop.
-    this->CachedStaticInnerMostLoop.clear();
+    this->CachedLU = new CachedLoopUnroller();
     // Reset other variables.
     this->State = SEARCHING;
     // A window of one thousand instructions is profitable for dataflow?
@@ -93,11 +119,8 @@ protected:
     // Release the data flow serializer.
     delete this->DataFlowSerializer;
     this->DataFlowSerializer = nullptr;
-    // Remember to release the static inner most loop first.
-    for (auto &Entry : this->CachedStaticInnerMostLoop) {
-      delete Entry.second;
-    }
-    this->CachedStaticInnerMostLoop.clear();
+    delete this->CachedLU;
+    this->CachedLU = nullptr;
     // Release the cached static loops.
     delete this->CachedLI;
     this->CachedLI = nullptr;
@@ -119,12 +142,7 @@ protected:
 
   CachedLoopInfo *CachedLI;
   CachedPostDominanceFrontier *CachedPDF;
-
-  /**
-   * Contains caches StaticInnerMostLoop.
-   */
-  std::unordered_map<llvm::Loop *, StaticInnerMostLoop *>
-      CachedStaticInnerMostLoop;
+  CachedLoopUnroller *CachedLU;
 
   size_t BufferThreshold;
 
@@ -138,7 +156,7 @@ protected:
 
   /**
    * Processed the buffered instructions.
-   * Returns whether we have started the dataflow executioin.
+   * Returns whether we have started the dataflow execution.
    * No matter what, the buffered instructions will be committed (except the
    * last one).
    */
@@ -153,12 +171,6 @@ protected:
    * Serialized the instruction to the data flow stream.
    */
   void serializeDataFlow(DynamicInstruction *DynamicInst);
-
-  /**
-   * Serialize an data flow end token to the data flow stream to indicate the
-   * boundary of invoke of the accelerator.
-   */
-  void serializeDataFlowEnd();
 
   /**
    * This function checks if a loop can be represented as dataflow.
@@ -241,18 +253,16 @@ void AbstractDataFlowAcceleratorPass::transform() {
 
     } else {
       // Commit any remaining buffered instructions when hitting the end.
-      while (!this->Trace->DynamicInstructionList.empty()) {
-        if (this->State == DATAFLOW) {
-          this->serializeDataFlow(this->Trace->DynamicInstructionList.front());
-        } else {
-          this->serializeInstStream(
-              this->Trace->DynamicInstructionList.front());
-        }
-        this->Trace->commitOneDynamicInst();
-      }
       if (this->State == DATAFLOW) {
-        // Remember to serialize the end token.
-        this->serializeDataFlowEnd();
+        // Simply send the end token to the data flow.
+        this->CurrentConfiguredDataFlow.addDynamicInst(nullptr);
+        break;
+      }
+      // After these point, it can only be SEARCHING or BUFFERING.
+      // Either case, we can simply commit all of them.
+      while (!this->Trace->DynamicInstructionList.empty()) {
+        this->serializeInstStream(this->Trace->DynamicInstructionList.front());
+        this->Trace->commitOneDynamicInst();
       }
       break;
     }
@@ -285,19 +295,20 @@ void AbstractDataFlowAcceleratorPass::transform() {
     }
     case DATAFLOW: {
 
-      assert(this->Trace->DynamicInstructionList.size() <= 2 &&
-             "For dataflow state, there should be at most 2 dynamic "
+      assert(this->Trace->DynamicInstructionList.size() >= 2 &&
+             "For dataflow state, there should be at least 2 dynamic "
              "instructions in the buffer.");
 
-      if (this->Trace->DynamicInstructionList.size() == 2) {
-        // We can commit the previous one.
-        this->serializeDataFlow(this->Trace->DynamicInstructionList.front());
-        this->Trace->commitOneDynamicInst();
+      // Add the previous inst to data flow.
+      if (this->Trace->DynamicInstructionList.size() >= 2) {
+        auto Iter = this->Trace->DynamicInstructionList.rbegin();
+        ++Iter;
+        this->CurrentConfiguredDataFlow.addDynamicInst(*Iter);
       }
 
       if (!CurrentLoop->contains(NewLoop)) {
         // We are outside of the current loop.
-        this->serializeDataFlowEnd();
+        this->CurrentConfiguredDataFlow.addDynamicInst(nullptr);
         if (IsAtHeaderOfCandidate) {
           // We are at the header of some new candidate loop, switch to
           // BUFFERING.
@@ -398,7 +409,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
       if (DataFlowStarted && this->State != DATAFLOW) {
         // We started an dataflow, and there is not more comming. Insert the end
         // token.
-        this->serializeDataFlowEnd();
+        this->CurrentConfiguredDataFlow.addDynamicInst(nullptr);
       }
 
       break;
@@ -462,14 +473,6 @@ public:
   std::string getOpName() const override { return "df-start"; }
 };
 
-void AbstractDataFlowAcceleratorPass::serializeDataFlowEnd() {
-  // We have to allocate a new instruction to encure the property of unique
-  // DynamicId.
-  auto EndToken = new AbsDataFlowEndToken();
-  this->DataFlowSerializer->serialize(EndToken, this->Trace);
-  delete EndToken;
-}
-
 bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
                                                     uint32_t LoopIter) {
 
@@ -487,30 +490,36 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
       this->serializeInstStream(&ConfigInst);
       DEBUG(llvm::errs() << "ADFA: configure the accelerator to loop "
                          << printLoop(Loop) << '\n');
+      auto Func = Loop->getHeader()->getParent();
       // Configure the dynamic data flow.
       this->CurrentConfiguredDataFlow.configure(
-          Loop, this->CachedPDF->getPostDominanceFrontier(
-                    Loop->getHeader()->getParent()));
+          Loop, this->CachedLI->getLoopInfo(Func),
+          this->CachedPDF->getPostDominanceFrontier(Func), this->Trace,
+          this->DataFlowSerializer, this->CachedLU,
+          this->CachedLI->getScalarEvolution(Func));
     }
 
     // Serialize the start inst.
     {
+
+      DEBUG(llvm::errs() << "ADFA: start the accelerator to loop "
+                         << printLoop(Loop) << '\n');
       AbsDataFlowStartInst StartInst;
       this->serializeInstStream(&StartInst);
       // Start the dynamic data flow.
       this->CurrentConfiguredDataFlow.start();
     }
 
-    while (this->Trace->DynamicInstructionList.size() > 1) {
-
-      // Fix the dependence for the data flow.
-      auto DynamicInst = this->Trace->DynamicInstructionList.front();
-      this->CurrentConfiguredDataFlow.fixDependence(DynamicInst, this->Trace);
+    // Add the instruction to the dataflow buffer.
+    auto End = this->Trace->DynamicInstructionList.end();
+    --End;
+    auto Iter = this->Trace->DynamicInstructionList.begin();
+    while (Iter != End) {
+      auto Next = Iter;
+      ++Next;
+      auto DynamicInst = *Iter;
       this->CurrentConfiguredDataFlow.addDynamicInst(DynamicInst);
-
-      // Serialize to the data flow.
-      this->serializeDataFlow(this->Trace->DynamicInstructionList.front());
-      this->Trace->commitOneDynamicInst();
+      Iter = Next;
     }
     return true;
   }
@@ -566,10 +575,18 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
 DynamicDataFlow::DynamicDataFlow()
     : Loop(nullptr), PDF(nullptr), CurrentAge(0) {}
 
-void DynamicDataFlow::configure(llvm::Loop *_Loop,
-                                const PostDominanceFrontier *_PDF) {
+void DynamicDataFlow::configure(llvm::Loop *_Loop, llvm::LoopInfo *_LI,
+                                const PostDominanceFrontier *_PDF,
+                                DataGraph *_DG, TDGSerializer *_Serializer,
+                                CachedLoopUnroller *_CachedLU,
+                                llvm::ScalarEvolution *_SE) {
   this->Loop = _Loop;
+  this->LI = _LI;
   this->PDF = _PDF;
+  this->DG = _DG;
+  this->Serializer = _Serializer;
+  this->CachedLU = _CachedLU;
+  this->SE = _SE;
   this->CurrentAge = 0;
   DEBUG(llvm::errs() << "Config the dynamic data flow for loop "
                      << this->Loop->getName() << '\n');
@@ -577,14 +594,13 @@ void DynamicDataFlow::configure(llvm::Loop *_Loop,
   DEBUG(this->PDF->print(llvm::errs()));
 }
 
-void DynamicDataFlow::fixDependence(DynamicInstruction *DynamicInst,
-                                    DataGraph *DG) {
+void DynamicDataFlow::fixCtrDependence(DynamicInstruction *DynamicInst) {
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr &&
          "DynamicDataFlow cannot fix dependence for non llvm instructions.");
 
   // Only worried about control dependence.
-  auto &CtrDeps = DG->CtrDeps.at(DynamicInst->Id);
+  auto &CtrDeps = this->DG->CtrDeps.at(DynamicInst->Id);
   CtrDeps.clear();
 
   auto CtrDepId = DynamicInstruction::InvalidId;
@@ -613,24 +629,122 @@ void DynamicDataFlow::fixDependence(DynamicInstruction *DynamicInst,
 }
 
 void DynamicDataFlow::addDynamicInst(DynamicInstruction *DynamicInst) {
-  auto StaticInst = DynamicInst->getStaticInstruction();
-  assert(StaticInst != nullptr &&
-         "DynamicDataFlow cannot handle non llvm instructions.");
 
-  auto Iter = this->StaticToDynamicMap.find(StaticInst);
-  if (Iter == this->StaticToDynamicMap.end()) {
-    this->StaticToDynamicMap.emplace(
-        std::piecewise_construct, std::forward_as_tuple(StaticInst),
-        std::forward_as_tuple(DynamicInst->Id, this->CurrentAge++));
+  if (DynamicInst != nullptr) {
+    DEBUG(llvm::errs() << "ADFA: Add dynamic instruction to the data flow "
+                       << DynamicInst->getOpName() << '\n');
   } else {
-    Iter->second.first = DynamicInst->Id;
-    Iter->second.second = this->CurrentAge++;
+    DEBUG(llvm::errs() << "ADFA: End the data flow.\n");
+  }
+
+  {
+    // Update the loop counter.
+    // Notice that LoopIterCounter will always consider a nullptr as outside
+    // loop, so we do not have to specially handle the nullptr.
+    int IterCount;
+    llvm::Instruction *StaticInst = nullptr;
+    if (DynamicInst != nullptr) {
+      StaticInst = DynamicInst->getStaticInstruction();
+      assert(StaticInst != nullptr &&
+             "DynamicDataFlow cannot handle non llvm instructions.");
+    }
+    if (this->InnerMostLoopCounter.isConfigured()) {
+      auto Status = this->InnerMostLoopCounter.count(StaticInst, IterCount);
+
+      DEBUG(llvm::errs() << "We are in the inner most loop "
+                         << printLoop(this->InnerMostLoopCounter.getLoop())
+                         << " with iter " << IterCount << '\n');
+      bool Unrolled = false;
+      if ((IterCount > 0) && (IterCount % this->UnrollWidth) == 0 &&
+          (Status == LoopIterCounter::Status::OUT ||
+           Status == LoopIterCounter::Status::NEW_ITER)) {
+        // We have reached the unroll width.
+        // Unroll.
+        DEBUG(llvm::errs() << "We are unrolling.\n");
+        Unrolled = true;
+        auto LU = this->CachedLU->getUnroller(
+            this->InnerMostLoopCounter.getLoop(), this->SE);
+        LU->unroll(this->DG, this->Buffer.begin(), this->Buffer.end());
+      }
+      // Serialize and commit all buffered instruction.
+      if (Status == LoopIterCounter::Status::OUT || Unrolled) {
+        while (this->Buffer.size() > 0) {
+          auto SerializedInst = this->Buffer.front();
+          DEBUG(llvm::errs() << "ADFA::DF: Serializing "
+                             << SerializedInst->getOpName() << '\n');
+          this->Serializer->serialize(SerializedInst, this->DG);
+          this->DG->commitOneDynamicInst();
+          this->Buffer.pop_front();
+        }
+      }
+    }
+  }
+
+  if (DynamicInst != nullptr) {
+    // Add the new instruction to our buffer.
+    this->Buffer.push_back(DynamicInst);
+
+    // First fix the control dependence.
+    this->fixCtrDependence(DynamicInst);
+
+    // Update our static to dynamic map.
+    auto StaticInst = DynamicInst->getStaticInstruction();
+    assert(StaticInst != nullptr &&
+           "DynamicDataFlow cannot handle non llvm instructions.");
+
+    auto Iter = this->StaticToDynamicMap.find(StaticInst);
+    if (Iter == this->StaticToDynamicMap.end()) {
+      this->StaticToDynamicMap.emplace(
+          std::piecewise_construct, std::forward_as_tuple(StaticInst),
+          std::forward_as_tuple(DynamicInst->Id, this->CurrentAge++));
+    } else {
+      Iter->second.first = DynamicInst->Id;
+      Iter->second.second = this->CurrentAge++;
+    }
+
+    auto NewLoop = this->LI->getLoopFor(StaticInst->getParent());
+    if (NewLoop->empty()) {
+      if (NewLoop != this->InnerMostLoopCounter.getLoop()) {
+        assert(this->Buffer.front() == DynamicInst &&
+               "The new loop header is still not the header.");
+        // A new inner most loop, we reset the iter counter.
+        this->InnerMostLoopCounter.configure(NewLoop);
+        // Kick start the counter.
+        int DummyIter;
+        this->InnerMostLoopCounter.count(StaticInst, DummyIter);
+      } else {
+        // Keep buffering for possible future unrolling.
+      }
+    } else {
+      // As we will only unroll the inner most loop, we do not buffer for these
+      // instructions not within the inner most loop.
+      // At this point, it should have reached the head.
+      this->InnerMostLoopCounter.reset();
+      assert(this->Buffer.front() == DynamicInst &&
+             "This is still not the header.");
+      DEBUG(llvm::errs() << "ADFA::DF: do not buffer non-inner-most loop inst "
+                         << DynamicInst->getOpName() << '\n');
+      this->Serializer->serialize(DynamicInst, this->DG);
+      // Release the instructions.
+      this->DG->commitOneDynamicInst();
+      this->Buffer.pop_front();
+    }
+  } else {
+    // We need to end the dataflow.
+    assert(this->Buffer.empty() && "The dataflow is stll not empty.");
+    DEBUG(llvm::errs() << "ADFA::DF: Serialize end token to data flow.");
+    auto EndToken = new AbsDataFlowEndToken();
+    this->Serializer->serialize(EndToken, this->DG);
+    delete EndToken;
   }
 }
 
 void DynamicDataFlow::start() {
   this->StaticToDynamicMap.clear();
   this->CurrentAge = 0;
+  this->InnerMostLoopCounter.reset();
+  assert(this->Buffer.empty() &&
+         "Some instructions are remained in the buffer.");
 }
 
 #undef DEBUG_TYPE
