@@ -348,7 +348,8 @@ void SIMDPass::transform() {
               NewLoop, new StaticInnerMostLoop(NewLoop));
         }
         NewStaticLoop = this->CachedStaticInnerMostLoop.at(NewLoop);
-        IsAtHeaderOfVectorizable = isStaticInstLoopHead(NewLoop, NewStaticInst);
+        IsAtHeaderOfVectorizable =
+            LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst);
       }
 
       if (IsAtHeaderOfVectorizable) {
@@ -475,36 +476,17 @@ bool SIMDPass::isLoopStaticVectorizable(llvm::Loop *Loop) {
   if (!Loop->empty()) {
     // This is not the inner most loop.
     DEBUG(llvm::errs() << "SIMDPass: Loop " << printLoop(Loop)
-                       << " is statically not vectorizable because it is not "
+                       << " is statically not vectorizable as it is not "
                           "inner most loop.\n");
     return false;
   }
 
-  // Check if there is any calls to unsupported function.
-  for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
-       BBIter != BBEnd; ++BBIter) {
-    for (auto InstIter = (*BBIter)->begin(), InstEnd = (*BBIter)->end();
-         InstIter != InstEnd; ++InstIter) {
-      if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(&*InstIter)) {
-        // This is a call inst.
-        auto Callee = CallInst->getCalledFunction();
-        if (Callee == nullptr) {
-          // Indirect call, not vectorizable.
-          DEBUG(llvm::errs() << "SIMDPass: Loop " << printLoop(Loop)
-                             << " is statically not vectorizable because it "
-                                "contains indirect call.\n");
-          return false;
-        }
-        // Check if calling some supported math function.
-        if (Callee->getName() != "sin") {
-          // TODO: add a set for supported functions.
-          DEBUG(llvm::errs() << "SIMDPass: Loop " << printLoop(Loop)
-                             << " is statically not vectorizable because it "
-                                "contains unsupported call.\n");
-          return false;
-        }
-      }
-    }
+  // Check if the loop is continuous.
+  if (!LoopUtils::isLoopContinuous(Loop)) {
+    DEBUG(llvm::errs()
+          << "Loop " << printLoop(Loop)
+          << " is statically not vectorizable as it is not continuous.\n");
+    return false;
   }
 
   // Done: this loop is statically vectorizable.
@@ -934,7 +916,7 @@ class SIMDPackInst : public DynamicInstruction {
 public:
   SIMDPackInst(llvm::Instruction *_StaticInst) : StaticInst(_StaticInst) {}
   std::string getOpName() const override { return "pack"; }
-  llvm::Instruction *getStaticInstruction() override {
+  llvm::Instruction *getStaticInstruction() const override {
     return this->StaticInst;
   }
   llvm::Instruction *StaticInst;

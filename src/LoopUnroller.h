@@ -108,6 +108,11 @@ private:
    * dependence.
    */
   void fixAndUpdateCtrDeps(DynamicInstruction *DynamicInst, DataGraph *DG);
+
+  /**
+   * Find the update binary operation of induction variable.
+   */
+  // llvm::BinaryOperator *findUpdatingBinaryOp(llvm::PHINode *IV) const;
 };
 
 class CachedLoopUnroller {

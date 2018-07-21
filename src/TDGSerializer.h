@@ -21,11 +21,19 @@ public:
   explicit TDGSerializer(const std::string &FileName);
   ~TDGSerializer();
 
+  /**
+   * Serialize the static information at the beginning.
+   */
+  void serializeStaticInfo(const LLVM::TDG::StaticInformation &StaticInfo);
+
   void serialize(DynamicInstruction *DynamicInst, DataGraph *DG);
 
 private:
   // Underlying file output stream.
   std::ofstream OutFileStream;
+
+  // Flag static information serialized.
+  bool SerializedStaticInfomation;
 
   google::protobuf::io::ZeroCopyOutputStream *OutZeroCopyStream;
 

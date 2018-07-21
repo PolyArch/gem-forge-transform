@@ -106,6 +106,8 @@ ReplayTrace::~ReplayTrace() {}
 void ReplayTrace::getAnalysisUsage(llvm::AnalysisUsage &Info) const {
   Info.addRequired<LocateAccelerableFunctions>();
   Info.addPreserved<LocateAccelerableFunctions>();
+  Info.addRequired<llvm::TargetLibraryInfoWrapperPass>();
+  Info.addRequired<llvm::AssumptionCacheTracker>();
 }
 
 bool ReplayTrace::runOnModule(llvm::Module &Module) {
@@ -152,6 +154,18 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
   this->Trace = new DataGraph(this->Module, DetailLevel);
   this->Serializer = new TDGSerializer(this->OutTraceName);
 
+  this->CachedLI = new CachedLoopInfo(
+      [this]() -> llvm::TargetLibraryInfo & {
+        return this->getAnalysis<llvm::TargetLibraryInfoWrapperPass>().getTLI();
+      },
+      [this](llvm::Function &Func) -> llvm::AssumptionCache & {
+        return this->getAnalysis<llvm::AssumptionCacheTracker>()
+            .getAssumptionCache(Func);
+      });
+
+  // Initialize the regions.
+  this->computeStaticInfo();
+
   return true;
 }
 
@@ -162,7 +176,55 @@ bool ReplayTrace::finalize(llvm::Module &Module) {
   DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
   delete this->Trace;
   this->Trace = nullptr;
+  // Release the cached static loops.
+  delete this->CachedLI;
+  this->CachedLI = nullptr;
   return true;
+}
+
+void ReplayTrace::computeStaticInfo() {
+  LLVM::TDG::StaticInformation StaticInfo;
+  StaticInfo.set_module(this->Module->getName().str());
+
+  for (auto FuncIter = this->Module->begin(), FuncEnd = this->Module->end();
+       FuncIter != FuncEnd; ++FuncIter) {
+    llvm::Function &Function = *FuncIter;
+    if (Function.isIntrinsic()) {
+      continue;
+    }
+
+    if (Function.isDeclaration()) {
+      continue;
+    }
+
+    if (Function.getName() == "replay") {
+      continue;
+    }
+
+    // Get all the loops.
+    auto LI = this->CachedLI->getLoopInfo(&Function);
+    for (auto Loop : LI->getLoopsInPreorder()) {
+      if (LoopUtils::isLoopContinuous(Loop)) {
+        // This loop is considered a region.
+        auto Region = StaticInfo.add_regions();
+        auto RegionId = LoopUtils::getLoopId(Loop);
+        Region->set_name(RegionId);
+        // Add all the basic blocks to the regions.
+        // Use the memory address as the block id.
+        DEBUG(llvm::errs() << "Found region " << RegionId << ": ");
+        for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+             BBIter != BBEnd; ++BBIter) {
+          llvm::BasicBlock *BB = *BBIter;
+          Region->add_bbs(reinterpret_cast<uint64_t>(BB));
+          DEBUG(llvm::errs() << BB->getName() << '(' << BB << "), ");
+        }
+        DEBUG(llvm::errs() << '\n');
+      }
+    }
+  }
+
+  // Serialize the static information.
+  this->Serializer->serializeStaticInfo(StaticInfo);
 }
 
 bool ReplayTrace::processFunction(llvm::Function &Function) {
@@ -376,7 +438,8 @@ void ReplayTrace::fakeFixRegisterDeps() {
                                        std::forward_as_tuple());
         }
         this->Trace->RegDeps.at(DynamicInst->Id)
-            .emplace_back(PrevMulDivInst->getStaticInstruction(), PrevMulDivInst->Id);
+            .emplace_back(PrevMulDivInst->getStaticInstruction(),
+                          PrevMulDivInst->Id);
       }
       PrevMulDivInst = DynamicInst;
       break;
@@ -407,7 +470,8 @@ void ReplayTrace::fakeMicroOps() {
   //       for (unsigned int Idx = 0,
   //                         NumOperands = StaticInstruction->getNumOperands();
   //            Idx != NumOperands; ++Idx) {
-  //         if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx))) {
+  //         if (llvm::isa<llvm::Constant>(StaticInstruction->getOperand(Idx)))
+  //         {
   //           // This is an immediate number.
   //           // No dependency for loading an immediate.
   //           FakeNumMicroOps.emplace_back(createFakeDynamicInst("limm"), 0);

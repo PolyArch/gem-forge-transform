@@ -2,10 +2,21 @@ syntax = "proto3";
 
 package LLVM.TDG;
 
+// Some static information at the head.
+message Region {
+  string name = 1;
+  repeated uint64 bbs = 2;
+}
+message StaticInformation {
+  string module = 1;
+  repeated Region regions = 2;
+}
+
 message TDGInstruction {
   string op = 1;
   uint64 id = 2;
-  repeated uint64 deps = 3;
+  uint64 bb = 3;
+  repeated uint64 deps = 4;
   oneof extra {
     StoreExtra store = 8;
     LoadExtra load = 9;

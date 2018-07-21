@@ -11,7 +11,6 @@
  */
 
 #include "LoopUnroller.h"
-#include "LoopUtils.h"
 #include "PostDominanceFrontier.h"
 #include "Replay.h"
 
@@ -85,22 +84,13 @@ public:
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
     ReplayTrace::getAnalysisUsage(Info);
     Info.addRequired<llvm::PostDominatorTreeWrapperPass>();
-    Info.addRequired<llvm::TargetLibraryInfoWrapperPass>();
-    Info.addRequired<llvm::AssumptionCacheTracker>();
   }
 
 protected:
   bool initialize(llvm::Module &Module) override {
+    // Call the base initialization.
+    bool Ret = ReplayTrace::initialize(Module);
     this->DataFlowSerializer = new TDGSerializer("abs-data-flow");
-    this->CachedLI = new CachedLoopInfo(
-        [this]() -> llvm::TargetLibraryInfo & {
-          return this->getAnalysis<llvm::TargetLibraryInfoWrapperPass>()
-              .getTLI();
-        },
-        [this](llvm::Function &Func) -> llvm::AssumptionCache & {
-          return this->getAnalysis<llvm::AssumptionCacheTracker>()
-              .getAssumptionCache(Func);
-        });
     this->CachedPDF = new CachedPostDominanceFrontier(
         [this](llvm::Function &Func) -> llvm::PostDominatorTree & {
           return this->getAnalysis<llvm::PostDominatorTreeWrapperPass>(Func)
@@ -111,19 +101,25 @@ protected:
     this->State = SEARCHING;
     // A window of one thousand instructions is profitable for dataflow?
     this->BufferThreshold = 50;
-    // Call the base initialization.
-    return ReplayTrace::initialize(Module);
+
+    this->MemorizedLoopDataflow.clear();
+
+    // Initialize some basic static information.
+    LLVM::TDG::StaticInformation StaticInfo;
+    StaticInfo.set_module(Module.getName().str());
+    this->DataFlowSerializer->serializeStaticInfo(StaticInfo);
+    return Ret;
   }
 
   bool finalize(llvm::Module &Module) override {
+
+    this->MemorizedLoopDataflow.clear();
+
     // Release the data flow serializer.
     delete this->DataFlowSerializer;
     this->DataFlowSerializer = nullptr;
     delete this->CachedLU;
     this->CachedLU = nullptr;
-    // Release the cached static loops.
-    delete this->CachedLI;
-    this->CachedLI = nullptr;
     delete this->CachedPDF;
     this->CachedPDF = nullptr;
     return ReplayTrace::finalize(Module);
@@ -140,9 +136,11 @@ protected:
    */
   TDGSerializer *DataFlowSerializer;
 
-  CachedLoopInfo *CachedLI;
   CachedPostDominanceFrontier *CachedPDF;
   CachedLoopUnroller *CachedLU;
+
+  // Memorize the result of isDataflow.
+  std::unordered_map<llvm::Loop *, bool> MemorizedLoopDataflow;
 
   size_t BufferThreshold;
 
@@ -178,7 +176,7 @@ protected:
    * 2. It does not call other functions, (except some supported math
    * functions).
    */
-  bool isLoopDataFlow(llvm::Loop *Loop) const;
+  bool isLoopDataFlow(llvm::Loop *Loop);
 }; // namespace
 
 void AbstractDataFlowAcceleratorPass::transform() {
@@ -239,16 +237,29 @@ void AbstractDataFlowAcceleratorPass::transform() {
       if (NewLoop != nullptr) {
         if (this->isLoopDataFlow(NewLoop)) {
           // This loop is possible for dataflow.
-          IsAtHeaderOfCandidate = isStaticInstLoopHead(NewLoop, NewStaticInst);
+          // DEBUG(llvm::errs()
+          //       << "Check if we are at header of " << printLoop(NewLoop)
+          //       << " header " << NewLoop->getHeader()->getName() << " inst "
+          //       << NewStaticInst->getName() << " bb "
+          //       << NewStaticInst->getParent()->getName() << ".\n");
+          // DEBUG(llvm::errs()
+          //       << "First non-phi "
+          //       << NewStaticInst->getParent()->getFirstNonPHI()->getName()
+          //       << ".\n");
+
+          IsAtHeaderOfCandidate =
+              LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst);
+          // DEBUG(llvm::errs() << "Check if we are at header: Done.\n");
         } else {
           // This is not a candidate.
+          // DEBUG(llvm::errs() << "Getted loop is not a candidate.\n");
           NewLoop = nullptr;
         }
       }
 
       // if (IsAtHeaderOfCandidate) {
       //   DEBUG(llvm::errs() << "Hitting header of new candidate loop "
-      //                      << NewStaticLoop->print() << "\n");
+      //                      << printLoop(NewLoop) << "\n");
       // }
 
     } else {
@@ -379,15 +390,6 @@ void AbstractDataFlowAcceleratorPass::transform() {
        */
       if (!CurrentLoop->contains(NewLoop)) {
         // Case 2
-        // Commit remaining insts.
-        while (this->Trace->DynamicInstructionList.size() > 1) {
-          assert(
-              !DataFlowStarted &&
-              "Data flow started with remaining instructions in the buffer.");
-          this->serializeInstStream(
-              this->Trace->DynamicInstructionList.front());
-          this->Trace->commitOneDynamicInst();
-        }
         if (IsAtHeaderOfCandidate) {
           // Case 2.1.
           // Update the loop and loop iter.
@@ -398,18 +400,27 @@ void AbstractDataFlowAcceleratorPass::transform() {
           // DEBUG(llvm::errs() << "ADFA: BUFFERING -> SEARCHING.\n");
           this->State = SEARCHING;
         }
+
+        if (DataFlowStarted) {
+          // We are out of the current loop, end the dataflow.
+          this->CurrentConfiguredDataFlow.addDynamicInst(nullptr);
+          assert(this->Trace->DynamicInstructionList.size() == 1 &&
+                 "Data flow ended with remaining instructions in the buffer.");
+        } else {
+          // Commit remaining insts if we haven't start the dataflow.
+          while (this->Trace->DynamicInstructionList.size() > 1) {
+            this->serializeInstStream(
+                this->Trace->DynamicInstructionList.front());
+            this->Trace->commitOneDynamicInst();
+          }
+        }
+
       } else {
         // Case 1.
         if (DataFlowStarted) {
           // DEBUG(llvm::errs() << "ADFA: BUFFERING -> DATAFLOW.\n");
           this->State = DATAFLOW;
         }
-      }
-
-      if (DataFlowStarted && this->State != DATAFLOW) {
-        // We started an dataflow, and there is not more comming. Insert the end
-        // token.
-        this->CurrentConfiguredDataFlow.addDynamicInst(nullptr);
       }
 
       break;
@@ -532,44 +543,28 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
   return false;
 }
 
-bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) const {
+bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) {
 
   assert(Loop != nullptr && "Loop should not be nullptr.");
 
-  // We allow nested loops.
+  auto Iter = this->MemorizedLoopDataflow.find(Loop);
+  if (Iter != this->MemorizedLoopDataflow.end()) {
+    return Iter->second;
+  }
 
-  // Check if there is any calls to unsupported function.
-  for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
-       BBIter != BBEnd; ++BBIter) {
-    for (auto InstIter = (*BBIter)->begin(), InstEnd = (*BBIter)->end();
-         InstIter != InstEnd; ++InstIter) {
-      if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(&*InstIter)) {
-        // This is a call inst.
-        auto Callee = CallInst->getCalledFunction();
-        if (Callee == nullptr) {
-          // Indirect call, not vectorizable.
-          DEBUG(llvm::errs()
-                << "AbstractDataFlowAcceleratorPass: Loop " << printLoop(Loop)
-                << " is statically not dataflow because it "
-                   "contains indirect call.\n");
-          return false;
-        }
-        // Check if calling some supported math function.
-        if (Callee->getName() != "sin") {
-          // TODO: add a set for supported functions.
-          DEBUG(llvm::errs()
-                << "AbstractDataFlowAcceleratorPass: Loop " << printLoop(Loop)
-                << " is statically not dataflow because it "
-                   "contains unsupported call.\n");
-          return false;
-        }
-      }
-    }
+  // We allow nested loops.
+  bool IsDataFlow = true;
+  if (!LoopUtils::isLoopContinuous(Loop)) {
+    // DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+    //                    << " is not dataflow as it is not continuous.\n");
+
+    IsDataFlow = false;
   }
 
   // Done: this loop can be represented as data flow.
   // DEBUG(llvm::errs() << "isLoopDataFlow returned true.\n");
-  return true;
+  this->MemorizedLoopDataflow.emplace(Loop, IsDataFlow);
+  return IsDataFlow;
 }
 
 DynamicDataFlow::DynamicDataFlow()
@@ -664,7 +659,9 @@ void DynamicDataFlow::addDynamicInst(DynamicInstruction *DynamicInst) {
         Unrolled = true;
         auto LU = this->CachedLU->getUnroller(
             this->InnerMostLoopCounter.getLoop(), this->SE);
-        LU->unroll(this->DG, this->Buffer.begin(), this->Buffer.end());
+        if (LU->canUnroll()) {
+          LU->unroll(this->DG, this->Buffer.begin(), this->Buffer.end());
+        }
       }
       // Serialize and commit all buffered instruction.
       if (Status == LoopIterCounter::Status::OUT || Unrolled) {
