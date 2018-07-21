@@ -16,9 +16,36 @@
 /**
  * Determine if the static inst is the head of a loop.
  */
-bool isStaticInstLoopHead(llvm::Loop *Loop, llvm::Instruction *StaticInst);
+// inline bool isStaticInstLoopHead(llvm::Loop *Loop,
+//                                  llvm::Instruction *StaticInst) {
+//   assert(Loop != nullptr && "Null loop for isStaticInstLoopHead.");
+//   return (Loop->getHeader() == StaticInst->getParent()) &&
+//          (StaticInst->getParent()->getFirstNonPHI() == StaticInst);
+// }
 
-std::string printLoop(llvm::Loop *Loop);
+std::string printLoop(const llvm::Loop *Loop);
+
+class LoopUtils {
+public:
+  /**
+   * Returns true if a loop is continuous, i.e. once entered, the execution will
+   * never falls out of the loop before the iteration ends.
+   * This means it contains no function calls.
+   */
+  static bool isLoopContinuous(const llvm::Loop *Loop);
+
+  /**
+   * Get a global id for this loop.
+   * Func::Header
+   */
+  static std::string getLoopId(const llvm::Loop *Loop);
+
+  /**
+   * Determine if the static inst is the head of a loop.
+   */
+  static bool isStaticInstLoopHead(llvm::Loop *Loop,
+                                   llvm::Instruction *StaticInst);
+};
 
 class LoopIterCounter {
 public:
@@ -47,8 +74,8 @@ public:
    *    NEW_ITER, with Iter set to 3 (just completed iter 3).
    * 2. We are in iteration 4, and StaticInst is nullptr/outside inst, it will
    *    return OUT, with Iter set to 4 (just completed iter 4).
-   * 3. We are in iteration 2, and StaticInst is in loop body (except the header),
-   *    it will return SAME_ITER, with Iter set to 2.
+   * 3. We are in iteration 2, and StaticInst is in loop body (except the
+   * header), it will return SAME_ITER, with Iter set to 2.
    */
   Status count(llvm::Instruction *StaticInst, int &Iter);
 

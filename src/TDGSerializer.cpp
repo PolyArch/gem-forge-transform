@@ -11,7 +11,7 @@
 
 TDGSerializer::TDGSerializer(const std::string &FileName)
     : OutFileStream(FileName, std::ios::out | std::ios::binary),
-      SerializedInsts(0) {
+      SerializedStaticInfomation(false), SerializedInsts(0) {
   assert(this->OutFileStream.is_open() &&
          "Failed to open output serialize file.");
   // Create the zero copy stream.
@@ -36,6 +36,16 @@ TDGSerializer::~TDGSerializer() {
   this->OutFileStream.close();
 }
 
+void TDGSerializer::serializeStaticInfo(
+    const LLVM::TDG::StaticInformation &StaticInfo) {
+  assert(!this->SerializedStaticInfomation &&
+         "StaticInfomation already serialized.");
+  google::protobuf::io::CodedOutputStream CodedStream(this->OutZeroCopyStream);
+  CodedStream.WriteVarint32(StaticInfo.ByteSize());
+  StaticInfo.SerializeWithCachedSizes(&CodedStream);
+  this->SerializedStaticInfomation = true;
+}
+
 void TDGSerializer::serialize(DynamicInstruction *DynamicInst, DataGraph *DG) {
   auto ProtobufEntry = this->TDG.add_instructions();
   DynamicInst->serializeToProtobuf(ProtobufEntry, DG);
@@ -47,6 +57,8 @@ void TDGSerializer::serialize(DynamicInstruction *DynamicInst, DataGraph *DG) {
 }
 
 void TDGSerializer::write() {
+  assert(this->SerializedStaticInfomation &&
+         "Should serialize the static information first.");
   assert(this->TDG.instructions_size() > 0 &&
          "Nothing to write for TDG serializer.");
   // Hacky to dump some serialized instructions for debug.

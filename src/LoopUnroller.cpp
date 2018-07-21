@@ -20,6 +20,12 @@ LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
       if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         llvm::InductionDescriptor ID;
         if (llvm::InductionDescriptor::isInductionPHI(PHINode, Loop, SE, ID)) {
+
+          // // This is an induction variable. We try to find the updating
+          // binary
+          // // operation.
+          // auto IVBinaryOp = this->findUpdatingBinaryOp(PHINode);
+
           this->InductionVars.emplace(PHINode, ID);
           this->IVToStartDynamicIdMap.emplace(Inst,
                                               DynamicInstruction::InvalidId);
@@ -38,7 +44,7 @@ void LoopUnroller::updateCurrentIter(DynamicInstruction *DynamicInst) {
   // Make sure that we are always in the loop.
   assert(this->Loop->contains(StaticInst) &&
          "LoopUnroller falls outside of the loop.");
-  if (isStaticInstLoopHead(this->Loop, StaticInst)) {
+  if (LoopUtils::isStaticInstLoopHead(this->Loop, StaticInst)) {
     this->CurrentIter++;
   }
 }

@@ -143,6 +143,26 @@ void DynamicInstruction::serializeToProtobuf(
     LLVM::TDG::TDGInstruction *ProtobufEntry, DataGraph *DG) const {
   ProtobufEntry->set_op(this->getOpName());
   ProtobufEntry->set_id(this->Id);
+
+  /**
+   * We set the bb field if we are the first non-phi instruction in the block.
+   * We can set bb field for all instruction, but we do this as a trivial
+   * optimization on the size of the data graph.
+   */
+  auto StaticInst = this->getStaticInstruction();
+  if (StaticInst != nullptr) {
+    auto BB = StaticInst->getParent();
+    if (BB->getFirstNonPHI() == StaticInst) {
+      /**
+       * We use the BB's address directly as the block id.
+       * This statisfy two principles:
+       * 1. Global uniqueness: no two bb have the same id.
+       * 2. 0 is reserved for invalid bb. (no NULL).
+       */
+      ProtobufEntry->set_bb(reinterpret_cast<uint64_t>(BB));
+    }
+  }
+
   {
     /**
      * A simple deduplication on the register deps.

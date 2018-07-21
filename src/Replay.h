@@ -4,6 +4,7 @@
 
 #include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
+#include "LoopUtils.h"
 #include "TDGSerializer.h"
 
 #include "llvm/IR/Function.h"
@@ -32,6 +33,11 @@ protected:
   virtual void transform();
   virtual bool finalize(llvm::Module &Module);
 
+  /**
+   * Compute all the static information and serialize in the tdg.
+   */
+  void computeStaticInfo();
+
   DataGraph *Trace;
 
   std::string OutTraceName;
@@ -39,6 +45,8 @@ protected:
   TDGSerializer *Serializer;
 
   llvm::Module *Module;
+
+  CachedLoopInfo *CachedLI;
 
   llvm::Value *ReplayFunc;
   llvm::Instruction *FakeRegisterSpill;

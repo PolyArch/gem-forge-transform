@@ -52,7 +52,7 @@ public:
 
   virtual ~DynamicInstruction();
   virtual std::string getOpName() const = 0;
-  virtual llvm::Instruction *getStaticInstruction() { return nullptr; }
+  virtual llvm::Instruction *getStaticInstruction() const { return nullptr; }
   virtual void dump() {}
 
   const DynamicId Id;
@@ -102,7 +102,7 @@ public:
   LLVMDynamicInstruction(LLVMDynamicInstruction &&other) = delete;
   LLVMDynamicInstruction &operator=(LLVMDynamicInstruction &&other) = delete;
   std::string getOpName() const override;
-  llvm::Instruction *getStaticInstruction() override {
+  llvm::Instruction *getStaticInstruction() const override {
     return this->StaticInstruction;
   }
   llvm::Instruction *StaticInstruction;

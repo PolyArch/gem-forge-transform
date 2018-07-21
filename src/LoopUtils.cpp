@@ -7,15 +7,59 @@
 /**
  * Determine if the static inst is the head of a loop.
  */
-bool isStaticInstLoopHead(llvm::Loop *Loop, llvm::Instruction *StaticInst) {
+// bool isStaticInstLoopHead(const llvm::Loop *Loop,
+//                           llvm::Instruction *StaticInst) {
+//   assert(Loop != nullptr && "Null loop for isStaticInstLoopHead.");
+//   return (Loop->getHeader() == StaticInst->getParent()) &&
+//          (StaticInst->getParent()->getFirstNonPHI() == StaticInst);
+// }
+
+std::string printLoop(const llvm::Loop *Loop) {
+  return std::string(Loop->getHeader()->getParent()->getName()) +
+         "::" + std::string(Loop->getName());
+}
+
+bool LoopUtils::isStaticInstLoopHead(llvm::Loop *Loop,
+                                     llvm::Instruction *StaticInst) {
   assert(Loop != nullptr && "Null loop for isStaticInstLoopHead.");
   return (Loop->getHeader() == StaticInst->getParent()) &&
          (StaticInst->getParent()->getFirstNonPHI() == StaticInst);
 }
 
-std::string printLoop(llvm::Loop *Loop) {
-  return std::string(Loop->getHeader()->getParent()->getName()) +
-         "::" + std::string(Loop->getName());
+bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
+  // Check if there is any calls to unsupported function.
+  for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    for (auto InstIter = (*BBIter)->begin(), InstEnd = (*BBIter)->end();
+         InstIter != InstEnd; ++InstIter) {
+      if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(&*InstIter)) {
+        // This is a call inst.
+        auto Callee = CallInst->getCalledFunction();
+        if (Callee == nullptr) {
+          // Indirect call, not continuous.
+          DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+                             << " is statically not continuous because it "
+                                "contains indirect call.\n");
+          return false;
+        }
+        // Check if calling some supported math function.
+        if (Callee->getName() != "sin") {
+          // TODO: add a set for supported functions.
+          DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+                             << " is statically not continuous because it "
+                                "contains unsupported call.\n");
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+std::string LoopUtils::getLoopId(const llvm::Loop *Loop) {
+  auto Header = Loop->getHeader();
+  auto Func = Header->getParent();
+  return Func->getName().str() + "::" + Loop->getName().str();
 }
 
 void LoopIterCounter::configure(llvm::Loop *_Loop) {
@@ -23,7 +67,8 @@ void LoopIterCounter::configure(llvm::Loop *_Loop) {
   this->Iter = -1;
 }
 
-LoopIterCounter::Status LoopIterCounter::count(llvm::Instruction *StaticInst, int &Iter) {
+LoopIterCounter::Status LoopIterCounter::count(llvm::Instruction *StaticInst,
+                                               int &Iter) {
   assert(this->isConfigured() && "LoopIterCounter is not configured.");
   if (StaticInst == nullptr || (!this->Loop->contains(StaticInst))) {
     // Outside instruction.
@@ -31,7 +76,7 @@ LoopIterCounter::Status LoopIterCounter::count(llvm::Instruction *StaticInst, in
     this->Iter = -1;
     return OUT;
   }
-  if (isStaticInstLoopHead(this->Loop, StaticInst)) {
+  if (LoopUtils::isStaticInstLoopHead(this->Loop, StaticInst)) {
     this->Iter++;
     Iter = this->Iter;
     return NEW_ITER;
