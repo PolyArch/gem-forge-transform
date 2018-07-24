@@ -48,6 +48,11 @@ protected:
 
   CachedLoopInfo *CachedLI;
 
+  /**
+   * Static Informatin.
+   */
+  LLVM::TDG::StaticInformation StaticInfo;
+
   llvm::Value *ReplayFunc;
   llvm::Instruction *FakeRegisterSpill;
   llvm::Instruction *FakeRegisterFill;

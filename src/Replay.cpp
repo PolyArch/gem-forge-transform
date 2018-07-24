@@ -163,8 +163,11 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
             .getAssumptionCache(Func);
       });
 
-  // Initialize the regions.
+  // Initialize the static information.
   this->computeStaticInfo();
+
+  // Serialize the static information first.
+  this->Serializer->serializeStaticInfo(StaticInfo);
 
   return true;
 }
@@ -183,8 +186,9 @@ bool ReplayTrace::finalize(llvm::Module &Module) {
 }
 
 void ReplayTrace::computeStaticInfo() {
-  LLVM::TDG::StaticInformation StaticInfo;
-  StaticInfo.set_module(this->Module->getName().str());
+  // Currently the static information contains the regions only.
+  this->StaticInfo.set_module(this->Module->getName().str());
+  this->StaticInfo.clear_regions();
 
   for (auto FuncIter = this->Module->begin(), FuncEnd = this->Module->end();
        FuncIter != FuncEnd; ++FuncIter) {
@@ -198,8 +202,17 @@ void ReplayTrace::computeStaticInfo() {
     }
 
     if (Function.getName() == "replay") {
+      // Skip our own replay function.
       continue;
     }
+
+    /**
+     * In order to compute the nest relationship between regions,
+     * we iterate the loop in preorder, and maintains a set of founded regions
+     * so far. For any new regions found, due to preorder, its parent should be
+     * processed. If its parent is a region, we add the parent region id.
+     */
+    std::set<llvm::Loop *> RegionsFound;
 
     // Get all the loops.
     auto LI = this->CachedLI->getLoopInfo(&Function);
@@ -209,9 +222,16 @@ void ReplayTrace::computeStaticInfo() {
         auto Region = StaticInfo.add_regions();
         auto RegionId = LoopUtils::getLoopId(Loop);
         Region->set_name(RegionId);
+        // Check if its parent is also a region.
+        auto ParentLoop = Loop->getParentLoop();
+        if (ParentLoop != nullptr &&
+            RegionsFound.find(ParentLoop) != RegionsFound.end()) {
+          Region->set_parent(LoopUtils::getLoopId(ParentLoop));
+        }
         // Add all the basic blocks to the regions.
         // Use the memory address as the block id.
-        DEBUG(llvm::errs() << "Found region " << RegionId << ": ");
+        DEBUG(llvm::errs() << "Found region " << RegionId << " parent "
+                           << Region->parent() << ": ");
         for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
              BBIter != BBEnd; ++BBIter) {
           llvm::BasicBlock *BB = *BBIter;
@@ -219,12 +239,10 @@ void ReplayTrace::computeStaticInfo() {
           DEBUG(llvm::errs() << BB->getName() << '(' << BB << "), ");
         }
         DEBUG(llvm::errs() << '\n');
+        RegionsFound.insert(Loop);
       }
     }
   }
-
-  // Serialize the static information.
-  this->Serializer->serializeStaticInfo(StaticInfo);
 }
 
 bool ReplayTrace::processFunction(llvm::Function &Function) {

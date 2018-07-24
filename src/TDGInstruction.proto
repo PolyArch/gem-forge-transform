@@ -5,7 +5,8 @@ package LLVM.TDG;
 // Some static information at the head.
 message Region {
   string name = 1;
-  repeated uint64 bbs = 2;
+  string parent = 2;
+  repeated uint64 bbs = 3;
 }
 message StaticInformation {
   string module = 1;

@@ -25,7 +25,7 @@ add_library(TracerProtobuf STATIC
 target_include_directories(TracerProtobuf PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
 set_target_properties(TracerProtobuf PROPERTIES
-    COMPILE_FLAGS "-std=c++14 -g -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
+    COMPILE_FLAGS "-std=c++14 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
 
 # GZip tracer library

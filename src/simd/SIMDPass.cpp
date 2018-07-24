@@ -88,6 +88,11 @@ public:
    */
   std::list<DynamicInstruction *> NewDynamicInstList;
 
+  /**
+   * Used to handle inside memory dependence for the newly created load/store.
+   */
+  MemoryDependenceComputer InsideMemDepsComputer;
+
 private:
   /**
    * Pointer to the datagraph.
@@ -105,7 +110,7 @@ public:
   static char ID;
   SIMDPass()
       : ReplayTrace(ID), State(SEARCHING), VectorizeWidth(4),
-        VectorizeEfficiencyThreshold(0.8f) {
+        VectorizeEfficiencyThreshold(0.99f) {
     if (::VectorizeWidth.getNumOccurrences() > 0) {
       this->VectorizeWidth = ::VectorizeWidth.getValue();
     }
@@ -247,13 +252,6 @@ protected:
                                  const DataGraph::DependenceSet &OldDeps) const;
 
   /**
-   * Helper function to transfer inside memory dependence.
-   */
-  void transferInsideMemDeps(DynamicInnerMostLoop &DynamicLoop,
-                             DataGraph::DependenceSet &NewMemDeps,
-                             const DataGraph::DependenceSet &OldMemDeps) const;
-
-  /**
    * Helper function to transfer inside register dependence.
    */
   void transferInsideRegDeps(DynamicInnerMostLoop &DynamicLoop,
@@ -275,7 +273,7 @@ protected:
    * unpack and insert #vec_width stores.
    * @return the number of newly inserted dynamic instructions.
    */
-  size_t createDynamicInstsForScatterStore(llvm::LoadInst *StaticStore,
+  size_t createDynamicInstsForScatterStore(llvm::StoreInst *StaticStore,
                                            DynamicInnerMostLoop &DynamicLoop);
 
   /**
@@ -605,7 +603,6 @@ bool SIMDPass::isLoopInterIterDataDependent(DynamicInnerMostLoop &DynamicLoop) {
   // Iterate through all the store/load instructions.
   for (auto BB : DynamicLoop.StaticLoop->BBList) {
 
-    DEBUG(llvm::errs() << 100 << DynamicLoop.StaticLoop->print() << '\n');
     for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
          ++InstIter) {
       auto StaticInst = &*InstIter;
@@ -645,32 +642,27 @@ bool SIMDPass::isLoopInterIterDataDependent(DynamicInnerMostLoop &DynamicLoop) {
     }
   }
 
-  DEBUG(llvm::errs() << 200 << DynamicLoop.StaticLoop->print() << '\n');
-
   return false;
 }
 
 bool SIMDPass::isLoopDynamicVectorizable(DynamicInnerMostLoop &DynamicLoop) {
 
-  DEBUG(llvm::errs() << 1 << DynamicLoop.StaticLoop->print() << '\n');
   float Efficiency = this->computeLoopEfficiency(DynamicLoop);
   if (Efficiency < this->VectorizeEfficiencyThreshold) {
-    DEBUG(llvm::errs() << "Failed due to inefficiency\n");
+    DEBUG(llvm::errs() << "Failed due to inefficiency, " << Efficiency << " < "
+                       << this->VectorizeEfficiencyThreshold << '\n');
     return false;
   }
 
-  DEBUG(llvm::errs() << 2 << DynamicLoop.StaticLoop->print() << '\n');
   if (this->isLoopInterIterMemDependent(DynamicLoop)) {
     DEBUG(llvm::errs() << "Failed due to inter-iter memory dependent\n");
     return false;
   }
 
-  DEBUG(llvm::errs() << 3 << DynamicLoop.StaticLoop->print() << '\n');
   if (this->isLoopInterIterDataDependent(DynamicLoop)) {
     DEBUG(llvm::errs() << "Failed due to inter-iter data dependent\n");
     return false;
   }
-  DEBUG(llvm::errs() << 4 << DynamicLoop.StaticLoop->print() << '\n');
 
   return true;
 }
@@ -722,7 +714,9 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
                 << "Store stride "
                 << DynamicLoop.StaticToStrideMap.at(StaticInst) << " type size "
                 << this->getTypeSizeForLoadStore(StaticInst) << '\n');
-          assert(false && "Can not handle scattered store for now.");
+          // assert(false && "Can not handle scattered store for now.");
+          this->createDynamicInstsForScatterStore(
+              llvm::cast<llvm::StoreInst>(StaticInst), DynamicLoop);
         }
       } else {
         // Basic case.
@@ -829,9 +823,8 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         InsertionPoint, NewDynamicInst);
     this->Trace->AliveDynamicInstsMap.emplace(NewDynamicInst->Id,
                                               NewDynamicInstIter);
-    this->Trace
-        ->StaticToLastDynamicMap[NewDynamicInst->getStaticInstruction()] =
-        NewDynamicInst->Id;
+    this->Trace->DynamicFrameStack.front().updateLastDynamicId(
+        NewDynamicInst->getStaticInstruction(), NewDynamicInst->Id);
     this->Trace->DynamicFrameStack.front().updatePrevControlInstId(
         NewDynamicInst);
   }
@@ -969,25 +962,6 @@ void SIMDPass::transferOutsideNonRegDeps(
   }
 }
 
-void SIMDPass::transferInsideMemDeps(
-    DynamicInnerMostLoop &DynamicLoop, DataGraph::DependenceSet &NewMemDeps,
-    const DataGraph::DependenceSet &OldMemDeps) const {
-  for (auto MemDepId : OldMemDeps) {
-    auto MemDepDynamicInst = this->Trace->getAliveDynamicInst(MemDepId);
-    if (MemDepDynamicInst == nullptr) {
-      // Outside memory dependence, ignore it.
-      continue;
-    }
-    auto MemDepStaticInst = MemDepDynamicInst->getStaticInstruction();
-    auto NewMemDepDynamicInstIter =
-        DynamicLoop.StaticToNewDynamicMap.find(MemDepStaticInst);
-    assert(NewMemDepDynamicInstIter !=
-               DynamicLoop.StaticToNewDynamicMap.end() &&
-           "Missing new dynamic simd instruction for memory dependence.");
-    NewMemDeps.insert(NewMemDepDynamicInstIter->second);
-  }
-}
-
 void SIMDPass::transferInsideRegDeps(DynamicInnerMostLoop &DynamicLoop,
                                      DataGraph::RegDependenceList &NewRegDeps,
                                      llvm::Instruction *NewStaticInst) const {
@@ -1042,10 +1016,6 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
     // Remember to fix the AddrToLastMemoryAccess map in datagraph.
     auto Addr = DynamicInst->DynamicOperands[0]->getAddr();
     uint64_t LoadedTypeSizeInByte = this->getTypeSizeForLoadStore(StaticLoad);
-    for (size_t I = 0; I < LoadedTypeSizeInByte; ++I) {
-      this->Trace->updateAddrToLastMemoryAccessMap(Addr + I, NewDynamicInst->Id,
-                                                   true /* true for load*/);
-    }
 
     // Fix the dependence.
     auto &NewRegDeps = this->Trace->RegDeps
@@ -1072,12 +1042,21 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
     this->transferOutsideNonRegDeps(DynamicLoop, NewCtrDeps,
                                     this->Trace->CtrDeps.at(DynamicIds[0]));
 
-    this->transferInsideMemDeps(DynamicLoop, NewMemDeps,
-                                this->Trace->MemDeps.at(DynamicId));
+    // Fix the inside memory dependence.
+    DynamicLoop.InsideMemDepsComputer.getMemoryDependence(
+        Addr, LoadedTypeSizeInByte, true, NewMemDeps);
+
     this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticLoad);
 
     NewDynamicIds.push_back(NewDynamicInst->Id);
     DynamicLoop.NewDynamicInstList.push_back(NewDynamicInst);
+
+    // Update the memory dependence computer.
+    this->Trace->updateAddrToLastMemoryAccessMap(
+        Addr, LoadedTypeSizeInByte, NewDynamicInst->Id, true /*true for load*/);
+    DynamicLoop.InsideMemDepsComputer.update(
+        Addr, LoadedTypeSizeInByte, NewDynamicInst->Id, true /*true for load*/);
+
     ++CreatedInstCount;
   }
 
@@ -1120,10 +1099,81 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
   return CreatedInstCount;
 }
 size_t
-SIMDPass::createDynamicInstsForScatterStore(llvm::LoadInst *StaticStore,
+SIMDPass::createDynamicInstsForScatterStore(llvm::StoreInst *StaticStore,
                                             DynamicInnerMostLoop &DynamicLoop) {
-  assert(false && "Scattered store is not supported yet.");
-  return 0;
+  const auto &DynamicIds = DynamicLoop.StaticToDynamicMap.at(StaticStore);
+  std::vector<DynamicInstruction::DynamicId> NewDynamicIds;
+
+  size_t CreatedInstCount = 0;
+  // Scalarize the instruction.
+  for (auto DynamicId : DynamicIds) {
+    assert(DynamicId != LLVMDynamicInstruction::InvalidId &&
+           "Conditional memory access found.");
+    auto DynamicInst = this->Trace->getAliveDynamicInst(DynamicId);
+    // Copy all the operands and result.
+    std::vector<DynamicValue *> NewDynamicOperands;
+    for (auto DynamicOperand : DynamicInst->DynamicOperands) {
+      NewDynamicOperands.push_back(new DynamicValue(*DynamicOperand));
+    }
+    DynamicValue *NewDynamicResult = nullptr;
+    if (DynamicInst->DynamicResult != nullptr) {
+      NewDynamicResult = new DynamicValue(*(DynamicInst->DynamicResult));
+    }
+    auto NewDynamicInst = new LLVMDynamicInstruction(
+        StaticStore, NewDynamicResult, std::move(NewDynamicOperands));
+
+    // Remember to fix the AddrToLastMemoryAccess map in datagraph.
+    auto Addr = DynamicInst->DynamicOperands[1]->getAddr();
+    uint64_t StoredTypeSizeInByte = this->getTypeSizeForLoadStore(StaticStore);
+
+    // Fix the dependence.
+    auto &NewRegDeps = this->Trace->RegDeps
+                           .emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple())
+                           .first->second;
+    auto &NewMemDeps = this->Trace->MemDeps
+                           .emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple())
+                           .first->second;
+    auto &NewCtrDeps = this->Trace->CtrDeps
+                           .emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple())
+                           .first->second;
+    this->transferOutsideRegDeps(DynamicLoop, NewRegDeps,
+                                 this->Trace->RegDeps.at(DynamicId));
+    this->transferOutsideNonRegDeps(DynamicLoop, NewMemDeps,
+                                    this->Trace->MemDeps.at(DynamicId));
+    // For outside control dependence, only the first iteration has the currect
+    // control dependence.
+    this->transferOutsideNonRegDeps(DynamicLoop, NewCtrDeps,
+                                    this->Trace->CtrDeps.at(DynamicIds[0]));
+
+    // Fix inside memory dependence.
+    DynamicLoop.InsideMemDepsComputer.getMemoryDependence(
+        Addr, StoredTypeSizeInByte, false, NewMemDeps);
+
+    this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticStore);
+
+    NewDynamicIds.push_back(NewDynamicInst->Id);
+    DynamicLoop.NewDynamicInstList.push_back(NewDynamicInst);
+
+    // Update the memory dependence computer.
+    this->Trace->updateAddrToLastMemoryAccessMap(Addr, StoredTypeSizeInByte,
+                                                 NewDynamicInst->Id,
+                                                 false /*false for store*/);
+    DynamicLoop.InsideMemDepsComputer.update(Addr, StoredTypeSizeInByte,
+                                             NewDynamicInst->Id,
+                                             false /*false for store*/);
+
+    ++CreatedInstCount;
+  }
+
+  // We should create something like an unpack instruction?
+  // No one should be register dependent on the store instruction.
+  return CreatedInstCount;
 }
 
 size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
@@ -1176,8 +1226,15 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
     return PickedInst;
   };
 
+  // TODO: Refactor this part.
+  // Collect some useful information for load and store.
+  bool IsMemoryAccess = false;
+  // All the following fields are valid when IsMemoryAccess is true.
+  bool IsLoad;
+  uint64_t Addr;
+  size_t ByteSize;
+
   // Create the new dynamic instruction.
-  // For load and store, we will update the AddrToLastLoad/StoreMap
   if (auto StaticLoad = llvm::dyn_cast<llvm::LoadInst>(StaticInst)) {
     // Continuous load.
     auto PickedInst = PickBaseForLoadStore(StaticInst);
@@ -1187,12 +1244,12 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
     NewDynamicInst =
         new SIMDLoadInst(StaticInst, DynamicResult, std::move(DynamicOperands),
                          DynamicLoop.LoopIter);
-    size_t Addr = NewDynamicInst->DynamicOperands[0]->getAddr();
-    uint64_t LoadedTypeSizeInByte = this->getTypeSizeForLoadStore(StaticLoad);
-    for (size_t I = 0; I < DynamicLoop.LoopIter * LoadedTypeSizeInByte; ++I) {
-      this->Trace->updateAddrToLastMemoryAccessMap(Addr + I, NewDynamicInst->Id,
-                                                   true /* true for load*/);
-    }
+
+    IsMemoryAccess = true;
+    IsLoad = true;
+    Addr = NewDynamicInst->DynamicOperands[0]->getAddr();
+    ByteSize = DynamicLoop.LoopIter * this->getTypeSizeForLoadStore(StaticLoad);
+
   } else if (auto StaticStore = llvm::dyn_cast<llvm::StoreInst>(StaticInst)) {
     // Continuous store, simply use the first store's address.
     // Copy the new addr.
@@ -1223,11 +1280,11 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
     NewDynamicInst = new SIMDStoreInst(StaticInst, DynamicResult,
                                        std::move(DynamicOperands), StoredData);
 
-    size_t Addr = NewDynamicInst->DynamicOperands[1]->getAddr();
-    for (size_t I = 0; I < StoredData.size(); ++I) {
-      this->Trace->updateAddrToLastMemoryAccessMap(Addr + I, NewDynamicInst->Id,
-                                                   false /*false for store*/);
-    }
+    IsMemoryAccess = true;
+    IsLoad = false;
+    Addr = NewDynamicInst->DynamicOperands[1]->getAddr();
+    ByteSize = StoredData.size();
+
   } else {
     // Normal instruction.
     NewDynamicInst = new LLVMDynamicInstruction(StaticInst, DynamicResult,
@@ -1268,11 +1325,6 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
                                     this->Trace->MemDeps.at(DynamicId));
     this->transferOutsideNonRegDeps(DynamicLoop, NewCtrDeps,
                                     this->Trace->CtrDeps.at(DynamicId));
-
-    // Fix the memory dependence within the loop.
-    // DEBUG(llvm::errs() << "Fixing inside loop memory dependence.\n");
-    this->transferInsideMemDeps(DynamicLoop, NewMemDeps,
-                                this->Trace->MemDeps.at(DynamicId));
   }
 
   // We fix the register dependence within the loop.
@@ -1280,9 +1332,23 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
   // loop.\n");
   this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticInst);
 
+  // Fix the memory dependence within the loop.
+  if (IsMemoryAccess) {
+    DynamicLoop.InsideMemDepsComputer.getMemoryDependence(Addr, ByteSize,
+                                                          IsLoad, NewMemDeps);
+  }
+
   // Add this dynamic instruction into DynamicLoop.
   DynamicLoop.StaticToNewDynamicMap.emplace(StaticInst, NewDynamicInst->Id);
   DynamicLoop.NewDynamicInstList.push_back(NewDynamicInst);
+
+  // Remember to update the inside memory dependence.
+  if (IsMemoryAccess) {
+    this->Trace->updateAddrToLastMemoryAccessMap(Addr, ByteSize,
+                                                 NewDynamicInst->Id, IsLoad);
+    DynamicLoop.InsideMemDepsComputer.update(Addr, ByteSize, NewDynamicInst->Id,
+                                             IsLoad);
+  }
 
   return 1;
 }

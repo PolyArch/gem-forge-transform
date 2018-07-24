@@ -48,6 +48,35 @@ void AddrToMemAccessMap::release() {
   }
 }
 
+void MemoryDependenceComputer::update(Address Addr, size_t ByteSize,
+                                      DynamicId Id, bool IsLoad) {
+  auto &Map = IsLoad ? this->LoadMap : this->StoreMap;
+  for (size_t I = 0; I < ByteSize; ++I) {
+    Map.update(Addr + I, Id);
+  }
+}
+
+void MemoryDependenceComputer::getMemoryDependence(
+    Address Addr, size_t ByteSize, bool IsLoad,
+    std::unordered_set<DynamicId> &OutMemDeps) const {
+  for (size_t I = 0; I < ByteSize; ++I) {
+    // R/WAW dependence.
+    auto DepId = this->StoreMap.getLastAccess(Addr + I);
+    if (DepId != DynamicInstruction::InvalidId) {
+      OutMemDeps.insert(DepId);
+    }
+  }
+  if (!IsLoad) {
+    // WAR dependence.
+    for (size_t I = 0; I < ByteSize; ++I) {
+      auto DepId = this->LoadMap.getLastAccess(Addr + I);
+      if (DepId != DynamicInstruction::InvalidId) {
+        OutMemDeps.insert(DepId);
+      }
+    }
+  }
+}
+
 DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function *_Function,
     std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments)
@@ -67,6 +96,16 @@ DataGraph::DynamicFrame::getValue(llvm::Value *Value) const {
   return Iter->second;
 }
 
+const DynamicValue *
+DataGraph::DynamicFrame::getValueNullable(llvm::Value *Value) const {
+  const auto Iter = this->RunTimeEnv.find(Value);
+  if (Iter == this->RunTimeEnv.end()) {
+    return nullptr;
+  } else {
+    return &(Iter->second);
+  }
+}
+
 void DataGraph::DynamicFrame::insertValue(llvm::Value *Value,
                                           DynamicValue DValue) {
   DEBUG(llvm::errs() << "OFFSET " << DValue.MemOffset << '\n');
@@ -76,15 +115,44 @@ void DataGraph::DynamicFrame::insertValue(llvm::Value *Value,
                            std::forward_as_tuple(Value),
                            std::forward_as_tuple(std::move(DValue)));
 
-  if (this->getValue(Value).MemOffset != DValue.MemOffset) {
-    const auto &Entry = this->getValue(Value);
-    DEBUG(llvm ::errs() << "Unmatched memory offset current "
-                        << DValue.MemOffset << " run time env " << Entry.Value
-                        << ' ' << Entry.MemBase << ' ' << Entry.MemOffset
-                        << '\n');
-  }
   assert(this->getValue(Value).MemOffset == DValue.MemOffset &&
          "Invalid memory offset in run time env.");
+}
+
+DataGraph::DynamicId
+DataGraph::DynamicFrame::getLastDynamicId(llvm::Instruction *StaticInst) const {
+  assert(StaticInst->getFunction() == this->Function &&
+         "This instruction is not in our function.");
+  auto Iter = this->StaticToLastDynamicMap.find(StaticInst);
+  if (Iter == this->StaticToLastDynamicMap.end()) {
+    return DynamicInstruction::InvalidId;
+  }
+  return Iter->second;
+}
+
+void DataGraph::DynamicFrame::updateLastDynamicId(llvm::Instruction *StaticInst,
+                                                  DynamicId Id) {
+  assert(StaticInst->getFunction() == this->Function &&
+         "This instruction is not in our function.");
+  this->StaticToLastDynamicMap[StaticInst] = Id;
+}
+
+DataGraph::DynamicId
+DataGraph::DynamicFrame::getPHINodeDependence(llvm::PHINode *PHINode) const {
+  assert(PHINode->getFunction() == this->Function &&
+         "This phi node is not in our function.");
+  auto Iter = this->PhiNodeDependenceMap.find(PHINode);
+  if (Iter == this->PhiNodeDependenceMap.end()) {
+    return DynamicInstruction::InvalidId;
+  }
+  return Iter->second;
+}
+
+void DataGraph::DynamicFrame::updatePHINodeDependence(llvm::PHINode *PHINode,
+                                                      DynamicId Id) {
+  assert(PHINode->getFunction() == this->Function &&
+         "This instruction is not in our function.");
+  this->PhiNodeDependenceMap[PHINode] = Id;
 }
 
 void DataGraph::DynamicFrame::updatePrevControlInstId(
@@ -327,6 +395,10 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
   // Update the PrevControlInstId.
   this->DynamicFrameStack.front().updatePrevControlInstId(DynamicInst);
 
+  // Add the map from static instrunction to dynamic.
+  this->DynamicFrameStack.front().updateLastDynamicId(StaticInstruction,
+                                                      DynamicInst->Id);
+
   // Update the previous block.
   this->DynamicFrameStack.front().PrevBasicBlock =
       StaticInstruction->getParent();
@@ -361,6 +433,8 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
 
   // Set up the call stack if this is a call.
   if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInstruction)) {
+    // Set up the previous call instruction.
+    this->DynamicFrameStack.front().PrevCallInst = StaticCall;
     auto &CallStack = this->DynamicFrameStack.front().CallStack;
     CallStack.clear();
     if (this->DetailLevel != SIMPLE) {
@@ -378,9 +452,6 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
 
   // Add to the alive map.
   this->AliveDynamicInstsMap[DynamicInst->Id] = InsertedIter;
-
-  // Add the map from static instrunction to dynamic.
-  this->StaticToLastDynamicMap[StaticInstruction] = DynamicInst->Id;
 
   return true;
 }
@@ -413,17 +484,21 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
       // dependence.
       if (auto OperandStaticPhi =
               llvm::dyn_cast<llvm::PHINode>(OperandStaticInst)) {
-        auto Iter = this->PhiNodeDependenceMap.find(OperandStaticPhi);
-        if (Iter != this->PhiNodeDependenceMap.end()) {
-          // We have found a dependence.
-          RegDeps.emplace_back(OperandStaticInst, Iter->second);
+        auto DepId = this->DynamicFrameStack.front().getPHINodeDependence(
+            OperandStaticPhi);
+        if (DepId != DynamicInstruction::InvalidId) {
+          // This phi instruction has a dependence.
+          RegDeps.emplace_back(OperandStaticInst, DepId);
+        } else {
+          // This phi instruction doesn't generate a dependence, ignore it.
         }
       } else {
         // non phi node dependence.
-        auto Iter = this->StaticToLastDynamicMap.find(OperandStaticInst);
-        assert(Iter != this->StaticToLastDynamicMap.end() &&
+        auto DepId =
+            this->DynamicFrameStack.front().getLastDynamicId(OperandStaticInst);
+        assert(DepId != DynamicInstruction::InvalidId &&
                "Failed to look up last dynamic for register dependence.");
-        RegDeps.emplace_back(OperandStaticInst, Iter->second);
+        RegDeps.emplace_back(OperandStaticInst, DepId);
       }
     }
   }
@@ -466,7 +541,18 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
       // For the incoming value of instruction and arguments, we look up the
       // run time env.
       // Make sure to copy it.
-      Frame.insertValue(StaticPhi, Frame.getValue(IncomingValue));
+      const auto IncomingDynamicValue = Frame.getValueNullable(IncomingValue);
+      if (IncomingDynamicValue != nullptr) {
+        // Normal case, we found the incoming dynamic value.
+        Frame.insertValue(StaticPhi, *IncomingDynamicValue);
+      } else {
+        // We failed to find the dynamic value. This can happen only when the
+        // incoming value is a untraced-call instruction.
+        assert(llvm::isa<llvm::CallInst>(IncomingValue) &&
+               "Non-call instruction missing dynamic value.");
+        // In such case, we have to use our own result from phi.
+        Frame.insertValue(StaticPhi, DynamicValue(Parsed.Result));
+      }
     } else {
       // We sliently create the default memory base/offset.
       Frame.RunTimeEnv.erase(StaticPhi);
@@ -478,48 +564,33 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
 
   // Handle the dependence.
   {
+    auto DepId = DynamicInstruction::InvalidId;
     if (auto OperandStaticInst =
             llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
       // Two cases for incoming instruction
       // 1. If the incoming value is a phi node, look up the
       // PhiNodeDependenceMap.
       // 2. Otherwise, if it , look up the StaticToLastDynamicMap.
-      DynamicId DependentId;
-      bool Found = false;
       if (auto OperandStaticPhi =
               llvm::dyn_cast<llvm::PHINode>(IncomingValue)) {
-        auto Iter = this->PhiNodeDependenceMap.find(OperandStaticPhi);
-        Found = Iter != this->PhiNodeDependenceMap.end();
-        if (Found) {
-          DependentId = Iter->second;
-        }
+        DepId = this->DynamicFrameStack.front().getPHINodeDependence(
+            OperandStaticPhi);
       } else {
         // There must be a dynamic instance for this.
-        assert(this->StaticToLastDynamicMap.find(OperandStaticInst) !=
-                   this->StaticToLastDynamicMap.end() &&
+        DepId =
+            this->DynamicFrameStack.front().getLastDynamicId(OperandStaticInst);
+        assert(DepId != DynamicInstruction::InvalidId &&
                "Missing dynamic instruction for phi incoming value.");
-        Found = true;
-        DependentId = this->StaticToLastDynamicMap.at(OperandStaticInst);
       }
-
-      if (Found) {
-        this->PhiNodeDependenceMap[StaticPhi] = DependentId;
-      } else {
-        this->PhiNodeDependenceMap.erase(StaticPhi);
-      }
-    } else {
-      // This is not produced by an instruction, we can silently ignore it.
     }
+    // Update the phi dependence map.
+    this->DynamicFrameStack.front().updatePHINodeDependence(StaticPhi, DepId);
   }
 }
 
-void DataGraph::updateAddrToLastMemoryAccessMap(uint64_t Addr, DynamicId Id,
-                                                bool loadOrStore) {
-  if (loadOrStore) {
-    this->AddrToLastLoadInstMap.update(Addr, Id);
-  } else {
-    this->AddrToLastStoreInstMap.update(Addr, Id);
-  }
+void DataGraph::updateAddrToLastMemoryAccessMap(uint64_t Addr, size_t ByteSize,
+                                                DynamicId Id, bool IsLoad) {
+  this->MemDepsComputer.update(Addr, ByteSize, Id, IsLoad);
 }
 
 void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
@@ -549,16 +620,12 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
         LoadStaticInstruction->getPointerOperandType()->getPointerElementType();
     uint64_t LoadedTypeSizeInByte =
         this->DataLayout->getTypeStoreSize(LoadedType);
-    for (uint64_t ByteIter = 0; ByteIter < LoadedTypeSizeInByte; ++ByteIter) {
-      uint64_t Addr = BaseAddr + ByteIter;
-      auto DepId = this->AddrToLastStoreInstMap.getLastAccess(Addr);
-      if (DepId != DynamicInstruction::InvalidId) {
-        MemDep.insert(DepId);
-        this->NumMemDependences++;
-      }
-      // Update the latest load map.
-      this->AddrToLastLoadInstMap.update(Addr, DynamicInst->Id);
-    }
+
+    this->MemDepsComputer.getMemoryDependence(BaseAddr, LoadedTypeSizeInByte,
+                                              true /*true for load*/, MemDep);
+    this->MemDepsComputer.update(BaseAddr, LoadedTypeSizeInByte,
+                                 DynamicInst->Id, true /*true for load*/);
+    this->NumMemDependences += MemDep.size();
     return;
   }
 
@@ -573,23 +640,13 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
                                  ->getPointerElementType();
     uint64_t StoredTypeSizeInByte =
         this->DataLayout->getTypeStoreSize(StoredType);
-    for (uint64_t ByteIter = 0; ByteIter < StoredTypeSizeInByte; ++ByteIter) {
-      uint64_t Addr = BaseAddr + ByteIter;
-      // WAW.
-      auto DepStoreId = this->AddrToLastStoreInstMap.getLastAccess(Addr);
-      if (DepStoreId != DynamicInstruction::InvalidId) {
-        MemDep.insert(DepStoreId);
-        this->NumMemDependences++;
-      }
-      // WAR.
-      auto DepLoadId = this->AddrToLastLoadInstMap.getLastAccess(Addr);
-      if (DepLoadId != DynamicInstruction::InvalidId) {
-        MemDep.insert(DepLoadId);
-        this->NumMemDependences++;
-      }
-      // Update the last store map.
-      this->AddrToLastStoreInstMap.update(Addr, DynamicInst->Id);
-    }
+
+    this->MemDepsComputer.getMemoryDependence(
+        BaseAddr, StoredTypeSizeInByte, false /*false for store*/, MemDep);
+    this->MemDepsComputer.update(BaseAddr, StoredTypeSizeInByte,
+                                 DynamicInst->Id, false /*false for store*/);
+    this->NumMemDependences += MemDep.size();
+
     return;
   }
 }
@@ -657,19 +714,20 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed) {
   // Currently our framework does not support recursion yet. I just make an
   // assertion here. It requires a more powerful dynamic frame stack to fully
   // support recursion.
-  for (const auto &Frame : this->DynamicFrameStack) {
-    if (Frame.Function == StaticFunction) {
-      // There is recursion some where.
-      DEBUG(llvm::errs() << "Recursion detected for "
-                         << StaticFunction->getName() << '\n');
-      DEBUG(llvm::errs() << "Full call stack: ");
-      for (const auto &Dump : this->DynamicFrameStack) {
-        DEBUG(llvm::errs() << Dump.Function->getName() << " -> ");
-      }
-      DEBUG(llvm::errs() << StaticFunction->getName() << '\n');
-    }
-    assert(Frame.Function != StaticFunction && "Recursion detected!");
-  }
+  // NOTE: We support recursion now.
+  // for (const auto &Frame : this->DynamicFrameStack) {
+  //   if (Frame.Function == StaticFunction) {
+  //     // There is recursion some where.
+  //     DEBUG(llvm::errs() << "Recursion detected for "
+  //                        << StaticFunction->getName() << '\n');
+  //     DEBUG(llvm::errs() << "Full call stack: ");
+  //     for (const auto &Dump : this->DynamicFrameStack) {
+  //       DEBUG(llvm::errs() << Dump.Function->getName() << " -> ");
+  //     }
+  //     DEBUG(llvm::errs() << StaticFunction->getName() << '\n');
+  //   }
+  //   assert(Frame.Function != StaticFunction && "Recursion detected!");
+  // }
 
   // ---
   // Start modification.
@@ -793,11 +851,20 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
       // This operand comes from an instruction.
       // Simply populates the result from the tiny run time env.
       const auto &DynamicFrame = this->DynamicFrameStack.front();
-      const auto &DynamicValue = DynamicFrame.getValue(Operand);
-      DynamicInst->DynamicOperands[OperandIndex]->MemBase =
-          DynamicValue.MemBase;
-      DynamicInst->DynamicOperands[OperandIndex]->MemOffset =
-          DynamicValue.MemOffset;
+
+      const auto DynamicValue = DynamicFrame.getValueNullable(Operand);
+      if (DynamicValue != nullptr) {
+        // We found the result.
+        DynamicInst->DynamicOperands[OperandIndex]->MemBase =
+            DynamicValue->MemBase;
+        DynamicInst->DynamicOperands[OperandIndex]->MemOffset =
+            DynamicValue->MemOffset;
+      } else {
+        // We cannot find the result in the run time env. The only possible case
+        // is that it is an untraced call inst.
+        assert(llvm::isa<llvm::CallInst>(Operand) &&
+               "Missing dynamic value for non-call instruction.");
+      }
 
       DEBUG(llvm::errs()
             << "Handle memory base/offset for operand " << Operand->getName()
@@ -925,7 +992,6 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
     // trace, it means that the callee is also traced and we should use the
     // result from callee's ret instruction. In that case, we have do defer the
     // processing until the callee returned.
-    this->DynamicFrameStack.front().PrevCallInst = CallStaticInstruction;
     if (CallStaticInstruction->getName() != "") {
       if (DynamicInst->DynamicResult == nullptr) {
         // We don't have the result, hopefully this means that the callee is
@@ -979,6 +1045,10 @@ void DataGraph::printStaticInst(llvm::raw_ostream &O,
 }
 
 void DataGraph::printMemoryUsage() const {
+  size_t StaticToLastDynamicMapSize = 0;
+  for (const auto &Frame : this->DynamicFrameStack) {
+    StaticToLastDynamicMapSize += Frame.StaticToLastDynamicMap.size();
+  }
   llvm::errs() << "====================================================\n";
 
   llvm::errs() << "DynamicInstructionList: "
@@ -988,14 +1058,14 @@ void DataGraph::printMemoryUsage() const {
   llvm::errs() << "RegDeps:                " << this->RegDeps.size() << '\n';
   llvm::errs() << "CtrDeps:                " << this->CtrDeps.size() << '\n';
   llvm::errs() << "MemDeps:                " << this->MemDeps.size() << '\n';
-  llvm::errs() << "StaticToLastDynamicMap: "
-               << this->StaticToLastDynamicMap.size() << '\n';
+  llvm::errs() << "StaticToLastDynamicMap: " << StaticToLastDynamicMapSize
+               << '\n';
   llvm::errs() << "DynamicFrameStack:      " << this->DynamicFrameStack.size()
                << '\n';
   llvm::errs() << "AddrToLastStoreInstMap: "
-               << this->AddrToLastStoreInstMap.size() << '\n';
+               << this->MemDepsComputer.storeMapSize() << '\n';
   llvm::errs() << "AddrToLastLoadInstMap:  "
-               << this->AddrToLastLoadInstMap.size() << '\n';
+               << this->MemDepsComputer.loadMapSize() << '\n';
 
   llvm::errs() << "====================================================\n";
 }

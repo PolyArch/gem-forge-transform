@@ -104,10 +104,9 @@ protected:
 
     this->MemorizedLoopDataflow.clear();
 
-    // Initialize some basic static information.
-    LLVM::TDG::StaticInformation StaticInfo;
-    StaticInfo.set_module(Module.getName().str());
-    this->DataFlowSerializer->serializeStaticInfo(StaticInfo);
+    // Always remember to initialize the static information.
+    // Here I use the same as the main inst stream.
+    this->DataFlowSerializer->serializeStaticInfo(this->StaticInfo);
     return Ret;
   }
 

@@ -232,19 +232,19 @@ class MachSuiteBenchmark:
     def replay(self):
         os.chdir(self.work_path)
         # Basic replay.
-        self.build_replay()
-        debugs = [
-            # 'LLVMTraceCPU',
-        ]
-        gem5_outdir = self.run_replay(debugs=debugs)
-        Util.call_helper([
-            'cp',
-            # os.path.join(gem5_outdir, 'stats.txt'),
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            self.get_replay_result(),
-        ])
+        # self.build_replay()
+        # debugs = [
+        #     # 'LLVMTraceCPU',
+        # ]
+        # gem5_outdir = self.run_replay(debugs=debugs)
+        # Util.call_helper([
+        #     'cp',
+        #     # os.path.join(gem5_outdir, 'stats.txt'),
+        #     os.path.join(gem5_outdir, 'region.stats.txt'),
+        #     self.get_replay_result(),
+        # ])
         # Abstract data flow replay.
-        self.build_replay_abs_data_flow()
+        # self.build_replay_abs_data_flow()
         debugs = [
             # 'AbstractDataFlowAccelerator',
             # 'LLVMTraceCPU',
@@ -267,45 +267,45 @@ class MachSuiteBenchmarks:
             "queue",
             #     # "bulk" # not working
         ],
-        "aes": [
-            "aes"
-        ],
-        "stencil": [
-            "stencil2d",
-            "stencil3d"
-        ],
-        "md": [
-            "grid",
-            "knn"
-        ],
-        "fft": [
-            "strided",
-            "transpose"
-        ],
-        "viterbi": [
-            "viterbi"
-        ],
-        "sort": [
-            # "radix",
-            "merge"
-        ],
-        "spmv": [
-            "ellpack",
-            "crs"
-        ],
-        "kmp": [
-            "kmp"
-        ],
-        #  "backprop": [
-        #     "backprop" # Not working.
-        #  ],
-        "gemm": [
-            "blocked",
-            "ncubed"
-        ],
-        "nw": [
-            "nw"
-        ]
+        # "aes": [
+        #     "aes"
+        # ],
+        # "stencil": [
+        #     "stencil2d",
+        #     "stencil3d"
+        # ],
+        # "md": [
+        #     "grid",
+        #     "knn"
+        # ],
+        # "fft": [
+        #     "strided",
+        #     "transpose"
+        # ],
+        # "viterbi": [
+        #     "viterbi"
+        # ],
+        # "sort": [
+        #     # "radix",
+        #     "merge"
+        # ],
+        # "spmv": [
+        #     "ellpack",
+        #     "crs"
+        # ],
+        # "kmp": [
+        #     "kmp"
+        # ],
+        # #  "backprop": [
+        # #     "backprop" # Not working.
+        # #  ],
+        # "gemm": [
+        #     "blocked",
+        #     "ncubed"
+        # ],
+        # "nw": [
+        #     "nw"
+        # ]
     }
 
     def __init__(self, folder):
@@ -351,174 +351,26 @@ class MachSuiteBenchmarks:
         results.draw(pdf_fn, baseline, test, variables)
 
 
-class ADFAAnalyzer:
-
-    SYS_CPU_PREFIX = 'system.cpu1.'
-
-    @staticmethod
-    def get_with_default(regions, region, stat, default):
-        if stat in regions[region]:
-            return regions[region][stat]
-        else:
-            return default
-
-    @staticmethod
-    def compute_speedup(baseline, adfa, region):
-        baselineCycles = baseline[region][ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        adfaCycles = adfa[region][ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        return baselineCycles / adfaCycles
-
-    @staticmethod
-    def compute_runtime_ratio(adfa, region):
-        cpu_cycles = adfa[region][ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        adfa_cycles = ADFAAnalyzer.get_with_default(
-            adfa, region, 'tdg.accs.adfa.numCycles', 0.0)
-        return adfa_cycles / cpu_cycles
-
-    @staticmethod
-    def analyze_adfa(benchmarks):
-        names = list()
-        speedup = list()
-        num_configs = list()
-        num_committed_inst = list()
-        num_df = list()
-        runtime_ratio = list()
-        avg_df_len = list()
-        avg_issue = list()
-        baseline_issue = list()
-        branches = list()
-        branch_misses = list()
-        cache_misses = list()
-        for benchmark_name in benchmarks.benchmarks:
-            for subbenchmark_name in benchmarks.benchmarks[benchmark_name]:
-                b = benchmarks.benchmarks[benchmark_name][subbenchmark_name]
-                name = b.get_name()
-                baseline = Util.Gem5RegionStats(name, b.get_replay_result())
-                adfa = Util.Gem5RegionStats(name, b.get_adfa_result())
-
-                print(name)
-
-                for region in baseline.regions:
-                    print('  ' + region)
-
-                    adfa_configs = ADFAAnalyzer.get_with_default(
-                        adfa, region, 'tdg.accs.adfa.numConfigured', 0.0)
-                    adfa_df = ADFAAnalyzer.get_with_default(
-                        adfa, region, 'tdg.accs.adfa.numExecution', 0.0)
-                    adfa_insts = ADFAAnalyzer.get_with_default(
-                        adfa, region, 'tdg.accs.adfa.numCommittedInst', 0.0)
-                    adfa_cycles = ADFAAnalyzer.get_with_default(
-                        adfa, region, 'tdg.accs.adfa.numCycles', 0.0)
-
-                    # baseline_
-
-                    names.append(name + '::' + region)
-                    speedup.append(ADFAAnalyzer.compute_speedup(
-                        baseline, adfa, region))
-                    num_configs.append(adfa_configs)
-                    num_df.append(adfa_df)
-                    num_committed_inst.append(adfa_insts)
-                    runtime_ratio.append(
-                        ADFAAnalyzer.compute_runtime_ratio(adfa, region))
-
-                    if adfa_insts > 0.0:
-                        if adfa_df > 0.0:
-                            avg_df_len.append(adfa_insts / adfa_df)
-                        else:
-                            avg_df_len.append(0.0)
-                        avg_issue.append(adfa_insts / adfa_cycles)
-                    else:
-                        avg_df_len.append(0.0)
-                        avg_issue.append(0.0)
-
-                    # baseline_issue.append(
-                    #     baseline[ADFAAnalyzer.SYS_CPU_PREFIX + 'iew.issued_per_cycle::mean'])
-
-                    n_branch = baseline[region][ADFAAnalyzer.SYS_CPU_PREFIX +
-                                                'fetch.branchInsts']
-                    n_branch_misses = baseline[region][ADFAAnalyzer.SYS_CPU_PREFIX +
-                                                       'fetch.branchPredMisses']
-                    n_insts = baseline[region][ADFAAnalyzer.SYS_CPU_PREFIX +
-                                               'commit.committedInsts']
-                    n_cache_misses = baseline[region][ADFAAnalyzer.SYS_CPU_PREFIX +
-                                                      'dcache.demand_misses']
-                    branches.append(n_branch / n_insts * 1000.0)
-                    branch_misses.append(n_branch_misses / n_insts * 1000.0)
-                    cache_misses.append(n_cache_misses / n_insts * 1000.0)
-
-        title = (
-            '{name:>40} '
-            '{speedup:>10} '
-            '{configs:>10} '
-            '{dfs:>10} '
-            '{ratio:>10} '
-            '{avg_df_len:>10} '
-            '{avg_issue:>10} '
-            # '{base_issue:>10} '
-            '{bpki:>7} '
-            '{bmpki:>7} '
-            '{cmpki:>5} '
-        )
-        print(title.format(
-            name='benchmark',
-            speedup='speedup',
-            configs='configs',
-            dfs='dataflows',
-            ratio='ratio',
-            avg_df_len='avg_df_len',
-            avg_issue='avg_issue',
-            # base_issue='base_issue',
-            bpki='BPKI',
-            bmpki='BMPKI',
-            cmpki='CMPKI',
-        ))
-        line = (
-            '{name:>40} '
-            '{speedup:>10.2f} '
-            '{configs:>10} '
-            '{dfs:>10} '
-            '{ratio:>10.4f} '
-            '{avg_df_len:>10.1f} '
-            '{avg_issue:>10.4f} '
-            # '{base_issue:>10.4f} '
-            '{bpki:>7.1f} '
-            '{bmpki:>7.1f} '
-            '{cmpki:>5.1f} '
-        )
-        for i in xrange(len(names)):
-            print(line.format(
-                name=names[i],
-                speedup=speedup[i],
-                configs=num_configs[i],
-                dfs=num_df[i],
-                ratio=runtime_ratio[i],
-                avg_df_len=avg_df_len[i],
-                avg_issue=avg_issue[i],
-                # base_issue=baseline_issue[i],
-                bpki=branches[i],
-                bmpki=branch_misses[i],
-                cmpki=cache_misses[i],
-            ))
-
-
 def run_benchmark(benchmark):
     print('start run benchmark ' + benchmark.get_name())
     # benchmark.baseline()
     # benchmark.build_raw_bc()
     # benchmark.trace()
-    # benchmark.replay()
+    benchmark.replay()
 
 
 def main(folder):
     benchmarks = MachSuiteBenchmarks(folder)
     names = list()
     processes = list()
+    bs = list()
     for benchmark_name in MachSuiteBenchmarks.BENCHMARK_PARAMS:
         for subbenchmark_name in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark_name]:
             benchmark = benchmarks.benchmarks[benchmark_name][subbenchmark_name]
             processes.append(multiprocessing.Process(
                 target=run_benchmark, args=(benchmark,)))
             names.append(benchmark.get_name())
+            bs.append(benchmark)
 
     # We start 4 processes each time until we are done.
     prev = 0
@@ -533,7 +385,7 @@ def main(folder):
         processes[prev].join()
         prev += 1
 
-    ADFAAnalyzer.analyze_adfa(benchmarks)
+    Util.ADFAAnalyzer.analyze_adfa(bs)
 
     # benchmarks.draw('MachSuite.baseline.replay.pdf',
     #                 'baseline', 'replay', names)

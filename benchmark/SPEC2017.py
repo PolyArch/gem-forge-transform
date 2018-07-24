@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+import multiprocessing
 
 import Constants as C
 import Util
@@ -19,9 +20,13 @@ class SPEC2017Benchmark:
 
         self.name = params['name']
         self.target = params['target']
-        self.max_insts = params['max_insts']
         self.trace_func = params['trace_func']
+
+        self.start_inst = params['start_inst']
+        self.max_inst = params['max_inst']
         self.skip_inst = params['skip_inst']
+        self.end_inst = params['end_inst']
+
         self.trace_stdlib = False
         self.cwd = os.getcwd()
 
@@ -59,7 +64,6 @@ class SPEC2017Benchmark:
             links=params['links'],
             args=args,
             trace_func=self.trace_func,
-            skip_inst=self.skip_inst,
         )
 
     def get_name(self):
@@ -91,6 +95,15 @@ class SPEC2017Benchmark:
     def get_trace(self):
         return self.target + '.trace'
 
+    def get_replay_tdg(self):
+        return self.target + '.replay.tdg'
+
+    def get_adfa_tdg(self):
+        return self.target + '.adfa.tdg'
+
+    def get_simd_tdg(self):
+        return self.target + '.simd.tdg'
+
     def get_replay_result(self):
         return os.path.join(
             self.cwd,
@@ -105,6 +118,13 @@ class SPEC2017Benchmark:
             'spec.{name}.adfa.txt'.format(name=self.name),
         )
 
+    def get_simd_result(self):
+        return os.path.join(
+            self.cwd,
+            'result',
+            'spec.{name}.simd.txt'.format(name=self.name),
+        )
+
     def build_raw_bc(self):
         # Fake the runcpu.
         fake_cmd = [
@@ -112,11 +132,11 @@ class SPEC2017Benchmark:
             '--fake',
             '--config=ecc-llvm-linux-x86_64',
             '--tune=base',
-            name
+            self.name
         ]
         Util.call_helper(fake_cmd)
         # Actually build it.
-        os.chdir(self.get_build_path(name))
+        os.chdir(self.get_build_path())
         try:
             # First try build without target.
             Util.call_helper(['specmake'])
@@ -134,7 +154,7 @@ class SPEC2017Benchmark:
         # Extract the bitcode from the binary.
         binary = self.target
         # Special rule for gcc_s, whose binary is sgcc
-        if target == 'gcc_s':
+        if self.target == 'gcc_s':
             binary = 'sgcc'
         extract_cmd = [
             'get-bc',
@@ -187,10 +207,17 @@ class SPEC2017Benchmark:
         os.chdir(self.get_run_path())
         self.benchmark.build_trace()
         # set the maximum number of insts.
-        if self.max_insts != -1:
-            os.putenv('LLVM_TDG_MAXIMUM_INST', str(self.max_insts))
+        if self.max_inst != -1:
+            print(self.max_inst)
+            print(self.start_inst)
+            print(self.end_inst)
+            print(self.skip_inst)
+            os.putenv('LLVM_TDG_MAX_INST', str(self.max_inst))
+            os.putenv('LLVM_TDG_START_INST', str(self.start_inst))
+            os.putenv('LLVM_TDG_END_INST', str(self.end_inst))
+            os.putenv('LLVM_TDG_SKIP_INST', str(self.skip_inst))
         else:
-            os.unsetenv('LLVM_TDG_MAXIMUM_INST')
+            os.unsetenv('LLVM_TDG_MAX_INST')
         self.benchmark.run_trace(self.get_trace())
         os.chdir(self.cwd)
 
@@ -198,11 +225,14 @@ class SPEC2017Benchmark:
         pass_name = 'replay'
         debugs = [
             'ReplayPass',
+            # 'DataGraph',
+            'DynamicInstruction',
         ]
         self.benchmark.build_replay(
             pass_name=pass_name,
             trace_file=self.get_trace(),
             tdg_detail='standalone',
+            output_tdg=self.get_replay_tdg(),
             debugs=debugs,
         )
 
@@ -211,45 +241,81 @@ class SPEC2017Benchmark:
         debugs = [
             'ReplayPass',
             # 'TDGSerializer',
-            'AbstractDataFlowAcceleratorPass',
+            # 'AbstractDataFlowAcceleratorPass',
             # 'LoopUtils',
         ]
         self.benchmark.build_replay(
             pass_name=pass_name,
             trace_file=self.get_trace(),
             tdg_detail='standalone',
+            output_tdg=self.get_adfa_tdg(),
             debugs=debugs,
         )
 
-    def run_replay(self, debugs):
+    def build_replay_simd(self):
+        pass_name = 'simd-pass'
+        debugs = [
+            'ReplayPass',
+            # 'SIMDPass',
+        ]
+        self.benchmark.build_replay(
+            pass_name=pass_name,
+            trace_file=self.get_trace(),
+            tdg_detail='standalone',
+            output_tdg=self.get_simd_tdg(),
+            debugs=debugs,
+        )
+
+    def run_replay(self, output_tdg, debugs):
         return self.benchmark.gem5_replay(
             standalone=1,
+            output_tdg=output_tdg,
             debugs=debugs,
         )
 
     def replay(self):
         os.chdir(self.get_run_path())
         # Basic replay.
-        self.build_replay()
-        # debugs = []
-        # gem5_outdir = self.run_replay(debugs=debugs)
+        # self.build_replay()
+        # debugs = [
+        #     # 'LLVMTraceCPU'
+        # ]
+        # gem5_outdir = self.run_replay(
+        #     output_tdg=self.get_replay_tdg(),
+        #     debugs=debugs)
         # Util.call_helper([
         #     'cp',
-        #     os.path.join(gem5_outdir, 'stats.txt'),
+        #     os.path.join(gem5_outdir, 'region.stats.txt'),
         #     self.get_replay_result(),
         # ])
         # Abstract data flow replay.
         # self.build_replay_abs_data_flow()
         # debugs = [
         #     # 'LLVMTraceCPU',
-        #     'AbstractDataFlowAccelerator'
+        #     # 'AbstractDataFlowAccelerator'
         # ]
-        # gem5_outdir = self.run_replay(debugs=debugs)
+        # gem5_outdir = self.run_replay(
+        #     output_tdg=self.get_adfa_tdg(),
+        #     debugs=debugs)
         # Util.call_helper([
         #     'cp',
-        #     os.path.join(gem5_outdir, 'stats.txt'),
+        #     os.path.join(gem5_outdir, 'region.stats.txt'),
         #     self.get_adfa_result(),
         # ])
+        # SIMD replay.
+        self.build_replay_simd()
+        debugs = [
+            # 'LLVMTraceCPU',
+            # 'AbstractDataFlowAccelerator'
+        ]
+        gem5_outdir = self.run_replay(
+            output_tdg=self.get_simd_tdg(),
+            debugs=debugs)
+        Util.call_helper([
+            'cp',
+            os.path.join(gem5_outdir, 'region.stats.txt'),
+            self.get_simd_result(),
+        ])
         os.chdir(self.cwd)
 
 
@@ -259,50 +325,68 @@ class SPEC2017Benchmarks:
         'lbm_s': {
             'name': '619.lbm_s',
             'links': ['-lm'],
-            'skip_inst': 0,
-            'max_insts': 100000000,
+            # First 100m insts every 1b insts, skipping the first 3.3b
+            'start_inst': 33e8,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 54e8,
             'trace_func': 'LBM_performStreamCollideTRT'
         },
         # 'imagick_s': {
         #     'name': '638.imagick_s',
         #     'links': ['-lm'],
-        #     'skip_inst': 0,
-        #     'max_insts': 100000000,
+        #     # First 100m insts every 1b insts, skipping the first 100m
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 21e8,
         #     'trace_func': 'MagickCommandGenesis',
         # },
         # 'nab_s': {
         #     'name': '644.nab_s',
         #     'links': ['-lm'],
-        #     'skip_inst': 0,
-        #     'max_insts': 100000000,
+        #     # First 100m insts every 1b insts, skipping the first 100m
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 21e8,
         #     'trace_func': 'md',
         # },
         # 'x264_s': {
         #     'name': '625.x264_s',
         #     'links': [],
-        #     'skip_inst': 100000000,
-        #     'max_insts': 100000000,
+        #     # First 100m insts every 1b insts, skipping the first 100m
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 21e8,
         #     'trace_func': 'x264_encoder_encode',
         # },
         # 'mcf_s': {
         #     'name': '605.mcf_s',
         #     'links': [],
-        #     'skip_inst': 0,
-        #     'max_insts': 100000000,
+        #     # First 100m insts every 1b insts, skipping the first 100m
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 21e8,
         #     'trace_func': 'global_opt',
         # },
         # 'xz_s': {
         #     'name': '657.xz_s',
         #     'links': [],
-        #     'skip_inst': 0,
-        #     'max_insts': 100000000,
+        #     # First 100m insts every 1b insts, skipping the first 100m
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 21e8,
         #     'trace_func': 'spec_compress,spec_uncompress',
         # },
         # 'gcc_s': {
         #     'name': '602.gcc_s',
         #     'links': [],
         #     'skip_inst': 100000000,
-        #     'max_insts': 100000000,
+        #     'max_inst': 100000000,
         #     'trace_func': '',
         # },
         # # C++ Benchmark: Notice that SPEC is compiled without
@@ -312,14 +396,14 @@ class SPEC2017Benchmarks:
         #     'name': '631.deepsjeng_s',
         #     'links': [],
         #     'skip_inst': 100000000,
-        #     'max_insts': 100000000,
+        #     'max_inst': 100000000,
         #     'trace_func': '',
         # },
         # 'leela_s': {
         #     'name': '641.leela_s',
         #     'links': [],
         #     'skip_inst': 0,
-        #     'max_insts': 100000000,
+        #     'max_inst': 100000000,
         #     'trace_func': '_ZN9UCTSearch5thinkEii', # Search::think
         # },
         # # perlbench_s is not working as it uses POSIX open function.
@@ -327,7 +411,7 @@ class SPEC2017Benchmarks:
         #     'name': '600.perlbench_s',
         #     'links': [],
         #     'skip_inst': 100000000,
-        #     'max_insts': 100000000,
+        #     'max_inst': 100000000,
         #     'trace_func': '',
         # },
 
@@ -351,8 +435,12 @@ class SPEC2017Benchmarks:
         self.benchmarks = dict()
         for target in SPEC2017Benchmarks.BENCHMARK_PARAMS:
             name = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['name']
-            max_insts = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['max_insts']
+
+            start_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['start_inst']
+            max_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['max_inst']
             skip_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['skip_inst']
+            end_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['end_inst']
+
             trace_func = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['trace_func']
             links = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['links']
 
@@ -377,10 +465,12 @@ class SPEC2017Benchmarks:
                 self.force,
                 name=name,
                 target=target,
-                max_insts=max_insts,
                 links=links,
                 trace_func=trace_func,
+                start_inst=start_inst,
+                max_inst=max_inst,
                 skip_inst=skip_inst,
+                end_inst=end_inst,
             )
 
     def set_gllvm(self):
@@ -391,151 +481,40 @@ class SPEC2017Benchmarks:
         os.putenv('LLVM_AR_NAME', 'ecc-ar')
 
 
-class ADFAAnalyzer:
-
-    SYS_CPU_PREFIX = 'system.cpu.'
-
-    @staticmethod
-    def compute_speedup(baseline, adfa):
-        baselineCycles = baseline[ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        adfaCycles = adfa[ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        return baselineCycles / adfaCycles
-
-    @staticmethod
-    def compute_runtime_ratio(adfa):
-        cpu_cycles = adfa[ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        adfa_cycles = adfa.get_default('.adfa.numCycles', 0.0)
-        return adfa_cycles / cpu_cycles
-
-    @staticmethod
-    def analyze_adfa(benchmarks):
-        names = list()
-        speedup = list()
-        num_configs = list()
-        num_committed_inst = list()
-        num_df = list()
-        runtime_ratio = list()
-        avg_df_len = list()
-        avg_issue = list()
-        baseline_issue = list()
-        branches = list()
-        branch_misses = list()
-        l1_cache_misses = list()
-        l2_cache_misses = list()
-        for b in benchmarks:
-            name = b.get_name()
-            baseline = Util.Gem5Stats(name, b.get_replay_result())
-            adfa = Util.Gem5Stats(name, b.get_adfa_result())
-
-            print(name)
-            adfa_configs = adfa.get_default('.adfa.numConfigured', 0.0)
-            adfa_df = adfa.get_default('.adfa.numExecution', 0.0)
-            adfa_insts = adfa.get_default('.adfa.numCommittedInst', 0.0)
-            adfa_cycles = adfa.get_default('.adfa.numCycles', 0.0)
-
-            names.append(name)
-            speedup.append(ADFAAnalyzer.compute_speedup(baseline, adfa))
-            num_configs.append(adfa_configs)
-            num_df.append(adfa_df)
-            num_committed_inst.append(adfa_insts)
-            runtime_ratio.append(ADFAAnalyzer.compute_runtime_ratio(adfa))
-
-            if adfa_insts > 0.0:
-                avg_df_len.append(adfa_insts / adfa_df)
-                avg_issue.append(adfa['.adfa.issued_per_cycle::mean'])
-            else:
-                avg_df_len.append(0.0)
-                avg_issue.append(0.0)
-
-            baseline_issue.append(
-                baseline[ADFAAnalyzer.SYS_CPU_PREFIX + 'iew.issued_per_cycle::mean'])
-
-            n_branch = baseline[ADFAAnalyzer.SYS_CPU_PREFIX +
-                                'fetch.branchInsts']
-            n_branch_misses = baseline[ADFAAnalyzer.SYS_CPU_PREFIX +
-                                       'fetch.branchPredMisses']
-            n_insts = baseline[ADFAAnalyzer.SYS_CPU_PREFIX +
-                               'commit.committedInsts']
-            n_l1_cache_misses = baseline[ADFAAnalyzer.SYS_CPU_PREFIX +
-                                         'dcache.demand_misses::cpu.data']
-            n_l2_cache_misses = baseline['system.l2.overall_misses::cpu.data']
-
-            branches.append(n_branch / n_insts * 1000.0)
-            branch_misses.append(n_branch_misses / n_insts * 1000.0)
-            l1_cache_misses.append(n_l1_cache_misses / n_insts * 1000.0)
-            l2_cache_misses.append(n_l2_cache_misses / n_insts * 1000.0)
-
-        title = (
-            '{name:>25} '
-            '{speedup:>10} '
-            '{configs:>10} '
-            '{dfs:>10} '
-            '{ratio:>10} '
-            '{avg_df_len:>10} '
-            '{avg_issue:>10} '
-            '{base_issue:>10} '
-            '{bpki:>5} '
-            '{bmpki:>5} '
-            '{l1cmpki:>7} '
-            '{l2cmpki:>7} '
-        )
-        print(title.format(
-            name='benchmark',
-            speedup='speedup',
-            configs='configs',
-            dfs='dataflows',
-            ratio='ratio',
-            avg_df_len='avg_df_len',
-            avg_issue='avg_issue',
-            base_issue='base_issue',
-            bpki='BPKI',
-            bmpki='BMPKI',
-            l1cmpki='L1CMPKI',
-            l2cmpki='L2CMPKI',
-        ))
-        line = (
-            '{name:>25} '
-            '{speedup:>10.2f} '
-            '{configs:>10} '
-            '{dfs:>10} '
-            '{ratio:>10.4f} '
-            '{avg_df_len:>10.1f} '
-            '{avg_issue:>10.4f} '
-            '{base_issue:>10.4f} '
-            '{bpki:>5.1f} '
-            '{bmpki:>5.1f} '
-            '{l1cmpki:>7.1f} '
-            '{l2cmpki:>7.1f} '
-        )
-        for i in xrange(len(names)):
-            print(line.format(
-                name=names[i],
-                speedup=speedup[i],
-                configs=num_configs[i],
-                dfs=num_df[i],
-                ratio=runtime_ratio[i],
-                avg_df_len=avg_df_len[i],
-                avg_issue=avg_issue[i],
-                base_issue=baseline_issue[i],
-                bpki=branches[i],
-                bmpki=branch_misses[i],
-                l1cmpki=l1_cache_misses[i],
-                l2cmpki=l2_cache_misses[i],
-            ))
+def run_benchmark(benchmark):
+    print('start run benchmark ' + benchmark.get_name())
+    benchmark.trace()
+    # benchmark.replay()
 
 
 def main(folder):
     trace_stdlib = False
-    force = False
+    force = True
     benchmarks = SPEC2017Benchmarks(trace_stdlib, force)
     names = list()
     b_list = list()
+    processes = list()
     for benchmark_name in benchmarks.benchmarks:
         benchmark = benchmarks.benchmarks[benchmark_name]
-        benchmark.trace()
-        benchmark.replay()
+        processes.append(multiprocessing.Process(
+            target=run_benchmark, args=(benchmark,)))
         b_list.append(benchmark)
-    ADFAAnalyzer.analyze_adfa(b_list)
+
+    # We start 4 processes each time until we are done.
+    prev = 0
+    issue_width = 8
+    for i in xrange(len(processes)):
+        processes[i].start()
+        if (i + 1) % issue_width == 0:
+            while prev < i:
+                processes[prev].join()
+                prev += 1
+    while prev < len(processes):
+        processes[prev].join()
+        prev += 1
+
+    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+    Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':
