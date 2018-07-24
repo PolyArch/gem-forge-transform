@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -40,23 +41,45 @@ enum TypeID {
 
 // Contain some common definitions
 const char *DEFAULT_TRACE_FILE_NAME = "llvm_trace";
-const char *getTraceFileName() {
+const char *getNewTraceFileName() {
+  static size_t samples = 0;
+  static char fileName[128];
   const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
   if (traceFileName) {
-    return traceFileName;
+    if (std::strlen(traceFileName) > 100) {
+      assert(false && "Too long trace name.");
+    }
   } else {
-    return DEFAULT_TRACE_FILE_NAME;
+    traceFileName = DEFAULT_TRACE_FILE_NAME;
   }
+  std::sprintf(fileName, "%s.%zu", traceFileName, samples);
+  samples++;
+  return fileName;
 }
 
 // This flag controls if I am already inside myself.
-// This helps to solve the problem when the runtime called some function
+// This helps to solve the problem when the tracer runtime calls some functions
 // which is also traced (so no recursion).
 static bool insideMyself = false;
 static uint64_t count;
 static uint64_t tracedCount = 0;
+
+/**
+ * If START_INST is set (>0), the tracer will ignore the dynamic stack and
+ * trace in a pattern of
+ * [START_INST+MAX_INST*0+SKIP_INST*0 ... START_INST+MAX_INST*1+SKIP_INST*0] ...
+ * [START_INST+MAX_INST*1+SKIP_INST*1 ... START_INST+MAX_INST*2+SKIP_INST*1] ...
+ * ...
+ * [START_INST+MAX_INST*i+SKIP_INST*i ... END_INST] ...
+ *
+ * Initialization is set to trace everything.
+ */
+static uint64_t START_INST = 0;
+static uint64_t MAX_INST = 1;
 static uint64_t SKIP_INST = 0;
-static uint64_t MAXIMUM_TRACED_INST = 0;
+static uint64_t END_INST = 0;
+
+// In simple mode, it will not log the dynamic value of operands.
 static bool isSimpleMode = false;
 
 // The tracer will maintain a stack at run time to determine if the
@@ -67,6 +90,15 @@ static unsigned tracedFunctionsInStack;
 static std::string currentInstOpName;
 
 // This serves as the guard.
+
+static uint64_t getUint64Env(const char *name) {
+  const char *env = std::getenv(name);
+  if (env) {
+    return std::stoull(std::string(env));
+  } else {
+    return 0;
+  }
+}
 
 static void initialize() {
   static bool initialized = false;
@@ -81,32 +113,31 @@ static void initialize() {
       isSimpleMode = false;
     }
 
-    // Set the maximum trace number.
-    const char *MaximumInst = std::getenv("LLVM_TDG_MAXIMUM_INST");
-    if (MaximumInst) {
-      MAXIMUM_TRACED_INST = std::stoull(std::string(MaximumInst));
-    }
-
-    // Set the skipped trace number.
-    const char *SkipInst = std::getenv("LLVM_TDG_SKIP_INST");
-    if (SkipInst) {
-      SKIP_INST = std::stoull(std::string(SkipInst));
-    }
+    START_INST = getUint64Env("LLVM_TDG_START_INST");
+    SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
+    MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
+    END_INST = getUint64Env("LLVM_TDG_END_INST");
 
     printf("initializing skip inst to %lu...\n", SKIP_INST);
-    printf("initializing maximum inst to %lu...\n", MAXIMUM_TRACED_INST);
+    printf("initializing max inst to %lu...\n", MAX_INST);
+    printf("initializing start inst to %lu...\n", START_INST);
+    printf("initializing end inst to %lu...\n", END_INST);
     initialized = true;
   }
 }
 
 /**
  * This functions decides if its time to trace.
- * 1. If SKIP_INST is set (> 0), we just wait until count > SKIP_INST.
+ * 1. If START_INST is set (> 0), we just trace in the above pattern.
  * 2. Otherwise, we trace all the IsTraced function and their callees.
  */
 static bool shouldLog() {
-  if (SKIP_INST > 0) {
-    return count > SKIP_INST;
+  if (START_INST > 0) {
+    if (count >= START_INST) {
+      return (count - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
+    } else {
+      return false;
+    }
   } else {
     return tracedFunctionsInStack > 0;
   }
@@ -235,11 +266,12 @@ void printInstEnd() {
   if (shouldLog()) {
     tracedCount++;
     printInstEndImpl();
-    // Check if we are about to exit.
-    if (MAXIMUM_TRACED_INST > 0 && tracedCount == MAXIMUM_TRACED_INST) {
-      // We have reached the limit.
-      // Simply exit.
-      std::exit(0);
+    // Check if we are about to switch file.
+    if (START_INST > 0) {
+      if ((count - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
+        // We are the last one of every MAX_INST. Switch file.
+        switchFileImpl();
+      }
     }
   }
 
@@ -253,6 +285,12 @@ void printInstEnd() {
     stack.pop_back();
     stackName.pop_back();
   }
+
+  // Check if we are about to exit.
+  if (END_INST > 0 && count == END_INST) {
+    std::exit(0);
+  }
+
   insideMyself = false;
   return;
 }

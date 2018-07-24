@@ -49,6 +49,13 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
   case llvm::Type::IntegerTyID: {
     auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
     unsigned BitWidth = IntegerType->getBitWidth();
+    if ((BitWidth % 8) != 0) {
+      DEBUG(llvm::errs() << "Bit width of integer " << BitWidth << '\n');
+    }
+    if (BitWidth == 1) {
+      // Sometimes, llvm optimize boolean to i1, but this is at least 1 bytes.
+      BitWidth = 8;
+    }
     assert((BitWidth % 8) == 0 && "Bit width should be multiple of 8.");
     size_t ByteWidth = BitWidth / 8;
     Bytes.resize(ByteWidth);
@@ -59,6 +66,10 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
     switch (ByteWidth) {
     case 1: {
       *reinterpret_cast<char *>(&Bytes[0]) = stoul(this->Value);
+      break;
+    }
+    case 2: {
+      *reinterpret_cast<uint16_t *>(&Bytes[0]) = stoul(this->Value);
       break;
     }
     case 4: {
@@ -509,9 +520,9 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     AllocExtra->set_addr(std::stoul(this->DynamicResult->Value, nullptr, 16));
     AllocExtra->set_size(AllocatedSize);
     AllocExtra->set_new_base(this->DynamicResult->MemBase);
-    // This load inst will produce some new base for future memory access.
-    DEBUG(llvm::errs() << "Set new base for alloc " << AllocExtra->new_base()
-                       << '\n');
+    // This alloc inst will produce some new base for future memory access.
+    // DEBUG(llvm::errs() << "Set new base for alloc " << AllocExtra->new_base()
+    //                    << '\n');
     return;
   }
 
@@ -538,6 +549,14 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
         break;
       }
       NextIter++;
+    }
+    if (NextIter == DG->DynamicInstructionList.end()) {
+      static size_t MissingNextBB = 0;
+      MissingNextBB++;
+      llvm::errs()
+          << "Failed getting next basic block for conditional branch, MISSING "
+          << MissingNextBB << '\n';
+      return;
     }
     assert(NextIter != DG->DynamicInstructionList.end() &&
            "Failed getting next basic block for conditional branch.");

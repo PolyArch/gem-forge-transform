@@ -53,6 +53,34 @@ private:
   void release();
 };
 
+/**
+ * Get the memory dependence.
+ */
+class MemoryDependenceComputer {
+public:
+  MemoryDependenceComputer() = default;
+  MemoryDependenceComputer(const MemoryDependenceComputer &Other) = delete;
+  MemoryDependenceComputer(MemoryDependenceComputer &&Other) = delete;
+  MemoryDependenceComputer &
+  operator=(const MemoryDependenceComputer &Other) = delete;
+  MemoryDependenceComputer &
+  operator=(MemoryDependenceComputer &&Other) = delete;
+
+  using Address = AddrToMemAccessMap::Address;
+  using DynamicId = DynamicInstruction::DynamicId;
+
+  void update(Address Addr, size_t ByteSize, DynamicId Id, bool IsLoad);
+  void getMemoryDependence(Address Addr, size_t ByteSize, bool IsLoad,
+                           std::unordered_set<DynamicId> &OutMemDeps) const;
+
+  size_t loadMapSize() const { return LoadMap.size(); }
+  size_t storeMapSize() const { return StoreMap.size(); }
+
+private:
+  AddrToMemAccessMap LoadMap;
+  AddrToMemAccessMap StoreMap;
+};
+
 class DataGraph {
 public:
   using DynamicId = DynamicInstruction::DynamicId;
@@ -104,14 +132,6 @@ public:
   DependenceMap CtrDeps;
   DependenceMap MemDeps;
 
-  /**
-   * Map from llvm static instructions to the last dynamic instruction id.
-   * If missing, then it hasn't appeared in the dynamic trace.
-   * Only for non-phi node.
-   * Used for register dependence resolution.
-   */
-  std::unordered_map<llvm::Instruction *, DynamicId> StaticToLastDynamicMap;
-
   llvm::Module *Module;
 
   llvm::DataLayout *DataLayout;
@@ -130,6 +150,18 @@ public:
     // A tiny run time environment, basically for memory base/offset
     // computation.
     std::unordered_map<llvm::Value *, DynamicValue> RunTimeEnv;
+
+    /**
+     * Map from llvm static instructions to the last dynamic instruction id.
+     * If missing, then it hasn't appeared in the dynamic trace.
+     * Only for non-phi node.
+     * Used for register dependence resolution.
+     */
+    std::unordered_map<llvm::Instruction *, DynamicId> StaticToLastDynamicMap;
+
+    // To resovle phi node.
+    std::unordered_map<llvm::PHINode *, DynamicId> PhiNodeDependenceMap;
+
     // Stores the dynamic value of CallInst.
     // Could be consumed by parseFuncEnter.
     std::vector<DynamicValue> CallStack;
@@ -144,7 +176,14 @@ public:
     ~DynamicFrame();
 
     const DynamicValue &getValue(llvm::Value *Value) const;
+    const DynamicValue *getValueNullable(llvm::Value *Value) const;
     void insertValue(llvm::Value *Value, DynamicValue DValue);
+
+    DynamicId getLastDynamicId(llvm::Instruction *StaticInst) const;
+    void updateLastDynamicId(llvm::Instruction *StaticInst, DynamicId Id);
+
+    DynamicId getPHINodeDependence(llvm::PHINode *PHINode) const;
+    void updatePHINodeDependence(llvm::PHINode *PHINode, DynamicId Id);
 
     void updatePrevControlInstId(DynamicInstruction *DInstruction);
 
@@ -164,8 +203,8 @@ public:
   void commitOneDynamicInst();
   void commitDynamicInst(DynamicId Id);
 
-  void updateAddrToLastMemoryAccessMap(uint64_t Addr, DynamicId Id,
-                                       bool loadOrStore);
+  void updateAddrToLastMemoryAccessMap(uint64_t Addr, size_t ByteSize,
+                                       DynamicId Id, bool IsLoad);
 
 private:
   /**********************************************************************
@@ -182,9 +221,6 @@ private:
   void parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed);
 
   TraceParser *Parser;
-
-  // To resovle phi node.
-  std::unordered_map<llvm::PHINode *, DynamicId> PhiNodeDependenceMap;
 
   /**
    * Handle phi node and effectively remove it from the graph.
@@ -205,12 +241,8 @@ private:
                                         const std::string &BasicBlockName,
                                         const int Index);
 
-  // A map from virtual address to the last dynamic store instructions that
-  // writes to it.
-  AddrToMemAccessMap AddrToLastStoreInstMap;
-  // A map from virtual address to the last dynamic load instructions that
-  // reads from it.
-  AddrToMemAccessMap AddrToLastLoadInstMap;
+  // Helper class to compute the memory dependence.
+  MemoryDependenceComputer MemDepsComputer;
 
   // Handle the RAW, WAW, WAR dependence.
   void handleMemoryDependence(DynamicInstruction *DynamicInst);

@@ -11,10 +11,10 @@
 void cleanup();
 
 // Single thread singleton.
+static std::ofstream o;
 inline std::ofstream &getTraceFile() {
-  static std::ofstream o;
   if (!o.is_open()) {
-    o.open(getTraceFileName(), std::ios::out | std::ios::binary);
+    o.open(getNewTraceFileName(), std::ios::out | std::ios::binary);
     std::atexit(cleanup);
   }
   assert(o.is_open());
@@ -24,10 +24,14 @@ inline std::ofstream &getTraceFile() {
 static uint64_t count = 0;
 
 void cleanup() {
-  std::ofstream &o = getTraceFile();
-  o.close();
-  std::cout << "Traced #" << count << std::endl;
+  if (o.is_open()) {
+    o.close();
+    std::cout << "Traced #" << count << std::endl;
+  }
 }
+
+// We simple close the file.
+void switchFileImpl() { cleanup(); }
 
 static LLVM::TDG::DynamicLLVMTraceEntry protobufTraceEntry;
 

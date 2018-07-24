@@ -8,13 +8,12 @@ import Util
 class Benchmark(object):
 
     def __init__(self, name, raw_bc, links, args=None, trace_func=None,
-                 trace_lib='Protobuf', skip_inst=0):
+                 trace_lib='Protobuf'):
         self.name = name
         self.raw_bc = raw_bc
         self.links = links
         self.args = args
         self.trace_func = trace_func
-        self.skip_inst = skip_inst
 
         self.pass_so = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
@@ -58,7 +57,6 @@ class Benchmark(object):
 
     def run_trace(self, trace_file='llvm_trace'):
         # Remember to set the environment for trace.
-        os.putenv('LLVM_TDG_SKIP_INST', str(self.skip_inst))
         os.putenv('LLVM_TDG_TRACE_FILE', trace_file)
         run_cmd = [
             './' + self.trace_bin,
@@ -101,7 +99,13 @@ class Benchmark(object):
     Construct the replay binary from the trace.
     """
 
-    def build_replay(self, pass_name='replay', trace_file='llvm_trace', tdg_detail='integrated', debugs=[]):
+    def build_replay(self,
+                     pass_name='replay',
+                     trace_file='llvm_trace',
+                     tdg_detail='integrated',
+                     output_tdg=None,
+                     debugs=[]
+                     ):
         opt_cmd = [
             'opt',
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
@@ -113,6 +117,8 @@ class Benchmark(object):
             '-o',
             self.replay_bc,
         ]
+        if output_tdg is not None:
+            opt_cmd.append('-output-datagraph=' + output_tdg)
         if debugs:
             opt_cmd.append(
                 '-debug-only={debugs}'.format(debugs=','.join(debugs)))
@@ -140,8 +146,10 @@ class Benchmark(object):
     The gem5 output directory (abs path).
     """
 
-    def gem5_replay(self, standalone=0, debugs=[]):
+    def gem5_replay(self, standalone=0, output_tdg=None, debugs=[]):
         LLVM_TRACE_FN = 'llvm_trace_gem5.txt'
+        if output_tdg is not None:
+            LLVM_TRACE_FN = output_tdg
         GEM5_OUT_DIR = '{cpu_type}.replay'.format(cpu_type=C.CPU_TYPE)
         Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
         gem5_args = [
