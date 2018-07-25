@@ -825,8 +825,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
                                               NewDynamicInstIter);
     this->Trace->DynamicFrameStack.front().updateLastDynamicId(
         NewDynamicInst->getStaticInstruction(), NewDynamicInst->Id);
-    this->Trace->DynamicFrameStack.front().updatePrevControlInstId(
-        NewDynamicInst);
+    this->Trace->updatePrevControlInstId(NewDynamicInst);
   }
 
   DEBUG(DynamicLoop.print(llvm::errs()));

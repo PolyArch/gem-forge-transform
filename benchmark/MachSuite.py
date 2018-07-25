@@ -198,6 +198,7 @@ class MachSuiteBenchmark:
         pass_name = 'replay'
         debugs = [
             'ReplayPass',
+            'DataGraph',
             # 'TDGSerializer'
         ]
         self.benchmark.build_replay(
@@ -232,19 +233,19 @@ class MachSuiteBenchmark:
     def replay(self):
         os.chdir(self.work_path)
         # Basic replay.
-        # self.build_replay()
-        # debugs = [
-        #     # 'LLVMTraceCPU',
-        # ]
-        # gem5_outdir = self.run_replay(debugs=debugs)
-        # Util.call_helper([
-        #     'cp',
-        #     # os.path.join(gem5_outdir, 'stats.txt'),
-        #     os.path.join(gem5_outdir, 'region.stats.txt'),
-        #     self.get_replay_result(),
-        # ])
+        self.build_replay()
+        debugs = [
+            # 'LLVMTraceCPU',
+        ]
+        gem5_outdir = self.run_replay(debugs=debugs)
+        Util.call_helper([
+            'cp',
+            # os.path.join(gem5_outdir, 'stats.txt'),
+            os.path.join(gem5_outdir, 'region.stats.txt'),
+            self.get_replay_result(),
+        ])
         # Abstract data flow replay.
-        # self.build_replay_abs_data_flow()
+        self.build_replay_abs_data_flow()
         debugs = [
             # 'AbstractDataFlowAccelerator',
             # 'LLVMTraceCPU',
