@@ -90,7 +90,8 @@ protected:
   bool initialize(llvm::Module &Module) override {
     // Call the base initialization.
     bool Ret = ReplayTrace::initialize(Module);
-    this->DataFlowSerializer = new TDGSerializer("abs-data-flow");
+    this->DataFlowSerializer =
+        new TDGSerializer(this->OutTraceName + ".adfa");
     this->CachedPDF = new CachedPostDominanceFrontier(
         [this](llvm::Function &Func) -> llvm::PostDominatorTree & {
           return this->getAnalysis<llvm::PostDominatorTreeWrapperPass>(Func)

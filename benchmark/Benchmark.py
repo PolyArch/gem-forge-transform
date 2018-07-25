@@ -150,7 +150,8 @@ class Benchmark(object):
         LLVM_TRACE_FN = 'llvm_trace_gem5.txt'
         if output_tdg is not None:
             LLVM_TRACE_FN = output_tdg
-        GEM5_OUT_DIR = '{cpu_type}.replay'.format(cpu_type=C.CPU_TYPE)
+        GEM5_OUT_DIR = '{cpu_type}.replay.{tdg}'.format(
+            cpu_type=C.CPU_TYPE, tdg=output_tdg)
         Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
         gem5_args = [
             C.GEM5_X86,

@@ -54,7 +54,7 @@ private:
 };
 
 /**
- * Get the memory dependence.
+ * Compute the memory dependence.
  */
 class MemoryDependenceComputer {
 public:
@@ -113,16 +113,16 @@ public:
   std::unordered_map<DynamicId, DynamicInstIter> AliveDynamicInstsMap;
 
   /**
-   * These maps hols the dependence for *ALIVE* instructions.
+   * These maps hold the dependence for *ALIVE* instructions.
    * We guarantee that there is always an empty set to represent no dependence.
    * Make sure you maintain this property.
    *
    * For the register dependence, we use list<pair<>> to store the corresponding
    * operand. This is handy for many transformations, e.g. loop unroll to break
    * dependence on induction variable.
-   * This is not a set, as for SIMD instruction is is possible that one operand
-   * has multiple dependence. For those non-llvm-inst dependence, the static
-   * instruction pointer can be nullptr.
+   * This is not a set, e.g. for SIMD instruction is is possible that one
+   * operand has multiple dependence. For those non-llvm-inst dependence, the
+   * static instruction pointer can be nullptr.
    */
   using DependenceSet = std::unordered_set<DynamicId>;
   using DependenceMap = std::unordered_map<DynamicId, DependenceSet>;
@@ -151,25 +151,10 @@ public:
     // computation.
     std::unordered_map<llvm::Value *, DynamicValue> RunTimeEnv;
 
-    /**
-     * Map from llvm static instructions to the last dynamic instruction id.
-     * If missing, then it hasn't appeared in the dynamic trace.
-     * Only for non-phi node.
-     * Used for register dependence resolution.
-     */
-    std::unordered_map<llvm::Instruction *, DynamicId> StaticToLastDynamicMap;
-
-    // To resovle phi node.
-    std::unordered_map<llvm::PHINode *, DynamicId> PhiNodeDependenceMap;
-
     // Stores the dynamic value of CallInst.
     // Could be consumed by parseFuncEnter.
     std::vector<DynamicValue> CallStack;
-    llvm::BasicBlock *PrevBasicBlock;
     llvm::CallInst *PrevCallInst;
-    // Store the dynamic id of the previous control instructions.
-    // Used to handle the control dependence.
-    DynamicId PrevControlInstId;
     explicit DynamicFrame(
         llvm::Function *_Function,
         std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments);
@@ -179,25 +164,50 @@ public:
     const DynamicValue *getValueNullable(llvm::Value *Value) const;
     void insertValue(llvm::Value *Value, DynamicValue DValue);
 
-    DynamicId getLastDynamicId(llvm::Instruction *StaticInst) const;
-    void updateLastDynamicId(llvm::Instruction *StaticInst, DynamicId Id);
-
-    DynamicId getPHINodeDependence(llvm::PHINode *PHINode) const;
-    void updatePHINodeDependence(llvm::PHINode *PHINode, DynamicId Id);
-
-    void updatePrevControlInstId(DynamicInstruction *DInstruction);
-
     DynamicFrame(const DynamicFrame &other) = delete;
     DynamicFrame(DynamicFrame &&other) = delete;
     DynamicFrame &operator=(const DynamicFrame &other) = delete;
     DynamicFrame &operator=(DynamicFrame &&other) = delete;
+
+    /********************************************************************
+     * Accessors.
+     ********************************************************************/
+
+    // Previous BB is used for resolve phi node.
+    llvm::BasicBlock *getPrevBB() const { return this->PrevBasicBlock; }
+    void setPrevBB(llvm::BasicBlock *PrevBB) {
+      assert(PrevBB->getParent() == this->Function &&
+             "This BB is not in function.");
+      this->PrevBasicBlock = PrevBB;
+    }
+
+    DynamicId getLastDynamicId(llvm::Instruction *StaticInst) const;
+    void updateLastDynamicId(llvm::Instruction *StaticInst, DynamicId Id);
+    size_t getLastDynamicIdMapSize() const {
+      return this->StaticToLastDynamicMap.size();
+    }
+
+  private:
+    llvm::BasicBlock *PrevBasicBlock;
+
+    /**
+     * Map from llvm static instructions to the last dynamic instruction id.
+     * If missing, then it hasn't appeared in the dynamic trace.
+     *
+     * Special case for PHINode: Since we don't include PHINode in our graph,
+     * there is no dynamic id allocated for PHINode. Instead, here we store the
+     * dynamic id of the producer of the incoming value. If the incoming value
+     * does not come from instruction, we store InvalidId.
+     */
+    std::unordered_map<llvm::Instruction *, DynamicId> StaticToLastDynamicMap;
   };
 
   // Records the information of the dynamic value inter-frame.
   // Especially used for mem/base initialization.
   std::list<DynamicFrame> DynamicFrameStack;
 
-  // Load one more inst from the trace. nullptr if eof.
+  // Load one more inst from the trace.
+  // Return DynamicInstructionList.end() if eof.
   DynamicInstIter loadOneDynamicInst();
   // Commit one inst and remove it from the alive set.
   void commitOneDynamicInst();
@@ -205,6 +215,8 @@ public:
 
   void updateAddrToLastMemoryAccessMap(uint64_t Addr, size_t ByteSize,
                                        DynamicId Id, bool IsLoad);
+
+  void updatePrevControlInstId(DynamicInstruction *DynamicInst);
 
 private:
   /**********************************************************************
@@ -231,22 +243,39 @@ private:
   void handlePhiNode(llvm::PHINode *StaticPhi,
                      const TraceParser::TracedInst &Parsed);
 
-  std::string CurrentBasicBlockName;
-  int CurrentIndex;
+  /***************************************************************************
+   * Find the static llvm instruction for an incoming dynamic instruction.
+   ***************************************************************************/
 
-  llvm::BasicBlock *CurrentBasicBlock;
-  llvm::BasicBlock::iterator CurrentStaticInstruction;
+  // Memorized map to quickly locate the static instruction.
+  std::unordered_map<
+      llvm::Function *,
+      std::unordered_map<std::string, std::vector<llvm::Instruction *>>>
+      MemorizedStaticInstMap;
 
+  // Use MemorizedStaticInstMap to quickly locate the static instruction.
+  // May update the memorize map if this is the first time.
+  // Also if the frame stack is empty, trys to allocate an empty frame for it.
   llvm::Instruction *getLLVMInstruction(const std::string &FunctionName,
                                         const std::string &BasicBlockName,
                                         const int Index);
 
+  /***************************************************************************
+   * Handle memory dependence.
+   ***************************************************************************/
+
   // Helper class to compute the memory dependence.
   MemoryDependenceComputer MemDepsComputer;
-
   // Handle the RAW, WAW, WAR dependence.
   void handleMemoryDependence(DynamicInstruction *DynamicInst);
 
+  /***************************************************************************
+   * Handle control dependence.
+   ***************************************************************************/
+
+  // Store the previous control flow instruction id.
+  // Used to resolve control dependence.
+  DynamicId PrevControlInstId;
   void handleControlDependence(DynamicInstruction *DynamicInst);
 
   void handleRegisterDependence(DynamicInstruction *DynamicInst,

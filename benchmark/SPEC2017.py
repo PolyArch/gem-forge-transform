@@ -26,6 +26,7 @@ class SPEC2017Benchmark:
         self.max_inst = params['max_inst']
         self.skip_inst = params['skip_inst']
         self.end_inst = params['end_inst']
+        self.n_traces = params['n_traces']
 
         self.trace_stdlib = False
         self.cwd = os.getcwd()
@@ -95,35 +96,27 @@ class SPEC2017Benchmark:
     def get_trace(self):
         return self.target + '.trace'
 
-    def get_replay_tdg(self):
-        return self.target + '.replay.tdg'
+    def get_traces(self):
+        traces = list()
+        for i in xrange(self.n_traces):
+            traces.append('{target}.trace.{i}'.format(
+                target=self.target, i=i))
+        return traces
 
-    def get_adfa_tdg(self):
-        return self.target + '.adfa.tdg'
+    def get_tdgs(self, transform):
+        tdgs = list()
+        for i in xrange(self.n_traces):
+            tdgs.append('{target}.{transform}.tdg.{i}'.format(
+                target=self.target, transform=transform, i=i))
+        return tdgs
 
-    def get_simd_tdg(self):
-        return self.target + '.simd.tdg'
-
-    def get_replay_result(self):
-        return os.path.join(
-            self.cwd,
-            'result',
-            'spec.{name}.replay.txt'.format(name=self.name),
-        )
-
-    def get_adfa_result(self):
-        return os.path.join(
-            self.cwd,
-            'result',
-            'spec.{name}.adfa.txt'.format(name=self.name),
-        )
-
-    def get_simd_result(self):
-        return os.path.join(
-            self.cwd,
-            'result',
-            'spec.{name}.simd.txt'.format(name=self.name),
-        )
+    def get_results(self, transform):
+        results = list()
+        for i in xrange(self.n_traces):
+            results.append('spec.{name}.{transform}.txt.{i}'.format(
+                name=self.name, transform=transform, i=i
+            ))
+        return results
 
     def build_raw_bc(self):
         # Fake the runcpu.
@@ -228,13 +221,17 @@ class SPEC2017Benchmark:
             # 'DataGraph',
             'DynamicInstruction',
         ]
-        self.benchmark.build_replay(
-            pass_name=pass_name,
-            trace_file=self.get_trace(),
-            tdg_detail='standalone',
-            output_tdg=self.get_replay_tdg(),
-            debugs=debugs,
-        )
+        traces = self.get_traces()
+        tdgs = self.get_tdgs('replay')
+        assert(len(traces) == len(tdgs))
+        for i in xrange(len(traces)):
+            self.benchmark.build_replay(
+                pass_name=pass_name,
+                trace_file=traces[i],
+                tdg_detail='standalone',
+                output_tdg=tdgs[i],
+                debugs=debugs,
+            )
 
     def build_replay_abs_data_flow(self):
         pass_name = 'abs-data-flow-acc-pass'
@@ -244,13 +241,17 @@ class SPEC2017Benchmark:
             # 'AbstractDataFlowAcceleratorPass',
             # 'LoopUtils',
         ]
-        self.benchmark.build_replay(
-            pass_name=pass_name,
-            trace_file=self.get_trace(),
-            tdg_detail='standalone',
-            output_tdg=self.get_adfa_tdg(),
-            debugs=debugs,
-        )
+        traces = self.get_traces()
+        tdgs = self.get_tdgs('adfa')
+        assert(len(traces) == len(tdgs))
+        for i in xrange(len(traces)):
+            self.benchmark.build_replay(
+                pass_name=pass_name,
+                trace_file=traces[i],
+                tdg_detail='standalone',
+                output_tdg=tdgs[i],
+                debugs=debugs,
+            )
 
     def build_replay_simd(self):
         pass_name = 'simd-pass'
@@ -258,90 +259,83 @@ class SPEC2017Benchmark:
             'ReplayPass',
             # 'SIMDPass',
         ]
-        self.benchmark.build_replay(
-            pass_name=pass_name,
-            trace_file=self.get_trace(),
-            tdg_detail='standalone',
-            output_tdg=self.get_simd_tdg(),
-            debugs=debugs,
-        )
+        traces = self.get_traces()
+        tdgs = self.get_tdgs('simd')
+        assert(len(traces) == len(tdgs))
+        for i in xrange(len(traces)):
+            self.benchmark.build_replay(
+                pass_name=pass_name,
+                trace_file=traces[i],
+                tdg_detail='standalone',
+                output_tdg=tdgs[i],
+                debugs=debugs,
+            )
 
-    def run_replay(self, output_tdg, debugs):
-        return self.benchmark.gem5_replay(
-            standalone=1,
-            output_tdg=output_tdg,
-            debugs=debugs,
-        )
+    def run_replay(self, transform, debugs):
+        tdgs = self.get_tdgs(transform)
+        results = self.get_results(transform)
+        assert(len(tdgs) == len(results))
+        for i in xrange(len(tdgs)):
+            gem5_dir = self.benchmark.gem5_replay(
+                standalone=1,
+                output_tdg=tdgs[i],
+                debugs=debugs,
+            )
+            Util.call_helper([
+                'cp',
+                os.path.join(gem5_outdir, 'region.stats.txt'),
+                results[i],
+            ])
 
     def replay(self):
         os.chdir(self.get_run_path())
         # Basic replay.
-        # self.build_replay()
-        # debugs = [
-        #     # 'LLVMTraceCPU'
-        # ]
-        # gem5_outdir = self.run_replay(
-        #     output_tdg=self.get_replay_tdg(),
-        #     debugs=debugs)
-        # Util.call_helper([
-        #     'cp',
-        #     os.path.join(gem5_outdir, 'region.stats.txt'),
-        #     self.get_replay_result(),
-        # ])
+        self.build_replay()
+        debugs = [
+            # 'LLVMTraceCPU'
+        ]
+        # self.run_replay('replay', debugs)
         # Abstract data flow replay.
-        # self.build_replay_abs_data_flow()
+        self.build_replay_abs_data_flow()
         # debugs = [
         #     # 'LLVMTraceCPU',
         #     # 'AbstractDataFlowAccelerator'
         # ]
-        # gem5_outdir = self.run_replay(
-        #     output_tdg=self.get_adfa_tdg(),
-        #     debugs=debugs)
-        # Util.call_helper([
-        #     'cp',
-        #     os.path.join(gem5_outdir, 'region.stats.txt'),
-        #     self.get_adfa_result(),
-        # ])
+        # self.run_replay('adfa', debugs)
         # SIMD replay.
         self.build_replay_simd()
-        debugs = [
-            # 'LLVMTraceCPU',
-            # 'AbstractDataFlowAccelerator'
-        ]
-        gem5_outdir = self.run_replay(
-            output_tdg=self.get_simd_tdg(),
-            debugs=debugs)
-        Util.call_helper([
-            'cp',
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            self.get_simd_result(),
-        ])
+        # debugs = [
+        #     # 'LLVMTraceCPU',
+        #     # 'AbstractDataFlowAccelerator'
+        # ]
+        # self.run_replay('simd', debugs)
         os.chdir(self.cwd)
 
 
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        'lbm_s': {
-            'name': '619.lbm_s',
-            'links': ['-lm'],
-            # First 100m insts every 1b insts, skipping the first 3.3b
-            'start_inst': 33e8,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 54e8,
-            'trace_func': 'LBM_performStreamCollideTRT'
-        },
-        # 'imagick_s': {
-        #     'name': '638.imagick_s',
+        # 'lbm_s': {
+        #     'name': '619.lbm_s',
         #     'links': ['-lm'],
-        #     # First 100m insts every 1b insts, skipping the first 100m
-        #     'start_inst': 1e8,
+        #     # First 100m insts every 1b insts, skipping the first 3.3b
+        #     'start_inst': 33e8,
         #     'max_inst': 1e8,
         #     'skip_inst': 9e8,
-        #     'end_inst': 21e8,
-        #     'trace_func': 'MagickCommandGenesis',
+        #     'end_inst': 54e8,
+        #     'n_traces': 2,
+        #     'trace_func': 'LBM_performStreamCollideTRT',
         # },
+        'imagick_s': {
+            'name': '638.imagick_s',
+            'links': ['-lm'],
+            'start_inst': 1e7,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 15e8,
+            'n_traces': 2,
+            'trace_func': 'MagickCommandGenesis',
+        },
         # 'nab_s': {
         #     'name': '644.nab_s',
         #     'links': ['-lm'],
@@ -440,6 +434,7 @@ class SPEC2017Benchmarks:
             max_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['max_inst']
             skip_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['skip_inst']
             end_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['end_inst']
+            n_traces = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['n_traces']
 
             trace_func = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['trace_func']
             links = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['links']
@@ -471,6 +466,7 @@ class SPEC2017Benchmarks:
                 max_inst=max_inst,
                 skip_inst=skip_inst,
                 end_inst=end_inst,
+                n_traces=n_traces,
             )
 
     def set_gllvm(self):
@@ -483,13 +479,13 @@ class SPEC2017Benchmarks:
 
 def run_benchmark(benchmark):
     print('start run benchmark ' + benchmark.get_name())
-    benchmark.trace()
-    # benchmark.replay()
+    # benchmark.trace()
+    benchmark.replay()
 
 
 def main(folder):
     trace_stdlib = False
-    force = True
+    force = False
     benchmarks = SPEC2017Benchmarks(trace_stdlib, force)
     names = list()
     b_list = list()
@@ -513,8 +509,8 @@ def main(folder):
         processes[prev].join()
         prev += 1
 
-    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    Util.ADFAAnalyzer.analyze_adfa(b_list)
+    # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+    # Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':
