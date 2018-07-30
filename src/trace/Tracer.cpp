@@ -278,6 +278,9 @@ void printInstEnd() {
   // Update the stack
   if (currentInstOpName == "ret") {
     // printf("%s\n", currentInstOpName.c_str());
+    if (stack.size() == 0) {
+      printf("Empty stack when we found ret?\n");
+    }
     assert(stack.size() > 0);
     if (stack.back()) {
       tracedFunctionsInStack--;
@@ -287,8 +290,14 @@ void printInstEnd() {
   }
 
   // Check if we are about to exit.
-  if (END_INST > 0 && count == END_INST) {
-    std::exit(0);
+  if (START_INST > 0) {
+    if (END_INST > 0 && count == END_INST) {
+      std::exit(0);
+    }
+  } else {
+    if (tracedCount == MAX_INST) {
+      std::exit(0);
+    }
   }
 
   insideMyself = false;

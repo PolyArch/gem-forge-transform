@@ -110,12 +110,16 @@ class SPEC2017Benchmark:
                 target=self.target, transform=transform, i=i))
         return tdgs
 
-    def get_results(self, transform):
+    def get_result(self, transform):
         results = list()
         for i in xrange(self.n_traces):
-            results.append('spec.{name}.{transform}.txt.{i}'.format(
-                name=self.name, transform=transform, i=i
-            ))
+            results.append(
+                os.path.join(
+                    self.cwd,
+                    'result',
+                    'spec.{name}.{transform}.txt.{i}'.format(
+                        name=self.name, transform=transform, i=i
+                    )))
         return results
 
     def build_raw_bc(self):
@@ -205,10 +209,10 @@ class SPEC2017Benchmark:
             print(self.start_inst)
             print(self.end_inst)
             print(self.skip_inst)
-            os.putenv('LLVM_TDG_MAX_INST', str(self.max_inst))
-            os.putenv('LLVM_TDG_START_INST', str(self.start_inst))
-            os.putenv('LLVM_TDG_END_INST', str(self.end_inst))
-            os.putenv('LLVM_TDG_SKIP_INST', str(self.skip_inst))
+            os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+            os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+            os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+            os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
         else:
             os.unsetenv('LLVM_TDG_MAX_INST')
         self.benchmark.run_trace(self.get_trace())
@@ -219,7 +223,7 @@ class SPEC2017Benchmark:
         debugs = [
             'ReplayPass',
             # 'DataGraph',
-            'DynamicInstruction',
+            # 'DynamicInstruction',
         ]
         traces = self.get_traces()
         tdgs = self.get_tdgs('replay')
@@ -237,6 +241,7 @@ class SPEC2017Benchmark:
         pass_name = 'abs-data-flow-acc-pass'
         debugs = [
             'ReplayPass',
+            'PostDominanceFrontier',
             # 'TDGSerializer',
             # 'AbstractDataFlowAcceleratorPass',
             # 'LoopUtils',
@@ -257,12 +262,13 @@ class SPEC2017Benchmark:
         pass_name = 'simd-pass'
         debugs = [
             'ReplayPass',
+            # 'DataGraph',
             # 'SIMDPass',
         ]
         traces = self.get_traces()
         tdgs = self.get_tdgs('simd')
         assert(len(traces) == len(tdgs))
-        for i in xrange(len(traces)):
+        for i in xrange(0, len(traces)):
             self.benchmark.build_replay(
                 pass_name=pass_name,
                 trace_file=traces[i],
@@ -273,10 +279,10 @@ class SPEC2017Benchmark:
 
     def run_replay(self, transform, debugs):
         tdgs = self.get_tdgs(transform)
-        results = self.get_results(transform)
+        results = self.get_result(transform)
         assert(len(tdgs) == len(results))
-        for i in xrange(len(tdgs)):
-            gem5_dir = self.benchmark.gem5_replay(
+        for i in xrange(0, len(tdgs)):
+            gem5_outdir = self.benchmark.gem5_replay(
                 standalone=1,
                 output_tdg=tdgs[i],
                 debugs=debugs,
@@ -294,21 +300,21 @@ class SPEC2017Benchmark:
         debugs = [
             # 'LLVMTraceCPU'
         ]
-        # self.run_replay('replay', debugs)
+        self.run_replay('replay', debugs)
         # Abstract data flow replay.
         self.build_replay_abs_data_flow()
-        # debugs = [
-        #     # 'LLVMTraceCPU',
-        #     # 'AbstractDataFlowAccelerator'
-        # ]
-        # self.run_replay('adfa', debugs)
+        debugs = [
+            # 'LLVMTraceCPU',
+            # 'AbstractDataFlowAccelerator'
+        ]
+        self.run_replay('adfa', debugs)
         # SIMD replay.
         self.build_replay_simd()
-        # debugs = [
-        #     # 'LLVMTraceCPU',
-        #     # 'AbstractDataFlowAccelerator'
-        # ]
-        # self.run_replay('simd', debugs)
+        debugs = [
+            # 'LLVMTraceCPU',
+            # 'AbstractDataFlowAccelerator'
+        ]
+        self.run_replay('simd', debugs)
         os.chdir(self.cwd)
 
 
@@ -322,67 +328,78 @@ class SPEC2017Benchmarks:
         #     'start_inst': 33e8,
         #     'max_inst': 1e8,
         #     'skip_inst': 9e8,
-        #     'end_inst': 54e8,
-        #     'n_traces': 2,
+        #     'end_inst': 34e8,
+        #     'n_traces': 1,
         #     'trace_func': 'LBM_performStreamCollideTRT',
         # },
-        'imagick_s': {
-            'name': '638.imagick_s',
-            'links': ['-lm'],
-            'start_inst': 1e7,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 15e8,
-            'n_traces': 2,
-            'trace_func': 'MagickCommandGenesis',
-        },
+        # 'imagick_s': {
+        #     'name': '638.imagick_s',
+        #     'links': ['-lm'],
+        #     'start_inst': 1e7,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 200e8,
+        #     'n_traces': 22,
+        #     'trace_func': 'MagickCommandGenesis',
+        # },
         # 'nab_s': {
         #     'name': '644.nab_s',
         #     'links': ['-lm'],
-        #     # First 100m insts every 1b insts, skipping the first 100m
-        #     'start_inst': 1e8,
+        #     # md start from 100b
+        #     'start_inst': 0,
         #     'max_inst': 1e8,
         #     'skip_inst': 9e8,
-        #     'end_inst': 21e8,
+        #     'end_inst': 121e8,
+        #     'n_traces': 1,
         #     'trace_func': 'md',
         # },
         # 'x264_s': {
         #     'name': '625.x264_s',
         #     'links': [],
-        #     # First 100m insts every 1b insts, skipping the first 100m
-        #     'start_inst': 1e8,
+        #     # x264_encoder_encode starts around 0.1e8.
+        #     # x264_adaptive_quant_frame starts around 4e8
+        #     # x264_lookahead_get_frames starts around 21e8
+        #     'start_inst': 4e8,
         #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 21e8,
+        #     'skip_inst': 20e8,
+        #     'end_inst': 28e8,
+        #     'n_traces': 2,
         #     'trace_func': 'x264_encoder_encode',
         # },
         # 'mcf_s': {
         #     'name': '605.mcf_s',
         #     'links': [],
-        #     # First 100m insts every 1b insts, skipping the first 100m
+        #     # global_opt starts around 0.3e8
         #     'start_inst': 1e8,
         #     'max_inst': 1e8,
         #     'skip_inst': 9e8,
         #     'end_inst': 21e8,
+        #     'n_traces': 2,
         #     'trace_func': 'global_opt',
         # },
         # 'xz_s': {
         #     'name': '657.xz_s',
         #     'links': [],
-        #     # First 100m insts every 1b insts, skipping the first 100m
-        #     'start_inst': 1e8,
+        #     # I failed to find the pattern.
+        #     # To trace this, instrument the tracer twice, one with
+        #     # compressStream traced, the other with uncompressStream traced
+        #     'start_inst': 0,
         #     'max_inst': 1e8,
         #     'skip_inst': 9e8,
-        #     'end_inst': 21e8,
-        #     'trace_func': 'spec_compress,spec_uncompress',
+        #     'end_inst': 1021e8,
+        #     'n_traces': 1,
+        #     'trace_func': 'uncompressStream',
         # },
-        # 'gcc_s': {
-        #     'name': '602.gcc_s',
-        #     'links': [],
-        #     'skip_inst': 100000000,
-        #     'max_inst': 100000000,
-        #     'trace_func': '',
-        # },
+        'gcc_s': {
+            'name': '602.gcc_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 50e8,
+            'end_inst': 1000e8,
+            'n_traces': 2,
+            'trace_func': 'compile_file',
+        },
         # # C++ Benchmark: Notice that SPEC is compiled without
         # # debug information, and we have to use mangled name
         # # for trace_func.
@@ -479,8 +496,8 @@ class SPEC2017Benchmarks:
 
 def run_benchmark(benchmark):
     print('start run benchmark ' + benchmark.get_name())
-    # benchmark.trace()
-    benchmark.replay()
+    benchmark.trace()
+    # benchmark.replay()
 
 
 def main(folder):
@@ -509,8 +526,8 @@ def main(folder):
         processes[prev].join()
         prev += 1
 
-    # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    # Util.ADFAAnalyzer.analyze_adfa(b_list)
+    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+    Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':

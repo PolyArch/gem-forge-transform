@@ -14,6 +14,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 
+#include <iomanip>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -128,6 +129,10 @@ public:
 
 protected:
   bool initialize(llvm::Module &Module) override {
+
+    // Clear the stats.
+    this->Stats.clear();
+
     // Reset memorization.
     this->CachedLI = new CachedLoopInfo(
         [this]() -> llvm::TargetLibraryInfo & {
@@ -158,6 +163,8 @@ protected:
     return ReplayTrace::finalize(Module);
   }
 
+  void dumpStats(std::ostream &O) override;
+
   enum {
     SEARCHING,
     BUFFERING,
@@ -176,6 +183,35 @@ protected:
    */
   std::unordered_map<llvm::Loop *, StaticInnerMostLoop *>
       CachedStaticInnerMostLoop;
+
+  struct LoopStats {
+    std::string RegionId;
+    uint64_t StaticInsts;
+    uint64_t DynamicInsts;
+    uint64_t Iter;
+    uint64_t VectorizedDynamicInsts;
+    uint64_t VectorizedIter;
+
+    LoopStats(const std::string &_RegionId, uint64_t _StaticInsts)
+        : RegionId(_RegionId), StaticInsts(_StaticInsts), DynamicInsts(0),
+          Iter(0), VectorizedDynamicInsts(0), VectorizedIter(0) {}
+
+    static void dumpStatsTitle(std::ostream &O) {
+      O << std::setw(50) << "RegionId" << std::setw(20) << "StaticInsts"
+        << std::setw(20) << "DynamicInsts" << std::setw(20) << "Iter"
+        << std::setw(20) << "VectorizedDynamicInsts" << std::setw(20)
+        << "VectorizedIter" << '\n';
+    }
+
+    void dumpStats(std::ostream &O) const {
+      O << std::setw(50) << this->RegionId << std::setw(20) << this->StaticInsts
+        << std::setw(20) << this->DynamicInsts << std::setw(20) << this->Iter
+        << std::setw(20) << this->VectorizedDynamicInsts << std::setw(20)
+        << this->VectorizedIter << '\n';
+    }
+  };
+
+  std::unordered_map<llvm::Loop *, LoopStats> Stats;
 
   void transform() override;
 
@@ -348,6 +384,12 @@ void SIMDPass::transform() {
         NewStaticLoop = this->CachedStaticInnerMostLoop.at(NewLoop);
         IsAtHeaderOfVectorizable =
             LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst);
+        // Create the stats for this loop.
+        if (this->Stats.find(NewLoop) == this->Stats.end()) {
+          this->Stats.emplace(NewLoop,
+                              LoopStats(LoopUtils::getLoopId(NewLoop),
+                                        NewStaticLoop->StaticInstCount));
+        }
       }
 
       if (IsAtHeaderOfVectorizable) {
@@ -409,8 +451,15 @@ void SIMDPass::transform() {
       if (NewStaticLoop != CurrentStaticLoop) {
         // We are out of the current loop.
         LoopIter++;
+        this->Stats.at(CurrentStaticLoop->Loop).Iter++;
       } else if (IsAtHeaderOfVectorizable) {
         LoopIter++;
+        this->Stats.at(CurrentStaticLoop->Loop).Iter++;
+      }
+
+      if (NewStaticLoop == CurrentStaticLoop) {
+        // We are still in the same loop.
+        this->Stats.at(CurrentStaticLoop->Loop).DynamicInsts++;
       }
 
       /**
@@ -815,6 +864,10 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
    * 2. Insert into the alive map.
    * 3. Update the StaticToLastDynamicMap.
    * 4. Update the DynamicFrame::PrevControlInstId.
+   *
+   * HACK: It is possible that the first instruction outside the window
+   * is a control instruction, or even a ret which modifies the frame stack.
+   * In such case we need to handle case 3/4 specially.
    */
   auto InsertionPoint = this->Trace->DynamicInstructionList.end();
   --InsertionPoint;
@@ -823,10 +876,25 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         InsertionPoint, NewDynamicInst);
     this->Trace->AliveDynamicInstsMap.emplace(NewDynamicInst->Id,
                                               NewDynamicInstIter);
-    this->Trace->DynamicFrameStack.front().updateLastDynamicId(
-        NewDynamicInst->getStaticInstruction(), NewDynamicInst->Id);
+
+    /**
+     * Hack for case 3: if the next inst is ret, the frame stack is already
+     * poped, we simply not updateLastDynamicId.
+     */
+    if (this->Trace->DynamicInstructionList.back()
+            ->getStaticInstruction()
+            ->getOpcode() != llvm::Instruction::Ret) {
+      this->Trace->DynamicFrameStack.front().updateLastDynamicId(
+          NewDynamicInst->getStaticInstruction(), NewDynamicInst->Id);
+    }
     this->Trace->updatePrevControlInstId(NewDynamicInst);
   }
+
+  /**
+   * Hack for case 4: update the previous control id for the last instruction.
+   */
+  this->Trace->updatePrevControlInstId(
+      this->Trace->DynamicInstructionList.back());
 
   DEBUG(DynamicLoop.print(llvm::errs()));
 
@@ -1377,12 +1445,31 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
       this->Trace->commitOneDynamicInst();
     }
     return;
+  } else {
+    // Update the stats of vectorized insts.
+    auto &Stat = this->Stats.at(StaticLoop->Loop);
+    Stat.VectorizedIter += LoopIter;
+    Stat.VectorizedDynamicInsts +=
+        this->Trace->DynamicInstructionList.size() - 1;
   }
 
   DEBUG(llvm::errs() << DynamicLoop.StaticLoop->print() << '\n');
   DEBUG(llvm::errs() << "SIMD Pass: Transforming Loop.===========\n");
   this->simdTransform(DynamicLoop);
   DEBUG(llvm::errs() << "SIMD Pass: Transforming Loop: Done.=====\n");
+}
+
+void SIMDPass::dumpStats(std::ostream &O) {
+  O << "----------- SIMD ------------\n";
+  LoopStats::dumpStatsTitle(O);
+  std::multimap<uint64_t, const LoopStats *> SortedStats;
+  for (const auto &Entry : this->Stats) {
+    SortedStats.emplace(Entry.second.DynamicInsts, &Entry.second);
+  }
+  for (auto StatIter = SortedStats.rbegin(), StatEnd = SortedStats.rend();
+       StatIter != StatEnd; ++StatIter) {
+    StatIter->second->dumpStats(O);
+  }
 }
 
 DynamicInnerMostLoop::DynamicInnerMostLoop(StaticInnerMostLoop *_StaticLoop,

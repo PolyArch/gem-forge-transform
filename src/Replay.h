@@ -32,6 +32,7 @@ protected:
   virtual bool initialize(llvm::Module &Module);
   virtual void transform();
   virtual bool finalize(llvm::Module &Module);
+  virtual void dumpStats(std::ostream &O);
 
   /**
    * Compute all the static information and serialize in the tdg.
@@ -47,6 +48,11 @@ protected:
   llvm::Module *Module;
 
   CachedLoopInfo *CachedLI;
+
+  /**
+   * Statistics.
+   */
+  uint64_t StatsDynamicInsts;
 
   /**
    * Static Informatin.

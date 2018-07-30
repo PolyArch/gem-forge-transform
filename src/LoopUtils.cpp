@@ -62,6 +62,17 @@ std::string LoopUtils::getLoopId(const llvm::Loop *Loop) {
   return Func->getName().str() + "::" + Loop->getName().str();
 }
 
+uint64_t LoopUtils::getNumStaticInstInLoop(llvm::Loop *Loop) {
+  uint64_t StaticInsts = 0;
+  for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    auto PHIs = BB->phis();
+    StaticInsts += BB->size() - std::distance(PHIs.begin(), PHIs.end());
+  }
+  return StaticInsts;
+}
+
 void LoopIterCounter::configure(llvm::Loop *_Loop) {
   this->Loop = _Loop;
   this->Iter = -1;
@@ -91,11 +102,7 @@ StaticInnerMostLoop::StaticInnerMostLoop(llvm::Loop *_Loop)
   this->scheduleBasicBlocksInLoop(this->Loop);
   assert(!this->BBList.empty() && "Empty loops.");
 
-  for (auto BB : this->BBList) {
-    auto PHIs = BB->phis();
-    this->StaticInstCount +=
-        BB->size() - std::distance(PHIs.begin(), PHIs.end());
-  }
+  this->StaticInstCount = LoopUtils::getNumStaticInstInLoop(this->Loop);
 
   // Create the load/store order map.
   uint32_t LoadStoreIdx = 0;
