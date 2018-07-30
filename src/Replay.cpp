@@ -137,6 +137,9 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
   // Register the external ioctl function.
   registerFunction(Module);
 
+  // Clear the stats.
+  this->StatsDynamicInsts = 0;
+
   // For replay, the datagraph should be at least standalone mode.
 
   // If user specify the detail level, we only allow
@@ -173,6 +176,13 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
 }
 
 bool ReplayTrace::finalize(llvm::Module &Module) {
+
+  std::string Stats = this->OutTraceName + ".stats.txt";
+  DEBUG(llvm::errs() << "Dump stats to " << Stats << '\n');
+  std::ofstream OStats(Stats);
+  this->dumpStats(OStats);
+  OStats.close();
+
   DEBUG(llvm::errs() << "Releasing serializer at " << this->Serializer << '\n');
   delete this->Serializer;
   this->Serializer = nullptr;
@@ -648,6 +658,7 @@ void ReplayTrace::transform() {
     if (Count > Window || Ended) {
       auto Iter = this->Trace->DynamicInstructionList.begin();
       this->Serializer->serialize(*Iter, this->Trace);
+      this->StatsDynamicInsts++;
       Count--;
       this->Trace->commitOneDynamicInst();
     }
@@ -689,6 +700,12 @@ void ReplayTrace::registerFunction(llvm::Module &Module) {
   DEBUG(llvm::errs() << this->FakeRegisterFill->getName() << '\n');
   Builder.CreateRetVoid();
 }
+
+void ReplayTrace::dumpStats(std::ostream &O) {
+  O << "----------- Replay ------------\n";
+  O << "Dynamic Instructions " << this->StatsDynamicInsts << '\n';
+}
+
 #undef DEBUG_TYPE
 
 char ReplayTrace::ID = 0;

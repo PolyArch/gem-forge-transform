@@ -45,6 +45,11 @@ public:
    */
   static bool isStaticInstLoopHead(llvm::Loop *Loop,
                                    llvm::Instruction *StaticInst);
+
+  /**
+   * Count the number of instructions in a loop, excluding PHINodes.
+   */
+  static uint64_t getNumStaticInstInLoop(llvm::Loop *Loop);
 };
 
 class LoopIterCounter {

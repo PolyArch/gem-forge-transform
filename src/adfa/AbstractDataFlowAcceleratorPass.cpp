@@ -23,6 +23,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 
+#include <iomanip>
+
 #define DEBUG_TYPE "AbstractDataFlowAcceleratorPass"
 namespace {
 
@@ -88,10 +90,15 @@ public:
 
 protected:
   bool initialize(llvm::Module &Module) override {
+
     // Call the base initialization.
     bool Ret = ReplayTrace::initialize(Module);
-    this->DataFlowSerializer =
-        new TDGSerializer(this->OutTraceName + ".adfa");
+
+    // Clear the stats.
+    this->Stats.clear();
+
+    this->DataFlowFileName = this->OutTraceName + ".adfa";
+    this->DataFlowSerializer = new TDGSerializer(this->DataFlowFileName);
     this->CachedPDF = new CachedPostDominanceFrontier(
         [this](llvm::Function &Func) -> llvm::PostDominatorTree & {
           return this->getAnalysis<llvm::PostDominatorTreeWrapperPass>(Func)
@@ -125,6 +132,8 @@ protected:
     return ReplayTrace::finalize(Module);
   }
 
+  void dumpStats(std::ostream &O) override;
+
   enum {
     SEARCHING,
     BUFFERING,
@@ -139,8 +148,39 @@ protected:
   CachedPostDominanceFrontier *CachedPDF;
   CachedLoopUnroller *CachedLU;
 
+  std::string DataFlowFileName;
+
   // Memorize the result of isDataflow.
   std::unordered_map<llvm::Loop *, bool> MemorizedLoopDataflow;
+
+  struct DataFlowStats {
+    std::string RegionId;
+    uint64_t StaticInst;
+    uint64_t DynamicInst;
+    uint64_t DataFlowDynamicInst;
+    uint64_t Config;
+    uint64_t DataFlow;
+
+    DataFlowStats(const std::string &_RegionId, uint64_t _StaticInst)
+        : RegionId(_RegionId), StaticInst(_StaticInst), DynamicInst(0),
+          DataFlowDynamicInst(0), Config(0), DataFlow(0) {}
+
+    static void dumpStatsTitle(std::ostream &O) {
+      O << std::setw(50) << "RegionId" << std::setw(20) << "StaticInsts"
+        << std::setw(20) << "DynamicInst" << std::setw(20)
+        << "DataFlowDynamicInst" << std::setw(20) << "Config" << std::setw(20)
+        << "DataFlow" << '\n';
+    }
+
+    void dumpStats(std::ostream &O) const {
+      O << std::setw(50) << this->RegionId << std::setw(20) << this->StaticInst
+        << std::setw(20) << this->DynamicInst << std::setw(20)
+        << this->DataFlowDynamicInst << std::setw(20) << this->Config
+        << std::setw(20) << this->DataFlow << '\n';
+    }
+  };
+
+  std::unordered_map<llvm::Loop *, DataFlowStats> Stats;
 
   size_t BufferThreshold;
 
@@ -250,6 +290,22 @@ void AbstractDataFlowAcceleratorPass::transform() {
           IsAtHeaderOfCandidate =
               LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst);
           // DEBUG(llvm::errs() << "Check if we are at header: Done.\n");
+
+          // Allocate and update the stats.
+          {
+            auto StatLoop = NewLoop;
+            while (StatLoop != nullptr) {
+              if (this->Stats.find(StatLoop) == this->Stats.end()) {
+                // Set the static instruction's count to 0 for now.
+                this->Stats.emplace(
+                    StatLoop,
+                    DataFlowStats(LoopUtils::getLoopId(StatLoop),
+                                  LoopUtils::getNumStaticInstInLoop(StatLoop)));
+              }
+              this->Stats.at(StatLoop).DynamicInst++;
+              StatLoop = StatLoop->getParentLoop();
+            }
+          }
         } else {
           // This is not a candidate.
           // DEBUG(llvm::errs() << "Getted loop is not a candidate.\n");
@@ -315,6 +371,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
         auto Iter = this->Trace->DynamicInstructionList.rbegin();
         ++Iter;
         this->CurrentConfiguredDataFlow.addDynamicInst(*Iter);
+        this->Stats.at(CurrentConfiguredDataFlow.Loop).DataFlowDynamicInst++;
       }
 
       if (!CurrentLoop->contains(NewLoop)) {
@@ -462,7 +519,8 @@ public:
  */
 class AbsDataFlowConfigInst : public DynamicInstruction {
 public:
-  AbsDataFlowConfigInst() {}
+  AbsDataFlowConfigInst(const std::string &_DataFlowFileName)
+      : DataFlowFileName(_DataFlowFileName) {}
   std::string getOpName() const override { return "df-config"; }
   // There should be some customized fields in the future.
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
@@ -471,8 +529,11 @@ public:
     auto ConfigExtra = ProtobufEntry->mutable_adfa_config();
     assert(ProtobufEntry->has_adfa_config() &&
            "The protobuf entry should have adfa config extra struct.");
-    ConfigExtra->set_data_flow("abs-data-flow");
+    ConfigExtra->set_data_flow(this->DataFlowFileName);
   }
+
+private:
+  std::string DataFlowFileName;
 };
 
 /**
@@ -497,7 +558,7 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
      */
     // Check if we need to configure the accelerator.
     if (Loop != this->CurrentConfiguredDataFlow.Loop) {
-      AbsDataFlowConfigInst ConfigInst;
+      AbsDataFlowConfigInst ConfigInst(this->DataFlowFileName);
       this->serializeInstStream(&ConfigInst);
       DEBUG(llvm::errs() << "ADFA: configure the accelerator to loop "
                          << printLoop(Loop) << '\n');
@@ -508,6 +569,7 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
           this->CachedPDF->getPostDominanceFrontier(Func), this->Trace,
           this->DataFlowSerializer, this->CachedLU,
           this->CachedLI->getScalarEvolution(Func));
+      this->Stats.at(Loop).Config++;
     }
 
     // Serialize the start inst.
@@ -519,6 +581,7 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
       this->serializeInstStream(&StartInst);
       // Start the dynamic data flow.
       this->CurrentConfiguredDataFlow.start();
+      this->Stats.at(Loop).DataFlow++;
     }
 
     // Add the instruction to the dataflow buffer.
@@ -530,6 +593,7 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
       ++Next;
       auto DynamicInst = *Iter;
       this->CurrentConfiguredDataFlow.addDynamicInst(DynamicInst);
+      this->Stats.at(Loop).DataFlowDynamicInst++;
       Iter = Next;
     }
     return true;
@@ -565,6 +629,20 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) {
   // DEBUG(llvm::errs() << "isLoopDataFlow returned true.\n");
   this->MemorizedLoopDataflow.emplace(Loop, IsDataFlow);
   return IsDataFlow;
+}
+
+void AbstractDataFlowAcceleratorPass::dumpStats(std::ostream &O) {
+  O << "----------- ADFA ------------\n";
+  DataFlowStats::dumpStatsTitle(O);
+  // Sort the stats with according to their dynamic insts.
+  std::multimap<uint64_t, const DataFlowStats *> SortedStats;
+  for (const auto &Entry : this->Stats) {
+    SortedStats.emplace(Entry.second.DynamicInst, &Entry.second);
+  }
+  for (auto StatIter = SortedStats.rbegin(), StatEnd = SortedStats.rend();
+       StatIter != StatEnd; ++StatIter) {
+    StatIter->second->dumpStats(O);
+  }
 }
 
 DynamicDataFlow::DynamicDataFlow()

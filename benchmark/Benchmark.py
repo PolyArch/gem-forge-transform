@@ -85,7 +85,7 @@ class Benchmark(object):
         Util.call_helper(trace_cmd)
         link_cmd = [
             'ecc++',
-            '-O0',
+            '-O3',
             self.trace_bc,
             self.trace_lib,
             '-o',

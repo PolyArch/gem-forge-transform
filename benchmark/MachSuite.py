@@ -57,26 +57,17 @@ class MachSuiteBenchmark:
     def get_baseline_binary(self):
         return '{name}.baseline'.format(name=self.get_name())
 
-    def get_baseline_result(self):
+    def get_result(self, transform):
         return os.path.join(
             self.cwd,
             'result',
-            '{name}.baseline.txt'.format(name=self.get_name()))
-
-    def get_replay_result(self):
-        return os.path.join(
-            self.cwd,
-            'result',
-            '{name}.replay.txt'.format(name=self.get_name()))
-
-    def get_adfa_result(self):
-        return os.path.join(
-            self.cwd,
-            'result',
-            '{name}.adfa.txt'.format(name=self.get_name()))
+            '{name}.{transform}.txt'.format(name=self.get_name(), transform=transform))
 
     def get_trace(self):
         return '{name}.trace'.format(name=self.get_name())
+
+    def get_tdg(self, transform):
+        return '{name}.{transform}.tdg'.format(name=self.get_name(), transform=transform)
 
     def compile(self, output_bc, defines=[], includes=[]):
         sources = list(MachSuiteBenchmark.COMMON_SOURCES)
@@ -186,7 +177,7 @@ class MachSuiteBenchmark:
         # Copy the result out.
         os.chdir(self.cwd)
         Util.call_helper(
-            ['cp', os.path.join(gem5_outdir, 'stats.txt'), self.get_baseline_result()])
+            ['cp', os.path.join(gem5_outdir, 'stats.txt'), self.get_result('baseline')])
 
     def trace(self):
         os.chdir(self.work_path)
@@ -198,7 +189,7 @@ class MachSuiteBenchmark:
         pass_name = 'replay'
         debugs = [
             'ReplayPass',
-            'DataGraph',
+            # 'DataGraph',
             # 'TDGSerializer'
         ]
         self.benchmark.build_replay(
@@ -206,6 +197,7 @@ class MachSuiteBenchmark:
             trace_file=self.get_trace(),
             tdg_detail='integrated',
             # tdg_detail='standalone',
+            output_tdg=self.get_tdg('replay'),
             debugs=debugs,
         )
 
@@ -213,7 +205,8 @@ class MachSuiteBenchmark:
         pass_name = 'abs-data-flow-acc-pass'
         debugs = [
             'ReplayPass',
-            # 'TDGSerializer',
+            'DynamicInstruction',
+            'TDGSerializer',
             # 'AbstractDataFlowAcceleratorPass',
             # 'LoopUtils',
         ]
@@ -222,42 +215,40 @@ class MachSuiteBenchmark:
             trace_file=self.get_trace(),
             tdg_detail='integrated',
             # tdg_detail='standalone',
+            output_tdg=self.get_tdg('adfa'),
             debugs=debugs,
         )
 
-    def run_replay(self, debugs):
-        return self.benchmark.gem5_replay(
+    def run_replay(self, transform, debugs):
+        gem5_outdir = self.benchmark.gem5_replay(
             standalone=0,
-            debugs=debugs)
+            output_tdg=self.get_tdg(transform),
+            debugs=debugs,
+        )
+        Util.call_helper([
+            'cp',
+            # os.path.join(gem5_outdir, 'stats.txt'),
+            os.path.join(gem5_outdir, 'region.stats.txt'),
+            self.get_result(transform),
+        ])
 
     def replay(self):
         os.chdir(self.work_path)
         # Basic replay.
-        self.build_replay()
-        debugs = [
-            # 'LLVMTraceCPU',
-        ]
-        gem5_outdir = self.run_replay(debugs=debugs)
-        Util.call_helper([
-            'cp',
-            # os.path.join(gem5_outdir, 'stats.txt'),
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            self.get_replay_result(),
-        ])
+        # self.build_replay()
+        # debugs = [
+        #     # 'LLVMTraceCPU',
+        #     'RegionStats',
+        # ]
+        # self.run_replay('replay', debugs)
         # Abstract data flow replay.
-        self.build_replay_abs_data_flow()
+        # self.build_replay_abs_data_flow()
         debugs = [
             # 'AbstractDataFlowAccelerator',
             # 'LLVMTraceCPU',
-            # 'RegionStats',
+            'RegionStats',
         ]
-        gem5_outdir = self.run_replay(debugs=debugs)
-        Util.call_helper([
-            'cp',
-            # os.path.join(gem5_outdir, 'stats.txt'),
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            self.get_adfa_result(),
-        ])
+        self.run_replay('adfa', debugs)
         os.chdir(self.cwd)
 
 

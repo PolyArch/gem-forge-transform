@@ -1,10 +1,23 @@
 #include "PostDominanceFrontier.h"
 
+#define DEBUG_TYPE "PostDominanceFrontier"
+
 PostDominanceFrontier::PostDominanceFrontier(
     const llvm::PostDominatorTree &Tree) {
-  for (auto Root : Tree.getRoots()) {
-    this->calculate(Tree, Tree.getNode(Root));
+  DEBUG(Tree.print(llvm::errs()));
+  auto RootNode = Tree.getRootNode();
+  if (RootNode->getBlock() == nullptr) {
+    // There are multiple exit nodes. Explicitly handle this by process the
+    // second level nodes.
+    for (auto ChildIter = RootNode->begin(), ChildEnd = RootNode->end();
+         ChildIter != ChildEnd; ++ChildIter) {
+      this->calculate(Tree, *ChildIter);
+    }
+  } else {
+    // Single valid exit node.
+    this->calculate(Tree, RootNode);
   }
+  DEBUG(this->print(llvm::errs()));
 }
 
 const PostDominanceFrontier::SetT &
@@ -14,6 +27,7 @@ PostDominanceFrontier::calculate(const llvm::PostDominatorTree &Tree,
   auto Iter = this->BBFrontierMap.find(BB);
   if (Iter == this->BBFrontierMap.end()) {
     // Create the frontier set.
+    DEBUG(llvm::errs() << "Calculate for BB " << BB->getName() << '\n');
     auto &Frontier =
         this->BBFrontierMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(BB),
@@ -55,6 +69,11 @@ void PostDominanceFrontier::print(llvm::raw_ostream &O) const {
 const PostDominanceFrontier::SetT &
 PostDominanceFrontier::getFrontier(llvm::BasicBlock *BB) const {
   auto Iter = this->BBFrontierMap.find(BB);
+  if (Iter == this->BBFrontierMap.end()) {
+    DEBUG(llvm::errs() << "Missing frontier set for basic block "
+                       << BB->getParent()->getName() << "::" << BB->getName()
+                       << '\n');
+  }
   assert(Iter != this->BBFrontierMap.end() &&
          "Missing frontier set for basic block.");
   return Iter->second;
@@ -78,3 +97,5 @@ CachedPostDominanceFrontier::getPostDominanceFrontier(llvm::Function *Func) {
   }
   return Iter->second;
 }
+
+#undef DEBUG_TYPE

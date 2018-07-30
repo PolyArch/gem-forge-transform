@@ -476,34 +476,39 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
   DEBUG(llvm::errs() << "Handle phi node ";
         this->printStaticInst(llvm::errs(), StaticPhi); llvm::errs() << '\n');
 
-  auto PrevBasicBlock = this->DynamicFrameStack.front().getPrevBB();
-  assert(PrevBasicBlock != nullptr && "Invalid previous basic block.");
-
   // First find the incoming value.
   llvm::Value *IncomingValue = nullptr;
-  for (unsigned int OperandId = 0,
-                    NumOperands = StaticPhi->getNumIncomingValues();
-       OperandId != NumOperands; ++OperandId) {
-    if (StaticPhi->getIncomingBlock(OperandId) == PrevBasicBlock) {
-      IncomingValue = StaticPhi->getIncomingValue(OperandId);
-      break;
-    }
-  }
+  auto PrevBasicBlock = this->DynamicFrameStack.front().getPrevBB();
 
-  assert(IncomingValue != nullptr &&
-         "Failed looking up the incoming value for phi node.");
-  if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
-    DEBUG(llvm::errs() << "Incoming value is ";
-          this->printStaticInst(llvm::errs(), IncomingInst);
-          llvm::errs() << '\n');
+  if (PrevBasicBlock != nullptr) {
+    for (unsigned int OperandId = 0,
+                      NumOperands = StaticPhi->getNumIncomingValues();
+         OperandId != NumOperands; ++OperandId) {
+      if (StaticPhi->getIncomingBlock(OperandId) == PrevBasicBlock) {
+        IncomingValue = StaticPhi->getIncomingValue(OperandId);
+        break;
+      }
+    }
+    assert(IncomingValue != nullptr &&
+           "Failed looking up the incoming value for phi node.");
+    if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+      DEBUG(llvm::errs() << "Incoming value is ";
+            this->printStaticInst(llvm::errs(), IncomingInst);
+            llvm::errs() << '\n');
+    }
+  } else {
+    // There is no previous basic block. This can not happen in INTEGRATED mode.
+    assert(this->DetailLevel < INTEGRATED &&
+           "Missing previous basic block in INTEGRATED mode.");
   }
 
   // Maintain the run time environment.
   // No need to worry about run time environment if we are in simple mode.
   if (this->DetailLevel > SIMPLE) {
     auto &Frame = this->DynamicFrameStack.front();
-    if (llvm::isa<llvm::Instruction>(IncomingValue) ||
-        llvm::isa<llvm::Argument>(IncomingValue)) {
+    if (IncomingValue != nullptr &&
+        (llvm::isa<llvm::Instruction>(IncomingValue) ||
+         llvm::isa<llvm::Argument>(IncomingValue))) {
       // For the incoming value of instruction and arguments, we look up the
       // run time env.
       // Make sure to copy it.
@@ -536,11 +541,13 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
   // Handle the dependence.
   {
     auto DepId = DynamicInstruction::InvalidId;
-    if (auto OperandStaticInst =
-            llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
-      // Loop for a dependent instruction.
-      DepId =
-          this->DynamicFrameStack.front().getLastDynamicId(OperandStaticInst);
+    if (IncomingValue != nullptr) {
+      if (auto OperandStaticInst =
+              llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+        // Loop for a dependent instruction.
+        DepId =
+            this->DynamicFrameStack.front().getLastDynamicId(OperandStaticInst);
+      }
     }
     // Update the phi dependence map.
     this->DynamicFrameStack.front().updateLastDynamicId(StaticPhi, DepId);
