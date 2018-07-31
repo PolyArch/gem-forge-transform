@@ -8,9 +8,49 @@ import Util
 from Benchmark import Benchmark
 
 
+"""
+Top level functions to use JobScheduler.
+"""
+
+
+def trace(benchmark):
+    benchmark.trace()
+
+
+def build_replay(benchmark, pass_name, trace_file, output_tdg, debugs):
+    os.chdir(benchmark.get_run_path())
+    benchmark.benchmark.build_replay(
+        pass_name=pass_name,
+        trace_file=trace_file,
+        tdg_detail='standalone',
+        output_tdg=output_tdg,
+        debugs=debugs,
+    )
+    os.chdir(benchmark.cwd)
+
+
+def run_replay(benchmark, output_tdg, result, debugs):
+    os.chdir(benchmark.get_run_path())
+    gem5_outdir = benchmark.benchmark.gem5_replay(
+        standalone=1,
+        output_tdg=output_tdg,
+        debugs=debugs,
+    )
+    Util.call_helper([
+        'cp',
+        os.path.join(gem5_outdir, 'region.stats.txt'),
+        result,
+    ])
+    os.chdir(benchmark.cwd)
+
+
 class SPEC2017Benchmark:
 
     def __init__(self, force_rebuild, **params):
+
+        # Job ids.
+        self.trace_job_id = None
+        self.transform_job_ids = None
 
         self.spec = os.environ.get('SPEC')
         if self.spec is None:
@@ -218,104 +258,63 @@ class SPEC2017Benchmark:
         self.benchmark.run_trace(self.get_trace())
         os.chdir(self.cwd)
 
-    def build_replay(self):
+    def schedule_trace(self, job_scheduler):
+        # Add the trace job.
+        # Notice that there is no dependence for trace job.
+        deps = list()
+        self.trace_job_id = (
+            job_scheduler.add_job('{name}.trace'.format(
+                name=self.get_name()), trace, (self,), deps)
+        )
+
+    def schedule_transform(self, job_scheduler, transform, debugs):
         pass_name = 'replay'
-        debugs = [
-            'ReplayPass',
-            # 'DataGraph',
-            # 'DynamicInstruction',
-        ]
+        if transform == 'simd':
+            pass_name = 'simd-pass'
+        elif transform == 'adfa':
+            pass_name = 'abs-data-flow-acc-pass'
+        elif transform == 'replay':
+            pass_name = 'replay'
+        else:
+            raise ValueError('Unknown transform name!')
         traces = self.get_traces()
-        tdgs = self.get_tdgs('replay')
+        tdgs = self.get_tdgs(transform)
         assert(len(traces) == len(tdgs))
-        for i in xrange(len(traces)):
-            self.benchmark.build_replay(
-                pass_name=pass_name,
-                trace_file=traces[i],
-                tdg_detail='standalone',
-                output_tdg=tdgs[i],
-                debugs=debugs,
-            )
-
-    def build_replay_abs_data_flow(self):
-        pass_name = 'abs-data-flow-acc-pass'
-        debugs = [
-            'ReplayPass',
-            'PostDominanceFrontier',
-            # 'TDGSerializer',
-            # 'AbstractDataFlowAcceleratorPass',
-            # 'LoopUtils',
-        ]
-        traces = self.get_traces()
-        tdgs = self.get_tdgs('adfa')
-        assert(len(traces) == len(tdgs))
-        for i in xrange(len(traces)):
-            self.benchmark.build_replay(
-                pass_name=pass_name,
-                trace_file=traces[i],
-                tdg_detail='standalone',
-                output_tdg=tdgs[i],
-                debugs=debugs,
-            )
-
-    def build_replay_simd(self):
-        pass_name = 'simd-pass'
-        debugs = [
-            'ReplayPass',
-            # 'DataGraph',
-            # 'SIMDPass',
-        ]
-        traces = self.get_traces()
-        tdgs = self.get_tdgs('simd')
-        assert(len(traces) == len(tdgs))
+        self.transform_job_ids = list()
         for i in xrange(0, len(traces)):
-            self.benchmark.build_replay(
-                pass_name=pass_name,
-                trace_file=traces[i],
-                tdg_detail='standalone',
-                output_tdg=tdgs[i],
-                debugs=debugs,
-            )
 
-    def run_replay(self, transform, debugs):
+            deps = list()
+            if self.trace_job_id is not None:
+                deps.append(self.trace_job_id)
+
+            # Schedule the build_replay job.
+            self.transform_job_ids.append(
+                job_scheduler.add_job(
+                    '{name}.transform.{transform}'.format(
+                        name=self.get_name(), transform=transform),
+                    build_replay,
+                    (self, pass_name, traces[i], tdgs[i], debugs),
+                    deps)
+            )
+        assert(len(self.transform_job_ids) == len(traces))
+
+    def schedule_simulation(self, job_scheduler, transform, debugs):
         tdgs = self.get_tdgs(transform)
         results = self.get_result(transform)
         assert(len(tdgs) == len(results))
         for i in xrange(0, len(tdgs)):
-            gem5_outdir = self.benchmark.gem5_replay(
-                standalone=1,
-                output_tdg=tdgs[i],
-                debugs=debugs,
-            )
-            Util.call_helper([
-                'cp',
-                os.path.join(gem5_outdir, 'region.stats.txt'),
-                results[i],
-            ])
 
-    def replay(self):
-        os.chdir(self.get_run_path())
-        # Basic replay.
-        self.build_replay()
-        debugs = [
-            # 'LLVMTraceCPU'
-        ]
-        self.run_replay('replay', debugs)
-        # Abstract data flow replay.
-        self.build_replay_abs_data_flow()
-        debugs = [
-            # 'LLVMTraceCPU',
-            # 'AbstractDataFlowAccelerator'
-        ]
-        self.run_replay('adfa', debugs)
-        # SIMD replay.
-        self.build_replay_simd()
-        debugs = [
-            # 'LLVMTraceCPU',
-            # 'AbstractDataFlowAccelerator'
-        ]
-        self.run_replay('simd', debugs)
-        os.chdir(self.cwd)
+            deps = list()
+            if self.transform_job_ids is not None:
+                deps.append(self.transform_job_ids[i])
+
+            job_scheduler.add_job(
+                '{name}.simulate.{transform}'.format(
+                    name=self.get_name(), transform=transform),
+                run_replay,
+                (self, tdgs[i], results[i], debugs),
+                deps,
+            )
 
 
 class SPEC2017Benchmarks:
@@ -397,7 +396,7 @@ class SPEC2017Benchmarks:
             'max_inst': 1e7,
             'skip_inst': 50e8,
             'end_inst': 1000e8,
-            'n_traces': 2,
+            'n_traces': 20,
             'trace_func': 'compile_file',
         },
         # # C++ Benchmark: Notice that SPEC is compiled without
@@ -494,40 +493,52 @@ class SPEC2017Benchmarks:
         os.putenv('LLVM_AR_NAME', 'ecc-ar')
 
 
-def run_benchmark(benchmark):
-    print('start run benchmark ' + benchmark.get_name())
-    benchmark.trace()
-    # benchmark.replay()
+# def run_benchmark(benchmark):
+#     print('start run benchmark ' + benchmark.get_name())
+#     # benchmark.trace()
+#     benchmark.replay()
 
 
 def main(folder):
     trace_stdlib = False
     force = False
+    job_scheduler = Util.JobScheduler(8, 1)
     benchmarks = SPEC2017Benchmarks(trace_stdlib, force)
     names = list()
     b_list = list()
-    processes = list()
     for benchmark_name in benchmarks.benchmarks:
         benchmark = benchmarks.benchmarks[benchmark_name]
-        processes.append(multiprocessing.Process(
-            target=run_benchmark, args=(benchmark,)))
+        # benchmark.schedule_trace(job_scheduler)
+        debugs = [
+            'ReplayPass',
+            'PostDominanceFrontier',
+            # 'TDGSerializer',
+            # 'AbstractDataFlowAcceleratorPass',
+            # 'LoopUtils',
+        ]
+        benchmark.schedule_transform(job_scheduler, 'replay', debugs)
+        debugs = []
+        benchmark.schedule_simulation(job_scheduler, 'replay', debugs)
+        debugs = [
+            'ReplayPass',
+        ]
+        benchmark.schedule_transform(job_scheduler, 'adfa', debugs)
+        debugs = []
+        benchmark.schedule_simulation(job_scheduler, 'adfa', debugs)
+        debugs = [
+            'ReplayPass',
+        ]
+        benchmark.schedule_transform(job_scheduler, 'simd', debugs)
+        debugs = []
+        benchmark.schedule_simulation(job_scheduler, 'simd', debugs)
+
         b_list.append(benchmark)
 
-    # We start 4 processes each time until we are done.
-    prev = 0
-    issue_width = 8
-    for i in xrange(len(processes)):
-        processes[i].start()
-        if (i + 1) % issue_width == 0:
-            while prev < i:
-                processes[prev].join()
-                prev += 1
-    while prev < len(processes):
-        processes[prev].join()
-        prev += 1
+    # Start the job.
+    job_scheduler.run()
 
-    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    Util.ADFAAnalyzer.analyze_adfa(b_list)
+    # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+    # Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':

@@ -2,8 +2,253 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy
-
+import multiprocessing
 import subprocess
+import unittest
+import time
+import traceback
+
+
+def error(msg, *args):
+    return multiprocessing.get_logger().error(msg, *args)
+
+
+class LogExceptions(object):
+    def __init__(self, callable):
+        self.__callable = callable
+
+    def __call__(self, *args, **kwargs):
+        try:
+            result = self.__callable(*args, **kwargs)
+
+        except Exception as e:
+            error(traceback.format_exc())
+            # Reraise the original exception so the Pool worker can clean up
+            raise
+
+        return result
+
+
+class JobScheduler:
+    """
+    A job scheduler.
+    Since we use pool class, which use a queue.Queue to pass tasks to the worker
+    processes. Everything that goes through queue.Queue must be picklable. 
+    Pickle is a serialization protocol for python. ONLY TOP-LEVEL object can be
+    pickled!
+    This means only top-level function for the job, and no nested class object for
+    the parameter.
+    """
+    STATE_INIT = 1
+    STATE_STARTED = 2
+    STATE_FINISHED = 3
+    STATE_FAILED = 4
+
+    class Job:
+        def __init__(self, name, job, args):
+            self.name = name
+            self.job = job
+            self.args = args
+            self.status = JobScheduler.STATE_INIT
+
+    def __init__(self, cores, poll_seconds):
+        self.state = JobScheduler.STATE_INIT
+        self.cores = cores
+        self.poll_seconds = poll_seconds
+        self.current_job_id = 1
+        self.lock = multiprocessing.Lock()
+        self.pool = multiprocessing.Pool(processes=self.cores)
+        self.jobs = dict()
+        self.job_children = dict()
+        self.job_deps = dict()
+
+        multiprocessing.log_to_stderr()
+
+    # Add a job and set the dependence graph.
+    def add_job(self, name, job, args, deps):
+        assert(self.state == JobScheduler.STATE_INIT)
+        new_job_id = self.current_job_id
+        self.current_job_id += 1
+        self.job_deps[new_job_id] = list(deps)
+        for dep in deps:
+            assert(dep in self.jobs)
+            self.job_children[dep].append(new_job_id)
+        self.job_children[new_job_id] = list()
+        self.jobs[new_job_id] = self.Job(name, job, args)
+        return new_job_id
+
+    # Caller should hold the locker.
+    def kick(self, job_id):
+        assert(job_id in self.jobs)
+        job = self.jobs[job_id]
+        if job.status != JobScheduler.STATE_INIT:
+            return
+        ready = True
+        for dep in self.job_deps[job_id]:
+            if self.jobs[dep].status != JobScheduler.STATE_FINISHED:
+                ready = False
+                break
+        if ready:
+            # Do we actually need to use nested lambda to capture job_id?
+            job.status = JobScheduler.STATE_STARTED
+            print('{job} started'.format(job=job_id))
+            job.res = self.pool.apply_async(
+                func=LogExceptions(job.job),
+                args=job.args,
+                callback=(lambda i: lambda _: self.call_back(i))(job_id)
+            )
+
+    def call_back(self, job_id):
+        """
+        Callback when the job is done.
+        Caller should not hold the lock.
+        """
+        print('{job} finished'.format(job=job_id))
+        self.lock.acquire()
+        assert(job_id in self.jobs)
+        job = self.jobs[job_id]
+        assert(job.status == JobScheduler.STATE_STARTED)
+        job.status = JobScheduler.STATE_FINISHED
+        for child in self.job_children[job_id]:
+            child_job = self.jobs[child]
+            assert(child_job.status == JobScheduler.STATE_INIT or child_job.status ==
+                   JobScheduler.STATE_FAILED)
+            self.kick(child)
+        self.lock.release()
+
+    def failed(self, job_id):
+        """
+        Mark the job and all its descent job Failed.
+        Caller should not hold the lock.
+        """
+        self.lock.acquire()
+        assert(job_id in self.jobs)
+        job = self.jobs[job_id]
+        assert(job.status == JobScheduler.STATE_STARTED)
+        stack = list()
+        stack.append(job_id)
+        while stack:
+            job_id = stack.pop()
+            print('{job} failed'.format(job=job_id))
+            job = self.jobs[job_id]
+            job.status = JobScheduler.STATE_FAILED
+            for child_id in self.job_children[job_id]:
+                stack.append(child_id)
+        self.lock.release()
+
+    def str_status(self, status):
+        if status == JobScheduler.STATE_INIT:
+            return 'INIT'
+        if status == JobScheduler.STATE_FAILED:
+            return 'FAILED'
+        if status == JobScheduler.STATE_STARTED:
+            return 'STARTED'
+        if status == JobScheduler.STATE_FINISHED:
+            return 'FINISHED'
+        return 'UNKNOWN'
+
+    def dump(self):
+        stack = list()
+        for job_id in self.jobs:
+            if len(self.job_deps[job_id]) == 0:
+                stack.append((job_id, 0))
+        print('=================== Job Scheduler =====================')
+        while stack:
+            job_id, level = stack.pop()
+            job = self.jobs[job_id]
+            print('{tab}{job_id} {job_name} {status}'.format(
+                tab='  '*level,
+                job_id=job_id,
+                job_name=job.name,
+                status=self.str_status(self.jobs[job_id].status)
+            ))
+            for child_id in self.job_children[job_id]:
+                stack.append((child_id, level + 1))
+        print('=================== Job Scheduler =====================')
+
+    def run(self):
+        assert(self.state == JobScheduler.STATE_INIT)
+        self.state = JobScheduler.STATE_STARTED
+        self.lock.acquire()
+        for job_id in self.job_deps:
+            self.kick(job_id)
+        self.lock.release()
+        # Poll every n seconds.
+        while True:
+            time.sleep(self.poll_seconds)
+            finished = True
+            # Try to get the res.
+            for job_id in self.jobs:
+                job = self.jobs[job_id]
+                if job.status == JobScheduler.STATE_STARTED:
+                    if job.res.ready() and (not job.res.successful()):
+                        # The job failed.
+                        self.failed(job_id)
+
+            self.lock.acquire()
+            for job_id in self.jobs:
+                job = self.jobs[job_id]
+                if (job.status != JobScheduler.STATE_FINISHED and job.status != JobScheduler.STATE_FAILED):
+                    # print('{job} is not finished'.format(job=job_id))
+                    finished = False
+                    break
+            self.lock.release()
+            if finished:
+                self.state = JobScheduler.STATE_FINISHED
+                break
+        self.dump()
+        self.pool.close()
+        self.pool.join()
+
+
+def test_job(id):
+    print('job {job} executed'.format(job=id))
+
+
+def test_job_fail(id):
+    print('job {job} failed'.format(job=id))
+    raise ValueError('Job deliberately failed.')
+
+
+class TestJobScheduler(unittest.TestCase):
+
+    # Test all jobs are finished.
+    # python unittest framework will treat test_* functions as unit test.
+    # So make this helper function as assert_*
+    def assert_all_jobs_status(self, scheduler, status):
+        for job_id in scheduler.jobs:
+            job = scheduler.jobs[job_id]
+            self.assertEqual(
+                job.status, status, 'There is job {job} with wrong status.'.format(job=job_id))
+
+    # Simple test case to test linear dependence.
+    def test_linear(self):
+        scheduler = JobScheduler(4, 1)
+        deps = []
+        for i in xrange(8):
+            new_job_id = scheduler.add_job('test_job', test_job, (i,), deps)
+            deps = list()
+            deps.append(new_job_id)
+        scheduler.run()
+        self.assert_all_jobs_status(scheduler, JobScheduler.STATE_FINISHED)
+        self.assertEqual(scheduler.state, JobScheduler.STATE_FINISHED)
+
+    # Simple linear dependence when everything failed.
+    def test_linear_fail(self):
+        scheduler = JobScheduler(4, 1)
+        deps = []
+        for i in xrange(8):
+            new_job_id = scheduler.add_job(
+                'test_job_fail', test_job_fail, (i,), deps)
+            deps = list()
+            deps.append(new_job_id)
+        scheduler.run()
+        self.assert_all_jobs_status(scheduler, JobScheduler.STATE_FAILED)
+        self.assertEqual(scheduler.state, JobScheduler.STATE_FINISHED)
+
+
+if __name__ == '__main__':
+    unittest.main()
 
 
 class Gem5Stats:
