@@ -25,7 +25,9 @@ add_library(LLVMTDGPass MODULE
     trace/TraceParserGZip.cpp
     trace/GZipUtil.cpp
     trace/TraceParserProtobuf.cpp
+    trace/ProfileParser.cpp
     ${TRACE_PROTOBUF_SRCS}
+    ${PROFILE_PROTOBUF_SRCS}
     ${TDG_PROTOBUF_SRCS}
     DynamicInstruction.cpp
     DataGraph.cpp

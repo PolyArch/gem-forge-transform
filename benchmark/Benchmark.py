@@ -139,6 +139,34 @@ class Benchmark(object):
         Util.call_helper(build_cmd)
 
     """
+    Get trace statistics.
+    """
+
+    def get_trace_statistics(self,
+                             trace_file,
+                             profile_file,
+                             debugs=[]
+                             ):
+        opt_cmd = [
+            'opt',
+            '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
+            '-trace-statistic-pass',
+            '-trace-file={trace_file}'.format(trace_file=trace_file),
+            '-trace-format={format}'.format(format=self.trace_format),
+            '-tdg-profile-file={profile_file}'.format(
+                profile_file=profile_file),
+            # For statistics, simple is enough.
+            '-datagraph-detail=simple',
+            self.raw_bc,
+            '-analyze',
+        ]
+        if debugs:
+            opt_cmd.append(
+                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
+        print('# Collecting statistics trace...')
+        Util.call_helper(opt_cmd)
+
+    """
     Replay the binary with gem5.
 
     Returns

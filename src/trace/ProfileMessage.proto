@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package LLVM.TDG;
+
+// Profiling message.
+message FunctionProfile {
+    string func = 1;
+    map<string, uint64> bbs = 2;
+}
+
+message Profile {
+    string name = 1;
+    map<string, FunctionProfile> funcs = 2;
+}
