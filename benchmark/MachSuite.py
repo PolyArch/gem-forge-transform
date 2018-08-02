@@ -66,6 +66,13 @@ class MachSuiteBenchmark:
     def get_trace(self):
         return '{name}.trace'.format(name=self.get_name())
 
+    def get_trace_result(self):
+        # Guarantee that there is only one trace result.
+        return self.get_trace() + '.0'
+
+    def get_profile(self):
+        return self.get_trace() + '.profile'
+
     def get_tdg(self, transform):
         return '{name}.{transform}.tdg'.format(name=self.get_name(), transform=transform)
 
@@ -194,7 +201,7 @@ class MachSuiteBenchmark:
         ]
         self.benchmark.build_replay(
             pass_name=pass_name,
-            trace_file=self.get_trace(),
+            trace_file=self.get_trace_result(),
             tdg_detail='integrated',
             # tdg_detail='standalone',
             output_tdg=self.get_tdg('replay'),
@@ -212,7 +219,7 @@ class MachSuiteBenchmark:
         ]
         self.benchmark.build_replay(
             pass_name=pass_name,
-            trace_file=self.get_trace(),
+            trace_file=self.get_trace_result(),
             tdg_detail='integrated',
             # tdg_detail='standalone',
             output_tdg=self.get_tdg('adfa'),
@@ -249,6 +256,16 @@ class MachSuiteBenchmark:
             'RegionStats',
         ]
         self.run_replay('adfa', debugs)
+        os.chdir(self.cwd)
+
+    def statistics(self):
+        os.chdir(self.work_path)
+        debugs = []
+        self.benchmark.get_trace_statistics(
+            trace_file=self.get_trace_result(),
+            profile_file=self.get_profile(),
+            debugs=debugs,
+        )
         os.chdir(self.cwd)
 
 
@@ -347,8 +364,9 @@ def run_benchmark(benchmark):
     print('start run benchmark ' + benchmark.get_name())
     # benchmark.baseline()
     # benchmark.build_raw_bc()
-    # benchmark.trace()
-    benchmark.replay()
+    benchmark.trace()
+    benchmark.statistics()
+    # benchmark.replay()
 
 
 def main(folder):
@@ -377,7 +395,7 @@ def main(folder):
         processes[prev].join()
         prev += 1
 
-    Util.ADFAAnalyzer.analyze_adfa(bs)
+    # Util.ADFAAnalyzer.analyze_adfa(bs)
 
     # benchmarks.draw('MachSuite.baseline.replay.pdf',
     #                 'baseline', 'replay', names)

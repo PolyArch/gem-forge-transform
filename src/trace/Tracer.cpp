@@ -1,4 +1,5 @@
 #include "trace/Tracer.h"
+#include "trace/ProfileLogger.h"
 
 #include <cassert>
 #include <cstdio>
@@ -57,6 +58,14 @@ const char *getNewTraceFileName() {
   return fileName;
 }
 
+std::string getProfileFileName() {
+  const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
+  if (!traceFileName) {
+    traceFileName = DEFAULT_TRACE_FILE_NAME;
+  }
+  return std::string(traceFileName) + ".profile";
+}
+
 // This flag controls if I am already inside myself.
 // This helps to solve the problem when the tracer runtime calls some functions
 // which is also traced (so no recursion).
@@ -100,6 +109,18 @@ static uint64_t getUint64Env(const char *name) {
   }
 }
 
+static void cleanup() {
+  auto profileFileName = getProfileFileName();
+  ProfileLogger::serializeToFile(profileFileName);
+  /**
+   * FIX IT!!
+   * We really should deallocate this one, but it will cause
+   * segment fault in the destructor and I have no idea how to fix it.
+   * Since the memory will be recollected by the OS anyway, I leave it here.
+   */
+  printf("Done!\n");
+}
+
 static void initialize() {
   static bool initialized = false;
   if (!initialized) {
@@ -117,6 +138,8 @@ static void initialize() {
     SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
     MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
     END_INST = getUint64Env("LLVM_TDG_END_INST");
+
+    std::atexit(cleanup);
 
     printf("initializing skip inst to %lu...\n", SKIP_INST);
     printf("initializing max inst to %lu...\n", MAX_INST);
@@ -176,6 +199,12 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     insideMyself = true;
   }
   initialize();
+  if (Id == 0) {
+    // We are at the header of a basic block. Profile.
+    std::string FuncStr(FunctionName);
+    std::string BBStr(BBName);
+    ProfileLogger::addBasicBlock(FuncStr, BBStr);
+  }
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
   // __LINE__, insideMyself, count); Update current inst.
   currentInstOpName = OpCodeName;
@@ -294,7 +323,7 @@ void printInstEnd() {
     if (END_INST > 0 && count == END_INST) {
       std::exit(0);
     }
-  } else {
+  } else if (MAX_INST > 0) {
     if (tracedCount == MAX_INST) {
       std::exit(0);
     }
