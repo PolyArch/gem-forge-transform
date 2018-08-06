@@ -134,8 +134,6 @@ public:
         // Check if this is a stream.
         const llvm::SCEV *SCEV = SE.getSCEV(Addr);
 
-        // DEBUG(SCEV->print(llvm::errs()));
-        // DEBUG(llvm::errs() << '\n');
         if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
           // This is a stream.
           if (IsLoad) {

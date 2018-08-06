@@ -236,7 +236,7 @@ void DataGraph::commitDynamicInst(DynamicId Id) {
 void DataGraph::commitOneDynamicInst() {
   assert(!this->DynamicInstructionList.empty() && "No inst to be committed.");
   // Remove all the dependence information.
-  auto Id = this->DynamicInstructionList.front()->Id;
+  auto Id = this->DynamicInstructionList.front()->getId();
   this->commitDynamicInst(Id);
   this->DynamicInstructionList.pop_front();
 }
@@ -368,7 +368,7 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
 
   // Add the map from static instrunction to dynamic.
   this->DynamicFrameStack.front().updateLastDynamicId(StaticInstruction,
-                                                      DynamicInst->Id);
+                                                      DynamicInst->getId());
 
   // Update the previous block.
   this->DynamicFrameStack.front().setPrevBB(StaticInstruction->getParent());
@@ -423,7 +423,7 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
       this->DynamicInstructionList.end(), DynamicInst);
 
   // Add to the alive map.
-  this->AliveDynamicInstsMap[DynamicInst->Id] = InsertedIter;
+  this->AliveDynamicInstsMap[DynamicInst->getId()] = InsertedIter;
 
   return true;
 }
@@ -435,7 +435,7 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
   DEBUG(llvm::errs() << '\n');
 
   // Handle register dependence.
-  assert(this->RegDeps.find(DynamicInst->Id) == this->RegDeps.end() &&
+  assert(this->RegDeps.find(DynamicInst->getId()) == this->RegDeps.end() &&
          "This dynamic instruction's register dependence has already been "
          "handled.");
 
@@ -443,7 +443,7 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
          "Can only handle register dependence for non phi node.");
   auto &RegDeps = this->RegDeps
                       .emplace(std::piecewise_construct,
-                               std::forward_as_tuple(DynamicInst->Id),
+                               std::forward_as_tuple(DynamicInst->getId()),
                                std::forward_as_tuple())
                       .first->second;
 
@@ -570,7 +570,7 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
   // always a set.
   auto &MemDep = this->MemDeps
                      .emplace(std::piecewise_construct,
-                              std::forward_as_tuple(DynamicInst->Id),
+                              std::forward_as_tuple(DynamicInst->getId()),
                               std::forward_as_tuple())
                      .first->second;
 
@@ -590,7 +590,7 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
     this->MemDepsComputer.getMemoryDependence(BaseAddr, LoadedTypeSizeInByte,
                                               true /*true for load*/, MemDep);
     this->MemDepsComputer.update(BaseAddr, LoadedTypeSizeInByte,
-                                 DynamicInst->Id, true /*true for load*/);
+                                 DynamicInst->getId(), true /*true for load*/);
     this->NumMemDependences += MemDep.size();
     return;
   }
@@ -610,7 +610,8 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
     this->MemDepsComputer.getMemoryDependence(
         BaseAddr, StoredTypeSizeInByte, false /*false for store*/, MemDep);
     this->MemDepsComputer.update(BaseAddr, StoredTypeSizeInByte,
-                                 DynamicInst->Id, false /*false for store*/);
+                                 DynamicInst->getId(),
+                                 false /*false for store*/);
     this->NumMemDependences += MemDep.size();
 
     return;
@@ -739,9 +740,19 @@ DataGraph::getLLVMInstruction(const std::string &FunctionName,
       std::unordered_map<llvm::Value *, DynamicValue> DynamicArguments;
       this->DynamicFrameStack.emplace_front(Func, std::move(DynamicArguments));
     }
+    if (this->DynamicFrameStack.front().Function != Func) {
+      DEBUG(llvm::errs() << "Mismatch frame "
+                         << this->DynamicFrameStack.front().Function->getName()
+                         << " with incoming instruction from "
+                         << Func->getName() << '\n');
+    }
     assert(this->DynamicFrameStack.front().Function == Func &&
            "Mismatch frame for incoming instruction.");
   }
+
+  DEBUG(llvm::errs() << "getLLVMInstruction returns "
+                     << Inst->getFunction()->getName() << " "
+                     << Inst->getOpcodeName() << '\n');
 
   return Inst;
 }
@@ -752,7 +763,7 @@ void DataGraph::updatePrevControlInstId(DynamicInstruction *DynamicInst) {
   case llvm::Instruction::Br:
   case llvm::Instruction::Ret:
   case llvm::Instruction::Call: {
-    this->PrevControlInstId = DynamicInst->Id;
+    this->PrevControlInstId = DynamicInst->getId();
     break;
   }
   default:
@@ -977,7 +988,7 @@ void DataGraph::handleControlDependence(DynamicInstruction *DynamicInst) {
   // Ensure the empty set property.
   auto &Deps = this->CtrDeps
                    .emplace(std::piecewise_construct,
-                            std::forward_as_tuple(DynamicInst->Id),
+                            std::forward_as_tuple(DynamicInst->getId()),
                             std::forward_as_tuple())
                    .first->second;
   if (this->PrevControlInstId != DynamicInstruction::InvalidId) {

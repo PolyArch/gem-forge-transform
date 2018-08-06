@@ -840,11 +840,11 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
       }
     };
     FixRegDependence(this->Trace->RegDeps.at(
-        this->Trace->DynamicInstructionList.back()->Id));
+        this->Trace->DynamicInstructionList.back()->getId()));
     FixDependence(this->Trace->MemDeps.at(
-        this->Trace->DynamicInstructionList.back()->Id));
+        this->Trace->DynamicInstructionList.back()->getId()));
     FixDependence(this->Trace->CtrDeps.at(
-        this->Trace->DynamicInstructionList.back()->Id));
+        this->Trace->DynamicInstructionList.back()->getId()));
   }
 
   // Commit (without serialize to output) all the buffered instructions
@@ -874,7 +874,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
   for (auto NewDynamicInst : DynamicLoop.NewDynamicInstList) {
     auto NewDynamicInstIter = this->Trace->DynamicInstructionList.insert(
         InsertionPoint, NewDynamicInst);
-    this->Trace->AliveDynamicInstsMap.emplace(NewDynamicInst->Id,
+    this->Trace->AliveDynamicInstsMap.emplace(NewDynamicInst->getId(),
                                               NewDynamicInstIter);
 
     /**
@@ -885,7 +885,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
             ->getStaticInstruction()
             ->getOpcode() != llvm::Instruction::Ret) {
       this->Trace->DynamicFrameStack.front().updateLastDynamicId(
-          NewDynamicInst->getStaticInstruction(), NewDynamicInst->Id);
+          NewDynamicInst->getStaticInstruction(), NewDynamicInst->getId());
     }
     this->Trace->updatePrevControlInstId(NewDynamicInst);
   }
@@ -1087,17 +1087,17 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
     // Fix the dependence.
     auto &NewRegDeps = this->Trace->RegDeps
                            .emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple(NewDynamicInst->getId()),
                                     std::forward_as_tuple())
                            .first->second;
     auto &NewMemDeps = this->Trace->MemDeps
                            .emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple(NewDynamicInst->getId()),
                                     std::forward_as_tuple())
                            .first->second;
     auto &NewCtrDeps = this->Trace->CtrDeps
                            .emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple(NewDynamicInst->getId()),
                                     std::forward_as_tuple())
                            .first->second;
     this->transferOutsideRegDeps(DynamicLoop, NewRegDeps,
@@ -1115,14 +1115,14 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
 
     this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticLoad);
 
-    NewDynamicIds.push_back(NewDynamicInst->Id);
+    NewDynamicIds.push_back(NewDynamicInst->getId());
     DynamicLoop.NewDynamicInstList.push_back(NewDynamicInst);
 
     // Update the memory dependence computer.
     this->Trace->updateAddrToLastMemoryAccessMap(
-        Addr, LoadedTypeSizeInByte, NewDynamicInst->Id, true /*true for load*/);
+        Addr, LoadedTypeSizeInByte, NewDynamicInst->getId(), true /*true for load*/);
     DynamicLoop.InsideMemDepsComputer.update(
-        Addr, LoadedTypeSizeInByte, NewDynamicInst->Id, true /*true for load*/);
+        Addr, LoadedTypeSizeInByte, NewDynamicInst->getId(), true /*true for load*/);
 
     ++CreatedInstCount;
   }
@@ -1134,19 +1134,19 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
   auto &NewPackRegDeps =
       this->Trace->RegDeps
           .emplace(std::piecewise_construct,
-                   std::forward_as_tuple(NewDynamicPackInst->Id),
+                   std::forward_as_tuple(NewDynamicPackInst->getId()),
                    std::forward_as_tuple())
           .first->second;
   auto &NewPackMemDeps =
       this->Trace->MemDeps
           .emplace(std::piecewise_construct,
-                   std::forward_as_tuple(NewDynamicPackInst->Id),
+                   std::forward_as_tuple(NewDynamicPackInst->getId()),
                    std::forward_as_tuple())
           .first->second;
   auto &NewPackCtrDeps =
       this->Trace->CtrDeps
           .emplace(std::piecewise_construct,
-                   std::forward_as_tuple(NewDynamicPackInst->Id),
+                   std::forward_as_tuple(NewDynamicPackInst->getId()),
                    std::forward_as_tuple())
           .first->second;
   for (auto NewDynamicId : NewDynamicIds) {
@@ -1159,7 +1159,7 @@ SIMDPass::createDynamicInstsForScatterLoad(llvm::LoadInst *StaticLoad,
 
   // Make the static instruction map to the pack instruction, so that all the
   // user of this load will dependent on this pack.
-  DynamicLoop.StaticToNewDynamicMap.emplace(StaticLoad, NewDynamicPackInst->Id);
+  DynamicLoop.StaticToNewDynamicMap.emplace(StaticLoad, NewDynamicPackInst->getId());
   DynamicLoop.NewDynamicInstList.push_back(NewDynamicPackInst);
   ++CreatedInstCount;
 
@@ -1196,17 +1196,17 @@ SIMDPass::createDynamicInstsForScatterStore(llvm::StoreInst *StaticStore,
     // Fix the dependence.
     auto &NewRegDeps = this->Trace->RegDeps
                            .emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple(NewDynamicInst->getId()),
                                     std::forward_as_tuple())
                            .first->second;
     auto &NewMemDeps = this->Trace->MemDeps
                            .emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple(NewDynamicInst->getId()),
                                     std::forward_as_tuple())
                            .first->second;
     auto &NewCtrDeps = this->Trace->CtrDeps
                            .emplace(std::piecewise_construct,
-                                    std::forward_as_tuple(NewDynamicInst->Id),
+                                    std::forward_as_tuple(NewDynamicInst->getId()),
                                     std::forward_as_tuple())
                            .first->second;
     this->transferOutsideRegDeps(DynamicLoop, NewRegDeps,
@@ -1224,15 +1224,15 @@ SIMDPass::createDynamicInstsForScatterStore(llvm::StoreInst *StaticStore,
 
     this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticStore);
 
-    NewDynamicIds.push_back(NewDynamicInst->Id);
+    NewDynamicIds.push_back(NewDynamicInst->getId());
     DynamicLoop.NewDynamicInstList.push_back(NewDynamicInst);
 
     // Update the memory dependence computer.
     this->Trace->updateAddrToLastMemoryAccessMap(Addr, StoredTypeSizeInByte,
-                                                 NewDynamicInst->Id,
+                                                 NewDynamicInst->getId(),
                                                  false /*false for store*/);
     DynamicLoop.InsideMemDepsComputer.update(Addr, StoredTypeSizeInByte,
-                                             NewDynamicInst->Id,
+                                             NewDynamicInst->getId(),
                                              false /*false for store*/);
 
     ++CreatedInstCount;
@@ -1361,23 +1361,23 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
   // DEBUG(llvm::errs() << "Created simd instruction for " <<
   // StaticInst->getName()
   //                    << "=" << StaticInst->getOpcodeName() << " id "
-  //                    << NewDynamicInst->Id << '\n');
+  //                    << NewDynamicInst->getId() << '\n');
 
   // Time to fix the dependence.
   // DEBUG(llvm::errs() << "Fixing dependence for new simd instruction.\n");
   auto &NewRegDeps = this->Trace->RegDeps
                          .emplace(std::piecewise_construct,
-                                  std::forward_as_tuple(NewDynamicInst->Id),
+                                  std::forward_as_tuple(NewDynamicInst->getId()),
                                   std::forward_as_tuple())
                          .first->second;
   auto &NewMemDeps = this->Trace->MemDeps
                          .emplace(std::piecewise_construct,
-                                  std::forward_as_tuple(NewDynamicInst->Id),
+                                  std::forward_as_tuple(NewDynamicInst->getId()),
                                   std::forward_as_tuple())
                          .first->second;
   auto &NewCtrDeps = this->Trace->CtrDeps
                          .emplace(std::piecewise_construct,
-                                  std::forward_as_tuple(NewDynamicInst->Id),
+                                  std::forward_as_tuple(NewDynamicInst->getId()),
                                   std::forward_as_tuple())
                          .first->second;
 
@@ -1406,14 +1406,14 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
   }
 
   // Add this dynamic instruction into DynamicLoop.
-  DynamicLoop.StaticToNewDynamicMap.emplace(StaticInst, NewDynamicInst->Id);
+  DynamicLoop.StaticToNewDynamicMap.emplace(StaticInst, NewDynamicInst->getId());
   DynamicLoop.NewDynamicInstList.push_back(NewDynamicInst);
 
   // Remember to update the inside memory dependence.
   if (IsMemoryAccess) {
     this->Trace->updateAddrToLastMemoryAccessMap(Addr, ByteSize,
-                                                 NewDynamicInst->Id, IsLoad);
-    DynamicLoop.InsideMemDepsComputer.update(Addr, ByteSize, NewDynamicInst->Id,
+                                                 NewDynamicInst->getId(), IsLoad);
+    DynamicLoop.InsideMemDepsComputer.update(Addr, ByteSize, NewDynamicInst->getId(),
                                              IsLoad);
   }
 
@@ -1530,7 +1530,7 @@ DynamicInnerMostLoop::DynamicInnerMostLoop(StaticInnerMostLoop *_StaticLoop,
            "This slot of the vector is already initialized.");
 
     // Finally insert into the vector.
-    DynamicIdVec[CurrentIter - 1] = (*Iter)->Id;
+    DynamicIdVec[CurrentIter - 1] = (*Iter)->getId();
   }
 
   // Compute the stride for load/store.

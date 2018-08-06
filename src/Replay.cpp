@@ -459,15 +459,15 @@ void ReplayTrace::fakeFixRegisterDeps() {
     case llvm::Instruction::SRem: {
       // Add the fake register dependence.
       if (PrevMulDivInst != nullptr) {
-        if (this->Trace->RegDeps.find(DynamicInst->Id) ==
+        if (this->Trace->RegDeps.find(DynamicInst->getId()) ==
             this->Trace->RegDeps.end()) {
           this->Trace->RegDeps.emplace(std::piecewise_construct,
-                                       std::forward_as_tuple(DynamicInst->Id),
+                                       std::forward_as_tuple(DynamicInst->getId()),
                                        std::forward_as_tuple());
         }
-        this->Trace->RegDeps.at(DynamicInst->Id)
+        this->Trace->RegDeps.at(DynamicInst->getId())
             .emplace_back(PrevMulDivInst->getStaticInstruction(),
-                          PrevMulDivInst->Id);
+                          PrevMulDivInst->getId());
       }
       PrevMulDivInst = DynamicInst;
       break;
@@ -548,17 +548,17 @@ void ReplayTrace::fakeMicroOps() {
   //         auto FakeInstruction = FakeOpEntry.first;
   //         if (FakeOpEntry.second == 1) {
   //           // If FakeDep, make the micro op dependent on inst's dependence.
-  //           if (this->Trace->RegDeps.find(DynamicInst->Id) !=
+  //           if (this->Trace->RegDeps.find(DynamicInst->getId()) !=
   //               this->Trace->RegDeps.end()) {
   //             this->Trace->RegDeps.emplace(
-  //                 FakeInstruction->Id,
-  //                 this->Trace->RegDeps.at(DynamicInst->Id));
+  //                 FakeInstruction->getId(),
+  //                 this->Trace->RegDeps.at(DynamicInst->getId()));
   //           }
-  //           if (this->Trace->CtrDeps.find(DynamicInst->Id) !=
+  //           if (this->Trace->CtrDeps.find(DynamicInst->getId()) !=
   //               this->Trace->CtrDeps.end()) {
   //             this->Trace->CtrDeps.emplace(
-  //                 FakeInstruction->Id,
-  //                 this->Trace->CtrDeps.at(DynamicInst->Id));
+  //                 FakeInstruction->getId(),
+  //                 this->Trace->CtrDeps.at(DynamicInst->getId()));
   //           }
   //         }
   //         Fakes.push_back(FakeInstruction);
@@ -571,14 +571,14 @@ void ReplayTrace::fakeMicroOps() {
   //       for (auto FakeOp : Fakes) {
   //         // Fix the dependence.
   //         // Make the inst dependent on the micro op.
-  //         if (this->Trace->RegDeps.find(DynamicInst->Id) ==
+  //         if (this->Trace->RegDeps.find(DynamicInst->getId()) ==
   //             this->Trace->RegDeps.end()) {
   //           this->Trace->RegDeps.emplace(std::piecewise_construct,
-  //                                        std::forward_as_tuple(DynamicInst->Id),
+  //                                        std::forward_as_tuple(DynamicInst->getId()),
   //                                        std::forward_as_tuple());
   //         }
-  //         this->Trace->RegDeps.at(DynamicInst->Id)
-  //             .emplace_back(nullptr, FakeOp->Id);
+  //         this->Trace->RegDeps.at(DynamicInst->getId())
+  //             .emplace_back(nullptr, FakeOp->getId());
   //       }
   //     }
   //   }

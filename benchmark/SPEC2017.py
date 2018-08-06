@@ -23,11 +23,12 @@ def collect_statistics(benchmark, trace_file, profile, debugs):
     os.chdir(benchmark.cwd)
 
 
-def build_replay(benchmark, pass_name, trace_file, output_tdg, debugs):
+def build_replay(benchmark, pass_name, trace_file, profile_file, output_tdg, debugs):
     os.chdir(benchmark.get_run_path())
     benchmark.benchmark.build_replay(
         pass_name=pass_name,
         trace_file=trace_file,
+        profile_file=profile_file,
         tdg_detail='standalone',
         output_tdg=output_tdg,
         debugs=debugs,
@@ -56,7 +57,7 @@ class SPEC2017Benchmark:
 
         # Job ids.
         self.trace_job_id = None
-        self.transform_job_ids = None
+        self.transform_job_ids = dict()
 
         self.spec = os.environ.get('SPEC')
         if self.spec is None:
@@ -148,6 +149,9 @@ class SPEC2017Benchmark:
     def get_traces(self):
         traces = list()
         for i in xrange(self.n_traces):
+            if self.target == 'gcc_s' and i == 7:
+                # So far there is a but causing tdg #7 not transformable.
+                continue
             traces.append('{target}.trace.{i}'.format(
                 target=self.target, i=i))
         return traces
@@ -155,13 +159,22 @@ class SPEC2017Benchmark:
     def get_tdgs(self, transform):
         tdgs = list()
         for i in xrange(self.n_traces):
-            tdgs.append('{target}.{transform}.tdg.{i}'.format(
-                target=self.target, transform=transform, i=i))
+            if self.target == 'gcc_s' and i == 7:
+                # So far there is a but causing tdg #7 not transformable.
+                continue
+            tdgs.append('{run}/{target}.{transform}.tdg.{i}'.format(
+                run=self.get_run_path(),
+                target=self.target, 
+                transform=transform, 
+                i=i))
         return tdgs
 
     def get_result(self, transform):
         results = list()
         for i in xrange(self.n_traces):
+            if self.target == 'gcc_s' and i == 7:
+                # So far there is a but causing tdg #7 not transformable.
+                continue
             results.append(
                 os.path.join(
                     self.cwd,
@@ -297,28 +310,33 @@ class SPEC2017Benchmark:
             pass_name = 'abs-data-flow-acc-pass'
         elif transform == 'replay':
             pass_name = 'replay'
+        elif transform == 'stream':
+            pass_name = 'stream-pass'
         else:
             raise ValueError('Unknown transform name!')
+        profile_file = self.get_profile()
         traces = self.get_traces()
         tdgs = self.get_tdgs(transform)
         assert(len(traces) == len(tdgs))
-        self.transform_job_ids = list()
-        for i in xrange(0, len(traces)):
+        self.transform_job_ids[transform] = list()
+        # for i in xrange(0, len(traces)):
+        for i in [7]:
 
             deps = list()
             if self.trace_job_id is not None:
                 deps.append(self.trace_job_id)
 
             # Schedule the build_replay job.
-            self.transform_job_ids.append(
+            self.transform_job_ids[transform].append(
                 job_scheduler.add_job(
                     '{name}.transform.{transform}'.format(
                         name=self.get_name(), transform=transform),
                     build_replay,
-                    (self, pass_name, traces[i], tdgs[i], debugs),
+                    (self, pass_name, traces[i],
+                     profile_file, tdgs[i], debugs),
                     deps)
             )
-        assert(len(self.transform_job_ids) == len(traces))
+        # assert(len(self.transform_job_ids[transform]) == len(traces))
 
     def schedule_simulation(self, job_scheduler, transform, debugs):
         tdgs = self.get_tdgs(transform)
@@ -326,8 +344,9 @@ class SPEC2017Benchmark:
         assert(len(tdgs) == len(results))
         for i in xrange(0, len(tdgs)):
             deps = list()
-            if self.transform_job_ids is not None:
-                deps.append(self.transform_job_ids[i])
+            if transform in self.transform_job_ids:
+                assert(len(self.transform_job_ids[transform]) == len(tdgs))
+                deps.append(self.transform_job_ids[transform][i])
 
             job_scheduler.add_job(
                 '{name}.simulate.{transform}'.format(
@@ -341,17 +360,17 @@ class SPEC2017Benchmark:
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        # 'lbm_s': {
-        #     'name': '619.lbm_s',
-        #     'links': ['-lm'],
-        #     # First 100m insts every 1b insts, skipping the first 3.3b
-        #     'start_inst': 33e8,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 34e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'LBM_performStreamCollideTRT',
-        # },
+        'lbm_s': {
+            'name': '619.lbm_s',
+            'links': ['-lm'],
+            # First 100m insts every 1b insts, skipping the first 3.3b
+            'start_inst': 33e8,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 34e8,
+            'n_traces': 1,
+            'trace_func': 'LBM_performStreamCollideTRT',
+        },
         # 'imagick_s': {
         #     'name': '638.imagick_s',
         #     'links': ['-lm'],
@@ -524,7 +543,15 @@ def main(folder):
     for benchmark_name in benchmarks.benchmarks:
         benchmark = benchmarks.benchmarks[benchmark_name]
         # benchmark.schedule_trace(job_scheduler)
-        benchmark.schedule_statistics(job_scheduler, [])
+        # benchmark.schedule_statistics(job_scheduler, [])
+        # debugs = [
+        #     'ReplayPass',
+        #     'StreamPass',
+        #     'DataGraph',
+        # ]
+        # benchmark.schedule_transform(job_scheduler, 'stream', debugs)
+        # debugs = []
+        # benchmark.schedule_simulation(job_scheduler, 'stream', debugs)
         # debugs = [
         #     'ReplayPass',
         #     'PostDominanceFrontier',
@@ -551,10 +578,10 @@ def main(folder):
         b_list.append(benchmark)
 
     # Start the job.
-    job_scheduler.run()
+    # job_scheduler.run()
 
-    # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    # Util.ADFAAnalyzer.analyze_adfa(b_list)
+    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+    Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':

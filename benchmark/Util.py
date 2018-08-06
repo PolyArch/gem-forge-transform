@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy
 import multiprocessing
 import subprocess
+import sys
 import unittest
 import time
 import traceback
@@ -470,6 +471,34 @@ class Results:
         plt.gcf().clear()
 
 
+class TDGTransformStats:
+    def __init__(self, files):
+        if isinstance(files, list):
+            self.parse(files[0])
+            if len(files) > 1:
+                self.merge(TDGTransformStats(files[1:]))
+        else:
+            self.parse(files)
+
+    def parse(self, file):
+        self.stats = dict()
+        with open(file) as f:
+            for line in f:
+                fields = line.split(': ')
+                if len(fields) != 2:
+                    continue
+                self.stats[fields[0]] = float(fields[1])
+
+    def merge(self, other):
+        for stat in self.stats:
+            assert(stat in other.stats)
+            self.stats[stat] += other.stats[stat]
+
+    def print_stats(self):
+        for stat in self.stats:
+            print('{stat} {value}'.format(stat=stat, value=self.stats[stat]))
+
+
 class RegionAggStats:
 
     def __init__(self, prefix, region, name):
@@ -486,6 +515,7 @@ class RegionAggStats:
         self.base_cm = -1.0
 
         # ADFA stats.
+        self.adfa_analyzed = False
         self.adfa_speedup = -1.0
         self.adfa_ratio = -1.0
         self.adfa_cfgs = -1.0
@@ -496,6 +526,7 @@ class RegionAggStats:
         self.adfa_issue = -1.0
 
         # SIMD stats.
+        self.simd_analyzed = False
         self.simd_speedup = -1.0
         self.simd_insts = -1.0
         self.simd_cycles = -1.0
@@ -503,6 +534,10 @@ class RegionAggStats:
         self.simd_br = -1.0
         self.simd_bm = -1.0
         self.simd_cm = -1.0
+
+        # Stream stats.
+        self.stream_analyzed = False
+        self.stream_speedup = -1.0
 
     def compute_baseline(self, baseline):
 
@@ -530,6 +565,8 @@ class RegionAggStats:
             self.base_cm = n_cache_misses / self.base_insts * 1000.0
 
     def compute_adfa(self, adfa):
+        assert(not self.adfa_analyzed)
+        self.adfa_analyzed = True
         self.adfa_cfgs = adfa.get_default(
             self.region, 'tdg.accs.adfa.numConfigured', 0.0)
         self.adfa_dfs = adfa.get_default(
@@ -552,6 +589,8 @@ class RegionAggStats:
             self.adfa_issue = self.adfa_insts / self.adfa_cycles
 
     def compute_simd(self, simd):
+        assert(not self.simd_analyzed)
+        self.simd_analyzed = True
         n_branch = simd[self.region][self.prefix + 'fetch.branchInsts']
         n_branch_misses = simd[self.region][self.prefix +
                                             'fetch.branchPredMisses']
@@ -571,8 +610,16 @@ class RegionAggStats:
             self.simd_bm = n_branch_misses / self.simd_insts * 1000.0
             self.simd_cm = n_cache_misses / self.simd_insts * 1000.0
 
-    @staticmethod
-    def print_title():
+    def compute_stream(self, stream):
+        assert(not self.stream_analyzed)
+        self.stream_analyzed = True
+        try:
+            stream_cycles = stream[self.region][self.prefix + 'numCycles']
+            self.stream_speedup = self.base_cycles / stream_cycles
+        except Exception as e:
+            print('warn: {region} found in stream'.format(region=self.region))
+
+    def print_title(self):
         title = (
             '{name:>50}| '
             '{base_insts:>10} '
@@ -581,20 +628,8 @@ class RegionAggStats:
             '{bpki:>7} '
             '{bmpki:>7} '
             '{cmpki:>5}| '
-            '{adfa_spd:>10} '
-            '{adfa_cfgs:>10} '
-            '{adfa_dfs:>10} '
-            '{adfa_ratio:>10} '
-            '{adfa_df_len:>10} '
-            '{adfa_issue:>10}| '
-            '{simd_spd:>10} '
-            '{simd_insts:>10} '
-            '{simd_issue:>10} '
-            '{simd_bpki:>7} '
-            '{simd_bmpki:>7} '
-            '{simd_cmpki:>5}| '
         )
-        print(title.format(
+        sys.stdout.write(title.format(
             name='name',
             base_insts='base_insts',
             base_issue='base_issue',
@@ -602,19 +637,56 @@ class RegionAggStats:
             bpki='BPKI',
             bmpki='BMPKI',
             cmpki='CMPKI',
-            adfa_spd='adfa_spd',
-            adfa_cfgs='adfa_cfgs',
-            adfa_dfs='adfa_dfs',
-            adfa_ratio='adfa_ratio',
-            adfa_df_len='adfa_dflen',
-            adfa_issue='adfa_issue',
-            simd_spd='simd_spd',
-            simd_insts='simd_insts',
-            simd_issue='simd_issue',
-            simd_bpki='BPKI',
-            simd_bmpki='BMPKI',
-            simd_cmpki='CMPKI',
+
         ))
+        if self.adfa_analyzed:
+            title = (
+                '{adfa_spd:>10} '
+                '{adfa_cfgs:>10} '
+                '{adfa_dfs:>10} '
+                '{adfa_ratio:>10} '
+                '{adfa_df_len:>10} '
+                '{adfa_issue:>10}| '
+                '{simd_spd:>10} '
+            )
+
+            sys.stdout.write(title.format(
+                adfa_spd='adfa_spd',
+                adfa_cfgs='adfa_cfgs',
+                adfa_dfs='adfa_dfs',
+                adfa_ratio='adfa_ratio',
+                adfa_df_len='adfa_dflen',
+                adfa_issue='adfa_issue',
+            ))
+
+        if self.simd_analyzed:
+            title = (
+                '{simd_spd:>10} '
+                '{simd_insts:>10} '
+                '{simd_issue:>10} '
+                '{simd_bpki:>7} '
+                '{simd_bmpki:>7} '
+                '{simd_cmpki:>5}| '
+            )
+
+            sys.stdout.write(title.format(
+                simd_spd='simd_spd',
+                simd_insts='simd_insts',
+                simd_issue='simd_issue',
+                simd_bpki='BPKI',
+                simd_bmpki='BMPKI',
+                simd_cmpki='CMPKI',
+            ))
+
+        if self.stream_analyzed:
+            title = (
+                '{stream_spd:>10} '
+            )
+
+            sys.stdout.write(title.format(
+                stream_spd='stm_spd',
+            ))
+        sys.stdout.write('\n')
 
     def print_line(self):
         line = (
@@ -625,20 +697,8 @@ class RegionAggStats:
             '{bpki:>7.1f} '
             '{bmpki:>7.1f} '
             '{cmpki:>5.1f}| '
-            '{adfa_spd:>10.2f} '
-            '{adfa_cfgs:>10} '
-            '{adfa_dfs:>10} '
-            '{adfa_ratio:>10.4f} '
-            '{adfa_df_len:>10.1f} '
-            '{adfa_issue:>10.4f}| '
-            '{simd_spd:>10.2f} '
-            '{simd_insts:>10} '
-            '{simd_issue:>10.4f} '
-            '{simd_bpki:>7.1f} '
-            '{simd_bmpki:>7.1f} '
-            '{simd_cmpki:>5.1f}| '
         )
-        print(line.format(
+        sys.stdout.write(line.format(
             name=self.name,
             base_insts=self.base_insts,
             base_issue=self.base_issue,
@@ -659,6 +719,51 @@ class RegionAggStats:
             simd_bmpki=self.simd_bm,
             simd_cmpki=self.simd_cm,
         ))
+
+        if self.adfa_analyzed:
+            line = (
+                '{adfa_spd:>10.2f} '
+                '{adfa_cfgs:>10} '
+                '{adfa_dfs:>10} '
+                '{adfa_ratio:>10.4f} '
+                '{adfa_df_len:>10.1f} '
+                '{adfa_issue:>10.4f}| '
+            )
+            sys.stdout.write(line.format(
+                adfa_spd=self.adfa_speedup,
+                adfa_cfgs=self.adfa_cfgs,
+                adfa_dfs=self.adfa_dfs,
+                adfa_ratio=self.adfa_ratio,
+                adfa_df_len=self.adfa_df_len,
+                adfa_issue=self.adfa_issue,
+            ))
+
+        if self.simd_analyzed:
+            line = (
+                '{simd_spd:>10.2f} '
+                '{simd_insts:>10} '
+                '{simd_issue:>10.4f} '
+                '{simd_bpki:>7.1f} '
+                '{simd_bmpki:>7.1f} '
+                '{simd_cmpki:>5.1f}| '
+            )
+            sys.stdout.write(line.format(
+                simd_spd=self.simd_speedup,
+                simd_insts=self.simd_insts,
+                simd_issue=self.simd_issue,
+                simd_bpki=self.simd_br,
+                simd_bmpki=self.simd_bm,
+                simd_cmpki=self.simd_cm,
+            ))
+
+        if self.stream_analyzed:
+            line = (
+                '{stream_spd:>10.1f} '
+            )
+            sys.stdout.write(line.format(
+                stream_spd=self.stream_speedup,
+            ))
+        sys.stdout.write('\n')
 
 
 class ADFAAnalyzer:
@@ -690,8 +795,9 @@ class ADFAAnalyzer:
         for b in benchmarks:
             name = b.get_name()
             baseline = Gem5RegionStats(name, b.get_result('replay'))
-            adfa = Gem5RegionStats(name, b.get_result('adfa'))
-            simd = Gem5RegionStats(name, b.get_result('simd'))
+            # adfa = Gem5RegionStats(name, b.get_result('adfa'))
+            # simd = Gem5RegionStats(name, b.get_result('simd'))
+            stream = Gem5RegionStats(name, b.get_result('stream'))
 
             regions[name] = list()
 
@@ -705,8 +811,9 @@ class ADFAAnalyzer:
                 region_agg_stats = RegionAggStats(
                     ADFAAnalyzer.SYS_CPU_PREFIX, region, region_name)
                 region_agg_stats.compute_baseline(baseline)
-                region_agg_stats.compute_adfa(adfa)
-                region_agg_stats.compute_simd(simd)
+                # region_agg_stats.compute_adfa(adfa)
+                # region_agg_stats.compute_simd(simd)
+                region_agg_stats.compute_stream(stream)
 
                 regions[name].append(region_agg_stats)
 
@@ -715,7 +822,19 @@ class ADFAAnalyzer:
                 regions[name], key=lambda x: x.base_insts, reverse=True)
 
         baseline.print_regions()
-        RegionAggStats.print_title()
+        title_printed = False
         for benchmark_name in regions:
             for region in regions[benchmark_name]:
+                if not title_printed:
+                    region.print_title()
+                    title_printed = True
                 region.print_line()
+
+        # Hack here to print some stream stats.
+        for b in benchmarks:
+            stream_tdgs = b.get_tdgs('stream')
+            tdg_stats = TDGTransformStats(
+                [tdg + '.stats.txt' for tdg in stream_tdgs])
+            tdg_stats.print_stats()
+            print((tdg_stats.stats['AddRecLoadCount'] +
+                   tdg_stats.stats['AddRecStoreCount']) / tdg_stats.stats['StreamCount'])

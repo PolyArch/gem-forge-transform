@@ -55,7 +55,7 @@ public:
   virtual llvm::Instruction *getStaticInstruction() const { return nullptr; }
   virtual void dump() {}
 
-  const DynamicId Id;
+  DynamicId getId() const { return this->Id; }
 
   static DynamicId InvalidId;
 
@@ -75,6 +75,8 @@ protected:
    * 0 IS RESERVED FOR INVALID DYNAMIC ID.
    */
   static DynamicId allocateId();
+
+  DynamicId Id;
 
   void formatDeps(llvm::raw_ostream &Out, DataGraph *DG) const;
   void formatOpCode(llvm::raw_ostream &Out) const;

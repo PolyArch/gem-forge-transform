@@ -673,7 +673,7 @@ void DynamicDataFlow::fixCtrDependence(DynamicInstruction *DynamicInst) {
          "DynamicDataFlow cannot fix dependence for non llvm instructions.");
 
   // Only worried about control dependence.
-  auto &CtrDeps = this->DG->CtrDeps.at(DynamicInst->Id);
+  auto &CtrDeps = this->DG->CtrDeps.at(DynamicInst->getId());
   CtrDeps.clear();
 
   auto CtrDepId = DynamicInstruction::InvalidId;
@@ -771,9 +771,9 @@ void DynamicDataFlow::addDynamicInst(DynamicInstruction *DynamicInst) {
     if (Iter == this->StaticToDynamicMap.end()) {
       this->StaticToDynamicMap.emplace(
           std::piecewise_construct, std::forward_as_tuple(StaticInst),
-          std::forward_as_tuple(DynamicInst->Id, this->CurrentAge++));
+          std::forward_as_tuple(DynamicInst->getId(), this->CurrentAge++));
     } else {
-      Iter->second.first = DynamicInst->Id;
+      Iter->second.first = DynamicInst->getId();
       Iter->second.second = this->CurrentAge++;
     }
 

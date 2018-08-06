@@ -102,6 +102,7 @@ class Benchmark(object):
     def build_replay(self,
                      pass_name='replay',
                      trace_file='llvm_trace',
+                     profile_file='llvm_trace.profile',
                      tdg_detail='integrated',
                      output_tdg=None,
                      debugs=[]
@@ -111,6 +112,8 @@ class Benchmark(object):
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-{pass_name}'.format(pass_name=pass_name),
             '-trace-file={trace_file}'.format(trace_file=trace_file),
+            '-tdg-profile-file={profile_file}'.format(
+                profile_file=profile_file),
             '-trace-format={format}'.format(format=self.trace_format),
             '-datagraph-detail={detail}'.format(detail=tdg_detail),
             self.raw_bc,

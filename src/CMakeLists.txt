@@ -34,6 +34,7 @@ add_library(LLVMTDGPass MODULE
     LoopUtils.cpp
     LoopUnroller.cpp
     PostDominanceFrontier.cpp
+    DynamicLoopTree.cpp
     LocateAccelerableFunctions.cpp
     Replay.cpp
     TraceStatisticPass.cpp
@@ -42,6 +43,8 @@ add_library(LLVMTDGPass MODULE
     simd/SIMDPass.cpp
     # Abstract data flow accelerator
     adfa/AbstractDataFlowAcceleratorPass.cpp
+    # Stream
+    stream/StreamPass.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
 )
