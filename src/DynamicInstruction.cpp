@@ -141,7 +141,7 @@ void DynamicInstruction::format(llvm::raw_ostream &Out, DataGraph *DG) const {
   Out << '|';
   // The faked number of micro ops.
   uint32_t FakeNumMicroOps = 1;
-  Out << this->Id << '|';
+  Out << this->getId() << '|';
   // The dependence field.
   this->formatDeps(Out, DG);
   Out << '|';
@@ -153,7 +153,7 @@ void DynamicInstruction::format(llvm::raw_ostream &Out, DataGraph *DG) const {
 void DynamicInstruction::serializeToProtobuf(
     LLVM::TDG::TDGInstruction *ProtobufEntry, DataGraph *DG) const {
   ProtobufEntry->set_op(this->getOpName());
-  ProtobufEntry->set_id(this->Id);
+  ProtobufEntry->set_id(this->getId());
 
   /**
    * We set the bb field if we are the first non-phi instruction in the block.
@@ -179,7 +179,7 @@ void DynamicInstruction::serializeToProtobuf(
      * A simple deduplication on the register deps.
      */
     std::unordered_set<DynamicId> RegDepsSeen;
-    auto DepIter = DG->RegDeps.find(this->Id);
+    auto DepIter = DG->RegDeps.find(this->getId());
     if (DepIter != DG->RegDeps.end()) {
       for (const auto &RegDep : DepIter->second) {
         if (RegDepsSeen.find(RegDep.second) == RegDepsSeen.end()) {
@@ -190,7 +190,7 @@ void DynamicInstruction::serializeToProtobuf(
     }
   }
   {
-    auto DepIter = DG->MemDeps.find(this->Id);
+    auto DepIter = DG->MemDeps.find(this->getId());
     if (DepIter != DG->MemDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
         ProtobufEntry->add_deps(DepInstId);
@@ -198,7 +198,7 @@ void DynamicInstruction::serializeToProtobuf(
     }
   }
   {
-    auto DepIter = DG->CtrDeps.find(this->Id);
+    auto DepIter = DG->CtrDeps.find(this->getId());
     if (DepIter != DG->CtrDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
         ProtobufEntry->add_deps(DepInstId);
@@ -216,7 +216,7 @@ void DynamicInstruction::formatDeps(llvm::raw_ostream &Out,
   //               << this->StaticInstruction->getName() << '\n');
   // }
   {
-    auto DepIter = DG->RegDeps.find(this->Id);
+    auto DepIter = DG->RegDeps.find(this->getId());
     if (DepIter != DG->RegDeps.end()) {
       for (const auto &RegDep : DepIter->second) {
         Out << RegDep.second << ',';
@@ -224,7 +224,7 @@ void DynamicInstruction::formatDeps(llvm::raw_ostream &Out,
     }
   }
   {
-    auto DepIter = DG->MemDeps.find(this->Id);
+    auto DepIter = DG->MemDeps.find(this->getId());
     if (DepIter != DG->MemDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
         Out << DepInstId << ',';
@@ -232,7 +232,7 @@ void DynamicInstruction::formatDeps(llvm::raw_ostream &Out,
     }
   }
   {
-    auto DepIter = DG->CtrDeps.find(this->Id);
+    auto DepIter = DG->CtrDeps.find(this->getId());
     if (DepIter != DG->CtrDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
         Out << DepInstId << ',';
@@ -383,7 +383,7 @@ void LLVMDynamicInstruction::formatCustomizedFields(llvm::raw_ostream &Out,
   if (auto BranchStaticInstruction =
           llvm::dyn_cast<llvm::BranchInst>(this->StaticInstruction)) {
     if (BranchStaticInstruction->isConditional()) {
-      auto NextIter = Trace->getDynamicInstFromId(this->Id);
+      auto NextIter = Trace->getDynamicInstFromId(this->getId());
       NextIter++;
       while (NextIter != Trace->DynamicInstructionList.end()) {
         // Check if this is an LLVM inst, i.e. not our inserted.
@@ -406,7 +406,7 @@ void LLVMDynamicInstruction::formatCustomizedFields(llvm::raw_ostream &Out,
   // TODO: Reuse code with branch case.
   if (auto SwitchStaticInstruction =
           llvm::dyn_cast<llvm::SwitchInst>(this->StaticInstruction)) {
-    auto NextIter = Trace->getDynamicInstFromId(this->Id);
+    auto NextIter = Trace->getDynamicInstFromId(this->getId());
     NextIter++;
     while (NextIter != Trace->DynamicInstructionList.end()) {
       // Check if this is an LLVM inst, i.e. not our inserted.
@@ -541,7 +541,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
      * This will require that there is at least one more instruction
      * in the buffer. Otherwise, we just panic.
      */
-    auto NextIter = DG->getDynamicInstFromId(this->Id);
+    auto NextIter = DG->getDynamicInstFromId(this->getId());
     NextIter++;
     while (NextIter != DG->DynamicInstructionList.end()) {
       // Check if this is an LLVM inst, i.e. not our inserted.

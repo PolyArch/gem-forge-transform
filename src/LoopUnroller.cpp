@@ -79,7 +79,7 @@ void LoopUnroller::fixAndUpdateIVRegDeps(DynamicInstruction *DynamicInst,
   DEBUG(llvm::errs() << "fixAndUpdateIVRegDeps for inst "
                      << DynamicInst->getOpName() << " at iter "
                      << this->CurrentIter << '\n');
-  auto &RegDeps = DG->RegDeps.at(DynamicInst->Id);
+  auto &RegDeps = DG->RegDeps.at(DynamicInst->getId());
   for (auto RegDepIter = RegDeps.begin(), RegDepEnd = RegDeps.end();
        RegDepIter != RegDepEnd;) {
     auto StaticOperand = RegDepIter->first;
@@ -120,7 +120,7 @@ void LoopUnroller::fixAndUpdateCtrDeps(DynamicInstruction *DynamicInst,
                                        DataGraph *DG) {
   std::list<DynamicId> RemovedCtrDeps;
   std::list<DynamicId> AddedCtrDeps;
-  auto &CtrDeps = DG->CtrDeps.at(DynamicInst->Id);
+  auto &CtrDeps = DG->CtrDeps.at(DynamicInst->getId());
   for (auto CtrDepId : CtrDeps) {
     auto CtrDepDynamicInst = DG->getAliveDynamicInst(CtrDepId);
     if (CtrDepDynamicInst == nullptr) {
@@ -186,7 +186,7 @@ void LoopUnroller::unroll(DataGraph *DG, DataGraph::DynamicInstIter Begin,
     // Fix the control dependence.
     this->fixAndUpdateCtrDeps(DynamicInst, DG);
     // Update our data structure.
-    this->DynamicIdToIterationMap.emplace(DynamicInst->Id, this->CurrentIter);
+    this->DynamicIdToIterationMap.emplace(DynamicInst->getId(), this->CurrentIter);
   }
 }
 
