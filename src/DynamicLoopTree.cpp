@@ -38,6 +38,9 @@ void DynamicLoopIteration::addInst(DynamicInstIter InstIter) {
       // We just entered the loop.
       this->Start = InstIter;
       this->Status = BUFFERING;
+      assert(this->StaticToDynamicMap.empty() &&
+             "StaticToDynamicMap should be empty in EMPTY state.");
+      this->StaticToDynamicMap.emplace(StaticInst, DynamicInst);
     }
     break;
   }
@@ -56,8 +59,17 @@ void DynamicLoopIteration::addInst(DynamicInstIter InstIter) {
     } else {
       // This instruction is in the loop.
       // Add to all the nest loops.
+      bool IsInNestedLoop = false;
       for (auto &Nest : this->NestLoopIters) {
         Nest.second->addInst(InstIter);
+        IsInNestedLoop =
+            IsInNestedLoop || Nest.second->getLoop()->contains(StaticInst);
+      }
+      if (!IsInNestedLoop) {
+        // If not in nested loop, add to my StaticToDynamicMap.
+        auto Emplaced =
+            this->StaticToDynamicMap.emplace(StaticInst, DynamicInst).second;
+        assert(Emplaced && "Multiple dynamic instructions in one iteration?");
       }
     }
     break;
@@ -105,4 +117,27 @@ DynamicLoopIteration *DynamicLoopIteration::getChildIter(llvm::Loop *Child) {
   assert(Child->getParentLoop() == this->Loop &&
          "Invalid child for this->Loop");
   return this->NestLoopIters.at(Child);
+}
+
+DynamicInstruction *
+DynamicLoopIteration::getDynamicInst(llvm::Instruction *StaticInst) const {
+  assert(
+      this->Loop->contains(StaticInst) &&
+      "Try getting dynamic instruction for static instruction not within this "
+      "loop.");
+
+  bool IsInNestedLoop = false;
+  for (auto &Nest : this->NestLoopIters) {
+    IsInNestedLoop =
+        IsInNestedLoop || Nest.second->getLoop()->contains(StaticInst);
+  }
+
+  assert(!IsInNestedLoop && "Try getting dynamic instruction for static "
+                            "instruction within nested loops.");
+
+  auto Iter = this->StaticToDynamicMap.find(StaticInst);
+  if (Iter == this->StaticToDynamicMap.end()) {
+    return nullptr;
+  }
+  return Iter->second;
 }

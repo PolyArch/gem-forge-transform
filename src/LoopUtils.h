@@ -50,6 +50,11 @@ public:
    * Count the number of instructions in a loop, excluding PHINodes.
    */
   static uint64_t getNumStaticInstInLoop(llvm::Loop *Loop);
+
+  /**
+   * Print an static instruction.
+   */
+  static std::string formatLLVMInst(llvm::Instruction *Inst);
 };
 
 class LoopIterCounter {

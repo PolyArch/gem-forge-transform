@@ -3,6 +3,7 @@
 
 #include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
+#include "LoopUtils.h"
 #include "trace/ProfileParser.h"
 
 #include "llvm/Analysis/LoopInfo.h"
@@ -65,7 +66,8 @@ public:
 
     //   if (!Ended) {
     //     auto NewDynamicInstIter = this->Trace->loadOneDynamicInst();
-    //     if (NewDynamicInstIter != this->Trace->DynamicInstructionList.end()) {
+    //     if (NewDynamicInstIter != this->Trace->DynamicInstructionList.end())
+    //     {
     //       Count++;
     //     } else {
     //       Ended = true;
@@ -136,6 +138,8 @@ public:
 
         if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
           // This is a stream.
+          DEBUG(llvm::errs()
+                << "Stream " << LoopUtils::formatLLVMInst(Inst) << '\n');
           if (IsLoad) {
             this->AddRecLoadCount.Val += BBCount;
           } else {

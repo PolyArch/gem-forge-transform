@@ -10,6 +10,9 @@ CTestTestfile.cmake
 
 build/*
 
+*.trace
+*.tdg
+*.profile
 *.bc
 *.ll
 *.s

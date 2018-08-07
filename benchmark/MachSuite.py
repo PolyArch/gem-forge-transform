@@ -73,6 +73,9 @@ class MachSuiteBenchmark:
     def get_profile(self):
         return self.get_trace() + '.profile'
 
+    def get_profile(self):
+        return self.get_trace() + '.profile'
+
     def get_tdg(self, transform):
         return '{name}.{transform}.tdg'.format(name=self.get_name(), transform=transform)
 
@@ -192,41 +195,34 @@ class MachSuiteBenchmark:
         self.benchmark.run_trace(self.get_trace())
         os.chdir(self.cwd)
 
-    def build_replay(self):
+    def transform(self, transform, debugs):
         pass_name = 'replay'
-        debugs = [
-            'ReplayPass',
-            # 'DataGraph',
-            # 'TDGSerializer'
-        ]
+        if transform == 'adfa':
+            pass_name = 'abs-data-flow-acc-pass'
+        elif transform == 'stream':
+            pass_name = 'stream-pass'
+        elif transform == 'replay':
+            pass_name = 'replay'
+        else:
+            assert(False)
+
+        os.chdir(self.work_path)
+
         self.benchmark.build_replay(
             pass_name=pass_name,
             trace_file=self.get_trace_result(),
+            profile_file=self.get_profile(),
             tdg_detail='integrated',
             # tdg_detail='standalone',
-            output_tdg=self.get_tdg('replay'),
+            output_tdg=self.get_tdg(transform),
             debugs=debugs,
         )
 
-    def build_replay_abs_data_flow(self):
-        pass_name = 'abs-data-flow-acc-pass'
-        debugs = [
-            'ReplayPass',
-            'DynamicInstruction',
-            'TDGSerializer',
-            # 'AbstractDataFlowAcceleratorPass',
-            # 'LoopUtils',
-        ]
-        self.benchmark.build_replay(
-            pass_name=pass_name,
-            trace_file=self.get_trace_result(),
-            tdg_detail='integrated',
-            # tdg_detail='standalone',
-            output_tdg=self.get_tdg('adfa'),
-            debugs=debugs,
-        )
 
-    def run_replay(self, transform, debugs):
+        os.chdir(self.cwd)
+
+    def simulate(self, transform, debugs):
+        os.chdir(self.work_path)
         gem5_outdir = self.benchmark.gem5_replay(
             standalone=0,
             output_tdg=self.get_tdg(transform),
@@ -238,29 +234,13 @@ class MachSuiteBenchmark:
             os.path.join(gem5_outdir, 'region.stats.txt'),
             self.get_result(transform),
         ])
-
-    def replay(self):
-        os.chdir(self.work_path)
-        # Basic replay.
-        # self.build_replay()
-        # debugs = [
-        #     # 'LLVMTraceCPU',
-        #     'RegionStats',
-        # ]
-        # self.run_replay('replay', debugs)
-        # Abstract data flow replay.
-        # self.build_replay_abs_data_flow()
-        debugs = [
-            # 'AbstractDataFlowAccelerator',
-            # 'LLVMTraceCPU',
-            'RegionStats',
-        ]
-        self.run_replay('adfa', debugs)
         os.chdir(self.cwd)
 
     def statistics(self):
         os.chdir(self.work_path)
-        debugs = []
+        debugs = [
+            'TraceStatisticPass',
+        ]
         self.benchmark.get_trace_statistics(
             trace_file=self.get_trace_result(),
             profile_file=self.get_profile(),
@@ -364,9 +344,48 @@ def run_benchmark(benchmark):
     print('start run benchmark ' + benchmark.get_name())
     # benchmark.baseline()
     # benchmark.build_raw_bc()
-    benchmark.trace()
-    benchmark.statistics()
-    # benchmark.replay()
+    # benchmark.trace()
+    # benchmark.statistics()
+
+    # Basic replay.
+    # debugs = [
+    #     'ReplayPass',
+    #     # 'DataGraph',
+    #     # 'TDGSerializer'
+    # ]
+    # benchmark.transform('replay', debugs)
+    # debugs = [
+    #     # 'LLVMTraceCPU',
+    #     'RegionStats',
+    # ]
+    # benchmark.simulate('replay', debugs)
+    # Abstract data flow replay.
+
+    # debugs = [
+    #     'ReplayPass',
+    #     'DynamicInstruction',
+    #     'TDGSerializer',
+    #     # 'AbstractDataFlowAcceleratorPass',
+    #     # 'LoopUtils',
+    # ]
+    # benchmark.transform('adfa', debugs)
+    # debugs = [
+    #     # 'AbstractDataFlowAccelerator',
+    #     # 'LLVMTraceCPU',
+    #     'RegionStats',
+    # ]
+    # benchmark.simulate('adfa', debugs)
+
+    # Stream.
+    debugs = [
+        'ReplayPass',
+        'StreamPass',
+    ]
+    benchmark.transform('stream', debugs)
+    debugs = [
+        # 'LLVMTraceCPU',
+    ]
+    # benchmark.simulate('stream', debugs)
 
 
 def main(folder):

@@ -43,6 +43,8 @@ public:
   DynamicInstIter begin() { return this->Start; }
   DynamicInstIter end() { return this->End; }
 
+  DynamicInstruction *getDynamicInst(llvm::Instruction *StaticInst) const;
+
 private:
   llvm::Loop *Loop;
   // Iterator pointing to the start and end of this iteration.
@@ -52,6 +54,10 @@ private:
   std::unordered_map<llvm::Loop *, DynamicLoopIteration *> NestLoopIters;
   // Pointer to the next iteration.
   DynamicLoopIteration *NextIter;
+
+  // Map from static instruction to the dynamic inst.
+  std::unordered_map<llvm::Instruction *, DynamicInstruction *>
+      StaticToDynamicMap;
   enum {
     EMPTY,
     BUFFERING,
