@@ -116,6 +116,12 @@ bool ReplayTrace::runOnModule(llvm::Module &Module) {
   // Do the trasformation only once.
   this->transform();
 
+  std::string Stats = this->OutTraceName + ".stats.txt";
+  DEBUG(llvm::errs() << "Dump stats to " << Stats << '\n');
+  std::ofstream OStats(Stats);
+  this->dumpStats(OStats);
+  OStats.close();
+
   bool Modified = false;
   if (this->Trace->DetailLevel == DataGraph::DataGraphDetailLv::INTEGRATED) {
     for (auto FuncIter = Module.begin(), FuncEnd = Module.end();
@@ -176,12 +182,6 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
 }
 
 bool ReplayTrace::finalize(llvm::Module &Module) {
-
-  std::string Stats = this->OutTraceName + ".stats.txt";
-  DEBUG(llvm::errs() << "Dump stats to " << Stats << '\n');
-  std::ofstream OStats(Stats);
-  this->dumpStats(OStats);
-  OStats.close();
 
   DEBUG(llvm::errs() << "Releasing serializer at " << this->Serializer << '\n');
   delete this->Serializer;
@@ -461,9 +461,10 @@ void ReplayTrace::fakeFixRegisterDeps() {
       if (PrevMulDivInst != nullptr) {
         if (this->Trace->RegDeps.find(DynamicInst->getId()) ==
             this->Trace->RegDeps.end()) {
-          this->Trace->RegDeps.emplace(std::piecewise_construct,
-                                       std::forward_as_tuple(DynamicInst->getId()),
-                                       std::forward_as_tuple());
+          this->Trace->RegDeps.emplace(
+              std::piecewise_construct,
+              std::forward_as_tuple(DynamicInst->getId()),
+              std::forward_as_tuple());
         }
         this->Trace->RegDeps.at(DynamicInst->getId())
             .emplace_back(PrevMulDivInst->getStaticInstruction(),

@@ -1,4 +1,5 @@
 #include "DynamicLoopTree.h"
+#include "MemoryAccessPattern.h"
 #include "Replay.h"
 #include "trace/ProfileParser.h"
 
@@ -58,6 +59,7 @@ protected:
     this->LoopTree = nullptr;
 
     this->LoopTripCount.clear();
+    this->MemorizedMemoryAccess.clear();
 
     return Ret;
   }
@@ -90,6 +92,8 @@ protected:
 
   void updateTripCount(DynamicLoopIteration *LoopTree);
 
+  void computeMemoryAccessPattern(DynamicLoopIteration *LoopTree);
+
   void computeStreamStatistics();
 
   enum {
@@ -99,9 +103,13 @@ protected:
 
   ProfileParser Profile;
 
+  MemoryAccessPattern MemPattern;
+
   DynamicLoopIteration *LoopTree;
 
   std::unordered_map<llvm::Loop *, bool> MemorizedLoopStream;
+  std::unordered_map<llvm::Loop *, std::unordered_set<llvm::Instruction *>>
+      MemorizedMemoryAccess;
 
   std::unordered_map<llvm::Loop *, std::pair<uint64_t, uint64_t>> LoopTripCount;
 
@@ -115,7 +123,7 @@ protected:
   ScalarUIntVar AddRecLoadCount;
   ScalarUIntVar AddRecStoreCount;
   ScalarUIntVar StreamCount;
-};
+}; // namespace
 
 void StreamPass::dumpStats(std::ostream &O) {
   O << "--------------- Stream -----------------\n";
@@ -125,6 +133,17 @@ void StreamPass::dumpStats(std::ostream &O) {
   this->AddRecLoadCount.print(O);
   this->AddRecStoreCount.print(O);
   this->StreamCount.print(O);
+  for (const auto &LoopMemAccess : this->MemorizedMemoryAccess) {
+    for (auto MemAccessInst : LoopMemAccess.second) {
+      const auto &Pattern = this->MemPattern.getPattern(MemAccessInst);
+      O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
+        << MemoryAccessPattern::formatPattern(Pattern.CurrentPattern) << '\n';
+      O << LoopUtils::formatLLVMInst(MemAccessInst) << ": " << Pattern.Count
+        << '\n';
+      O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
+        << Pattern.StreamCount << '\n';
+    }
+  }
 }
 
 void StreamPass::transform() {
@@ -161,6 +180,7 @@ void StreamPass::transform() {
       // We at the end of the loop. Commit everything.
       if (this->LoopTree != nullptr) {
         this->updateTripCount(this->LoopTree);
+        this->computeMemoryAccessPattern(this->LoopTree);
         delete this->LoopTree;
         this->LoopTree = nullptr;
       }
@@ -212,10 +232,12 @@ void StreamPass::transform() {
 
       // Check if we have reached the number of iterations.
       if (this->LoopTree->countIter() == 4 || !CurrentLoop->contains(NewLoop)) {
-        auto NextIter = this->LoopTree->moveTailIter();
 
         // Collect statistics.
         this->updateTripCount(this->LoopTree);
+        this->computeMemoryAccessPattern(this->LoopTree);
+
+        auto NextIter = this->LoopTree->moveTailIter();
 
         // Do stream transform.
         this->streamTransform();
@@ -352,13 +374,91 @@ void StreamPass::updateTripCount(DynamicLoopIteration *LoopTree) {
 
   // Count for all the nested loop recursively.
   auto Iter = LoopTree;
-  while (Iter != nullptr) {
+  for (size_t Trip = 0; Trip < TripCount; ++Trip) {
     for (auto NestIter = Loop->begin(), NestEnd = Loop->end();
          NestIter != NestEnd; ++NestIter) {
       auto ChildLoop = *NestIter;
       this->updateTripCount(Iter->getChildIter(ChildLoop));
     }
     Iter = Iter->getNextIter();
+  }
+}
+
+void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
+  assert(LoopTree != nullptr &&
+         "Null LoopTree when trying to compute memory access pattern.");
+
+  auto Loop = LoopTree->getLoop();
+  auto TripCount = LoopTree->countIter();
+
+  // Collect memory access for within this loop only.
+  // Memorize this result.
+  if (this->MemorizedMemoryAccess.find(Loop) ==
+      this->MemorizedMemoryAccess.end()) {
+    std::unordered_set<llvm::Instruction *> &MemAccess =
+        this->MemorizedMemoryAccess
+            .emplace(std::piecewise_construct, std::forward_as_tuple(Loop),
+                     std::forward_as_tuple())
+            .first->second;
+    auto LI = this->CachedLI->getLoopInfo(Loop->getHeader()->getParent());
+    for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+         BBIter != BBEnd; ++BBIter) {
+      auto BB = *BBIter;
+      if (LI->getLoopFor(BB) != Loop) {
+        // This BB is within some nested loop.
+        continue;
+      }
+      for (auto InstIter = BB->begin(), InstEnd = BB->end();
+           InstIter != InstEnd; ++InstIter) {
+        auto Inst = &*InstIter;
+        if (llvm::isa<llvm::LoadInst>(Inst) ||
+            llvm::isa<llvm::StoreInst>(Inst)) {
+          MemAccess.insert(Inst);
+        }
+      }
+    }
+  }
+  const auto &MemAccess = this->MemorizedMemoryAccess.at(Loop);
+
+  auto Iter = LoopTree;
+  for (size_t Trip = 0; Trip < TripCount; ++Trip) {
+
+    // Count for all the nested loop recursively.
+    for (auto NestIter = Loop->begin(), NestEnd = Loop->end();
+         NestIter != NestEnd; ++NestIter) {
+      auto ChildLoop = *NestIter;
+      this->computeMemoryAccessPattern(Iter->getChildIter(ChildLoop));
+    }
+
+    // Compute pattern for memory access within this loop.
+    for (auto MemAccessInst : MemAccess) {
+      auto DynamicInst = Iter->getDynamicInst(MemAccessInst);
+      if (DynamicInst == nullptr) {
+        // TODO: This instruction is not executed in this iteration.
+        // Should have a way to inform pattern computer here.
+      } else {
+        uint64_t Addr = 0;
+        if (llvm::isa<llvm::LoadInst>(MemAccessInst)) {
+          Addr = DynamicInst->DynamicOperands[0]->getAddr();
+        } else {
+          Addr = DynamicInst->DynamicOperands[1]->getAddr();
+        }
+        this->MemPattern.addAccess(MemAccessInst, Addr);
+      }
+    }
+
+    Iter = Iter->getNextIter();
+  }
+
+  if (Iter == nullptr) {
+    // This is the end of the loop, we should end the stream.
+    for (auto MemAccessInst : MemAccess) {
+      if (MemAccessInst->getParent()->getName() == "bb22") {
+        DEBUG(llvm::errs() << "End loop for inst "
+                           << LoopUtils::formatLLVMInst(MemAccessInst) << '\n');
+      }
+      this->MemPattern.endLoop(MemAccessInst);
+    }
   }
 }
 
