@@ -87,6 +87,33 @@ void DynamicLoopIteration::addInst(DynamicInstIter InstIter) {
   }
 }
 
+void DynamicLoopIteration::addInstEnd(DynamicInstIter InstIter) {
+
+  switch (this->Status) {
+  case EMPTY: {
+    break;
+  }
+  case BUFFERING: {
+    this->Status = COMPLETED;
+    this->End = InstIter;
+    for (auto &Nest : this->NestLoopIters) {
+      Nest.second->addInstEnd(InstIter);
+    }
+    break;
+  }
+  case COMPLETED: {
+    if (this->NextIter != nullptr) {
+      this->NextIter->addInstEnd(InstIter);
+    }
+    break;
+  }
+  default: {
+    llvm_unreachable("DynamicLoopIteration: Invalid status.");
+    break;
+  }
+  }
+}
+
 size_t DynamicLoopIteration::countIter() const {
   if (this->Status == COMPLETED) {
     if (this->NextIter != nullptr) {

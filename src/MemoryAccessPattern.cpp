@@ -101,10 +101,21 @@ void MemoryAccessPattern::addAccess(llvm::Instruction *Inst, uint64_t Addr) {
   }
 }
 
-void MemoryAccessPattern::endLoop(llvm::Instruction *Inst) {
+void MemoryAccessPattern::endLoop(llvm::Instruction *Inst, size_t Iters) {
   auto Iter = this->ComputingPatternMap.find(Inst);
-  assert(Iter != this->ComputingPatternMap.end() &&
-         "This instruction's access pattern is not being computed.");
+  if (Iter == this->ComputingPatternMap.end()) {
+    return;
+  }
+  if (Inst->getName() == "tmp25") {
+    DEBUG(llvm::errs() << Iter->second.Count << ' ' << Iters << '\n');
+  }
+  // Hack: We allow at most one missing access.
+  // This is used to handle the possible last iteration "break".
+  if (Iter->second.Count + 1 < Iters) {
+    // Somehow this is a conditional memory acess. We do not support for now.
+    // Make it random.
+    Iter->second.CurrentPattern = RANDOM;
+  }
   Iter->second.StreamCount = 1;
   const auto &NewPattern = Iter->second;
   auto ComputedIter = this->ComputedPatternMap.find(Inst);
@@ -116,7 +127,73 @@ void MemoryAccessPattern::endLoop(llvm::Instruction *Inst) {
     if (ComputedPattern.CurrentPattern != NewPattern.CurrentPattern) {
       DEBUG(llvm::errs() << "Changing pattern.\n");
     }
-    ComputedPattern.CurrentPattern = NewPattern.CurrentPattern;
+
+    switch (ComputedPattern.CurrentPattern) {
+    case RANDOM: {
+      // Always remain random.
+      break;
+    }
+    case CONSTANT: {
+      switch (NewPattern.CurrentPattern) {
+      case RANDOM: {
+        ComputedPattern.CurrentPattern = RANDOM;
+        break;
+      }
+      case QUARDRIC:
+      case LINEAR: {
+        // Upgrade the stream level.
+        ComputedPattern.CurrentPattern = NewPattern.CurrentPattern;
+        break;
+      }
+      default: { break; }
+      }
+      break;
+    }
+    case LINEAR: {
+      switch (NewPattern.CurrentPattern) {
+      case RANDOM: {
+        ComputedPattern.CurrentPattern = RANDOM;
+        break;
+      }
+      case QUARDRIC: {
+        // Upgrade the stream level.
+        ComputedPattern.CurrentPattern = NewPattern.CurrentPattern;
+        break;
+      }
+      default: { break; }
+      }
+      break;
+    }
+    case QUARDRIC: {
+      switch (NewPattern.CurrentPattern) {
+      case RANDOM: {
+        ComputedPattern.CurrentPattern = RANDOM;
+        break;
+      }
+      default: { break; }
+      }
+      break;
+    }
+    case INDIRECT: {
+      switch (NewPattern.CurrentPattern) {
+      case RANDOM: {
+        ComputedPattern.CurrentPattern = RANDOM;
+        break;
+      }
+      case INDIRECT: {
+        assert(NewPattern.BaseLoad == ComputedPattern.BaseLoad &&
+               "Mismatch base load instruction.");
+        break;
+      }
+      default: {
+        assert(false && "Computed as indirect but now is direct.");
+        break;
+      }
+      }
+      break;
+    }
+    default: { llvm_unreachable("Illegal stream pattern."); }
+    }
 
     // Merge the result.
     ComputedPattern.Count += NewPattern.Count;
@@ -135,6 +212,10 @@ MemoryAccessPattern::getPattern(llvm::Instruction *Inst) const {
            "Failed getting memory access pattern for static instruction.");
   }
   return Iter->second;
+}
+
+bool MemoryAccessPattern::contains(llvm::Instruction *Inst) const {
+  return this->ComputedPatternMap.find(Inst) != this->ComputedPatternMap.end();
 }
 
 std::string MemoryAccessPattern::formatPattern(Pattern Pat) {
