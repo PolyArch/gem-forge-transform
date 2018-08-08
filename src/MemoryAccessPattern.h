@@ -24,7 +24,7 @@ public:
   /**
    * Wraps up an ongoing stream.
    */
-  void endLoop(llvm::Instruction *Inst);
+  void endLoop(llvm::Instruction *Inst, size_t Iters);
 
   enum Pattern {
     RANDOM,
@@ -52,17 +52,19 @@ public:
     uint64_t J;
 
     PatternComputation(uint64_t _Base)
-        : CurrentPattern(CONSTANT), Count(1), StreamCount(0), Base(_Base),
-          StrideI(0), I(0), NI(0), StrideJ(0), J(0) {}
+        : CurrentPattern(CONSTANT), Count(1), StreamCount(0), BaseLoad(nullptr),
+          Base(_Base), StrideI(0), I(0), NI(0), StrideJ(0), J(0) {}
 
     PatternComputation(const PatternComputation &Other)
         : CurrentPattern(Other.CurrentPattern), Count(Other.Count),
-          StreamCount(Other.StreamCount), Base(Other.Base),
-          StrideI(Other.StrideI), I(Other.I), NI(Other.NI),
+          StreamCount(Other.StreamCount), BaseLoad(Other.BaseLoad),
+          Base(Other.Base), StrideI(Other.StrideI), I(Other.I), NI(Other.NI),
           StrideJ(Other.StrideJ), J(Other.J) {}
   };
 
   const PatternComputation &getPattern(llvm::Instruction *Inst) const;
+
+  bool contains(llvm::Instruction *Inst) const;
 
   static std::string formatPattern(Pattern Pat);
 

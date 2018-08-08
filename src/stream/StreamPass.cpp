@@ -81,6 +81,13 @@ protected:
   void transform() override;
 
   /**
+   * The actual implementation of transform.
+   * Takes two passes. The first pass dynamically get all the stream accesses.
+   * The second pass will transform them.
+   */
+  void transformImpl(int Pass);
+
+  /**
    * Replace the memory access with our stream interface.
    */
   void streamTransform();
@@ -111,6 +118,8 @@ protected:
   std::unordered_map<llvm::Loop *, std::unordered_set<llvm::Instruction *>>
       MemorizedMemoryAccess;
 
+  std::unordered_map<llvm::Loop *, size_t> LoopOngoingIters;
+
   std::unordered_map<llvm::Loop *, std::pair<uint64_t, uint64_t>> LoopTripCount;
 
   /*******************************************************
@@ -133,23 +142,39 @@ void StreamPass::dumpStats(std::ostream &O) {
   this->AddRecLoadCount.print(O);
   this->AddRecStoreCount.print(O);
   this->StreamCount.print(O);
-  for (const auto &LoopMemAccess : this->MemorizedMemoryAccess) {
-    for (auto MemAccessInst : LoopMemAccess.second) {
-      const auto &Pattern = this->MemPattern.getPattern(MemAccessInst);
-      O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
-        << MemoryAccessPattern::formatPattern(Pattern.CurrentPattern) << '\n';
-      O << LoopUtils::formatLLVMInst(MemAccessInst) << ": " << Pattern.Count
-        << '\n';
-      O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
-        << Pattern.StreamCount << '\n';
-    }
-  }
+  // for (const auto &LoopMemAccess : this->MemorizedMemoryAccess) {
+  //   for (auto MemAccessInst : LoopMemAccess.second) {
+  //     const auto &Pattern = this->MemPattern.getPattern(MemAccessInst);
+  //     O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
+  //       << MemoryAccessPattern::formatPattern(Pattern.CurrentPattern) <<
+  //       '\n';
+  //     O << LoopUtils::formatLLVMInst(MemAccessInst) << ": " << Pattern.Count
+  //       << '\n';
+  //     O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
+  //       << Pattern.StreamCount << '\n';
+  //   }
+  // }
 }
 
 void StreamPass::transform() {
+  // First pass.
+  this->transformImpl(0);
+
+  delete this->Trace;
+  this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+
+  // Second pass.
+  this->State = SEARCHING;
+
+  this->transformImpl(1);
+
+  this->computeStreamStatistics();
+}
+
+void StreamPass::transformImpl(int Pass) {
   llvm::Loop *CurrentLoop = nullptr;
 
-  DEBUG(llvm::errs() << "Stream: Start.\n");
+  DEBUG(llvm::errs() << "Stream: Start Pass " << Pass << ".\n");
 
   while (true) {
 
@@ -165,6 +190,13 @@ void StreamPass::transform() {
       NewStaticInst = (*NewInstIter)->getStaticInstruction();
       assert(NewStaticInst != nullptr && "Invalid static llvm instruction.");
 
+      if (Pass == 0) {
+        if (llvm::isa<llvm::LoadInst>(NewStaticInst) ||
+            llvm::isa<llvm::StoreInst>(NewStaticInst)) {
+          this->DynMemInstCount.Val++;
+        }
+      }
+
       auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
       NewLoop = LI->getLoopFor(NewStaticInst->getParent());
 
@@ -179,14 +211,21 @@ void StreamPass::transform() {
     } else {
       // We at the end of the loop. Commit everything.
       if (this->LoopTree != nullptr) {
-        this->updateTripCount(this->LoopTree);
-        this->computeMemoryAccessPattern(this->LoopTree);
+        this->LoopTree->addInstEnd(this->Trace->DynamicInstructionList.end());
+        if (Pass == 0) {
+          // First pass.
+          this->updateTripCount(this->LoopTree);
+          this->computeMemoryAccessPattern(this->LoopTree);
+        }
         delete this->LoopTree;
         this->LoopTree = nullptr;
       }
       while (!this->Trace->DynamicInstructionList.empty()) {
-        this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
-                                    this->Trace);
+        if (Pass == 1) {
+          // Serialize in the second pass.
+          this->Serializer->serialize(
+              this->Trace->DynamicInstructionList.front(), this->Trace);
+        }
         this->Trace->commitOneDynamicInst();
       }
       break;
@@ -200,8 +239,10 @@ void StreamPass::transform() {
 
       if (this->Trace->DynamicInstructionList.size() == 2) {
         // We can commit the previous one.
-        this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
-                                    this->Trace);
+        if (Pass == 1) {
+          this->Serializer->serialize(
+              this->Trace->DynamicInstructionList.front(), this->Trace);
+        }
         this->Trace->commitOneDynamicInst();
       }
 
@@ -233,19 +274,25 @@ void StreamPass::transform() {
       // Check if we have reached the number of iterations.
       if (this->LoopTree->countIter() == 4 || !CurrentLoop->contains(NewLoop)) {
 
-        // Collect statistics.
-        this->updateTripCount(this->LoopTree);
-        this->computeMemoryAccessPattern(this->LoopTree);
+        // Collect statistics in first pass.
+        if (Pass == 0) {
+          this->updateTripCount(this->LoopTree);
+          this->computeMemoryAccessPattern(this->LoopTree);
+        }
 
         auto NextIter = this->LoopTree->moveTailIter();
 
         // Do stream transform.
-        this->streamTransform();
+        if (Pass == 1) {
+          this->streamTransform();
+        }
 
         // Commit all the instructions.
         while (this->Trace->DynamicInstructionList.size() > 1) {
-          this->Serializer->serialize(
-              this->Trace->DynamicInstructionList.front(), this->Trace);
+          if (Pass == 1) {
+            this->Serializer->serialize(
+                this->Trace->DynamicInstructionList.front(), this->Trace);
+          }
           this->Trace->commitOneDynamicInst();
         }
 
@@ -280,8 +327,6 @@ void StreamPass::transform() {
     }
     }
   }
-
-  this->computeStreamStatistics();
 
   DEBUG(llvm::errs() << "Stream: End.\n");
 }
@@ -452,13 +497,26 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
 
   if (Iter == nullptr) {
     // This is the end of the loop, we should end the stream.
-    for (auto MemAccessInst : MemAccess) {
-      if (MemAccessInst->getParent()->getName() == "bb22") {
-        DEBUG(llvm::errs() << "End loop for inst "
-                           << LoopUtils::formatLLVMInst(MemAccessInst) << '\n');
-      }
-      this->MemPattern.endLoop(MemAccessInst);
+    size_t PreviousIters = 0;
+    if (this->LoopOngoingIters.find(Loop) != this->LoopOngoingIters.end()) {
+      PreviousIters = this->LoopOngoingIters.at(Loop);
     }
+    this->LoopOngoingIters.erase(Loop);
+    // DEBUG(llvm::errs() << PreviousIters + TripCount << '\n');
+    for (auto MemAccessInst : MemAccess) {
+      // DEBUG(llvm::errs() << "End loop of inst "
+      //                    << LoopUtils::formatLLVMInst(MemAccessInst)
+      //                    << " iters " << TripCount + PreviousIters << '\n');
+      this->MemPattern.endLoop(MemAccessInst, TripCount + PreviousIters);
+    }
+  } else {
+    // This loop is still going on.
+    size_t PreviousIters = 0;
+    if (this->LoopOngoingIters.find(Loop) != this->LoopOngoingIters.end()) {
+      PreviousIters = this->LoopOngoingIters.at(Loop);
+    }
+    // DEBUG(llvm::errs() << PreviousIters + TripCount << '\n');
+    this->LoopOngoingIters[Loop] = PreviousIters + TripCount;
   }
 }
 
@@ -481,6 +539,37 @@ bool StreamPass::isStreamAccess(llvm::ScalarEvolution *SE,
 
   if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
     return true;
+  }
+
+  // Try to look at dynamic information.
+  if (!this->MemPattern.contains(StaticInst)) {
+    return false;
+  }
+  const auto &Pattern = this->MemPattern.getPattern(StaticInst);
+  switch (Pattern.CurrentPattern) {
+  case MemoryAccessPattern::Pattern::CONSTANT:
+  case MemoryAccessPattern::Pattern::QUARDRIC:
+  case MemoryAccessPattern::Pattern::LINEAR: {
+    return true;
+  }
+  case MemoryAccessPattern::Pattern::INDIRECT: {
+    auto BaseLoad = Pattern.BaseLoad;
+    if (!this->MemPattern.contains(BaseLoad)) {
+      return false;
+    }
+    const auto &BaseLoadPattern = this->MemPattern.getPattern(BaseLoad);
+    switch (BaseLoadPattern.CurrentPattern) {
+    case MemoryAccessPattern::Pattern::CONSTANT:
+    case MemoryAccessPattern::Pattern::QUARDRIC:
+    case MemoryAccessPattern::Pattern::LINEAR: {
+      // Indirect stream based on linear/quardric stream.
+      return true;
+    }
+    default: { return false; }
+    }
+    return false;
+  }
+  default: { return false; }
   }
 
   return false;

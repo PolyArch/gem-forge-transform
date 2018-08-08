@@ -24,6 +24,8 @@ public:
 
   void addInst(DynamicInstIter InstIter);
 
+  void addInstEnd(DynamicInstIter InstIter);
+
   /**
    * Count the number of iterations so far.
    */

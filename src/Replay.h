@@ -40,6 +40,7 @@ protected:
   void computeStaticInfo();
 
   DataGraph *Trace;
+  DataGraph::DataGraphDetailLv DGDetailLevel;
 
   std::string OutTraceName;
 

@@ -151,16 +151,16 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
   // If user specify the detail level, we only allow
   // it upgrades.
 
-  auto DetailLevel = DataGraph::DataGraphDetailLv::STANDALONE;
+  this->DGDetailLevel = DataGraph::DataGraphDetailLv::STANDALONE;
   if (DataGraphDetailLevel.getNumOccurrences() == 1) {
     assert(DataGraphDetailLevel >= DataGraph::DataGraphDetailLv::STANDALONE &&
            "User specified detail level is lower than standalone.");
-    DetailLevel = DataGraphDetailLevel;
+    this->DGDetailLevel = DataGraphDetailLevel;
   }
 
   DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
-                     << DetailLevel << ".\n");
-  this->Trace = new DataGraph(this->Module, DetailLevel);
+                     << this->DGDetailLevel << ".\n");
+  this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
   this->Serializer = new TDGSerializer(this->OutTraceName);
 
   this->CachedLI = new CachedLoopInfo(
