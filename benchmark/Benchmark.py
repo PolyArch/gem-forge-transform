@@ -70,7 +70,7 @@ class Benchmark(object):
     Construct the traced binary.
     """
 
-    def build_trace(self):
+    def build_trace(self, link_stdlib=False, trace_reachable_only=False):
         trace_cmd = [
             'opt',
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
@@ -81,16 +81,32 @@ class Benchmark(object):
         ]
         if self.trace_func is not None:
             trace_cmd.append('-trace-function=' + self.trace_func)
+        if trace_reachable_only:
+            trace_cmd.append('-trace-reachable-only=1')
         print('# Instrumenting tracer...')
         Util.call_helper(trace_cmd)
-        link_cmd = [
-            'ecc++',
-            '-O3',
-            self.trace_bc,
-            self.trace_lib,
-            '-o',
-            self.trace_bin,
-        ]
+        if link_stdlib:
+            link_cmd = [
+                'ecc++',
+                '-O3',
+                '-nostdlib',
+                '-static',
+                self.trace_bc,
+                self.trace_lib,
+                C.MUSL_LIBC_STATIC_LIB,
+                '-lc++',
+                '-o',
+                self.trace_bin,
+            ]
+        else:
+            link_cmd = [
+                'ecc++',
+                '-O3',
+                self.trace_bc,
+                self.trace_lib,
+                '-o',
+                self.trace_bin,
+            ]
         link_cmd += self.trace_links
         print('# Link to traced binary...')
         Util.call_helper(link_cmd)

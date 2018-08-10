@@ -16,24 +16,20 @@ Protobuf built with ellcc.
 PROTOBUF_ELLCC_LIB = '/home/zhengrong/Documents/protobuf-ellcc/lib/libprotobuf.a'
 
 """
-musl libc path.
-It must be compiled with gllvm/wllvm to get the LLVM bitcode.
+Standard library path. For tracing standard library.
 """
-MUSL_LIBC_PATH = '/home/zhengrong/Documents/musl-1.1.19/lib'
-MUSL_LIBC_LLVM_BC = os.path.join(MUSL_LIBC_PATH, 'libc.a.bc')
-MUSL_LIBC_CRT = os.path.join(MUSL_LIBC_PATH, 'crt1.o')
-MUSL_LIBC_STATIC_LIB = os.path.join(MUSL_LIBC_PATH, 'libc.a')
+STDLIB_PATH = os.path.join(LLVM_TDG_DIR, 'benchmark', 'stdlib')
+MUSL_LIBC_LLVM_BC = os.path.join(STDLIB_PATH, 'libc.a.bc')
+MUSL_LIBC_CRT = os.path.join(STDLIB_PATH, 'crt1.o')
+MUSL_LIBC_STATIC_LIB = os.path.join(STDLIB_PATH, 'libc.a')
 
 """
 LLVM Compiler run time path.
 Provide the compiler run time library.
 """
-LLVM_BUILD_PATH = '/home/zhengrong/Documents/llvm-6.0/llvm/build'
-LLVM_COMPILER_RT_PATH = os.path.join(
-    LLVM_BUILD_PATH, 'lib/clang/6.0.0/lib/linux')
-LLVM_COMPILER_RT_BUILTIN_LIB = os.path.join(
-    LLVM_COMPILER_RT_PATH, 'libclang_rt.builtins-x86_64.a')
-LLVM_UNWIND_STATIC_LIB = os.path.join(LLVM_BUILD_PATH, 'lib/libunwind.a')
+LLVM_COMPILER_RT_BC = os.path.join(STDLIB_PATH, 'libcompiler-rt.a.bc')
+LLVM_COMPILER_RT_LIB = os.path.join(STDLIB_PATH, 'libcompiler-rt.a')
+# LLVM_UNWIND_STATIC_LIB = os.path.join(LLVM_BUILD_PATH, 'lib/libunwind.a')
 
 """
 GEM5_PATH

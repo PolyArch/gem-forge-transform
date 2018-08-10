@@ -40,24 +40,25 @@ void bfs(node_t nodes[N_NODES], edge_t edges[N_EDGES],
   // printf("bfs called\n");
 
 loop_queue:
-  for (dummy = 0; dummy < N_NODES;
+  for (dummy = 0; dummy < N_NODES && !Q_EMPTY();
        dummy++) { // Typically while(not_empty(queue)){
-    if (Q_EMPTY())
+    if (Q_EMPTY()) {
       break;
-    n = Q_PEEK();                                 // Data dependent load.
+    }
+    n = Q_PEEK(); // Data dependent load.
     Q_POP();
     edge_index_t tmp_begin = nodes[n].edge_begin; // Data dependent load.
     edge_index_t tmp_end = nodes[n].edge_end;     // Data dependent load.
+    level_t new_level = level[n] + 1;             // Data dependent load.
   loop_neighbors:
     for (e = tmp_begin; e < tmp_end; e++) {
-      node_index_t tmp_dst = edges[e].dst;        // Stream load.
-      // level_t tmp_level = level[tmp_dst];
-      // if( tmp_level ==MAX_LEVEL ) { // Unmarked
-      level_t tmp_level = level[n] + 1;           // Data dependent load.
-      level[tmp_dst] = tmp_level;                 // Data dependent store.
-      ++level_counts[tmp_level];                  // Data dependent load/store.
-      Q_PUSH(tmp_dst);                            // Data dependent store.
-      // }
+      node_index_t tmp_dst = edges[e].dst; // Stream load.
+      level_t tmp_level = level[tmp_dst];
+      if (tmp_level == MAX_LEVEL) { // Unmarked
+        level[tmp_dst] = new_level; // Data dependent store.
+        ++level_counts[new_level];  // Data dependent load/store.
+        Q_PUSH(tmp_dst);            // Data dependent store.
+      }
     }
   }
 

@@ -74,10 +74,26 @@ uint64_t LoopUtils::getNumStaticInstInLoop(llvm::Loop *Loop) {
 }
 
 std::string LoopUtils::formatLLVMInst(llvm::Instruction *Inst) {
-  return (llvm::Twine(Inst->getFunction()->getName()) +
-          "::" + Inst->getParent()->getName() + "::" + Inst->getName() + "(" +
-          Inst->getOpcodeName() + ")")
-      .str();
+  if (Inst->getName() != "") {
+    return (llvm::Twine(Inst->getFunction()->getName()) +
+            "::" + Inst->getParent()->getName() + "::" + Inst->getName() + "(" +
+            Inst->getOpcodeName() + ")")
+        .str();
+  } else {
+    size_t Idx = 0;
+    for (auto InstIter = Inst->getParent()->begin(),
+              InstEnd = Inst->getParent()->end();
+         InstIter != InstEnd; ++InstIter) {
+      if ((&*InstIter) == Inst) {
+        break;
+      }
+      Idx++;
+    }
+    return (llvm::Twine(Inst->getFunction()->getName()) +
+            "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
+            "(" + Inst->getOpcodeName() + ")")
+        .str();
+  }
 }
 
 void LoopIterCounter::configure(llvm::Loop *_Loop) {
