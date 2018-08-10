@@ -487,12 +487,16 @@ class TDGTransformStats:
                 fields = line.split(': ')
                 if len(fields) != 2:
                     continue
-                self.stats[fields[0]] = float(fields[1])
+                try:
+                    self.stats[fields[0]] = float(fields[1])
+                except Exception as e:
+                    # Ignore the non float fields.
+                    pass
 
     def merge(self, other):
         for stat in self.stats:
-            assert(stat in other.stats)
-            self.stats[stat] += other.stats[stat]
+            if stat in other.stats:
+                self.stats[stat] += other.stats[stat]
 
     def print_stats(self):
         for stat in self.stats:
@@ -829,12 +833,3 @@ class ADFAAnalyzer:
                     region.print_title()
                     title_printed = True
                 region.print_line()
-
-        # Hack here to print some stream stats.
-        for b in benchmarks:
-            stream_tdgs = b.get_tdgs('stream')
-            tdg_stats = TDGTransformStats(
-                [tdg + '.stats.txt' for tdg in stream_tdgs])
-            tdg_stats.print_stats()
-            print((tdg_stats.stats['AddRecLoadCount'] +
-                   tdg_stats.stats['AddRecStoreCount']) / tdg_stats.stats['StreamCount'])

@@ -25,6 +25,18 @@ static llvm::cl::opt<bool>
     TraceInstructionOnly("trace-inst-only",
                          llvm::cl::desc("Trace instruction only."));
 
+/**
+ * Some times when we try to trace into stdlib, we want to reduce the overhead
+ * of the tracer runtime. We want to limit our choice of traced functions.
+ * This requires the function call graphs are determinable. If we ever encounter
+ * an indirect call, we abort.
+ * This option will be ingored if "trace-function" is not specified.
+ */
+static llvm::cl::opt<bool> TraceReachableFunctionOnly(
+    "trace-reachable-only",
+    llvm::cl::desc("Trace reachable functions from trace-function "
+                   "only. About when there is indirect call."));
+
 #define DEBUG_TYPE "TracePass"
 namespace {
 
@@ -52,13 +64,13 @@ getOrCreateStringLiteral(std::map<std::string, llvm::Constant *> &GlobalStrings,
         *(Module), ArrayTy, true, llvm::GlobalValue::PrivateLinkage, Array,
         ".str");
     GlobalVariableStr->setAlignment(1);
-    // Get the address of the first element in the string.
-    // Notice that the global variable %.str is also a pointer, that's why we
-    // need two indexes. See great tutorial:
-    // https://llvm.org/docs/GetElementPtr.html#what-is-the-first-index-of-the-gep-instruction
-    //   auto ConstantZero =
-    //   llvm::ConstantInt::get(this->Module->getContext(),
-    //  llvm::APInt(32, 0));
+    /**
+     * Get the address of the first element in the string.
+     * Notice that the global variable %.str is also a pointer, that's why we
+     * need two indexes. See great tutorial:
+     * https://
+     * llvm.org/docs/GetElementPtr.html#what-is-the-first-index-of-the-gep-instruction
+     */
     auto ConstantZero = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(Module->getContext()), 0, false);
     std::vector<llvm::Constant *> Indexes;
@@ -134,6 +146,10 @@ public:
           DEBUG(llvm::errs() << "Add traced function " << *Iter << '\n');
         }
       }
+      if (TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
+          TraceReachableFunctionOnly.getValue()) {
+        this->findReachableFunctions();
+      }
     }
 
     return true;
@@ -141,6 +157,16 @@ public:
   bool runOnFunction(llvm::Function &Function) override {
     auto FunctionName = Function.getName().str();
     DEBUG(llvm::errs() << "Processing Function: " << FunctionName << '\n');
+
+    if (TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
+        TraceReachableFunctionOnly.getValue()) {
+      if (this->reachableFunctions.find(&Function) ==
+          this->reachableFunctions.end()) {
+        // This function is not reachable.
+        // We safely ignore it.
+        return false;
+      }
+    }
 
     // Set the current function.
     this->CurrentFunction = &Function;
@@ -175,6 +201,13 @@ private:
 
   // Contains all the traced functions, if specified.
   std::unordered_set<std::string> tracedFunctionNames;
+
+  /**
+   * Store the reachable function from tracedFunctionNames.
+   */
+  std::unordered_set<llvm::Function *> reachableFunctions;
+
+  void findReachableFunctions();
 
   // Insert all the print function declaration into the module.
   void registerPrintFunctions(llvm::Module &Module) {
@@ -419,7 +452,7 @@ private:
            * LLVM requires a terminator for each basic block.
            * Most of the terminators does not produce values,
            * thus no need to trace the result.
-           * However, the only exception is 'invoke'. For now 
+           * However, the only exception is 'invoke'. For now
            * I don't have any good solution to handle this
            * without messing a lot of code.
            * This should be fine for standalone mode.
@@ -589,6 +622,62 @@ private:
     return std::move(Args);
   }
 };
+
+void TracePass::findReachableFunctions() {
+  assert(TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
+         "TraceReachableFunctionOnly should be specified.");
+  assert(TraceReachableFunctionOnly.getValue() &&
+         "TraceReachableFunctionOnly should be specified as true.");
+  std::list<llvm::Function *> Queue;
+  for (const auto &FunctionName : this->tracedFunctionNames) {
+    auto Func = this->Module->getFunction(FunctionName);
+    assert(Func != nullptr && "Failed to look up function in the module.");
+    Queue.push_back(Func);
+  }
+  while (!Queue.empty()) {
+    auto Func = Queue.front();
+    Queue.pop_front();
+    if (this->reachableFunctions.find(Func) != this->reachableFunctions.end()) {
+      continue;
+    }
+    this->reachableFunctions.insert(Func);
+    for (auto BBIter = Func->begin(), BBEnd = Func->end(); BBIter != BBEnd;
+         ++BBIter) {
+      for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
+           InstIter != InstEnd; ++InstIter) {
+        auto Inst = &*InstIter;
+        if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
+          if (CallInst->isInlineAsm()) {
+            continue;
+          }
+          auto CalleeFunc = CallInst->getCalledFunction();
+          if (CalleeFunc == nullptr) {
+            llvm::errs() << "Trace reachable functions only specified, but "
+                            "found indirect call in function "
+                         << Func->getName() << '\n';
+            llvm_unreachable("Trace reachable functions found indirect call.");
+          }
+          if (CalleeFunc->isIntrinsic()) {
+            continue;
+          }
+          if (CalleeFunc->isDeclaration()) {
+            // This is only declaration, we take this as external calls.
+            continue;
+          }
+          // This is a reachable function with a body.
+          Queue.push_back(CalleeFunc);
+        }
+      }
+    }
+  }
+  DEBUG(llvm::errs()
+        << "==================== Reachable Functions ==================\n");
+  for (auto Func : this->reachableFunctions) {
+    DEBUG(llvm::errs() << Func->getName() << '\n');
+  }
+  DEBUG(llvm::errs()
+        << "==================== Reachable Functions ==================\n");
+}
 
 } // namespace
 

@@ -4,6 +4,7 @@ import multiprocessing
 
 import Constants as C
 import Util
+import StreamStatistics
 from Benchmark import Benchmark
 
 
@@ -77,7 +78,14 @@ class MachSuiteBenchmark:
         return self.get_trace() + '.profile'
 
     def get_tdg(self, transform):
-        return '{name}.{transform}.tdg'.format(name=self.get_name(), transform=transform)
+        return os.path.join(
+            self.work_path,
+            '{name}.{transform}.tdg'.format(
+                name=self.get_name(), transform=transform)
+        )
+
+    def get_tdgs(self, transform):
+        return [self.get_tdg(transform), ]
 
     def compile(self, output_bc, defines=[], includes=[]):
         sources = list(MachSuiteBenchmark.COMMON_SOURCES)
@@ -217,7 +225,6 @@ class MachSuiteBenchmark:
             output_tdg=self.get_tdg(transform),
             debugs=debugs,
         )
-
 
         os.chdir(self.cwd)
 
@@ -359,8 +366,8 @@ def run_benchmark(benchmark):
     #     'RegionStats',
     # ]
     # benchmark.simulate('replay', debugs)
-    # Abstract data flow replay.
 
+    # Abstract data flow replay.
     # debugs = [
     #     'ReplayPass',
     #     'DynamicInstruction',
@@ -380,11 +387,12 @@ def run_benchmark(benchmark):
     debugs = [
         'ReplayPass',
         'StreamPass',
+        # 'MemoryAccessPattern',
     ]
     benchmark.transform('stream', debugs)
-    debugs = [
-        # 'LLVMTraceCPU',
-    ]
+    # debugs = [
+    #     # 'LLVMTraceCPU',
+    # ]
     # benchmark.simulate('stream', debugs)
 
 
@@ -413,6 +421,14 @@ def main(folder):
     while prev < len(processes):
         processes[prev].join()
         prev += 1
+
+    for benchmark in bs:
+        tdgs = benchmark.get_tdgs('stream')
+        tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
+        stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
+        print('-------------------------- ' + benchmark.get_name())
+        stream_stats.print_stats()
+        stream_stats.print_access()
 
     # Util.ADFAAnalyzer.analyze_adfa(bs)
 

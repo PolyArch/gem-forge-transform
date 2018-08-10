@@ -5,6 +5,7 @@ import multiprocessing
 
 import Constants as C
 import Util
+import StreamStatistics
 from Benchmark import Benchmark
 
 
@@ -164,8 +165,8 @@ class SPEC2017Benchmark:
                 continue
             tdgs.append('{run}/{target}.{transform}.tdg.{i}'.format(
                 run=self.get_run_path(),
-                target=self.target, 
-                transform=transform, 
+                target=self.target,
+                transform=transform,
                 i=i))
         return tdgs
 
@@ -319,9 +320,8 @@ class SPEC2017Benchmark:
         tdgs = self.get_tdgs(transform)
         assert(len(traces) == len(tdgs))
         self.transform_job_ids[transform] = list()
-        # for i in xrange(0, len(traces)):
-        for i in [7]:
-
+        for i in xrange(0, len(traces)):
+            # for i in [1]:
             deps = list()
             if self.trace_job_id is not None:
                 deps.append(self.trace_job_id)
@@ -360,17 +360,17 @@ class SPEC2017Benchmark:
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        'lbm_s': {
-            'name': '619.lbm_s',
-            'links': ['-lm'],
-            # First 100m insts every 1b insts, skipping the first 3.3b
-            'start_inst': 33e8,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 34e8,
-            'n_traces': 1,
-            'trace_func': 'LBM_performStreamCollideTRT',
-        },
+        # 'lbm_s': {
+        #     'name': '619.lbm_s',
+        #     'links': ['-lm'],
+        #     # First 100m insts every 1b insts, skipping the first 3.3b
+        #     'start_inst': 33e8,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 34e8,
+        #     'n_traces': 1,
+        #     'trace_func': 'LBM_performStreamCollideTRT',
+        # },
         # 'imagick_s': {
         #     'name': '638.imagick_s',
         #     'links': ['-lm'],
@@ -429,16 +429,16 @@ class SPEC2017Benchmarks:
         #     'n_traces': 1,
         #     'trace_func': 'uncompressStream',
         # },
-        # 'gcc_s': {
-        #     'name': '602.gcc_s',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 50e8,
-        #     'end_inst': 1000e8,
-        #     'n_traces': 20,
-        #     'trace_func': 'compile_file',
-        # },
+        'gcc_s': {
+            'name': '602.gcc_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 50e8,
+            'end_inst': 1000e8,
+            'n_traces': 20,
+            'trace_func': 'compile_file',
+        },
         # # C++ Benchmark: Notice that SPEC is compiled without
         # # debug information, and we have to use mangled name
         # # for trace_func.
@@ -544,12 +544,12 @@ def main(folder):
         benchmark = benchmarks.benchmarks[benchmark_name]
         # benchmark.schedule_trace(job_scheduler)
         # benchmark.schedule_statistics(job_scheduler, [])
-        # debugs = [
-        #     'ReplayPass',
-        #     'StreamPass',
-        #     'DataGraph',
-        # ]
-        # benchmark.schedule_transform(job_scheduler, 'stream', debugs)
+        debugs = [
+            'ReplayPass',
+            'StreamPass',
+            # 'DataGraph',
+        ]
+        benchmark.schedule_transform(job_scheduler, 'stream', debugs)
         # debugs = []
         # benchmark.schedule_simulation(job_scheduler, 'stream', debugs)
         # debugs = [
@@ -578,10 +578,18 @@ def main(folder):
         b_list.append(benchmark)
 
     # Start the job.
-    # job_scheduler.run()
+    job_scheduler.run()
 
-    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    Util.ADFAAnalyzer.analyze_adfa(b_list)
+    for benchmark in b_list:
+        tdgs = benchmark.get_tdgs('stream')
+        tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
+        stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
+        print('-------------------------- ' + benchmark.get_name())
+        stream_stats.print_stats()
+        stream_stats.print_access()
+
+    # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+    # Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':

@@ -6,6 +6,97 @@
 
 #define DEBUG_TYPE "MemoryAccessPattern"
 
+bool MemoryAccessPattern::isPatternRelaxed(Pattern A, Pattern B) {
+  switch (A) {
+  case UNKNOWN: {
+    return true;
+  }
+  case INDIRECT: {
+    return B == INDIRECT;
+  }
+  case CONSTANT: {
+    switch (B) {
+    case CONSTANT:
+    case LINEAR:
+    case QUARDRIC:
+    case RANDOM: {
+      return true;
+    }
+    default: { return false; }
+    }
+  }
+  case LINEAR: {
+    switch (B) {
+    case LINEAR:
+    case QUARDRIC:
+    case RANDOM: {
+      return true;
+    }
+    default: { return false; }
+    }
+  }
+  case QUARDRIC: {
+    switch (B) {
+    case QUARDRIC:
+    case RANDOM: {
+      return true;
+    }
+    default: { return false; }
+    }
+  }
+  case RANDOM: {
+    return B == RANDOM;
+  }
+  default: {
+    llvm_unreachable("Illegal memory access pattern.");
+    return false;
+  }
+  }
+}
+
+void MemoryAccessPattern::addMissingAccess(llvm::Instruction *Inst) {
+  auto Iter = this->ComputingPatternMap.find(Inst);
+  if (Iter == this->ComputingPatternMap.end()) {
+    Iter = this->ComputingPatternMap
+               .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
+                        std::forward_as_tuple())
+               .first;
+
+    assert(Iter->second.CurrentPattern == UNKNOWN &&
+           "Missing access for the first time should be marked as unknown.");
+
+    // TODO: Handle indirect memory access here.
+    auto &Pattern = Iter->second;
+    auto IndirectBase = this->isIndirect(Inst);
+    if (IndirectBase != nullptr) {
+      Pattern.CurrentPattern = INDIRECT;
+      Pattern.BaseLoad = IndirectBase;
+    }
+
+    Pattern.Count = 0;
+
+    return;
+  }
+
+  // Otherwise, implicitly assume it follows the current pattern, and update the
+  // statistics and induction variable.
+  auto &Pattern = Iter->second;
+  Pattern.IsConditional = true;
+  Pattern.Iters++;
+  switch (Pattern.CurrentPattern) {
+  case LINEAR: {
+    Pattern.I++;
+    break;
+  }
+  case QUARDRIC: {
+    Pattern.J++;
+    break;
+  }
+  default: { break; }
+  }
+  return;
+}
+
 void MemoryAccessPattern::addAccess(llvm::Instruction *Inst, uint64_t Addr) {
   auto Iter = this->ComputingPatternMap.find(Inst);
   if (Iter == this->ComputingPatternMap.end()) {
@@ -26,7 +117,14 @@ void MemoryAccessPattern::addAccess(llvm::Instruction *Inst, uint64_t Addr) {
   }
   auto &Pattern = Iter->second;
   Pattern.Count++;
+  Pattern.Iters++;
   switch (Pattern.CurrentPattern) {
+  case UNKNOWN: {
+    // First time, go to CONSTANT.
+    Pattern.CurrentPattern = CONSTANT;
+    Pattern.Base = Addr;
+    break;
+  }
   case CONSTANT: {
     if (Addr == Pattern.Base) {
       // We are still accessing the same address.
@@ -67,7 +165,7 @@ void MemoryAccessPattern::addAccess(llvm::Instruction *Inst, uint64_t Addr) {
     // Have not reached the limit.
     auto CurrentAddr = Pattern.Base + Pattern.StrideJ * Pattern.J +
                        Pattern.StrideI * (Pattern.I + 1);
-    if (Pattern.I == Pattern.NI) {
+    if (Pattern.I + 1 == Pattern.NI) {
       // Reached the limit.
       CurrentAddr = Pattern.Base + Pattern.StrideJ * (Pattern.J + 1);
     }
@@ -101,109 +199,24 @@ void MemoryAccessPattern::addAccess(llvm::Instruction *Inst, uint64_t Addr) {
   }
 }
 
-void MemoryAccessPattern::endLoop(llvm::Instruction *Inst, size_t Iters) {
+void MemoryAccessPattern::endStream(llvm::Instruction *Inst) {
   auto Iter = this->ComputingPatternMap.find(Inst);
   if (Iter == this->ComputingPatternMap.end()) {
     return;
   }
-  if (Inst->getName() == "tmp25") {
-    DEBUG(llvm::errs() << Iter->second.Count << ' ' << Iters << '\n');
-  }
-  // Hack: We allow at most one missing access.
-  // This is used to handle the possible last iteration "break".
-  if (Iter->second.Count + 1 < Iters) {
-    // Somehow this is a conditional memory acess. We do not support for now.
-    // Make it random.
-    Iter->second.CurrentPattern = RANDOM;
-  }
-  Iter->second.StreamCount = 1;
   const auto &NewPattern = Iter->second;
   auto ComputedIter = this->ComputedPatternMap.find(Inst);
   if (ComputedIter == this->ComputedPatternMap.end()) {
     this->ComputedPatternMap.emplace(Inst, NewPattern);
   } else {
     auto &ComputedPattern = ComputedIter->second;
-
-    if (ComputedPattern.CurrentPattern != NewPattern.CurrentPattern) {
-      DEBUG(llvm::errs() << "Changing pattern.\n");
-    }
-
-    switch (ComputedPattern.CurrentPattern) {
-    case RANDOM: {
-      // Always remain random.
-      break;
-    }
-    case CONSTANT: {
-      switch (NewPattern.CurrentPattern) {
-      case RANDOM: {
-        ComputedPattern.CurrentPattern = RANDOM;
-        break;
-      }
-      case QUARDRIC:
-      case LINEAR: {
-        // Upgrade the stream level.
-        ComputedPattern.CurrentPattern = NewPattern.CurrentPattern;
-        break;
-      }
-      default: { break; }
-      }
-      break;
-    }
-    case LINEAR: {
-      switch (NewPattern.CurrentPattern) {
-      case RANDOM: {
-        ComputedPattern.CurrentPattern = RANDOM;
-        break;
-      }
-      case QUARDRIC: {
-        // Upgrade the stream level.
-        ComputedPattern.CurrentPattern = NewPattern.CurrentPattern;
-        break;
-      }
-      default: { break; }
-      }
-      break;
-    }
-    case QUARDRIC: {
-      switch (NewPattern.CurrentPattern) {
-      case RANDOM: {
-        ComputedPattern.CurrentPattern = RANDOM;
-        break;
-      }
-      default: { break; }
-      }
-      break;
-    }
-    case INDIRECT: {
-      switch (NewPattern.CurrentPattern) {
-      case RANDOM: {
-        ComputedPattern.CurrentPattern = RANDOM;
-        break;
-      }
-      case INDIRECT: {
-        assert(NewPattern.BaseLoad == ComputedPattern.BaseLoad &&
-               "Mismatch base load instruction.");
-        break;
-      }
-      default: {
-        assert(false && "Computed as indirect but now is direct.");
-        break;
-      }
-      }
-      break;
-    }
-    default: { llvm_unreachable("Illegal stream pattern."); }
-    }
-
-    // Merge the result.
-    ComputedPattern.Count += NewPattern.Count;
-    ComputedPattern.StreamCount += NewPattern.StreamCount;
+    ComputedPattern.merge(NewPattern);
   }
 
   this->ComputingPatternMap.erase(Iter);
 }
 
-const MemoryAccessPattern::PatternComputation &
+const MemoryAccessPattern::ComputedPattern &
 MemoryAccessPattern::getPattern(llvm::Instruction *Inst) const {
   // We are not sure about the pattern.
   auto Iter = this->ComputedPatternMap.find(Inst);
@@ -220,6 +233,9 @@ bool MemoryAccessPattern::contains(llvm::Instruction *Inst) const {
 
 std::string MemoryAccessPattern::formatPattern(Pattern Pat) {
   switch (Pat) {
+  case UNKNOWN: {
+    return "UNKNOWN";
+  }
   case RANDOM: {
     return "RANDOM";
   }
@@ -270,6 +286,30 @@ MemoryAccessPattern::isIndirect(llvm::Instruction *Inst) const {
     }
   }
   return nullptr;
+}
+
+void MemoryAccessPattern::ComputedPattern::merge(
+    const PatternComputation &NewPattern) {
+  this->Count += NewPattern.Count;
+  this->Iters += NewPattern.Iters;
+  this->StreamCount++;
+  this->IsConditional = this->IsConditional || NewPattern.IsConditional;
+  if (MemoryAccessPattern::isPatternRelaxed(this->CurrentPattern,
+                                            NewPattern.CurrentPattern)) {
+    this->CurrentPattern = NewPattern.CurrentPattern;
+  }
+}
+
+void MemoryAccessPattern::finializePattern() {
+  for (auto &Entry : this->ComputedPatternMap) {
+    auto &Pattern = Entry.second;
+    if (static_cast<float>(Pattern.Count) /
+            static_cast<float>(Pattern.StreamCount) <
+        3.0) {
+      // In such case we believe this is not a stream.
+      Pattern.CurrentPattern = RANDOM;
+    }
+  }
 }
 
 #undef DEBUG_TYPE

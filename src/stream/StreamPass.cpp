@@ -48,7 +48,9 @@ public:
   StreamPass()
       : ReplayTrace(ID), INIT_VAR(DynInstCount), INIT_VAR(DynMemInstCount),
         INIT_VAR(TracedDynInstCount), INIT_VAR(AddRecLoadCount),
-        INIT_VAR(AddRecStoreCount), INIT_VAR(StreamCount) {}
+        INIT_VAR(AddRecStoreCount), INIT_VAR(ConstantCount),
+        INIT_VAR(LinearCount), INIT_VAR(QuardricCount), INIT_VAR(IndirectCount),
+        INIT_VAR(StreamCount) {}
 #undef INIT_VAR
 
 protected:
@@ -131,6 +133,10 @@ protected:
 
   ScalarUIntVar AddRecLoadCount;
   ScalarUIntVar AddRecStoreCount;
+  ScalarUIntVar ConstantCount;
+  ScalarUIntVar LinearCount;
+  ScalarUIntVar QuardricCount;
+  ScalarUIntVar IndirectCount;
   ScalarUIntVar StreamCount;
 }; // namespace
 
@@ -141,24 +147,37 @@ void StreamPass::dumpStats(std::ostream &O) {
   this->TracedDynInstCount.print(O);
   this->AddRecLoadCount.print(O);
   this->AddRecStoreCount.print(O);
+  this->ConstantCount.print(O);
+  this->LinearCount.print(O);
+  this->QuardricCount.print(O);
+  this->IndirectCount.print(O);
   this->StreamCount.print(O);
-  // for (const auto &LoopMemAccess : this->MemorizedMemoryAccess) {
-  //   for (auto MemAccessInst : LoopMemAccess.second) {
-  //     const auto &Pattern = this->MemPattern.getPattern(MemAccessInst);
-  //     O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
-  //       << MemoryAccessPattern::formatPattern(Pattern.CurrentPattern) <<
-  //       '\n';
-  //     O << LoopUtils::formatLLVMInst(MemAccessInst) << ": " << Pattern.Count
-  //       << '\n';
-  //     O << LoopUtils::formatLLVMInst(MemAccessInst) << ": "
-  //       << Pattern.StreamCount << '\n';
-  //   }
-  // }
+  for (const auto &LoopMemAccess : this->MemorizedMemoryAccess) {
+    for (auto MemAccessInst : LoopMemAccess.second) {
+      if (!this->MemPattern.contains(MemAccessInst)) {
+        continue;
+      }
+      const auto &Pattern = this->MemPattern.getPattern(MemAccessInst);
+      O << LoopUtils::getLoopId(LoopMemAccess.first) << ' ';
+      O << LoopUtils::formatLLVMInst(MemAccessInst) << ' '
+        << MemoryAccessPattern::formatPattern(Pattern.CurrentPattern) << ' '
+        << Pattern.Iters << ' ' << Pattern.Count << ' ' << Pattern.StreamCount
+        << ' ';
+      if (Pattern.BaseLoad != nullptr) {
+        O << LoopUtils::formatLLVMInst(Pattern.BaseLoad);
+      } else {
+        O << "NO_BASE_LOAD";
+      }
+      O << '\n';
+    }
+  }
 }
 
 void StreamPass::transform() {
   // First pass.
   this->transformImpl(0);
+
+  this->MemPattern.finializePattern();
 
   delete this->Trace;
   this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
@@ -166,7 +185,7 @@ void StreamPass::transform() {
   // Second pass.
   this->State = SEARCHING;
 
-  this->transformImpl(1);
+  // this->transformImpl(1);
 
   this->computeStreamStatistics();
 }
@@ -479,8 +498,8 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
     for (auto MemAccessInst : MemAccess) {
       auto DynamicInst = Iter->getDynamicInst(MemAccessInst);
       if (DynamicInst == nullptr) {
-        // TODO: This instruction is not executed in this iteration.
-        // Should have a way to inform pattern computer here.
+        // This memory access is not performed in this iteration.
+        this->MemPattern.addMissingAccess(MemAccessInst);
       } else {
         uint64_t Addr = 0;
         if (llvm::isa<llvm::LoadInst>(MemAccessInst)) {
@@ -502,12 +521,11 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
       PreviousIters = this->LoopOngoingIters.at(Loop);
     }
     this->LoopOngoingIters.erase(Loop);
-    // DEBUG(llvm::errs() << PreviousIters + TripCount << '\n');
     for (auto MemAccessInst : MemAccess) {
       // DEBUG(llvm::errs() << "End loop of inst "
       //                    << LoopUtils::formatLLVMInst(MemAccessInst)
       //                    << " iters " << TripCount + PreviousIters << '\n');
-      this->MemPattern.endLoop(MemAccessInst, TripCount + PreviousIters);
+      this->MemPattern.endStream(MemAccessInst);
     }
   } else {
     // This loop is still going on.
@@ -515,7 +533,6 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
     if (this->LoopOngoingIters.find(Loop) != this->LoopOngoingIters.end()) {
       PreviousIters = this->LoopOngoingIters.at(Loop);
     }
-    // DEBUG(llvm::errs() << PreviousIters + TripCount << '\n');
     this->LoopOngoingIters[Loop] = PreviousIters + TripCount;
   }
 }
@@ -594,17 +611,74 @@ void StreamPass::computeStreamStatistics() {
            InstIter != InstEnd; ++InstIter) {
         auto Inst = &*InstIter;
         // We only care about memory accesses.
-        if (!this->isStreamAccess(SE, Inst)) {
+        if (!llvm::isa<llvm::LoadInst>(Inst) &&
+            !llvm::isa<llvm::StoreInst>(Inst)) {
           continue;
         }
+
         bool IsLoad = llvm::isa<llvm::LoadInst>(Inst);
-        // This is a stream.
+        llvm::Value *Addr = nullptr;
         if (IsLoad) {
-          this->AddRecLoadCount.Val += Iters;
+          Addr = Inst->getOperand(0);
         } else {
-          this->AddRecStoreCount.Val += Iters;
+          Addr = Inst->getOperand(1);
         }
-        this->StreamCount.Val += Enters;
+
+        // Try to look at dynamic information.
+        if (!this->MemPattern.contains(Inst)) {
+          continue;
+        }
+        const auto &Pattern = this->MemPattern.getPattern(Inst);
+
+        const llvm::SCEV *SCEV = SE->getSCEV(Addr);
+
+        if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
+          if (IsLoad) {
+            this->AddRecLoadCount.Val += Pattern.Count;
+          } else {
+            this->AddRecStoreCount.Val += Pattern.Count;
+          }
+          this->StreamCount.Val += Pattern.StreamCount;
+          continue;
+        }
+
+        switch (Pattern.CurrentPattern) {
+        case MemoryAccessPattern::Pattern::CONSTANT: {
+          this->ConstantCount.Val += Pattern.Count;
+          this->StreamCount.Val += Pattern.StreamCount;
+          break;
+        }
+        case MemoryAccessPattern::Pattern::QUARDRIC: {
+          this->QuardricCount.Val += Pattern.Count;
+          this->StreamCount.Val += Pattern.StreamCount;
+          break;
+        }
+        case MemoryAccessPattern::Pattern::LINEAR: {
+          this->LinearCount.Val += Pattern.Count;
+          this->StreamCount.Val += Pattern.StreamCount;
+          break;
+        }
+        case MemoryAccessPattern::Pattern::INDIRECT: {
+          auto BaseLoad = Pattern.BaseLoad;
+          if (!this->MemPattern.contains(BaseLoad)) {
+            break;
+          }
+          const auto &BaseLoadPattern = this->MemPattern.getPattern(BaseLoad);
+          switch (BaseLoadPattern.CurrentPattern) {
+          case MemoryAccessPattern::Pattern::CONSTANT:
+          case MemoryAccessPattern::Pattern::QUARDRIC:
+          case MemoryAccessPattern::Pattern::LINEAR: {
+            // Indirect stream based on linear/quardric stream.
+            this->IndirectCount.Val += Pattern.Count;
+            this->StreamCount.Val += Pattern.StreamCount;
+            break;
+          }
+          default: { break; }
+          }
+          break;
+        }
+        default: { break; }
+        }
       }
     }
   }
