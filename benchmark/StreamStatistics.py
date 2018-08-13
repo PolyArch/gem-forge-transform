@@ -6,21 +6,24 @@ class Access:
         if line[-1] == '\n':
             line = line[0:-1]
         fields = line.split(' ')
-        assert(len(fields) == 7)
+        assert(len(fields) >= 9)
         self.loop = fields[0]
         self.inst = fields[1]
         self.pattern = fields[2]
-        self.iters = float(fields[3])
-        self.count = float(fields[4])
-        self.streams = float(fields[5])
-        self.base_load = fields[6]
+        self.acc_pattern = fields[3]
+        self.iters = float(fields[4])
+        self.accesses = float(fields[5])
+        self.updates = float(fields[6])
+        self.streams = float(fields[7])
+        self.base_load = fields[8]
 
     def merge(self, other):
         assert(self.inst == other.inst)
         assert(self.loop == other.loop)
         assert(self.base_load == other.base_load)
         self.iters += other.iters
-        self.count += other.count
+        self.accesses += other.accesses
+        self.updates += other.updates
         self.streams += other.streams
 
     @staticmethod
@@ -28,9 +31,11 @@ class Access:
         table = prettytable.PrettyTable([
             'Loop',
             'Inst',
-            'Pattern',
+            'Addr Pat',
+            'Acc Pat',
             'Iters',
-            'Count',
+            'Accesses',
+            'Updates',
             'Stream',
             'Base Load',
         ])
@@ -40,28 +45,32 @@ class Access:
                 access.loop,
                 access.inst,
                 access.pattern,
+                access.acc_pattern,
                 access.iters,
-                access.count,
+                access.accesses,
+                access.updates,
                 access.streams,
                 access.base_load,
             ])
         print(table)
 
     def __str__(self):
-        return '{loop} {inst} {pattern} {iters} {count} {streams} {base_load}'.format(
+        return '{loop} {inst} {pattern} {acc_pattern} {iters} {accesses} {updates} {streams} {base_load}'.format(
             loop=self.loop,
             inst=self.inst,
             pattern=self.pattern,
+            acc_pattern=self.acc_pattern,
             iters=self.iters,
-            count=self.count,
+            accesses=self.accesses,
+            updates=self.updates,
             streams=self.streams,
             base_load=self.base_load,
         )
 
     def __gt__(self, other):
-        if self.count > other.count:
+        if self.accesses > other.accesses:
             return True
-        elif self.count < other.count:
+        elif self.accesses < other.accesses:
             return False
 
         if self.iters > other.iters:

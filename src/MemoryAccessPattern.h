@@ -6,25 +6,50 @@
 #include <unordered_map>
 
 /**
- * This class try to compute the dynamic memory access pattern within a loop.
+ * This class try to compute the dynamic memory stream within a loop.
  *
- * Pattern hierarchy.
+ * A stream is conceptually divided into two parts:
+ * 1. The address pattern describes the address of the memory access. It ignores
+ * all the information of control flow. The address pattern has a simple
+ * hierarchy.
+ *
  * UNKNOWN -> CONSTANT -> LINEAR -> QUARDRIC -> RANDOM
  *         -> INDIRECT
  *
- * A pattern starts from UNKNOWN, representing that there is no memory access
- * seen so far. As the user provides more accessed address, we gradually relax
- * our constraints to RANDOM.
+ * The address pattern starts from UNKNOWN, representing that there is no memory
+ * access seen so far. As the user provides more accessed address, we gradually
+ * relax our constraints to RANDOM.
  *
- * An indirect stream is identified by checking if its address comes from a
- * load.
+ * An indirect address pattern is identified by checking if its address comes
+ * from a load.
  *
- * When one stream ends, the user calls endStream() to update a stream's
- * pattern. If there is some previously computed pattern, it can only be further
- * relaxed.
+ * 2. The access pattern describes how the address is accessed. It has a five
+ * categories:
  *
- * Also, the user can also call addMissingAccess to inform that there is a
- * missing access in this iteration. This will mark the stream conditional.
+ *               -> ConditionalAccessOnly
+ * Unconditional                          -> SameCondition -> Independent
+ *               -> ConditionalUpdateOnly
+ *
+ * An unconditional access pattern can be represented as pseudo-code:
+ * while (i < end) {
+ *   a[i];
+ *   i++;
+ * }
+ *
+ * And other access patterns can be understood by putting if condition on access
+ * (a[i]) and/or update (i++).
+ *
+ * NOTE: however, since so far we only have the access information, not updating
+ * information, we can not support independent access patter.
+ *
+ * The user will feed in memory addesses via addAccess(), or addMissingAccess if
+ * missing access in that iteration. For each computing stream, we maintain one
+ * FSM for each address pattern and access pattern.
+ *
+ * When one stream ends, the user calls endStream() and we check these FSMs to
+ * find the succeeded patterns. If there is some previously computed pattern, it
+ * can only be further relaxed in the hierarchy.
+ *
  */
 class MemoryAccessPattern {
 public:
@@ -68,12 +93,24 @@ public:
     RANDOM,
   };
 
-  struct PatternComputation {
+  enum AccessPattern {
+    UNCONDITIONAL,
+    CONDITIONAL_ACCESS_ONLY,
+    CONDITIONAL_UPDATE_ONLY,
+    SAME_CONDITION,
+    // Independent access pattern is so far not supported.
+  };
+  bool contains(llvm::Instruction *Inst) const;
+
+  static std::string formatPattern(Pattern Pat);
+  static std::string formatAccessPattern(AccessPattern AccPattern);
+
+private:
+  class AddressPatternFSM {
+  public:
     Pattern CurrentPattern;
-    // Statistics.
-    uint64_t Count;
-    uint64_t Iters;
-    bool IsConditional;
+    uint64_t Updates;
+    uint64_t PrevAddress;
     // INDIRECT
     llvm::Instruction *BaseLoad;
     // CONSTANT.
@@ -86,63 +123,98 @@ public:
     int64_t StrideJ;
     uint64_t J;
 
-    /**
-     * Constructor for missing first access.
-     */
-    PatternComputation()
-        : CurrentPattern(UNKNOWN), Count(1), Iters(1), IsConditional(true),
-          BaseLoad(nullptr), Base(0), StrideI(0), I(0), NI(0), StrideJ(0),
-          J(0) {}
+    AddressPatternFSM(llvm::Instruction *_BaseLoad)
+        : CurrentPattern(UNKNOWN), Updates(0), PrevAddress(0),
+          BaseLoad(_BaseLoad), Base(0), StrideI(0), I(0), NI(0), StrideJ(0),
+          J(0) {
+      if (this->BaseLoad != nullptr) {
+        this->CurrentPattern = INDIRECT;
+      }
+    }
 
-    /**
-     * Constructor for known first access.
-     */
-    PatternComputation(uint64_t _Base)
-        : CurrentPattern(CONSTANT), Count(1), Iters(1), IsConditional(false),
-          BaseLoad(nullptr), Base(_Base), StrideI(0), I(0), NI(0), StrideJ(0),
-          J(0) {}
+    void update(uint64_t Addr);
+    void updateMissing();
   };
 
-  struct ComputedPattern {
-    Pattern CurrentPattern;
-    bool IsConditional;
-    uint64_t Count;
+  class AccessPatternFSM {
+  public:
+    enum StateT {
+      UNKNOWN,
+      SUCCESS,
+      FAILURE,
+    };
+
+    // Statistics.
+    uint64_t Accesses;
     uint64_t Iters;
-    uint64_t StreamCount;
-    // For indirect memory access.
-    llvm::Instruction *BaseLoad;
-    ComputedPattern(const PatternComputation &NewPattern)
-        : CurrentPattern(NewPattern.CurrentPattern),
-          IsConditional(NewPattern.IsConditional), Count(NewPattern.Count),
-          Iters(NewPattern.Iters), StreamCount(1),
-          BaseLoad(NewPattern.BaseLoad) {}
 
-    void merge(const PatternComputation &NewPattern);
+    void addAccess(uint64_t Addr);
+    void addMissingAccess();
+
+    StateT getState() const { return this->State; }
+
+    const AddressPatternFSM &getAddressPattern() const {
+      return this->AddressPattern;
+    }
+
+    AccessPattern getAccessPattern() const { return this->AccPattern; }
+
+    AccessPatternFSM(AccessPattern _AccPattern, llvm::Instruction *_BaseLoad)
+        : Accesses(0), Iters(0), State(UNKNOWN), AccPattern(_AccPattern),
+          AddressPattern(_BaseLoad) {}
+
+  protected:
+    StateT State;
+
+    const AccessPattern AccPattern;
+
+    AddressPatternFSM AddressPattern;
   };
-
-  const ComputedPattern &getPattern(llvm::Instruction *Inst) const;
-
-  bool contains(llvm::Instruction *Inst) const;
-
-  static std::string formatPattern(Pattern Pat);
-
-private:
-  std::unordered_map<llvm::Instruction *, ComputedPattern> ComputedPatternMap;
 
   /**
    * Representing an ongoing computation.
    */
 
-  std::unordered_map<llvm::Instruction *, PatternComputation>
+  std::unordered_map<llvm::Instruction *, std::vector<AccessPatternFSM *>>
       ComputingPatternMap;
 
   llvm::Instruction *isIndirect(llvm::Instruction *Inst) const;
 
   /**
-   * Implement the pattern hierarchy.
+   * Implement the address pattern hierarchy.
    * Returns true if B is more relaxed than A. (B >= A)
    */
-  static bool isPatternRelaxed(Pattern A, Pattern B);
+  static bool isAddressPatternRelaxed(Pattern A, Pattern B);
+
+  /**
+   * Implement the access pattern hierarchy.
+   * Returns true if B is more relaxed than A. (B >= A).
+   */
+  static bool isAccessPatternRelaxed(AccessPattern A, AccessPattern B);
+
+public:
+  struct ComputedPattern {
+    Pattern CurrentPattern;
+    AccessPattern AccPattern;
+    uint64_t Accesses;
+    uint64_t Updates;
+    uint64_t Iters;
+    uint64_t StreamCount;
+    // For indirect memory access.
+    llvm::Instruction *BaseLoad;
+    ComputedPattern(const AccessPatternFSM &NewFSM)
+        : CurrentPattern(NewFSM.getAddressPattern().CurrentPattern),
+          AccPattern(NewFSM.getAccessPattern()), Accesses(NewFSM.Accesses),
+          Updates(NewFSM.getAddressPattern().Updates), Iters(NewFSM.Iters),
+          StreamCount(1), BaseLoad(NewFSM.getAddressPattern().BaseLoad) {}
+
+    void merge(const AccessPatternFSM &NewFSM);
+  };
+
+  const ComputedPattern &getPattern(llvm::Instruction *Inst) const;
+
+private:
+  std::unordered_map<llvm::Instruction *, ComputedPattern> ComputedPatternMap;
 };
 
 #endif

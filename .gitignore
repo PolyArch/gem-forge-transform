@@ -18,3 +18,4 @@ build/*
 *.s
 *.pyc
 *.o
+*.data
