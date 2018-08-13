@@ -53,7 +53,14 @@
  */
 class MemoryAccessPattern {
 public:
-  MemoryAccessPattern() = default;
+  MemoryAccessPattern(llvm::Instruction *_MemInst)
+      : MemInst(_MemInst), ComputedPatternPtr(nullptr) {}
+  ~MemoryAccessPattern() {
+    if (this->ComputedPatternPtr != nullptr) {
+      delete this->ComputedPatternPtr;
+      this->ComputedPatternPtr = nullptr;
+    }
+  }
   MemoryAccessPattern(const MemoryAccessPattern &Other) = delete;
   MemoryAccessPattern(MemoryAccessPattern &&Other) = delete;
   MemoryAccessPattern &operator=(const MemoryAccessPattern &Other) = delete;
@@ -62,25 +69,27 @@ public:
   /**
    * Add one dynamic access address for a specific instruction.
    */
-  void addAccess(llvm::Instruction *Inst, uint64_t Addr);
+  void addAccess(uint64_t Addr);
 
   /**
    * There is one missing access in this iteration.
    * We implicitly assume the missing access complys with the current pattern.
    */
-  void addMissingAccess(llvm::Instruction *Inst);
+  void addMissingAccess();
 
   /**
    * Wraps up an ongoing stream.
    */
-  void endStream(llvm::Instruction *Inst);
+  void endStream();
 
   /**
    * Finalize the pattern computed.
    * This will compute the average length of the stream and if
    * that is lower than a threshold, we think this is random pattern?
    */
-  void finializePattern();
+  void finalizePattern();
+
+  bool computed() const;
 
   /**
    */
@@ -100,7 +109,6 @@ public:
     SAME_CONDITION,
     // Independent access pattern is so far not supported.
   };
-  bool contains(llvm::Instruction *Inst) const;
 
   static std::string formatPattern(Pattern Pat);
   static std::string formatAccessPattern(AccessPattern AccPattern);
@@ -171,14 +179,14 @@ private:
     AddressPatternFSM AddressPattern;
   };
 
+  llvm::Instruction *MemInst;
+
   /**
    * Representing an ongoing computation.
    */
+  std::vector<AccessPatternFSM *> ComputingFSMs;
 
-  std::unordered_map<llvm::Instruction *, std::vector<AccessPatternFSM *>>
-      ComputingPatternMap;
-
-  llvm::Instruction *isIndirect(llvm::Instruction *Inst) const;
+  static llvm::Instruction *isIndirect(llvm::Instruction *Inst);
 
   /**
    * Implement the address pattern hierarchy.
@@ -211,10 +219,10 @@ public:
     void merge(const AccessPatternFSM &NewFSM);
   };
 
-  const ComputedPattern &getPattern(llvm::Instruction *Inst) const;
+  const ComputedPattern &getPattern() const;
 
 private:
-  std::unordered_map<llvm::Instruction *, ComputedPattern> ComputedPatternMap;
+  ComputedPattern *ComputedPatternPtr;
 };
 
 #endif
