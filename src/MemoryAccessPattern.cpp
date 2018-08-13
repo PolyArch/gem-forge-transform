@@ -244,71 +244,54 @@ bool MemoryAccessPattern::isAccessPatternRelaxed(AccessPattern A,
   }
 }
 
-void MemoryAccessPattern::addMissingAccess(llvm::Instruction *Inst) {
-  auto Iter = this->ComputingPatternMap.find(Inst);
-  if (Iter == this->ComputingPatternMap.end()) {
-    Iter = this->ComputingPatternMap
-               .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
-                        std::forward_as_tuple())
-               .first;
+void MemoryAccessPattern::addMissingAccess() {
 
-    // TODO: Handle indirect memory access here.
-    auto IndirectBase = this->isIndirect(Inst);
-
-    auto &FSMs = Iter->second;
-    FSMs.push_back(new AccessPatternFSM(UNCONDITIONAL, IndirectBase));
-    FSMs.push_back(new AccessPatternFSM(CONDITIONAL_ACCESS_ONLY, IndirectBase));
-    FSMs.push_back(new AccessPatternFSM(CONDITIONAL_UPDATE_ONLY, IndirectBase));
-    FSMs.push_back(new AccessPatternFSM(SAME_CONDITION, IndirectBase));
+  if (this->ComputingFSMs.empty()) {
+    auto IndirectBase = MemoryAccessPattern::isIndirect(this->MemInst);
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(UNCONDITIONAL, IndirectBase));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(CONDITIONAL_ACCESS_ONLY, IndirectBase));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(CONDITIONAL_UPDATE_ONLY, IndirectBase));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(SAME_CONDITION, IndirectBase));
   }
 
   // Add the first missing access.
-  auto &FSMs = Iter->second;
-  for (auto FSM : FSMs) {
+  for (auto FSM : this->ComputingFSMs) {
     FSM->addMissingAccess();
   }
 }
 
-void MemoryAccessPattern::addAccess(llvm::Instruction *Inst, uint64_t Addr) {
-  auto Iter = this->ComputingPatternMap.find(Inst);
-  if (Iter == this->ComputingPatternMap.end()) {
-    Iter = this->ComputingPatternMap
-               .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
-                        std::forward_as_tuple())
-               .first;
+void MemoryAccessPattern::addAccess(uint64_t Addr) {
 
-    // TODO: Handle indirect memory access here.
-    auto IndirectBase = this->isIndirect(Inst);
-
-    auto &FSMs = Iter->second;
-    // DEBUG(llvm::errs() << "This happens." << Inst->getName() << '\n');
-    FSMs.push_back(new AccessPatternFSM(UNCONDITIONAL, IndirectBase));
-    FSMs.push_back(new AccessPatternFSM(CONDITIONAL_ACCESS_ONLY, IndirectBase));
-    FSMs.push_back(new AccessPatternFSM(CONDITIONAL_UPDATE_ONLY, IndirectBase));
-    FSMs.push_back(new AccessPatternFSM(SAME_CONDITION, IndirectBase));
+  if (this->ComputingFSMs.empty()) {
+    auto IndirectBase = MemoryAccessPattern::isIndirect(this->MemInst);
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(UNCONDITIONAL, IndirectBase));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(CONDITIONAL_ACCESS_ONLY, IndirectBase));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(CONDITIONAL_UPDATE_ONLY, IndirectBase));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(SAME_CONDITION, IndirectBase));
   }
 
-  auto &FSMs = Iter->second;
-  for (auto FSM : FSMs) {
+  for (auto FSM : this->ComputingFSMs) {
     FSM->addAccess(Addr);
   }
 }
 
-void MemoryAccessPattern::endStream(llvm::Instruction *Inst) {
-  auto Iter = this->ComputingPatternMap.find(Inst);
-  // if (Iter == this->ComputingPatternMap.end()) {
-  //   return;
-  // }
-  assert(Iter != this->ComputingPatternMap.end() &&
-         "Ending stream not computed.");
-  auto &FSMs = Iter->second;
+void MemoryAccessPattern::endStream() {
+  assert(!this->ComputingFSMs.empty() && "Ending stream not computed.");
 
   AccessPatternFSM *NewFSM = nullptr;
   Pattern NewAddrPattern;
-  for (auto FSM : FSMs) {
+  for (auto FSM : this->ComputingFSMs) {
     if (FSM->getState() == AccessPatternFSM::StateT::SUCCESS) {
 
-      if (Inst->getName() == "tmp18") {
+      if (this->MemInst->getName() == "tmp18") {
         DEBUG(llvm::errs() << "tmp18 has access pattern "
                            << formatAccessPattern(FSM->getAccessPattern())
                            << " with address pattern "
@@ -333,7 +316,7 @@ void MemoryAccessPattern::endStream(llvm::Instruction *Inst) {
     }
   }
 
-  if (Inst->getName() == "tmp18") {
+  if (this->MemInst->getName() == "tmp18") {
     DEBUG(llvm::errs() << "tmp18 picked access pattern "
                        << formatAccessPattern(NewFSM->getAccessPattern())
                        << " with address pattern "
@@ -342,35 +325,31 @@ void MemoryAccessPattern::endStream(llvm::Instruction *Inst) {
                        << '\n');
   }
 
-  auto ComputedIter = this->ComputedPatternMap.find(Inst);
-  if (ComputedIter == this->ComputedPatternMap.end()) {
-    this->ComputedPatternMap.emplace(Inst, *NewFSM);
+  if (this->ComputedPatternPtr == nullptr) {
+    this->ComputedPatternPtr = new ComputedPattern(*NewFSM);
   } else {
-    auto &ComputedPattern = ComputedIter->second;
-    ComputedPattern.merge(*NewFSM);
+    this->ComputedPatternPtr->merge(*NewFSM);
   }
 
-  for (auto &FSM : FSMs) {
+  for (auto &FSM : this->ComputingFSMs) {
     delete FSM;
     FSM = nullptr;
   }
 
-  this->ComputingPatternMap.erase(Iter);
+  this->ComputingFSMs.clear();
 }
 
 const MemoryAccessPattern::ComputedPattern &
-MemoryAccessPattern::getPattern(llvm::Instruction *Inst) const {
+MemoryAccessPattern::getPattern() const {
   // We are not sure about the pattern.
-  auto Iter = this->ComputedPatternMap.find(Inst);
-  if (Iter == this->ComputedPatternMap.end()) {
-    assert(false &&
-           "Failed getting memory access pattern for static instruction.");
-  }
-  return Iter->second;
+  assert(this->ComputedPatternPtr != nullptr &&
+         "Failed getting memory access pattern for static instruction.");
+
+  return *this->ComputedPatternPtr;
 }
 
-bool MemoryAccessPattern::contains(llvm::Instruction *Inst) const {
-  return this->ComputedPatternMap.find(Inst) != this->ComputedPatternMap.end();
+bool MemoryAccessPattern::computed() const {
+  return this->ComputedPatternPtr != nullptr;
 }
 
 std::string MemoryAccessPattern::formatPattern(Pattern Pat) {
@@ -417,8 +396,7 @@ std::string MemoryAccessPattern::formatAccessPattern(AccessPattern AccPattern) {
   }
 }
 
-llvm::Instruction *
-MemoryAccessPattern::isIndirect(llvm::Instruction *Inst) const {
+llvm::Instruction *MemoryAccessPattern::isIndirect(llvm::Instruction *Inst) {
   bool IsLoad = llvm::isa<llvm::LoadInst>(Inst);
   llvm::Value *Addr = nullptr;
   if (IsLoad) {
@@ -468,15 +446,15 @@ void MemoryAccessPattern::ComputedPattern::merge(
   }
 }
 
-void MemoryAccessPattern::finializePattern() {
-  for (auto &Entry : this->ComputedPatternMap) {
-    auto &Pattern = Entry.second;
-    if (static_cast<float>(Pattern.Accesses) /
-            static_cast<float>(Pattern.StreamCount) <
-        3.0) {
-      // In such case we believe this is not a stream.
-      Pattern.CurrentPattern = RANDOM;
-    }
+void MemoryAccessPattern::finalizePattern() {
+  if (this->ComputedPatternPtr == nullptr) {
+    return;
+  }
+  if (static_cast<float>(this->ComputedPatternPtr->Accesses) /
+          static_cast<float>(this->ComputedPatternPtr->StreamCount) <
+      3.0) {
+    // In such case we believe this is not a stream.
+    this->ComputedPatternPtr->CurrentPattern = RANDOM;
   }
 }
 

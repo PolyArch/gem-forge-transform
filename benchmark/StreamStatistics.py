@@ -110,8 +110,9 @@ class StreamStatistics:
 
     def parse_access(self, line):
         access = Access(line)
-        assert(access.inst not in self.accesses)
-        self.accesses[access.inst] = access
+        uid = access.inst + access.loop
+        assert(uid not in self.accesses)
+        self.accesses[uid] = access
 
     def merge(self, other):
         for stat in self.stats:

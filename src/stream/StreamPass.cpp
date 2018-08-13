@@ -40,6 +40,33 @@ public:
   std::string getOpName() const override { return "stream-store"; }
 };
 
+/**
+ * Stream class wraps over MemoryAccessPattern and contains the stream pattern
+ * analyzed in a specific loop level.
+ */
+class Stream {
+public:
+  Stream(llvm::Loop *_Loop, llvm::Instruction *_MemInst)
+      : Loop(_Loop), MemInst(_MemInst), Pattern(_MemInst) {
+    assert(this->Loop->contains(this->MemInst) &&
+           "The loop should contain the memory access instruction.");
+  }
+
+  void addAccess(uint64_t Addr) { this->Pattern.addAccess(Addr); }
+  void addMissingAccess() { this->Pattern.addMissingAccess(); }
+  void endStream() { this->Pattern.endStream(); }
+  void finalizePattern() { this->Pattern.finalizePattern(); }
+
+  llvm::Loop *getLoop() const { return this->Loop; }
+  llvm::Instruction *getMemInst() const { return this->MemInst; }
+  const MemoryAccessPattern &getPattern() const { return this->Pattern; }
+
+private:
+  llvm::Loop *Loop;
+  llvm::Instruction *MemInst;
+  MemoryAccessPattern Pattern;
+};
+
 class StreamPass : public ReplayTrace {
 public:
   static char ID;
@@ -96,6 +123,11 @@ protected:
 
   bool isLoopStream(llvm::Loop *Loop);
 
+  /**
+   * Initialize the MemInstToStreamMap and MemorizedMemoryAccess.
+   */
+  void initializeLoopStream(llvm::Loop *Loop);
+
   bool isStreamAccess(llvm::ScalarEvolution *SE,
                       llvm::Instruction *StaticInst) const;
 
@@ -112,7 +144,12 @@ protected:
 
   ProfileParser Profile;
 
-  MemoryAccessPattern MemPattern;
+  /**
+   * A map from memory access instruction to a list of streams.
+   * Each stream contains the analyzation result of the instruction in different
+   * loop levels.
+   */
+  std::unordered_map<llvm::Instruction *, std::list<Stream>> MemInstToStreamMap;
 
   DynamicLoopIteration *LoopTree;
 
@@ -152,14 +189,12 @@ void StreamPass::dumpStats(std::ostream &O) {
   this->QuardricCount.print(O);
   this->IndirectCount.print(O);
   this->StreamCount.print(O);
-  for (const auto &LoopMemAccess : this->MemorizedMemoryAccess) {
-    for (auto MemAccessInst : LoopMemAccess.second) {
-      if (!this->MemPattern.contains(MemAccessInst)) {
-        continue;
-      }
-      const auto &Pattern = this->MemPattern.getPattern(MemAccessInst);
-      O << LoopUtils::getLoopId(LoopMemAccess.first) << ' ';
-      O << LoopUtils::formatLLVMInst(MemAccessInst) << ' '
+
+  for (auto &MemInstStreamEntry : this->MemInstToStreamMap) {
+    for (auto &Stream : MemInstStreamEntry.second) {
+      const auto &Pattern = Stream.getPattern().getPattern();
+      O << LoopUtils::getLoopId(Stream.getLoop()) << ' ';
+      O << LoopUtils::formatLLVMInst(Stream.getMemInst()) << ' '
         << MemoryAccessPattern::formatPattern(Pattern.CurrentPattern) << ' '
         << MemoryAccessPattern::formatAccessPattern(Pattern.AccPattern) << ' '
         << Pattern.Iters << ' ' << Pattern.Accesses << ' ' << Pattern.Updates
@@ -178,7 +213,20 @@ void StreamPass::transform() {
   // First pass.
   this->transformImpl(0);
 
-  this->MemPattern.finializePattern();
+  for (auto &MemInstStreamEntry : this->MemInstToStreamMap) {
+    for (auto &Stream : MemInstStreamEntry.second) {
+      if (!Stream.getPattern().computed()) {
+        llvm::errs() << LoopUtils::getLoopId(Stream.getLoop()) << " "
+                     << LoopUtils::formatLLVMInst(Stream.getMemInst())
+                     << " is not computed.\n";
+      } else {
+        llvm::errs() << LoopUtils::getLoopId(Stream.getLoop()) << " "
+                     << LoopUtils::formatLLVMInst(Stream.getMemInst())
+                     << " is computed.\n";
+      }
+      Stream.finalizePattern();
+    }
+  }
 
   delete this->Trace;
   this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
@@ -275,6 +323,8 @@ void StreamPass::transformImpl(int Pass) {
         CurrentLoop = NewLoop;
         this->LoopTree = new DynamicLoopIteration(
             NewLoop, this->Trace->DynamicInstructionList.end());
+        // Initialize the loop stream.
+        this->initializeLoopStream(CurrentLoop);
         // Add the first instruction to the loop tree.
         this->LoopTree->addInst(NewInstIter);
 
@@ -375,6 +425,67 @@ bool StreamPass::isLoopStream(llvm::Loop *Loop) {
   return IsLoopStream;
 }
 
+void StreamPass::initializeLoopStream(llvm::Loop *Loop) {
+  if (this->MemorizedMemoryAccess.find(Loop) !=
+      this->MemorizedMemoryAccess.end()) {
+    // We have alread initialized this loop stream.
+    return;
+  }
+
+  // First initialize MemorizedMemoryAccess for every subloop.
+  std::list<llvm::Loop *> Loops;
+  Loops.push_back(Loop);
+  while (!Loops.empty()) {
+    auto CurrentLoop = Loops.front();
+    Loops.pop_front();
+    assert(this->MemorizedMemoryAccess.find(CurrentLoop) ==
+               this->MemorizedMemoryAccess.end() &&
+           "This loop stream is already initialized.");
+    this->MemorizedMemoryAccess.emplace(std::piecewise_construct,
+                                        std::forward_as_tuple(CurrentLoop),
+                                        std::forward_as_tuple());
+    for (auto SubLoop : CurrentLoop->getSubLoops()) {
+      Loops.push_back(SubLoop);
+    }
+  }
+
+  auto LI = this->CachedLI->getLoopInfo(Loop->getHeader()->getParent());
+  for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+
+    auto InnerMostLoop = LI->getLoopFor(BB);
+
+    auto &MemAccess = this->MemorizedMemoryAccess.at(InnerMostLoop);
+
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      if ((!llvm::isa<llvm::LoadInst>(Inst)) &&
+          (!llvm::isa<llvm::StoreInst>(Inst))) {
+        continue;
+      }
+      // Insert the memory access instruction into the memorized loop.
+      MemAccess.insert(Inst);
+
+      assert(this->MemInstToStreamMap.find(Inst) ==
+                 this->MemInstToStreamMap.end() &&
+             "The memory access instruction is already processed.");
+      auto &StreamList =
+          this->MemInstToStreamMap.emplace(Inst, std::list<Stream>())
+              .first->second;
+
+      // Initialize the stream for all loop level.
+      auto LoopLevel = InnerMostLoop;
+      while (LoopLevel != Loop) {
+        StreamList.emplace_back(LoopLevel, Inst);
+        LoopLevel = LoopLevel->getParentLoop();
+      }
+      StreamList.emplace_back(LoopLevel, Inst);
+    }
+  }
+}
+
 void StreamPass::streamTransform() {
   assert(this->LoopTree != nullptr && "Empty loop tree for transformation.");
 
@@ -456,33 +567,6 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
   auto Loop = LoopTree->getLoop();
   auto TripCount = LoopTree->countIter();
 
-  // Collect memory access for within this loop only.
-  // Memorize this result.
-  if (this->MemorizedMemoryAccess.find(Loop) ==
-      this->MemorizedMemoryAccess.end()) {
-    std::unordered_set<llvm::Instruction *> &MemAccess =
-        this->MemorizedMemoryAccess
-            .emplace(std::piecewise_construct, std::forward_as_tuple(Loop),
-                     std::forward_as_tuple())
-            .first->second;
-    auto LI = this->CachedLI->getLoopInfo(Loop->getHeader()->getParent());
-    for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
-         BBIter != BBEnd; ++BBIter) {
-      auto BB = *BBIter;
-      if (LI->getLoopFor(BB) != Loop) {
-        // This BB is within some nested loop.
-        continue;
-      }
-      for (auto InstIter = BB->begin(), InstEnd = BB->end();
-           InstIter != InstEnd; ++InstIter) {
-        auto Inst = &*InstIter;
-        if (llvm::isa<llvm::LoadInst>(Inst) ||
-            llvm::isa<llvm::StoreInst>(Inst)) {
-          MemAccess.insert(Inst);
-        }
-      }
-    }
-  }
   const auto &MemAccess = this->MemorizedMemoryAccess.at(Loop);
 
   auto Iter = LoopTree;
@@ -498,9 +582,12 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
     // Compute pattern for memory access within this loop.
     for (auto MemAccessInst : MemAccess) {
       auto DynamicInst = Iter->getDynamicInst(MemAccessInst);
+      auto &StreamList = this->MemInstToStreamMap.at(MemAccessInst);
       if (DynamicInst == nullptr) {
         // This memory access is not performed in this iteration.
-        this->MemPattern.addMissingAccess(MemAccessInst);
+        for (auto &Stream : StreamList) {
+          Stream.addMissingAccess();
+        }
       } else {
         uint64_t Addr = 0;
         if (llvm::isa<llvm::LoadInst>(MemAccessInst)) {
@@ -508,7 +595,9 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
         } else {
           Addr = DynamicInst->DynamicOperands[1]->getAddr();
         }
-        this->MemPattern.addAccess(MemAccessInst, Addr);
+        for (auto &Stream : StreamList) {
+          Stream.addAccess(Addr);
+        }
       }
     }
 
@@ -522,11 +611,26 @@ void StreamPass::computeMemoryAccessPattern(DynamicLoopIteration *LoopTree) {
       PreviousIters = this->LoopOngoingIters.at(Loop);
     }
     this->LoopOngoingIters.erase(Loop);
-    for (auto MemAccessInst : MemAccess) {
-      // DEBUG(llvm::errs() << "End loop of inst "
-      //                    << LoopUtils::formatLLVMInst(MemAccessInst)
-      //                    << " iters " << TripCount + PreviousIters << '\n');
-      this->MemPattern.endStream(MemAccessInst);
+    // We have to end the stream for all memory instruction with in the loop.
+    // TODO: Memorize this?
+    for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+         BBIter != BBEnd; ++BBIter) {
+      auto BB = *BBIter;
+      for (auto InstIter = BB->begin(), InstEnd = BB->end();
+           InstIter != InstEnd; ++InstIter) {
+        auto Inst = &*InstIter;
+        if ((!llvm::isa<llvm::LoadInst>(Inst)) &&
+            (!llvm::isa<llvm::StoreInst>(Inst))) {
+          continue;
+        }
+        auto &StreamList = this->MemInstToStreamMap.at(Inst);
+        for (auto &Stream : StreamList) {
+          if (Stream.getLoop() == Loop) {
+            Stream.endStream();
+            break;
+          }
+        }
+      }
     }
   } else {
     // This loop is still going on.
@@ -560,10 +664,13 @@ bool StreamPass::isStreamAccess(llvm::ScalarEvolution *SE,
   }
 
   // Try to look at dynamic information.
-  if (!this->MemPattern.contains(StaticInst)) {
+  auto Iter = this->MemInstToStreamMap.find(StaticInst);
+  if (Iter == this->MemInstToStreamMap.end()) {
     return false;
   }
-  const auto &Pattern = this->MemPattern.getPattern(StaticInst);
+  // We only look at the inner most loop level for now.
+  assert(!Iter->second.empty() && "There should be at least one stream.");
+  const auto &Pattern = Iter->second.front().getPattern().getPattern();
   switch (Pattern.CurrentPattern) {
   case MemoryAccessPattern::Pattern::CONSTANT:
   case MemoryAccessPattern::Pattern::QUARDRIC:
@@ -572,10 +679,15 @@ bool StreamPass::isStreamAccess(llvm::ScalarEvolution *SE,
   }
   case MemoryAccessPattern::Pattern::INDIRECT: {
     auto BaseLoad = Pattern.BaseLoad;
-    if (!this->MemPattern.contains(BaseLoad)) {
+
+    auto BaseIter = this->MemInstToStreamMap.find(BaseLoad);
+    if (BaseIter == this->MemInstToStreamMap.end()) {
       return false;
     }
-    const auto &BaseLoadPattern = this->MemPattern.getPattern(BaseLoad);
+    assert(!Iter->second.empty() &&
+           "There should be at least one stream for base load.");
+    const auto &BaseLoadPattern =
+        BaseIter->second.front().getPattern().getPattern();
     switch (BaseLoadPattern.CurrentPattern) {
     case MemoryAccessPattern::Pattern::CONSTANT:
     case MemoryAccessPattern::Pattern::QUARDRIC:
@@ -626,10 +738,13 @@ void StreamPass::computeStreamStatistics() {
         }
 
         // Try to look at dynamic information.
-        if (!this->MemPattern.contains(Inst)) {
+        auto Iter = this->MemInstToStreamMap.find(Inst);
+        if (Iter == this->MemInstToStreamMap.end()) {
           continue;
         }
-        const auto &Pattern = this->MemPattern.getPattern(Inst);
+        // We only look at the inner most loop level for now.
+        assert(!Iter->second.empty() && "There should be at least one stream.");
+        const auto &Pattern = Iter->second.front().getPattern().getPattern();
 
         const llvm::SCEV *SCEV = SE->getSCEV(Addr);
 
@@ -661,10 +776,15 @@ void StreamPass::computeStreamStatistics() {
         }
         case MemoryAccessPattern::Pattern::INDIRECT: {
           auto BaseLoad = Pattern.BaseLoad;
-          if (!this->MemPattern.contains(BaseLoad)) {
+
+          auto BaseIter = this->MemInstToStreamMap.find(BaseLoad);
+          if (BaseIter == this->MemInstToStreamMap.end()) {
             break;
           }
-          const auto &BaseLoadPattern = this->MemPattern.getPattern(BaseLoad);
+          assert(!Iter->second.empty() &&
+                 "There should be at least one stream for base load.");
+          const auto &BaseLoadPattern =
+              BaseIter->second.front().getPattern().getPattern();
           switch (BaseLoadPattern.CurrentPattern) {
           case MemoryAccessPattern::Pattern::CONSTANT:
           case MemoryAccessPattern::Pattern::QUARDRIC:
