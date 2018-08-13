@@ -381,17 +381,17 @@ class SPEC2017Benchmarks:
         #     'n_traces': 22,
         #     'trace_func': 'MagickCommandGenesis',
         # },
-        # 'nab_s': {
-        #     'name': '644.nab_s',
-        #     'links': ['-lm'],
-        #     # md start from 100b
-        #     'start_inst': 0,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 121e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'md',
-        # },
+        'nab_s': {
+            'name': '644.nab_s',
+            'links': ['-lm'],
+            # md start from 100b
+            'start_inst': 0,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 121e8,
+            'n_traces': 1,
+            'trace_func': 'md',
+        },
         # 'x264_s': {
         #     'name': '625.x264_s',
         #     'links': [],
@@ -429,16 +429,16 @@ class SPEC2017Benchmarks:
         #     'n_traces': 1,
         #     'trace_func': 'uncompressStream',
         # },
-        'gcc_s': {
-            'name': '602.gcc_s',
-            'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 50e8,
-            'end_inst': 1000e8,
-            'n_traces': 20,
-            'trace_func': 'compile_file',
-        },
+        # 'gcc_s': {
+        #     'name': '602.gcc_s',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 50e8,
+        #     'end_inst': 1000e8,
+        #     'n_traces': 20,
+        #     'trace_func': 'compile_file',
+        # },
         # # C++ Benchmark: Notice that SPEC is compiled without
         # # debug information, and we have to use mangled name
         # # for trace_func.

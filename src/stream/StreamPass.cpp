@@ -161,8 +161,9 @@ void StreamPass::dumpStats(std::ostream &O) {
       O << LoopUtils::getLoopId(LoopMemAccess.first) << ' ';
       O << LoopUtils::formatLLVMInst(MemAccessInst) << ' '
         << MemoryAccessPattern::formatPattern(Pattern.CurrentPattern) << ' '
-        << Pattern.Iters << ' ' << Pattern.Count << ' ' << Pattern.StreamCount
-        << ' ';
+        << MemoryAccessPattern::formatAccessPattern(Pattern.AccPattern) << ' '
+        << Pattern.Iters << ' ' << Pattern.Accesses << ' ' << Pattern.Updates
+        << ' ' << Pattern.StreamCount << ' ';
       if (Pattern.BaseLoad != nullptr) {
         O << LoopUtils::formatLLVMInst(Pattern.BaseLoad);
       } else {
@@ -634,9 +635,9 @@ void StreamPass::computeStreamStatistics() {
 
         if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
           if (IsLoad) {
-            this->AddRecLoadCount.Val += Pattern.Count;
+            this->AddRecLoadCount.Val += Pattern.Accesses;
           } else {
-            this->AddRecStoreCount.Val += Pattern.Count;
+            this->AddRecStoreCount.Val += Pattern.Accesses;
           }
           this->StreamCount.Val += Pattern.StreamCount;
           continue;
@@ -644,17 +645,17 @@ void StreamPass::computeStreamStatistics() {
 
         switch (Pattern.CurrentPattern) {
         case MemoryAccessPattern::Pattern::CONSTANT: {
-          this->ConstantCount.Val += Pattern.Count;
+          this->ConstantCount.Val += Pattern.Accesses;
           this->StreamCount.Val += Pattern.StreamCount;
           break;
         }
         case MemoryAccessPattern::Pattern::QUARDRIC: {
-          this->QuardricCount.Val += Pattern.Count;
+          this->QuardricCount.Val += Pattern.Accesses;
           this->StreamCount.Val += Pattern.StreamCount;
           break;
         }
         case MemoryAccessPattern::Pattern::LINEAR: {
-          this->LinearCount.Val += Pattern.Count;
+          this->LinearCount.Val += Pattern.Accesses;
           this->StreamCount.Val += Pattern.StreamCount;
           break;
         }
@@ -669,7 +670,7 @@ void StreamPass::computeStreamStatistics() {
           case MemoryAccessPattern::Pattern::QUARDRIC:
           case MemoryAccessPattern::Pattern::LINEAR: {
             // Indirect stream based on linear/quardric stream.
-            this->IndirectCount.Val += Pattern.Count;
+            this->IndirectCount.Val += Pattern.Accesses;
             this->StreamCount.Val += Pattern.StreamCount;
             break;
           }
