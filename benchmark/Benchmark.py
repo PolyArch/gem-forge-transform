@@ -70,7 +70,7 @@ class Benchmark(object):
     Construct the traced binary.
     """
 
-    def build_trace(self, link_stdlib=False, trace_reachable_only=False):
+    def build_trace(self, link_stdlib=False, trace_reachable_only=False, debugs=[]):
         trace_cmd = [
             'opt',
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
@@ -83,6 +83,10 @@ class Benchmark(object):
             trace_cmd.append('-trace-function=' + self.trace_func)
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
+        if debugs:
+            print(debugs)
+            trace_cmd.append(
+                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
         print('# Instrumenting tracer...')
         Util.call_helper(trace_cmd)
         if link_stdlib:

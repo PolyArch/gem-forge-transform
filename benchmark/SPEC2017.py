@@ -265,7 +265,12 @@ class SPEC2017Benchmark:
 
     def trace(self):
         os.chdir(self.get_run_path())
-        self.benchmark.build_trace()
+        debugs = [
+            'TracePass',
+        ]
+        self.benchmark.build_trace(
+            debugs=debugs,
+        )
         # set the maximum number of insts.
         if self.max_inst != -1:
             print(self.max_inst)
@@ -381,17 +386,17 @@ class SPEC2017Benchmarks:
         #     'n_traces': 22,
         #     'trace_func': 'MagickCommandGenesis',
         # },
-        'nab_s': {
-            'name': '644.nab_s',
-            'links': ['-lm'],
-            # md start from 100b
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 121e8,
-            'n_traces': 1,
-            'trace_func': 'md',
-        },
+        # 'nab_s': {
+        #     'name': '644.nab_s',
+        #     'links': ['-lm'],
+        #     # md start from 100b
+        #     'start_inst': 0,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 121e8,
+        #     'n_traces': 1,
+        #     'trace_func': 'md',
+        # },
         # 'x264_s': {
         #     'name': '625.x264_s',
         #     'links': [],
@@ -439,16 +444,17 @@ class SPEC2017Benchmarks:
         #     'n_traces': 20,
         #     'trace_func': 'compile_file',
         # },
-        # # C++ Benchmark: Notice that SPEC is compiled without
-        # # debug information, and we have to use mangled name
-        # # for trace_func.
-        # 'deepsjeng_s': {
-        #     'name': '631.deepsjeng_s',
-        #     'links': [],
-        #     'skip_inst': 100000000,
-        #     'max_inst': 100000000,
-        #     'trace_func': '',
-        # },
+        # # C++ Benchmark
+        'deepsjeng_s': {
+            'name': '631.deepsjeng_s',
+            'links': [],
+            'start_inst': 0,
+            'max_inst': 1e8,
+            'skip_inst': 0,
+            'end_inst': 0,
+            'n_traces': 1,
+            'trace_func': 'think(gamestate_t*, state_t*)',
+        },
         # 'leela_s': {
         #     'name': '641.leela_s',
         #     'links': [],
@@ -533,23 +539,23 @@ class SPEC2017Benchmarks:
         os.putenv('LLVM_AR_NAME', 'ecc-ar')
 
 
-def main(folder):
+def main(folder, build, trace):
     trace_stdlib = False
-    force = False
     job_scheduler = Util.JobScheduler(8, 1)
-    benchmarks = SPEC2017Benchmarks(trace_stdlib, force)
+    benchmarks = SPEC2017Benchmarks(trace_stdlib, build)
     names = list()
     b_list = list()
     for benchmark_name in benchmarks.benchmarks:
         benchmark = benchmarks.benchmarks[benchmark_name]
-        # benchmark.schedule_trace(job_scheduler)
+        if trace:
+            benchmark.schedule_trace(job_scheduler)
         # benchmark.schedule_statistics(job_scheduler, [])
         debugs = [
             'ReplayPass',
             'StreamPass',
             # 'DataGraph',
         ]
-        benchmark.schedule_transform(job_scheduler, 'stream', debugs)
+        # benchmark.schedule_transform(job_scheduler, 'stream', debugs)
         # debugs = []
         # benchmark.schedule_simulation(job_scheduler, 'stream', debugs)
         # debugs = [
@@ -580,22 +586,27 @@ def main(folder):
     # Start the job.
     job_scheduler.run()
 
-    for benchmark in b_list:
-        tdgs = benchmark.get_tdgs('stream')
-        tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
-        stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
-        print('-------------------------- ' + benchmark.get_name())
-        stream_stats.print_stats()
-        stream_stats.print_access()
+    # for benchmark in b_list:
+    #     tdgs = benchmark.get_tdgs('stream')
+    #     tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
+    # stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
+    # print('-------------------------- ' + benchmark.get_name())
+    # stream_stats.print_stats()
+    # stream_stats.print_access()
 
     # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
     # Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) == 1:
-        # Use the current folder.
-        main('.')
-    else:
-        main(sys.argv[1])
+    import optparse
+    parser = optparse.OptionParser()
+    parser.add_option('-b', '--build', action='store_true',
+                      dest='build', default=False)
+    parser.add_option('-t', '--trace', action='store_true',
+                      dest='trace', default=False)
+    parser.add_option('-d', '--directory', action='store',
+                      type='string', dest='directory')
+    (options, args) = parser.parse_args()
+    # Use the current folder.
+    main(options.directory, options.build, options.trace)
