@@ -1,18 +1,31 @@
 cmake_minimum_required(VERSION 3.4)
 
-set(CMAKE_CXX_COMPILER ecc++)
-set(CMAKE_C_COMPILER ecc)
-set(CMAKE_AR ecc-ar)
-set(CMAKE_RANLIB ecc-ranlib)
+set(ELLCC_PATH /home/zhengrong/Documents/ellcc CACHE PATH "Where to find ellcc.")
+set(ELLCC_LLVM_PATH /home/zhengrong/Documents/ellcc/build/build-ecc/llvm/x86_64-linux CACHE PATH "Where to find llvm when use ellcc.")
+option(USE_ELLCC "Use ellcc to trace stdlib" OFF)
 
+set(LLVM_PATH /home/zhengrong/Documents/llvm-6.0/install)
+
+if (USE_ELLCC)
+    set(CMAKE_CXX_COMPILER $(ELLCC_PATH)/bin/ecc++)
+    set(CMAKE_C_COMPILER $(ELLCC_PATH)/bin/ecc)
+    set(CMAKE_AR $(ELLCC_PATH)/bin/ecc-ar)
+    set(CMAKE_RANLIB $(ELLCC_PATH)/bin/ecc-ranlib)
+    set(LLVM_PATH $(ELLCC_LLVM_PATH))
+endif (USE_ELLCC)
+
+message(STATUS ${LLVM_PATH})
 find_package(LLVM REQUIRED 
     CONFIG
-    PATHS /home/zhengrong/Documents/ellcc/build/build-ecc/llvm/x86_64-linux
+    PATHS ${LLVM_PATH}
     NO_DEFAULT_PATH
-    )
+)
 
-# Use our own version of protobuf.
-set(CMAKE_PREFIX_PATH $(CMAKE_PREFIX_PATH) /home/zhengrong/Documents/protobuf-ellcc)
+# Use our own version of protobuf if using ellcc.
+if (USE_ELLCC)
+    set(CMAKE_PREFIX_PATH $(CMAKE_PREFIX_PATH) /home/zhengrong/Documents/protobuf-ellcc)
+endif (USE_ELLCC)
+
 message(STATUS ${CMAKE_PREFIX_PATH})
 find_package(Protobuf 
     REQUIRED

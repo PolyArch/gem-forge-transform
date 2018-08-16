@@ -95,7 +95,7 @@ class MachSuiteBenchmark:
             assert(source[-2:] == '.c')
             bc = source.replace('.c', '.bc')
             compile_cmd = [
-                'ecc',
+                C.CC,
                 '-emit-llvm',
                 '-o',
                 bc,
@@ -115,7 +115,7 @@ class MachSuiteBenchmark:
             bcs.append(bc)
 
         link_cmd = [
-            'llvm-link',
+            C.LLVM_LINK,
             '-o',
             output_bc,
         ]
@@ -123,7 +123,7 @@ class MachSuiteBenchmark:
         print('# compile: Linking...')
         Util.call_helper(link_cmd)
         print('# compile: Naming everthing...')
-        Util.call_helper(['opt', '-instnamer', output_bc, '-o', output_bc])
+        Util.call_helper([C.OPT, '-instnamer', output_bc, '-o', output_bc])
         clean_cmd = ['rm'] + bcs
         print('# compile: Cleaning...')
         Util.call_helper(clean_cmd)
@@ -143,7 +143,7 @@ class MachSuiteBenchmark:
         output_bc = 'tmp.bc'
         self.compile(output_bc, defines, includes)
         build_cmd = [
-            'ecc',
+            C.CC,
             '-static',
             '-o',
             self.get_baseline_binary(),
@@ -347,41 +347,51 @@ class MachSuiteBenchmarks:
         results.draw(pdf_fn, baseline, test, variables)
 
 
-def run_benchmark(benchmark):
+def run_benchmark(benchmark, options):
     print('start run benchmark ' + benchmark.get_name())
     # benchmark.baseline()
-    # benchmark.build_raw_bc()
-    # benchmark.trace()
+    if options.build:
+        benchmark.build_raw_bc()
+    if options.trace:
+        benchmark.trace()
     # benchmark.statistics()
 
     # Basic replay.
-    # debugs = [
-    #     'ReplayPass',
-    #     # 'DataGraph',
-    #     # 'TDGSerializer'
-    # ]
-    # benchmark.transform('replay', debugs)
-    # debugs = [
-    #     # 'LLVMTraceCPU',
-    #     'RegionStats',
-    # ]
-    # benchmark.simulate('replay', debugs)
+    debugs = [
+        'ReplayPass',
+        # 'DataGraph',
+        # 'TDGSerializer'
+    ]
+    if options.build_datagraph:
+        if options.transform_pass == 'replay' or options.transform_pass == 'all':
+            benchmark.transform('replay', debugs)
+    debugs = [
+        # 'LLVMTraceCPU',
+        'RegionStats',
+    ]
+    if options.simulate:
+        if options.transform_pass == 'replay' or options.transform_pass == 'all':
+            benchmark.simulate('replay', debugs)
 
     # Abstract data flow replay.
-    # debugs = [
-    #     'ReplayPass',
-    #     'DynamicInstruction',
-    #     'TDGSerializer',
-    #     # 'AbstractDataFlowAcceleratorPass',
-    #     # 'LoopUtils',
-    # ]
-    # benchmark.transform('adfa', debugs)
-    # debugs = [
-    #     # 'AbstractDataFlowAccelerator',
-    #     # 'LLVMTraceCPU',
-    #     'RegionStats',
-    # ]
-    # benchmark.simulate('adfa', debugs)
+    debugs = [
+        'ReplayPass',
+        'DynamicInstruction',
+        'TDGSerializer',
+        # 'AbstractDataFlowAcceleratorPass',
+        # 'LoopUtils',
+    ]
+    if options.build_datagraph:
+        if options.transform_pass == 'adfa' or options.transform_pass == 'all':
+            benchmark.transform('adfa', debugs)
+    debugs = [
+        # 'AbstractDataFlowAccelerator',
+        # 'LLVMTraceCPU',
+        'RegionStats',
+    ]
+    if options.simulat:
+        if options.transform_pass == 'adfa' or options.transform_pass == 'all':
+            benchmark.simulate('adfa', debugs)
 
     # Stream.
     debugs = [
@@ -389,15 +399,19 @@ def run_benchmark(benchmark):
         'StreamPass',
         # 'MemoryAccessPattern',
     ]
-    benchmark.transform('stream', debugs)
-    # debugs = [
-    #     # 'LLVMTraceCPU',
-    # ]
-    # benchmark.simulate('stream', debugs)
+    if options.build_datagraph:
+        if options.transform_pass == 'stream' or options.transform_pass == 'all':
+            benchmark.transform('stream', debugs)
+    debugs = [
+        # 'LLVMTraceCPU',
+    ]
+    if options.simulat:
+        if options.transform_pass == 'stream' or options.transform_pass == 'all':
+            benchmark.simulate('stream', debugs)
 
 
-def main(folder):
-    benchmarks = MachSuiteBenchmarks(folder)
+def main(options):
+    benchmarks = MachSuiteBenchmarks(options.directory)
     names = list()
     processes = list()
     bs = list()
@@ -405,7 +419,7 @@ def main(folder):
         for subbenchmark_name in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark_name]:
             benchmark = benchmarks.benchmarks[benchmark_name][subbenchmark_name]
             processes.append(multiprocessing.Process(
-                target=run_benchmark, args=(benchmark,)))
+                target=run_benchmark, args=(benchmark, options,)))
             names.append(benchmark.get_name())
             bs.append(benchmark)
 
@@ -440,8 +454,20 @@ def main(folder):
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv) == 1:
-        # Use the current folder.
-        main('.')
-    else:
-        main(sys.argv[1])
+    import optparse
+    parser = optparse.OptionParser()
+    parser.add_option('-b', '--build', action='store_true',
+                      dest='build', default=False)
+    parser.add_option('-t', '--trace', action='store_true',
+                      dest='trace', default=False)
+    parser.add_option('--directory', action='store',
+                      type='string', dest='directory')
+    parser.add_option('-p', '--pass', action='store',
+                      type='string', dest='transform_pass', )
+    parser.add_option('-d', '--datagraph', action='store_true',
+                      dest='build_datagraph', default=False)
+    parser.add_option('-s', '--simulate datagraph', action='store_true',
+                      dest='simulate', default=False)
+    (options, args) = parser.parse_args()
+    print options
+    main(options)

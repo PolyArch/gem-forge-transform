@@ -21,13 +21,19 @@ class Benchmark(object):
         self.trace_bin = name + '.traced'
         self.trace_bc = self.trace_bin + '.bc'
         if trace_lib == 'Protobuf':
-            self.trace_links = links + [C.PROTOBUF_ELLCC_LIB]
+            self.trace_links = links + [
+                C.PROTOBUF_LIB,
+                C.LIBUNWIND_LIB,
+            ]
             self.trace_lib = os.path.join(
                 C.LLVM_TDG_BUILD_DIR, 'trace/libTracerProtobuf.a'
             )
             self.trace_format = 'protobuf'
         else:
-            self.trace_links = links + ['-lz']
+            self.trace_links = links + [
+                '-lz',
+                C.LIBUNWIND_LIB,
+            ]
             self.trace_lib = os.path.join(
                 C.LLVM_TDG_BUILD_DIR, 'trace/libTracerGZip.a'
             )
@@ -72,14 +78,14 @@ class Benchmark(object):
 
     def build_trace(self, link_stdlib=False, trace_reachable_only=False, debugs=[]):
         trace_cmd = [
-            'opt',
+            C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-trace-pass',
             self.raw_bc,
             '-o',
             self.trace_bc,
         ]
-        if self.trace_func is not None:
+        if self.trace_func is not None and len(self.trace_func) > 0:
             trace_cmd.append('-trace-function=' + self.trace_func)
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
@@ -91,7 +97,7 @@ class Benchmark(object):
         Util.call_helper(trace_cmd)
         if link_stdlib:
             link_cmd = [
-                'ecc++',
+                C.CXX,
                 '-O3',
                 '-nostdlib',
                 '-static',
@@ -104,7 +110,7 @@ class Benchmark(object):
             ]
         else:
             link_cmd = [
-                'ecc++',
+                C.CXX,
                 '-O3',
                 self.trace_bc,
                 self.trace_lib,
@@ -128,7 +134,7 @@ class Benchmark(object):
                      debugs=[]
                      ):
         opt_cmd = [
-            'opt',
+            C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-{pass_name}'.format(pass_name=pass_name),
             '-trace-file={trace_file}'.format(trace_file=trace_file),
@@ -148,7 +154,7 @@ class Benchmark(object):
         print('# Processing trace...')
         Util.call_helper(opt_cmd)
         build_cmd = [
-            'ecc',
+            C.CC,
             '-static',
             '-o',
             self.replay_bin,
@@ -171,7 +177,7 @@ class Benchmark(object):
                              debugs=[]
                              ):
         opt_cmd = [
-            'opt',
+            C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-trace-statistic-pass',
             '-trace-file={trace_file}'.format(trace_file=trace_file),

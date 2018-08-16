@@ -25,8 +25,8 @@ static llvm::cl::opt<std::string> TraceFunctionNames(
                    "C++ Functions, the signature is required. Dot separated."));
 
 namespace {
-// The separator has to be something else than ',()*&:[a-z][A-Z][0-9]_', which will
-// appear in the C++ function signature.
+// The separator has to be something else than ',()*&:[a-z][A-Z][0-9]_', which
+// will appear in the C++ function signature.
 const char TraceFunctionNameSeparator = '.';
 } // namespace
 
@@ -152,19 +152,25 @@ public:
       }
     }
 
+    // Insert "main" function into the must traced set.
+    this->mustTracedFunctionNames.insert("main");
+
     return true;
   }
   bool runOnFunction(llvm::Function &Function) override {
     auto FunctionName = Function.getName().str();
     DEBUG(llvm::errs() << "Processing Function: " << FunctionName << '\n');
 
-    if (TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
-        TraceReachableFunctionOnly.getValue()) {
-      if (this->reachableFunctions.find(&Function) ==
-          this->reachableFunctions.end()) {
-        // This function is not reachable.
-        // We safely ignore it.
-        return false;
+    if (this->mustTracedFunctionNames.count(FunctionName) == 0) {
+      // This function is not in the must traced set.
+      if (TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
+          TraceReachableFunctionOnly.getValue()) {
+        if (this->reachableFunctions.find(&Function) ==
+            this->reachableFunctions.end()) {
+          // This function is not reachable.
+          // We safely ignore it.
+          return false;
+        }
       }
     }
 
@@ -206,6 +212,11 @@ private:
    * Store the reachable function from tracedFunctionNames.
    */
   std::unordered_set<llvm::Function *> reachableFunctions;
+
+  /**
+   * Contains the must trace functions, currently only the main function.
+   */
+  std::unordered_set<std::string> mustTracedFunctionNames;
 
   /**
    * Parse the trace function list.
@@ -312,45 +323,63 @@ private:
         this->GlobalStrings, this->Module, BB.getParent()->getName());
     auto BBNameValue = getOrCreateStringLiteral(this->GlobalStrings,
                                                 this->Module, BB.getName());
-    auto PHIInsts = std::vector<std::pair<llvm::PHINode *, unsigned>>();
+    // HeadInst is an instruction that must be at the first place of BB.
+    // e.g. PHINode, landingpad.
+    auto HeadInsts = std::vector<std::pair<llvm::Instruction *, unsigned>>();
     unsigned InstId = 0;
+
+    auto IsHeadInst = [](llvm::Instruction *Inst) -> bool {
+      return llvm::isa<llvm::PHINode>(Inst) ||
+             llvm::isa<llvm::LandingPadInst>(Inst);
+    };
+
+    DEBUG(llvm::errs() << "Inside bb " << BB.getName() << '\n');
+
     for (auto InstIter = BB.begin(); InstIter != BB.end();
          InstIter = NextInstIter, InstId++) {
       NextInstIter = InstIter;
       NextInstIter++;
 
       std::string OpCodeName = InstIter->getOpcodeName();
-      // DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
+      DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
       llvm::Instruction *Inst = &*InstIter;
 
-      if (auto *PHI = llvm::dyn_cast<llvm::PHINode>(Inst)) {
-        // Special case for phi node as they must be grouped at the top
+      if (IsHeadInst(Inst)) {
+        // Special case for head instructions as they must be grouped at the top
         // of the basic block.
         // Push them into a vector for later processing.
-        PHIInsts.emplace_back(PHI, InstId);
-        continue;
-      }
-
-      // Ignore the landpadinst.
-      if (llvm::isa<llvm::LandingPadInst>(Inst)) {
+        HeadInsts.emplace_back(Inst, InstId);
         continue;
       }
 
       traceNonPhiInst(Inst, FunctionNameValue, BBNameValue, InstId);
     }
 
+    DEBUG(llvm::errs() << "After transformation.\n");
+    for (auto InstIter = BB.begin(); InstIter != BB.end(); ++InstIter) {
+      std::string OpCodeName = InstIter->getOpcodeName();
+      DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
+    }
+
     // Handle all the phi nodes now.
-    if (!PHIInsts.empty()) {
-      auto InsertBefore = PHIInsts[PHIInsts.size() - 1].first->getNextNode();
+    if (!HeadInsts.empty()) {
+      auto InsertBefore = HeadInsts.back().first->getNextNode();
       // Ignore landingpadinst.
-      while (llvm::isa<llvm::LandingPadInst>(InsertBefore)) {
-        InsertBefore = InsertBefore->getNextNode();
-      }
-      for (auto &PHIInstPair : PHIInsts) {
-        auto PHIInst = PHIInstPair.first;
-        auto InstId = PHIInstPair.second;
-        tracePhiInst(PHIInst, FunctionNameValue, BBNameValue, InstId,
-                     InsertBefore);
+      assert(!IsHeadInst(InsertBefore) &&
+             "InsertBefore should not be head instruction.");
+      for (auto &HeadInstPair : HeadInsts) {
+        auto HeadInst = HeadInstPair.first;
+        auto InstId = HeadInstPair.second;
+        if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(HeadInst)) {
+          tracePhiInst(PHIInst, FunctionNameValue, BBNameValue, InstId,
+                       InsertBefore);
+        } else if (llvm::isa<llvm::LandingPadInst>(HeadInst)) {
+          // landingpad inst can be traced as normal instruction?
+          traceNonPhiInst(HeadInst, FunctionNameValue, BBNameValue, InstId,
+                          InsertBefore);
+        } else {
+          llvm_unreachable("Invalid head instruction.");
+        }
       }
     }
 
@@ -359,7 +388,7 @@ private:
 
   // Phi node has to be handled specially as it must be the first
   // instruction of a basic block.
-  // All the trace functions will be inserted beter @InsertBefore.
+  // All the trace functions will be inserted before @InsertBefore.
   void tracePhiInst(llvm::PHINode *Inst, llvm::Constant *FunctionNameValue,
                     llvm::Constant *BBNameValue, unsigned InstId,
                     llvm::Instruction *InsertBefore) {
@@ -396,7 +425,8 @@ private:
   // Insert the trace call to non phi instructions.
   void traceNonPhiInst(llvm::Instruction *Inst,
                        llvm::Constant *FunctionNameValue,
-                       llvm::Constant *BBNameValue, unsigned InstId) {
+                       llvm::Constant *BBNameValue, unsigned InstId,
+                       llvm::Instruction *InsertBefore = nullptr) {
     std::string OpCodeName = Inst->getOpcodeName();
     assert(OpCodeName != "phi" && "traceNonPhiInst can't trace phi inst.");
 
@@ -406,7 +436,7 @@ private:
     std::vector<llvm::Value *> PrintInstArgs =
         getPrintInstArgs(Inst, FunctionNameValue, BBNameValue, InstId);
     // Call printInst. Before the instruction.
-    llvm::IRBuilder<> Builder(Inst);
+    llvm::IRBuilder<> Builder((InsertBefore == nullptr) ? Inst : InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
     if (!TraceInstructionOnly) {
@@ -437,30 +467,26 @@ private:
 
       // Call printResult after the instruction (if it has a result).
       bool shouldTraceResult = Inst->getName() != "";
-      // Special case for call: if the callee is traced, then we do
-      // not log the result, but rely on the traced ret to provide it.
-      // Otherwise, we log the result.
       if (shouldTraceResult) {
         if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
-          auto CalledFunction = CallInst->getCalledFunction();
-          if (CalledFunction == nullptr) {
-            // This is a indirect call...
-            // I just assume the provided handle is traced...
-            shouldTraceResult = false;
-          } else {
-            if (!CalledFunction->isDeclaration()) {
-              // The callee is traced.
-              shouldTraceResult = false;
-            }
-          }
+          /**
+           * Do not take the risk of tracing the result of call instruction.
+           * If the callee is traced, then the pair of (printInst, printInstEnd)
+           * for the call instruction is likely interleaved with the the print*
+           * calls in the callee.
+           * And there is no way for us to determine whether the callee is
+           * traced, so I just ignore the result of call instruction.
+           * The result of the call can be filled in either by the callee's
+           * traced ret instruction, or by other users in the same function.
+           */
+          shouldTraceResult = false;
         } else if (auto InvokeInst = llvm::dyn_cast<llvm::InvokeInst>(Inst)) {
           /**
+           * Similar reason as call instruction, but also due to that
            * LLVM requires a terminator for each basic block.
            * Most of the terminators does not produce values,
            * thus no need to trace the result.
-           * However, the only exception is 'invoke'. For now
-           * I don't have any good solution to handle this
-           * without messing a lot of code.
+           * However, the only exception is 'invoke'.
            * This should be fine for standalone mode.
            */
           shouldTraceResult = false;
@@ -468,16 +494,20 @@ private:
       }
 
       if (shouldTraceResult) {
-        llvm::Instruction *NextInst = Inst->getNextNode();
-        if (NextInst == nullptr) {
-          assert(false && "Missing tracing last inst in block.");
-        } else {
-          assert(NextInst != nullptr && "Null next inst.");
-          Builder.SetInsertPoint(NextInst);
-          auto PrintValueArgs =
-              getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
-          Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+        if (InsertBefore == nullptr) {
+          // Set the insertion point after the instruction.
+          llvm::Instruction *NextInst = Inst->getNextNode();
+          if (NextInst == nullptr) {
+            assert(false && "Missing tracing last inst in block.");
+          } else {
+            assert(NextInst != nullptr && "Null next inst.");
+            Builder.SetInsertPoint(NextInst);
+          }
         }
+
+        auto PrintValueArgs =
+            getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
+        Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
       }
     }
     // Call printInstEnd to commit.
