@@ -58,7 +58,7 @@ cp bin/opt ../../../../bin
 
 ### GLLVM
 
-We need to use [gllvm](https://github.com/SRI-CSL/gllvm) to compile the standard library into LLVM IR. It is straight forward to set it up. Notice that we using it, we are going to set the `LLVM_CC_NAME=ecc`, `LLVM_CXX_NAME=ecc++`, `LLVM_AR_NAME=ecc-ar`, `LLVM_LINK_NAME=llvm-link`.
+We need to use [gllvm](https://github.com/SRI-CSL/gllvm) to compile the standard library into LLVM IR. It is straight forward to set it up. Notice that when we using it, we are going to set the `LLVM_CC_NAME=ecc`, `LLVM_CXX_NAME=ecc++`, `LLVM_AR_NAME=ecc-ar`, `LLVM_LINK_NAME=llvm-link`.
 
 ### Compile MUSL to LLVM IR
 

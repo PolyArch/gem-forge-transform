@@ -66,4 +66,7 @@ set_target_properties(LLVMTDGPass PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
 
-target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY})
+# Link to LLVM components.
+llvm_map_components_to_libnames(LLVM_LIBS demangle)
+
+target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY} ${LLVM_LIBS})

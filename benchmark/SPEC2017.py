@@ -129,13 +129,17 @@ class SPEC2017Benchmark:
         )
 
     def get_run_path(self):
+        if self.name.endswith('_s'):
+            run_dirname = 'run_base_refspeed_LLVM_TDG-m64.0000'
+        else:
+            run_dirname = 'run_base_refrate_LLVM_TDG-m64.0000'
         return os.path.join(
             self.spec,
             'benchspec',
             'CPU',
             self.name,
             'run',
-            'run_base_refspeed_LLVM_TDG-m64.0000'
+            run_dirname
         )
 
     def get_raw_bc(self):
@@ -227,7 +231,7 @@ class SPEC2017Benchmark:
         if self.trace_stdlib:
             # Link with the llvm bitcode of standard library.
             link_cmd = [
-                'llvm-link',
+                C.LLVM_LINK,
                 raw_bc,
                 C.MUSL_LIBC_LLVM_BC,
                 '-o',
@@ -238,7 +242,7 @@ class SPEC2017Benchmark:
 
         # Name everything in the bitcode.
         print('# Naming everything in the llvm bitcode...')
-        Util.call_helper(['opt', '-instnamer', raw_bc, '-o', raw_bc])
+        Util.call_helper([C.OPT, '-instnamer', raw_bc, '-o', raw_bc])
         # Copy it to run directory.
         Util.call_helper([
             'cp',
@@ -259,6 +263,35 @@ class SPEC2017Benchmark:
             # Found one.
             fields = line.split()
             assert(len(fields) > 6)
+            if self.name.endswith('namd_r'):
+                # Sepcial case for namd_r, which echos to a script and use numactl to
+                # control NUMA access.
+                # I don't think we should consider this for our benchmark,
+                # so I manually extracted the arguments.
+                return [
+                    '--input',
+                    'apoa1.input',
+                    '--output',
+                    'apoa1.ref.output',
+                    '--iterations',
+                    '65',
+                ]
+            elif self.name.endswith('povray_r'):
+                return [
+                    'SPEC-benchmark-ref.ini',
+                ]
+            elif self.name.endswith('parest_r'):
+                return [
+                    'ref.prm',
+                ]
+            elif self.name.endswith('blender_r'):
+                return [
+                    'sh3_no_char.blend',
+                    '--render-output',
+                    'sh3_no_char_',
+                    '--threads', '1', '-b', '-F',
+                    'RAWTGA', '-s', '849', '-e', '849', '-a',
+                ]
             # Ignore the first one and redirect one.
             # Also ignore other invoke for now.
             return fields[1:-5]
@@ -445,29 +478,111 @@ class SPEC2017Benchmarks:
         #     'trace_func': 'compile_file',
         # },
         # # C++ Benchmark
-        'deepsjeng_s': {
-            'name': '631.deepsjeng_s',
-            'links': [],
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 0,
-            'end_inst': 0,
-            'n_traces': 1,
-            'trace_func': 'think(gamestate_t*, state_t*)',
-        },
+        # 'deepsjeng_s': {
+        #     'name': '631.deepsjeng_s',
+        #     'links': [],
+        #     'start_inst': 0,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 0,
+        #     'end_inst': 0,
+        #     'n_traces': 1,
+        #     'trace_func': 'think(gamestate_t*, state_t*)',
+        # },
         # 'leela_s': {
         #     'name': '641.leela_s',
         #     'links': [],
-        #     'skip_inst': 0,
-        #     'max_inst': 100000000,
-        #     'trace_func': '_ZN9UCTSearch5thinkEii', # Search::think
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
         # },
-        # # perlbench_s is not working as it uses POSIX open function.
+        # 'namd_r': {
+        #     'name': '508.namd_r',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        # },
+        # # Will throw exception.
+        # # Does not work with ellcc as RE.
+        # 'povray_r': {
+        #     'name': '511.povray_r',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        # },
+        # # Does not work as it will throw exception.
+        # # Does not work with ellcc as RE.
+        # # Need to fix a comparison between integer and pointer error.
+        'parest_r': {
+            'name': '510.parest_r',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+        },
+
+
+        # # Does not work with ellcc as it uses linux header.
+        # # Does not throw.
+        # 'xalancbmk_s': {
+        #     'name': '623.xalancbmk_s',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        # },
+
+        # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
+        # Does not throw.
+        # Haven't tested with ellcc.
+        # 'blender_r': {
+        #     'name': '526.blender_r',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        # },
+
+
+        # # Not working so far due to setjmp/longjmp.
+        # 'omnetpp_s': {
+        #     'name': '620.omnetpp_s',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        # },
+        # # Does not work with ellcc as it uses posix io function.
         # 'perlbench_s': {
         #     'name': '600.perlbench_s',
         #     'links': [],
-        #     'skip_inst': 100000000,
-        #     'max_inst': 100000000,
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
         #     'trace_func': '',
         # },
 
@@ -533,10 +648,18 @@ class SPEC2017Benchmarks:
 
     def set_gllvm(self):
         # Set up the environment for gllvm.
-        os.putenv('LLVM_CC_NAME', 'ecc')
-        os.putenv('LLVM_CXX_NAME', 'ecc++')
-        os.putenv('LLVM_LINK_NAME', 'llvm-link')
-        os.putenv('LLVM_AR_NAME', 'ecc-ar')
+        if C.USE_ELLCC:
+            os.putenv('LLVM_COMPILER_PATH', C.ELLCC_BIN_PATH)
+            os.putenv('LLVM_CC_NAME', 'ecc')
+            os.putenv('LLVM_CXX_NAME', 'ecc++')
+            os.putenv('LLVM_LINK_NAME', 'llvm-link')
+            os.putenv('LLVM_AR_NAME', 'ecc-ar')
+        else:
+            os.putenv('LLVM_COMPILER_PATH', C.LLVM_BIN_PATH)
+            os.putenv('LLVM_CC_NAME', 'clang')
+            os.putenv('LLVM_CXX_NAME', 'clang++')
+            os.putenv('LLVM_LINK_NAME', 'llvm-link')
+            os.putenv('LLVM_AR_NAME', 'llvm-ar')
 
 
 def main(folder, build, trace):

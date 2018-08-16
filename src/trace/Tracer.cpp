@@ -7,6 +7,8 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
 
 // The tracer will work with two environment variables:
 // 1. LLVM_TDG_TRACE_MODE, if simple, it will not trace value, but instructions
@@ -73,6 +75,11 @@ static bool insideMyself = false;
 static uint64_t count;
 static uint64_t tracedCount = 0;
 
+// Use this flag to ingore all the initialization phase.
+static bool hasSeenMain = false;
+
+static bool isDebug = false;
+
 /**
  * If START_INST is set (>0), the tracer will ignore the dynamic stack and
  * trace in a pattern of
@@ -88,6 +95,8 @@ static uint64_t MAX_INST = 1;
 static uint64_t SKIP_INST = 0;
 static uint64_t END_INST = 0;
 
+static uint64_t PRINT_INTERVAL = 10000000;
+
 // In simple mode, it will not log the dynamic value of operands.
 static bool isSimpleMode = false;
 
@@ -96,7 +105,7 @@ static bool isSimpleMode = false;
 static std::vector<unsigned> stack;
 static std::vector<const char *> stackName;
 static unsigned tracedFunctionsInStack;
-static std::string currentInstOpName;
+static const char *currentInstOpName = nullptr;
 
 // This serves as the guard.
 
@@ -106,6 +115,15 @@ static uint64_t getUint64Env(const char *name) {
     return std::stoull(std::string(env));
   } else {
     return 0;
+  }
+}
+
+static bool getBoolEnv(const char *name) {
+  const char *env = std::getenv(name);
+  if (env) {
+    return std::strcmp(env, "true") == 0;
+  } else {
+    return false;
   }
 }
 
@@ -139,12 +157,21 @@ static void initialize() {
     MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
     END_INST = getUint64Env("LLVM_TDG_END_INST");
 
+    PRINT_INTERVAL = getUint64Env("LLVM_TDG_PRINT_INTERVAL");
+    if (PRINT_INTERVAL == 0) {
+      PRINT_INTERVAL = 10000000;
+    }
+
+    isDebug = getBoolEnv("LLVM_TDG_DEBUG");
+
     std::atexit(cleanup);
 
-    printf("initializing skip inst to %lu...\n", SKIP_INST);
-    printf("initializing max inst to %lu...\n", MAX_INST);
-    printf("initializing start inst to %lu...\n", START_INST);
-    printf("initializing end inst to %lu...\n", END_INST);
+    printf("initializing SKIP_INST to %lu...\n", SKIP_INST);
+    printf("initializing MAX_INST to %lu...\n", MAX_INST);
+    printf("initializing START_INST to %lu...\n", START_INST);
+    printf("initializing END_INST to %lu...\n", END_INST);
+    printf("initializing PRINT_INTERVAL to %lu...\n", PRINT_INTERVAL);
+    printf("initializing isDebug to %d...\n", isDebug);
     initialized = true;
   }
 }
@@ -166,6 +193,70 @@ static bool shouldLog() {
   }
 }
 
+static void printStack() {
+  for (size_t i = 0; i < stackName.size(); ++i) {
+    printf("%s (%u) -> ", stackName[i], stack[i]);
+  }
+  printf("\n");
+}
+
+// Try to use libunwind to unwind the stack to some point. Return if succeed.
+static void unwind() {
+  unw_cursor_t cursor;
+  unw_context_t context;
+
+  unw_getcontext(&context);
+  unw_init_local(&cursor, &context);
+
+  std::vector<std::string> unwinded;
+
+  while (unw_step(&cursor) > 0) {
+    unw_word_t offset, pc;
+    unw_get_reg(&cursor, UNW_REG_IP, &pc);
+    if (pc == 0) {
+      break;
+    }
+    char sym[256];
+    if (unw_get_proc_name(&cursor, sym, sizeof(sym), &offset) == 0) {
+      unwinded.push_back(sym);
+      if (isDebug) {
+        printf("0x%lx: (%s+0x%lx)\n", pc, sym, offset);
+      }
+    } else {
+      if (isDebug) {
+        printf("0x%lx: -- unable to get the symbol\n", pc);
+      }
+      // Ignore the frame without symbol name
+    }
+  }
+
+  // Matching algorithm:
+  // For every frame in our stack, search in the unwinded stack, if there is no
+  // match, then we assume this is the boundary.
+  assert(unwinded.size() > 0 && "There should be at least one frame.");
+  int boundary = 0;
+  int unwindedIdx = unwinded.size() - 1;
+  while (boundary < stackName.size()) {
+    bool found = false;
+    while (unwindedIdx >= 0 && !found) {
+      if (stackName[boundary] == unwinded[unwindedIdx]) {
+        // Found a match.
+        boundary++;
+        found = true;
+      }
+      unwindedIdx--;
+    }
+    if (!found) {
+      // This is the boundary.
+      break;
+    }
+  }
+
+  // Throw away the frame beyond the boundary.
+  stackName.resize(boundary);
+  stack.resize(boundary);
+}
+
 void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
   // printf("%s %s:%d, inside? %d\n", FunctionName, __FILE__, __LINE__,
   // insideMyself);
@@ -173,6 +264,16 @@ void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
     return;
   } else {
     insideMyself = true;
+  }
+  if (!hasSeenMain) {
+    if (std::strcmp(FunctionName, "main") == 0) {
+      // Keep going.
+      hasSeenMain = true;
+    } else {
+      // Exit.
+      insideMyself = false;
+      return;
+    }
   }
   // printf("%s:%d, inside? %d\n", __FILE__, __LINE__, insideMyself);
   initialize();
@@ -198,7 +299,45 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
   } else {
     insideMyself = true;
   }
+  if (!hasSeenMain) {
+    if (std::strcmp(FunctionName, "main") == 0) {
+      // Keep going.
+      hasSeenMain = true;
+    } else {
+      // Exit.
+      insideMyself = false;
+      return;
+    }
+  }
   initialize();
+  if (stackName.empty()) {
+    printf("Empty stack when we in printInst?.");
+    std::exit(1);
+  }
+
+  // Check if this is a landingpad instruction.
+  if (std::strcmp(OpCodeName, "landingpad") == 0) {
+    // This is a landingpad instruction.
+    // Use libunwind to adjust our stack.
+    if (isDebug) {
+      printf("Before unwind the stack: \n");
+      printStack();
+    }
+    unwind();
+    assert(!stackName.empty() && "After unwind the stack is empty.");
+
+    if (isDebug) {
+      printf("After unwind the stack: \n");
+      printStack();
+    }
+  }
+
+  if (stackName.back() != FunctionName) {
+    printf("Unmatched FunctionName %s %s %u with stack: \n", FunctionName,
+           BBName, Id);
+    printStack();
+    std::exit(1);
+  }
   if (Id == 0) {
     // We are at the header of a basic block. Profile.
     std::string FuncStr(FunctionName);
@@ -207,16 +346,16 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
   }
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
   // __LINE__, insideMyself, count); Update current inst.
+  assert(currentInstOpName == nullptr && "Previous inst has not been closed.");
   currentInstOpName = OpCodeName;
   count++;
-  const uint64_t PRINT_INTERVAL = 10000000;
   if (count % PRINT_INTERVAL < 5) {
     // Print every PRINT_INTERVAL instructions.
     printf("%lu:", count);
     for (size_t i = 0; i < stackName.size(); ++i) {
       printf("%s (%u) -> ", stackName[i], stack[i]);
     }
-    printf("\n");
+    printf(" %s %u %s\n", BBName, Id, OpCodeName);
     if (count % PRINT_INTERVAL == 0) {
       printf("\n");
     }
@@ -234,6 +373,10 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
     return;
   } else {
     insideMyself = true;
+  }
+  if (!hasSeenMain) {
+    insideMyself = false;
+    return;
   }
   if (!shouldLog()) {
     insideMyself = false;
@@ -292,6 +435,10 @@ void printInstEnd() {
   } else {
     insideMyself = true;
   }
+  if (!hasSeenMain) {
+    insideMyself = false;
+    return;
+  }
   if (shouldLog()) {
     tracedCount++;
     printInstEndImpl();
@@ -305,8 +452,14 @@ void printInstEnd() {
   }
 
   // Update the stack
-  if (currentInstOpName == "ret") {
+  assert(currentInstOpName != nullptr &&
+         "Missing currentInstOpName in printInstEnd.");
+  if (std::strcmp(currentInstOpName, "ret") == 0) {
     // printf("%s\n", currentInstOpName.c_str());
+    if (isDebug) {
+      printf("Return from: ");
+      printStack();
+    }
     if (stack.size() == 0) {
       printf("Empty stack when we found ret?\n");
     }
@@ -317,6 +470,7 @@ void printInstEnd() {
     stack.pop_back();
     stackName.pop_back();
   }
+  currentInstOpName = nullptr;
 
   // Check if we are about to exit.
   if (START_INST > 0) {
@@ -338,6 +492,10 @@ void printFuncEnterEnd() {
     return;
   } else {
     insideMyself = true;
+  }
+  if (!hasSeenMain) {
+    insideMyself = false;
+    return;
   }
   if (shouldLog()) {
     printFuncEnterEndImpl();

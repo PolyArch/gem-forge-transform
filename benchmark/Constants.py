@@ -5,10 +5,18 @@ LLVM_TDG_DIR = '/home/zhengrong/Documents/LLVM-TDG'
 LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'src')
 
 """
+Normal llvm install path.
+"""
+LLVM_PATH = '/home/zhengrong/Documents/llvm-6.0/install'
+LLVM_BIN_PATH = os.path.join(LLVM_PATH, 'bin')
+
+
+"""
 ellcc path.
 """
 
 ELLCC_PATH = '/home/zhengrong/Documents/ellcc'
+ELLCC_BIN_PATH = os.path.join(ELLCC_PATH, 'bin')
 
 """
 Protobuf built with ellcc.
@@ -53,3 +61,22 @@ STORE_QUEUE_SIZE = 32
 GEM5_L1D_SIZE = '32kB'
 GEM5_L1I_SIZE = '32kB'
 GEM5_L2_SIZE = '256kB'
+
+
+USE_ELLCC = False
+
+if not USE_ELLCC:
+    OPT = os.path.join(LLVM_BIN_PATH, 'opt')
+    CC = os.path.join(LLVM_BIN_PATH, 'clang')
+    CXX = os.path.join(LLVM_BIN_PATH, 'clang++')
+    LLVM_LINK = os.path.join(LLVM_BIN_PATH, 'llvm-link')
+    PROTOBUF_LIB = os.path.join('-lprotobuf')
+    LIBUNWIND_LIB = os.path.join('-lunwind')
+else:
+    OPT = os.path.join(ELLCC_BIN_PATH, 'opt')
+    CC = os.path.join(ELLCC_BIN_PATH, 'ecc')
+    CXX = os.path.join(ELLCC_BIN_PATH, 'ecc++')
+    LLVM_LINK = os.path.join(ELLCC_BIN_PATH, 'llvm-link')
+    PROTOBUF_LIB = PROTOBUF_ELLCC_LIB
+    print("Undefined libunwind for ellcc!")
+    assert(False)
