@@ -70,6 +70,7 @@ if not USE_ELLCC:
     CC = os.path.join(LLVM_BIN_PATH, 'clang')
     CXX = os.path.join(LLVM_BIN_PATH, 'clang++')
     LLVM_LINK = os.path.join(LLVM_BIN_PATH, 'llvm-link')
+    LLVM_DIS = os.path.join(LLVM_BIN_PATH, 'llvm-dis')
     PROTOBUF_LIB = os.path.join('-lprotobuf')
     LIBUNWIND_LIB = os.path.join('-lunwind')
 else:
@@ -77,6 +78,7 @@ else:
     CC = os.path.join(ELLCC_BIN_PATH, 'ecc')
     CXX = os.path.join(ELLCC_BIN_PATH, 'ecc++')
     LLVM_LINK = os.path.join(ELLCC_BIN_PATH, 'llvm-link')
+    LLVM_DIS = os.path.join(ELLCC_BIN_PATH, 'llvm-dis')
     PROTOBUF_LIB = PROTOBUF_ELLCC_LIB
     print("Undefined libunwind for ellcc!")
     assert(False)

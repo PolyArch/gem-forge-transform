@@ -464,9 +464,9 @@ if __name__ == '__main__':
                       type='string', dest='directory')
     parser.add_option('-p', '--pass', action='store',
                       type='string', dest='transform_pass', )
-    parser.add_option('-d', '--datagraph', action='store_true',
+    parser.add_option('-d', '--build-datagraph', action='store_true',
                       dest='build_datagraph', default=False)
-    parser.add_option('-s', '--simulate datagraph', action='store_true',
+    parser.add_option('-s', '--simulate', action='store_true',
                       dest='simulate', default=False)
     (options, args) = parser.parse_args()
     print options

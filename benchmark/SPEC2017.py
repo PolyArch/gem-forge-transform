@@ -398,17 +398,17 @@ class SPEC2017Benchmark:
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        # 'lbm_s': {
-        #     'name': '619.lbm_s',
-        #     'links': ['-lm'],
-        #     # First 100m insts every 1b insts, skipping the first 3.3b
-        #     'start_inst': 33e8,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 34e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'LBM_performStreamCollideTRT',
-        # },
+        'lbm_s': {
+            'name': '619.lbm_s',
+            'links': ['-lm'],
+            # First 100m insts every 1b insts, skipping the first 3.3b
+            'start_inst': 33e8,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 34e8,
+            'n_traces': 1,
+            'trace_func': 'LBM_performStreamCollideTRT',
+        },
         # 'imagick_s': {
         #     'name': '638.imagick_s',
         #     'links': ['-lm'],
@@ -477,6 +477,17 @@ class SPEC2017Benchmarks:
         #     'n_traces': 20,
         #     'trace_func': 'compile_file',
         # },
+        # # Does not work with ellcc as it uses posix io function.
+        # 'perlbench_s': {
+        #     'name': '600.perlbench_s',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        # },
         # # C++ Benchmark
         # 'deepsjeng_s': {
         #     'name': '631.deepsjeng_s',
@@ -520,20 +531,19 @@ class SPEC2017Benchmarks:
         #     'n_traces': 10,
         #     'trace_func': '',
         # },
-        # # Does not work as it will throw exception.
+        # # Throws exception.
         # # Does not work with ellcc as RE.
         # # Need to fix a comparison between integer and pointer error.
-        'parest_r': {
-            'name': '510.parest_r',
-            'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 10,
-            'trace_func': '',
-        },
-
+        # 'parest_r': {
+        #     'name': '510.parest_r',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        # },
 
         # # Does not work with ellcc as it uses linux header.
         # # Does not throw.
@@ -566,17 +576,6 @@ class SPEC2017Benchmarks:
         # # Not working so far due to setjmp/longjmp.
         # 'omnetpp_s': {
         #     'name': '620.omnetpp_s',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        # },
-        # # Does not work with ellcc as it uses posix io function.
-        # 'perlbench_s': {
-        #     'name': '600.perlbench_s',
         #     'links': [],
         #     'start_inst': 1e8,
         #     'max_inst': 1e7,
@@ -662,63 +661,77 @@ class SPEC2017Benchmarks:
             os.putenv('LLVM_AR_NAME', 'llvm-ar')
 
 
-def main(folder, build, trace):
+build_datagraph_debugs = {
+    'stream': [
+        'ReplayPass',
+        'StreamPass',
+        # 'DataGraph',
+    ],
+    'replay': [],
+    'adfa': [],
+    'simd': [],
+}
+
+
+simulate_datagraph_debugs = {
+    'stream': [],
+    'replay': [],
+    'adfa': [],
+    'simd': [],
+}
+
+
+def main(options):
     trace_stdlib = False
     job_scheduler = Util.JobScheduler(8, 1)
-    benchmarks = SPEC2017Benchmarks(trace_stdlib, build)
+    benchmarks = SPEC2017Benchmarks(trace_stdlib, options.build)
     names = list()
     b_list = list()
     for benchmark_name in benchmarks.benchmarks:
         benchmark = benchmarks.benchmarks[benchmark_name]
-        if trace:
+        if options.trace:
             benchmark.schedule_trace(job_scheduler)
-        # benchmark.schedule_statistics(job_scheduler, [])
-        debugs = [
-            'ReplayPass',
-            'StreamPass',
-            # 'DataGraph',
-        ]
-        # benchmark.schedule_transform(job_scheduler, 'stream', debugs)
-        # debugs = []
-        # benchmark.schedule_simulation(job_scheduler, 'stream', debugs)
-        # debugs = [
-        #     'ReplayPass',
-        #     'PostDominanceFrontier',
-        #     # 'TDGSerializer',
-        #     # 'AbstractDataFlowAcceleratorPass',
-        #     # 'LoopUtils',
-        # ]
-        # benchmark.schedule_transform(job_scheduler, 'replay', debugs)
-        # debugs = []
-        # benchmark.schedule_simulation(job_scheduler, 'replay', debugs)
-        # debugs = [
-        #     'ReplayPass',
-        # ]
-        # benchmark.schedule_transform(job_scheduler, 'adfa', debugs)
-        # debugs = []
-        # benchmark.schedule_simulation(job_scheduler, 'adfa', debugs)
-        # debugs = [
-        #     'ReplayPass',
-        # ]
-        # benchmark.schedule_transform(job_scheduler, 'simd', debugs)
-        # debugs = []
-        # benchmark.schedule_simulation(job_scheduler, 'simd', debugs)
-
+        # Schedule data graph transformation.
+        if options.build_datagraph:
+            if options.transform_pass == 'all':
+                for transform_pass in build_datagraph_debugs:
+                    benchmark.schedule_transform(
+                        job_scheduler,
+                        transform_pass,
+                        build_datagraph_debugs[transform_pass])
+            else:
+                benchmark.schedule_transform(
+                    job_scheduler,
+                    options.transform_pass,
+                    build_datagraph_debugs[options.transform_pass])
+        # Schedule data graph simulation.
+        if options.simulate:
+            if options.transform_pass == 'all':
+                for transform_pass in simulate_datagraph_debugs:
+                    benchmark.schedule_simulation(
+                        job_scheduler,
+                        transform_pass,
+                        simulate_datagraph_debugs[transform_pass])
+            else:
+                benchmark.schedule_simulation(
+                    job_scheduler,
+                    options.transform_pass,
+                    simulate_datagraph_debugs[options.transform_pass])
         b_list.append(benchmark)
 
     # Start the job.
     job_scheduler.run()
 
-    # for benchmark in b_list:
-    #     tdgs = benchmark.get_tdgs('stream')
-    #     tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
-    # stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
-    # print('-------------------------- ' + benchmark.get_name())
-    # stream_stats.print_stats()
-    # stream_stats.print_access()
+    for benchmark in b_list:
+        tdgs = benchmark.get_tdgs('stream')
+        tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
+    stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
+    print('-------------------------- ' + benchmark.get_name())
+    stream_stats.print_stats()
+    stream_stats.print_access()
 
-    # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    # Util.ADFAAnalyzer.analyze_adfa(b_list)
+    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+    Util.ADFAAnalyzer.analyze_adfa(b_list)
 
 
 if __name__ == '__main__':
@@ -728,8 +741,14 @@ if __name__ == '__main__':
                       dest='build', default=False)
     parser.add_option('-t', '--trace', action='store_true',
                       dest='trace', default=False)
-    parser.add_option('-d', '--directory', action='store',
+    parser.add_option('--directory', action='store',
                       type='string', dest='directory')
+    parser.add_option('-p', '--pass', action='store',
+                      type='string', dest='transform_pass', default='all')
+    parser.add_option('-d', '--build-datagraph', action='store_true',
+                      dest='build_datagraph', default=False)
+    parser.add_option('-s', '--simulate', action='store_true',
+                      dest='simulate', default=False)
     (options, args) = parser.parse_args()
     # Use the current folder.
-    main(options.directory, options.build, options.trace)
+    main(options)

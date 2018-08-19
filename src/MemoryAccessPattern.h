@@ -3,6 +3,7 @@
 
 #include "llvm/IR/Instruction.h"
 
+#include <list>
 #include <unordered_map>
 
 /**
@@ -116,6 +117,14 @@ public:
 private:
   class AddressPatternFSM {
   public:
+    enum StateT {
+      UNKNOWN,
+      SUCCESS,
+      FAILURE,
+    };
+
+    StateT State;
+
     Pattern CurrentPattern;
     uint64_t Updates;
     uint64_t PrevAddress;
@@ -131,17 +140,13 @@ private:
     int64_t StrideJ;
     uint64_t J;
 
-    AddressPatternFSM(llvm::Instruction *_BaseLoad)
-        : CurrentPattern(UNKNOWN), Updates(0), PrevAddress(0),
-          BaseLoad(_BaseLoad), Base(0), StrideI(0), I(0), NI(0), StrideJ(0),
-          J(0) {
-      if (this->BaseLoad != nullptr) {
-        this->CurrentPattern = INDIRECT;
-      }
-    }
+    AddressPatternFSM(llvm::Instruction *_BaseLoad, Pattern _CurrentPattern);
 
     void update(uint64_t Addr);
     void updateMissing();
+
+  private:
+    std::list<std::pair<uint64_t, uint64_t>> ConfirmedAddrs;
   };
 
   class AccessPatternFSM {
@@ -161,22 +166,29 @@ private:
 
     StateT getState() const { return this->State; }
 
-    const AddressPatternFSM &getAddressPattern() const {
-      return this->AddressPattern;
-    }
+    const AddressPatternFSM &getAddressPattern() const;
 
     AccessPattern getAccessPattern() const { return this->AccPattern; }
 
-    AccessPatternFSM(AccessPattern _AccPattern, llvm::Instruction *_BaseLoad)
-        : Accesses(0), Iters(0), State(UNKNOWN), AccPattern(_AccPattern),
-          AddressPattern(_BaseLoad) {}
+    AccessPatternFSM(AccessPattern _AccPattern, llvm::Instruction *_BaseLoad);
 
   protected:
     StateT State;
 
     const AccessPattern AccPattern;
 
-    AddressPatternFSM AddressPattern;
+    std::list<AddressPatternFSM> AddressPatterns;
+
+    void feedUpdateMissingToAddrPatterns() {
+      for (auto &AddrPattern : this->AddressPatterns) {
+        AddrPattern.updateMissing();
+      }
+    }
+    void feedUpdateToAddrPatterns(uint64_t Addr) {
+      for (auto &AddrPattern : this->AddressPatterns) {
+        AddrPattern.update(Addr);
+      }
+    }
   };
 
   llvm::Instruction *MemInst;
