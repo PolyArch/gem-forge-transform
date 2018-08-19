@@ -181,28 +181,38 @@ public:
       this->PrevBasicBlock = PrevBB;
     }
 
-    DynamicId getLastDynamicId(llvm::Instruction *StaticInst) const;
-    void updateLastDynamicId(llvm::Instruction *StaticInst, DynamicId Id);
-    size_t getLastDynamicIdMapSize() const {
-      return this->StaticToLastDynamicMap.size();
+    const std::list<DynamicId> &
+    translateRegisterDependence(llvm::Instruction *StaticInst) const;
+    void updateRegisterDependenceLookUpMap(llvm::Instruction *StaticInst,
+                                           std::list<DynamicId> Ids);
+    void updateRegisterDependenceLookUpMap(llvm::Instruction *StaticInst,
+                                           DynamicId Id);
+    size_t getRegisterDependenceLookUpMapSize() const {
+      return this->RegDepLookUpMap.size();
     }
 
   private:
     llvm::BasicBlock *PrevBasicBlock;
 
     /**
-     * Map from llvm static instructions to the last dynamic instruction id.
-     * If missing, then it hasn't appeared in the dynamic trace.
+     * Map from llvm static instructions I to a list of dynamic ids Ids.
+     * Any register dependence to I will be translated to dependences on Ids.
+     *
+     * For flexibility, we allow multiple ids here. One possible use case is
+     * when we want to delete one dynamic instruction but also maintain the
+     * corrent dependence chain.
      *
      * Special case for PHINode: Since we don't include PHINode in our graph,
-     * there is no dynamic id allocated for PHINode. Instead, here we store the
-     * dynamic id of the producer of the incoming value. If the incoming value
-     * does not come from instruction, we store InvalidId.
+     * there is no dynamic id allocated for PHINode. Instead, if there is no
+     * other user defined transformation, here we store the dynamic id of the
+     * producer of the incoming value.
      */
-    std::unordered_map<llvm::Instruction *, DynamicId> StaticToLastDynamicMap;
+    std::unordered_map<llvm::Instruction *, std::list<DynamicId>>
+        RegDepLookUpMap;
   };
 
   // Records the information of the dynamic value inter-frame.
+  // Grows from the front side.
   // Especially used for mem/base initialization.
   std::list<DynamicFrame> DynamicFrameStack;
 

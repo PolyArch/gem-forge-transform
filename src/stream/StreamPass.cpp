@@ -47,9 +47,18 @@ public:
 class Stream {
 public:
   Stream(llvm::Loop *_Loop, llvm::Instruction *_MemInst)
-      : Loop(_Loop), MemInst(_MemInst), Pattern(_MemInst) {
+      : Loop(_Loop), MemInst(_MemInst), AddrValue(nullptr), Pattern(_MemInst) {
     assert(this->Loop->contains(this->MemInst) &&
            "The loop should contain the memory access instruction.");
+
+    if (llvm::isa<llvm::LoadInst>(this->MemInst)) {
+      this->AddrValue = this->MemInst->getOperand(0);
+    } else {
+      this->AddrValue = this->MemInst->getOperand(1);
+    }
+
+    // Intialize the address computing instructions.
+    this->calculateAddressComputeInsts();
   }
 
   void addAccess(uint64_t Addr) { this->Pattern.addAccess(Addr); }
@@ -59,12 +68,25 @@ public:
 
   llvm::Loop *getLoop() const { return this->Loop; }
   llvm::Instruction *getMemInst() const { return this->MemInst; }
+  llvm::Value *getAddrValue() const { return this->AddrValue; }
   const MemoryAccessPattern &getPattern() const { return this->Pattern; }
+  const std::set<llvm::Instruction *> &getAddressComputeInsts() const {
+    return this->AddressComputeInsts;
+  }
 
 private:
   llvm::Loop *Loop;
   llvm::Instruction *MemInst;
+  llvm::Value *AddrValue;
   MemoryAccessPattern Pattern;
+  std::set<llvm::Instruction *> AddressComputeInsts;
+
+  /**
+   * Calculate the address compute instructions.
+   * This is done via a DFS from the address value and try to include every GEP,
+   * PHINode, CAST and ARITHMETIC instructions within the same level of loop.
+   */
+  void calculateAddressComputeInsts();
 };
 
 class StreamPass : public ReplayTrace {
@@ -77,7 +99,7 @@ public:
         INIT_VAR(TracedDynInstCount), INIT_VAR(AddRecLoadCount),
         INIT_VAR(AddRecStoreCount), INIT_VAR(ConstantCount),
         INIT_VAR(LinearCount), INIT_VAR(QuardricCount), INIT_VAR(IndirectCount),
-        INIT_VAR(StreamCount) {}
+        INIT_VAR(StreamCount), INIT_VAR(RemovedAddrInstCount) {}
 #undef INIT_VAR
 
 protected:
@@ -110,16 +132,14 @@ protected:
   void transform() override;
 
   /**
-   * The actual implementation of transform.
-   * Takes two passes. The first pass dynamically get all the stream accesses.
-   * The second pass will transform them.
+   * Analyze the stream pattern in the first pass.
    */
-  void transformImpl(int Pass);
+  void analyzeStream();
 
   /**
-   * Replace the memory access with our stream interface.
+   * Replace the memory access with our stream interface in the second pass.
    */
-  void streamTransform();
+  void transformStream();
 
   bool isLoopStream(llvm::Loop *Loop);
 
@@ -130,6 +150,11 @@ protected:
 
   bool isStreamAccess(llvm::ScalarEvolution *SE,
                       llvm::Instruction *StaticInst) const;
+
+  /**
+   * For all the analyzed stream, choose the loop level for optimization.
+   */
+  void chooseStream();
 
   void updateTripCount(DynamicLoopIteration *LoopTree);
 
@@ -150,6 +175,18 @@ protected:
    * loop levels.
    */
   std::unordered_map<llvm::Instruction *, std::list<Stream>> MemInstToStreamMap;
+
+  /**
+   * A map from memory access instruction to the chosen stream at a specific
+   * loop level. The stream is actually stored in MemInstToStreamMap. Be careful
+   * with the life span.
+   */
+  std::unordered_map<llvm::Instruction *, Stream *> MemInstToChosenStreamMap;
+
+  /**
+   * A set contains the removed address compute intsruction.
+   */
+  std::unordered_set<llvm::Instruction *> RemovableAddrComputeInstSet;
 
   DynamicLoopIteration *LoopTree;
 
@@ -175,6 +212,7 @@ protected:
   ScalarUIntVar QuardricCount;
   ScalarUIntVar IndirectCount;
   ScalarUIntVar StreamCount;
+  ScalarUIntVar RemovedAddrInstCount;
 }; // namespace
 
 void StreamPass::dumpStats(std::ostream &O) {
@@ -189,6 +227,7 @@ void StreamPass::dumpStats(std::ostream &O) {
   this->QuardricCount.print(O);
   this->IndirectCount.print(O);
   this->StreamCount.print(O);
+  this->RemovedAddrInstCount.print(O);
 
   for (auto &MemInstStreamEntry : this->MemInstToStreamMap) {
     for (auto &Stream : MemInstStreamEntry.second) {
@@ -211,7 +250,7 @@ void StreamPass::dumpStats(std::ostream &O) {
 
 void StreamPass::transform() {
   // First pass.
-  this->transformImpl(0);
+  this->analyzeStream();
 
   for (auto &MemInstStreamEntry : this->MemInstToStreamMap) {
     for (auto &Stream : MemInstStreamEntry.second) {
@@ -220,29 +259,89 @@ void StreamPass::transform() {
                      << LoopUtils::formatLLVMInst(Stream.getMemInst())
                      << " is not computed.\n";
       } else {
-        llvm::errs() << LoopUtils::getLoopId(Stream.getLoop()) << " "
-                     << LoopUtils::formatLLVMInst(Stream.getMemInst())
-                     << " is computed.\n";
+        DEBUG(llvm::errs() << LoopUtils::getLoopId(Stream.getLoop()) << " "
+                           << LoopUtils::formatLLVMInst(Stream.getMemInst())
+                           << " is computed.\n");
       }
       Stream.finalizePattern();
     }
   }
 
+  this->chooseStream();
+
   delete this->Trace;
   this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
 
   // Second pass.
-  this->State = SEARCHING;
-
-  // this->transformImpl(1);
+  this->transformStream();
 
   this->computeStreamStatistics();
 }
 
-void StreamPass::transformImpl(int Pass) {
+void StreamPass::chooseStream() {
+  // First pass to pick out linear and quardric streams.
+  for (auto &MemInstToStreamEntry : this->MemInstToStreamMap) {
+    Stream *ChosenStream = nullptr;
+    for (auto &Stream : MemInstToStreamEntry.second) {
+      switch (Stream.getPattern().getPattern().CurrentPattern) {
+      case MemoryAccessPattern::Pattern::QUARDRIC:
+      case MemoryAccessPattern::Pattern::LINEAR: {
+        ChosenStream = &Stream;
+      }
+      default: { break; }
+      }
+    }
+    if (ChosenStream != nullptr) {
+      this->MemInstToChosenStreamMap.emplace(MemInstToStreamEntry.first,
+                                             ChosenStream);
+    }
+  }
+  // Second pass to make the indirect stream same loop level as the base load.
+  for (auto &MemInstToStreamEntry : this->MemInstToStreamMap) {
+    Stream *ChosenStream = nullptr;
+    for (auto &Stream : MemInstToStreamEntry.second) {
+      const auto &Pattern = Stream.getPattern().getPattern();
+      if (Pattern.CurrentPattern == MemoryAccessPattern::Pattern::INDIRECT) {
+        auto Iter = this->MemInstToChosenStreamMap.find(Pattern.BaseLoad);
+        if (Iter != this->MemInstToChosenStreamMap.end()) {
+          if (Iter->second->getLoop() == Stream.getLoop()) {
+            // We found the match.
+            // No need to search for next one.
+            ChosenStream = &Stream;
+            break;
+          }
+        }
+      }
+    }
+    if (ChosenStream != nullptr) {
+      this->MemInstToChosenStreamMap.emplace(MemInstToStreamEntry.first,
+                                             ChosenStream);
+    }
+  }
+  // Finally try to find the removable address compute instruction.
+  // For now I take a very conservative approach: only look at the address value
+  // and see if that is within the chosen loop level and also has only one user.
+  for (const auto &MemInstToChosenStreamEntry :
+       this->MemInstToChosenStreamMap) {
+    const auto &ChosenStream = MemInstToChosenStreamEntry.second;
+    if (auto AddrInst =
+            llvm::dyn_cast<llvm::Instruction>(ChosenStream->getAddrValue())) {
+      if (!ChosenStream->getLoop()->contains(AddrInst)) {
+        continue;
+      }
+      if (!AddrInst->hasOneUse()) {
+        continue;
+      }
+      // This is a removable address compute instruction.
+      this->RemovableAddrComputeInstSet.insert(AddrInst);
+    }
+  }
+}
+
+void StreamPass::analyzeStream() {
   llvm::Loop *CurrentLoop = nullptr;
 
-  DEBUG(llvm::errs() << "Stream: Start Pass " << Pass << ".\n");
+  DEBUG(llvm::errs() << "Stream: Start analysis.\n");
 
   while (true) {
 
@@ -258,11 +357,9 @@ void StreamPass::transformImpl(int Pass) {
       NewStaticInst = (*NewInstIter)->getStaticInstruction();
       assert(NewStaticInst != nullptr && "Invalid static llvm instruction.");
 
-      if (Pass == 0) {
-        if (llvm::isa<llvm::LoadInst>(NewStaticInst) ||
-            llvm::isa<llvm::StoreInst>(NewStaticInst)) {
-          this->DynMemInstCount.Val++;
-        }
+      if (llvm::isa<llvm::LoadInst>(NewStaticInst) ||
+          llvm::isa<llvm::StoreInst>(NewStaticInst)) {
+        this->DynMemInstCount.Val++;
       }
 
       auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
@@ -280,20 +377,14 @@ void StreamPass::transformImpl(int Pass) {
       // We at the end of the loop. Commit everything.
       if (this->LoopTree != nullptr) {
         this->LoopTree->addInstEnd(this->Trace->DynamicInstructionList.end());
-        if (Pass == 0) {
-          // First pass.
-          this->updateTripCount(this->LoopTree);
-          this->computeMemoryAccessPattern(this->LoopTree);
-        }
+
+        this->updateTripCount(this->LoopTree);
+        this->computeMemoryAccessPattern(this->LoopTree);
+
         delete this->LoopTree;
         this->LoopTree = nullptr;
       }
       while (!this->Trace->DynamicInstructionList.empty()) {
-        if (Pass == 1) {
-          // Serialize in the second pass.
-          this->Serializer->serialize(
-              this->Trace->DynamicInstructionList.front(), this->Trace);
-        }
         this->Trace->commitOneDynamicInst();
       }
       break;
@@ -307,10 +398,6 @@ void StreamPass::transformImpl(int Pass) {
 
       if (this->Trace->DynamicInstructionList.size() == 2) {
         // We can commit the previous one.
-        if (Pass == 1) {
-          this->Serializer->serialize(
-              this->Trace->DynamicInstructionList.front(), this->Trace);
-        }
         this->Trace->commitOneDynamicInst();
       }
 
@@ -345,24 +432,13 @@ void StreamPass::transformImpl(int Pass) {
       if (this->LoopTree->countIter() == 4 || !CurrentLoop->contains(NewLoop)) {
 
         // Collect statistics in first pass.
-        if (Pass == 0) {
-          this->updateTripCount(this->LoopTree);
-          this->computeMemoryAccessPattern(this->LoopTree);
-        }
+        this->updateTripCount(this->LoopTree);
+        this->computeMemoryAccessPattern(this->LoopTree);
 
         auto NextIter = this->LoopTree->moveTailIter();
 
-        // Do stream transform.
-        if (Pass == 1) {
-          this->streamTransform();
-        }
-
         // Commit all the instructions.
         while (this->Trace->DynamicInstructionList.size() > 1) {
-          if (Pass == 1) {
-            this->Serializer->serialize(
-                this->Trace->DynamicInstructionList.front(), this->Trace);
-          }
           this->Trace->commitOneDynamicInst();
         }
 
@@ -486,47 +562,110 @@ void StreamPass::initializeLoopStream(llvm::Loop *Loop) {
   }
 }
 
-void StreamPass::streamTransform() {
-  assert(this->LoopTree != nullptr && "Empty loop tree for transformation.");
+void StreamPass::transformStream() {
 
-  auto Loop = this->LoopTree->getLoop();
+  // Grows at the end.
+  std::list<llvm::Loop *> RegionStack;
 
-  auto SE = this->CachedLI->getScalarEvolution(Loop->getHeader()->getParent());
+  DEBUG(llvm::errs() << "Stream: Start Pass 2.\n");
 
-  // Loop through all the iterations.
-  auto CurrentTree = this->LoopTree;
-  for (size_t CurrentIter = 0, TotalIter = this->LoopTree->countIter();
-       CurrentIter != TotalIter;
-       ++CurrentIter, CurrentTree = CurrentTree->getNextIter()) {
-    assert(CurrentTree != nullptr &&
-           "Empty current loop tree for transformation.");
+  while (true) {
 
-    // Loop through all the instructions in this iteration.
-    for (auto DynamicInstIter = CurrentTree->begin(),
-              DynamicInstEnd = CurrentTree->end();
-         DynamicInstIter != DynamicInstEnd; ++DynamicInstIter) {
-      auto DynamicInst = *DynamicInstIter;
-      auto StaticInst = DynamicInst->getStaticInstruction();
-      assert(StaticInst != nullptr && "Non llvm static instruction found.");
+    auto NewInstIter = this->Trace->loadOneDynamicInst();
 
-      // Check if this is a stream access.
-      if (this->isStreamAccess(SE, StaticInst)) {
-        bool IsLoad = llvm::isa<llvm::LoadInst>(StaticInst);
-        DynamicInstruction *NewStreamInst = nullptr;
-        if (IsLoad) {
-          NewStreamInst = new StreamLoadInst(DynamicInst->getId());
-        } else {
-          NewStreamInst = new StreamStoreInst(DynamicInst->getId());
-        }
+    if (NewInstIter == this->Trace->DynamicInstructionList.end()) {
+      // We at the end of the loop. Commit everything.
+      while (!this->Trace->DynamicInstructionList.empty()) {
+        // Serialize in the second pass.
+        this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                    this->Trace);
+        this->Trace->commitOneDynamicInst();
+      }
+      break;
+    }
 
-        // Replace the original memory access with stream access.
-        *DynamicInstIter = NewStreamInst;
+    // This is a new instruction.
+    auto NewDynamicInst = *NewInstIter;
+    auto NewStaticInst = NewDynamicInst->getStaticInstruction();
+    assert(NewStaticInst != nullptr && "Invalid static llvm instruction.");
 
-        // Remember to delete the original one.
-        delete DynamicInst;
+    auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
+    auto NewLoop = LI->getLoopFor(NewStaticInst->getParent());
+
+    bool IsAtHeadOfCandidate = false;
+
+    if (NewLoop != nullptr) {
+      if (this->isLoopStream(NewLoop)) {
+        IsAtHeadOfCandidate =
+            LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst);
+      } else {
+        NewLoop = nullptr;
       }
     }
+
+    // Pop all the exited region.
+    while (!RegionStack.empty() &&
+           !RegionStack.back()->contains(NewStaticInst)) {
+      RegionStack.pop_back();
+    }
+
+    // Enter new region.
+    if (NewLoop != nullptr && IsAtHeadOfCandidate) {
+      RegionStack.push_back(NewLoop);
+    }
+
+    // Do the transformation.
+    // Replace the stream load/store instruction.
+    // Remove the removable address compute instruction.
+    if (this->RemovableAddrComputeInstSet.count(NewStaticInst) != 0) {
+
+      // In order to maintain some sort of dependence chain, I will update the
+      // register dependence look up table here.
+      // This works as this is the last instruction in the stream so far, so the
+      // translateRegisterDependence will automatically pick up the dependence.
+      std::list<DynamicInstruction::DynamicId> RegDeps;
+      for (const auto &RegDep :
+           this->Trace->RegDeps.at(NewDynamicInst->getId())) {
+        RegDeps.push_back(RegDep.second);
+      }
+      this->Trace->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
+          NewStaticInst, std::move(RegDeps));
+
+      // Remove from the dependence map and so on.
+      this->Trace->commitDynamicInst(NewDynamicInst->getId());
+
+      // Remove from the list.
+      this->Trace->DynamicInstructionList.erase(NewInstIter);
+
+      this->RemovedAddrInstCount.Val++;
+
+    } else if (this->MemInstToChosenStreamMap.count(NewStaticInst) != 0) {
+      bool IsLoad = llvm::isa<llvm::LoadInst>(NewStaticInst);
+      DynamicInstruction *NewStreamInst = nullptr;
+      if (IsLoad) {
+        NewStreamInst = new StreamLoadInst(NewDynamicInst->getId());
+      } else {
+        NewStreamInst = new StreamStoreInst(NewDynamicInst->getId());
+      }
+
+      // Replace the original memory access with stream access.
+      *NewInstIter = NewStreamInst;
+
+      // Remember to delete the original one.
+      delete NewDynamicInst;
+    }
+
+    // Serialize the instruction.
+    // Set a sufficient large buffer size so that the conditional branch
+    // instruction can find the next basic block.
+    if (this->Trace->DynamicInstructionList.size() == 100) {
+      this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                  this->Trace);
+      this->Trace->commitOneDynamicInst();
+    }
   }
+
+  DEBUG(llvm::errs() << "Stream: End.\n");
 }
 
 void StreamPass::updateTripCount(DynamicLoopIteration *LoopTree) {
@@ -801,6 +940,46 @@ void StreamPass::computeStreamStatistics() {
         default: { break; }
         }
       }
+    }
+  }
+}
+
+void Stream::calculateAddressComputeInsts() {
+  std::list<llvm::Instruction *> Queue;
+  if (auto AddrInst = llvm::dyn_cast<llvm::Instruction>(this->AddrValue)) {
+    Queue.push_back(AddrInst);
+  }
+  while (!Queue.empty()) {
+    auto Inst = Queue.front();
+    Queue.pop_front();
+    if (!this->Loop->contains(Inst)) {
+      // This is not from our level of analysis, ignore it.
+      continue;
+    }
+    if (this->AddressComputeInsts.count(Inst) != 0) {
+      // We have already processed this one.
+      continue;
+    }
+    switch (Inst->getOpcode()) {
+    case llvm::Instruction::BitCast:
+    case llvm::Instruction::Add:
+    case llvm::Instruction::Sub:
+    case llvm::Instruction::PHI:
+    case llvm::Instruction::GetElementPtr: {
+      this->AddressComputeInsts.insert(Inst);
+      for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(
+                Inst->getOperand(OperandIdx))) {
+          Queue.push_back(OperandInst);
+        }
+      }
+      break;
+    }
+    default: {
+      // Ignore those unsupported instruction.
+      break;
+    }
     }
   }
 }

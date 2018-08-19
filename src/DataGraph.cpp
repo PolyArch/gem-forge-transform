@@ -81,7 +81,18 @@ DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function *_Function,
     std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments)
     : Function(_Function), RunTimeEnv(std::move(_Arguments)),
-      PrevBasicBlock(nullptr), PrevCallInst(nullptr) {}
+      PrevBasicBlock(nullptr), PrevCallInst(nullptr) {
+  // Initalize the register dependence look up table to empty list.
+  for (auto BBIter = this->Function->begin(), BBEnd = this->Function->end();
+       BBIter != BBEnd; ++BBIter) {
+    for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
+         InstIter != InstEnd; ++InstIter) {
+      this->RegDepLookUpMap.emplace(std::piecewise_construct,
+                                    std::forward_as_tuple(&*InstIter),
+                                    std::forward_as_tuple());
+    }
+  }
+}
 
 DataGraph::DynamicFrame::~DynamicFrame() {
   // Nothing to release.
@@ -118,27 +129,28 @@ void DataGraph::DynamicFrame::insertValue(llvm::Value *Value,
          "Invalid memory offset in run time env.");
 }
 
-DataGraph::DynamicId
-DataGraph::DynamicFrame::getLastDynamicId(llvm::Instruction *StaticInst) const {
+const std::list<DataGraph::DynamicId> &
+DataGraph::DynamicFrame::translateRegisterDependence(
+    llvm::Instruction *StaticInst) const {
   assert(StaticInst->getFunction() == this->Function &&
          "This instruction is not in our function.");
-  auto Iter = this->StaticToLastDynamicMap.find(StaticInst);
-  if (Iter == this->StaticToLastDynamicMap.end()) {
-    return DynamicInstruction::InvalidId;
-  }
-  return Iter->second;
+  return this->RegDepLookUpMap.at(StaticInst);
 }
 
-void DataGraph::DynamicFrame::updateLastDynamicId(llvm::Instruction *StaticInst,
-                                                  DynamicId Id) {
+void DataGraph::DynamicFrame::updateRegisterDependenceLookUpMap(
+    llvm::Instruction *StaticInst, DynamicId Id) {
   assert(StaticInst->getFunction() == this->Function &&
          "This instruction is not in our function.");
-  if (!llvm::isa<llvm::PHINode>(StaticInst)) {
-    // We do not allow invalid id for non-PHINode.
-    assert(Id != DynamicInstruction::InvalidId &&
-           "Invalid Id for non-PHINode.");
-  }
-  this->StaticToLastDynamicMap[StaticInst] = Id;
+  auto Iter = this->RegDepLookUpMap.find(StaticInst);
+  Iter->second.clear();
+  Iter->second.push_back(Id);
+}
+
+void DataGraph::DynamicFrame::updateRegisterDependenceLookUpMap(
+    llvm::Instruction *StaticInst, std::list<DynamicId> Ids) {
+  assert(StaticInst->getFunction() == this->Function &&
+         "This instruction is not in our function.");
+  this->RegDepLookUpMap.at(StaticInst) = std::move(Ids);
 }
 
 DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
@@ -366,9 +378,9 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
   // Update the PrevControlInstId.
   this->updatePrevControlInstId(DynamicInst);
 
-  // Add the map from static instrunction to dynamic.
-  this->DynamicFrameStack.front().updateLastDynamicId(StaticInstruction,
-                                                      DynamicInst->getId());
+  // Add to the register dependence look up map.
+  this->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
+      StaticInstruction, DynamicInst->getId());
 
   // Update the previous block.
   this->DynamicFrameStack.front().setPrevBB(StaticInstruction->getParent());
@@ -453,17 +465,9 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
     if (auto OperandStaticInst = llvm::dyn_cast<llvm::Instruction>(
             StaticInstruction->getOperand(OperandId))) {
       // There is a register dependence on other instruction.
-      auto DepId =
-          this->DynamicFrameStack.front().getLastDynamicId(OperandStaticInst);
-      if (this->DetailLevel == INTEGRATED) {
-        // When in integrated mode, we do not allow missing register dependence
-        // for non-PHINode.
-        assert(((llvm::isa<llvm::PHINode>(OperandStaticInst)) ||
-                (DepId != DynamicInstruction::InvalidId)) &&
-               "Missing register deps in integrated mode.");
-      }
-      if (DepId != DynamicInstruction::InvalidId) {
-        // Found a register dependence.
+      for (auto DepId :
+           this->DynamicFrameStack.front().translateRegisterDependence(
+               OperandStaticInst)) {
         RegDeps.emplace_back(OperandStaticInst, DepId);
       }
     }
@@ -540,17 +544,19 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
 
   // Handle the dependence.
   {
+    std::list<DynamicId> RegDeps;
     auto DepId = DynamicInstruction::InvalidId;
     if (IncomingValue != nullptr) {
       if (auto OperandStaticInst =
               llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
         // Loop for a dependent instruction.
-        DepId =
-            this->DynamicFrameStack.front().getLastDynamicId(OperandStaticInst);
+        RegDeps = this->DynamicFrameStack.front().translateRegisterDependence(
+            OperandStaticInst);
       }
     }
-    // Update the phi dependence map.
-    this->DynamicFrameStack.front().updateLastDynamicId(StaticPhi, DepId);
+    // Update the register dependence look up map.
+    this->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
+        StaticPhi, std::move(RegDeps));
   }
 }
 
@@ -1015,7 +1021,7 @@ void DataGraph::printStaticInst(llvm::raw_ostream &O,
 void DataGraph::printMemoryUsage() const {
   size_t StaticToLastDynamicMapSize = 0;
   for (const auto &Frame : this->DynamicFrameStack) {
-    StaticToLastDynamicMapSize += Frame.getLastDynamicIdMapSize();
+    StaticToLastDynamicMapSize += Frame.getRegisterDependenceLookUpMapSize();
   }
   llvm::errs() << "====================================================\n";
 

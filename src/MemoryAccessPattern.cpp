@@ -6,76 +6,165 @@
 
 #define DEBUG_TYPE "MemoryAccessPattern"
 
+MemoryAccessPattern::AddressPatternFSM::AddressPatternFSM(
+    llvm::Instruction *_BaseLoad, Pattern _CurrentPattern)
+    : State(UNKNOWN), CurrentPattern(_CurrentPattern), Updates(0),
+      PrevAddress(0), BaseLoad(_BaseLoad), Base(0), StrideI(0), I(0), NI(0),
+      StrideJ(0), J(0) {
+  if (this->BaseLoad != nullptr) {
+    this->CurrentPattern = INDIRECT;
+  }
+  if (this->CurrentPattern == RANDOM) {
+    // Always success for random pattern.
+    this->State = SUCCESS;
+  }
+  if (this->CurrentPattern == INDIRECT) {
+    // Always success for INDIRECT pattern.
+    this->State = SUCCESS;
+  }
+  if (this->CurrentPattern == QUARDRIC) {
+    // Always fail for QUARDRIC pattern for now.
+    this->State = FAILURE;
+  }
+}
+
 void MemoryAccessPattern::AddressPatternFSM::update(uint64_t Addr) {
+
+  if (this->State == FAILURE) {
+    return;
+  }
+
   this->PrevAddress = Addr;
   this->Updates++;
   switch (this->CurrentPattern) {
   case UNKNOWN: {
-    // First time, go to CONSTANT.
-    this->CurrentPattern = CONSTANT;
-    this->Base = Addr;
+    // We have at least one confirmed address, not unknown.
+    this->State = FAILURE;
     break;
   }
   case CONSTANT: {
-    if (Addr == this->Base) {
-      // We are still accessing the same address.
-    } else {
-      // If this is the second time, switch to LINEAR; Otherwise, this is
-      // Quadric.
-      if (this->Updates == 2) {
-        this->CurrentPattern = LINEAR;
-        this->StrideI = Addr - this->Base;
-        this->I = 1;
-      } else {
-        this->CurrentPattern = QUARDRIC;
-        this->StrideI = 0;
-        this->I = 0;
-        this->NI = this->Updates;
-        this->StrideJ = Addr - this->Base;
-        this->J = 1;
+    switch (this->State) {
+    case UNKNOWN: {
+      this->State = SUCCESS;
+      this->Base = Addr;
+      break;
+    }
+    case SUCCESS: {
+      if (this->Base != Addr) {
+        this->State = FAILURE;
       }
+      break;
+    }
+    case FAILURE: {
+      llvm_unreachable("FAILURE state in CONSTANT.");
+    }
+    default: { llvm_unreachable("Illegal state in CONSTANT."); }
     }
     break;
   }
   case LINEAR: {
-    auto CurrentAddr = this->Base + this->StrideI * (this->I + 1);
-    if (Addr == CurrentAddr) {
-      // We are still accessing the same address.
-      this->I++;
-    } else {
-      // Switch to quadric.
-      this->CurrentPattern = QUARDRIC;
-      this->NI = this->I + 1;
-      this->I = 0;
-      this->StrideJ = Addr - this->Base;
-      this->J = 1;
+    switch (this->State) {
+    case UNKNOWN: {
+      this->ConfirmedAddrs.emplace_back(this->Updates - 1, Addr);
+      if (this->ConfirmedAddrs.size() == 2) {
+        auto Addr0 = this->ConfirmedAddrs.front().second;
+        auto Idx0 = this->ConfirmedAddrs.front().first;
+        auto Addr1 = this->ConfirmedAddrs.back().second;
+        auto Idx1 = this->ConfirmedAddrs.back().first;
+        // No need to worry about overflow.
+        auto AddrDiff = Addr1 - Addr0;
+        auto IdxDiff = Idx1 - Idx0;
+        if (AddrDiff % IdxDiff != 0) {
+          this->State = FAILURE;
+        } else {
+          this->StrideI = AddrDiff / IdxDiff;
+          this->Base = Addr0 - Idx0 * this->StrideI;
+          this->I = Idx1;
+          this->State = SUCCESS;
+        }
+      }
+      break;
+    }
+    case SUCCESS: {
+      auto CurrentAddr = this->Base + this->StrideI * (this->I + 1);
+      if (Addr == CurrentAddr) {
+        // We are still accessing the same address.
+        this->I++;
+      } else {
+        this->State = FAILURE;
+      }
+      break;
+    }
+    case FAILURE: {
+      llvm_unreachable("FAILURE state in LINEAR.");
+    }
+    default: { llvm_unreachable("Illegal state in LINEAR."); }
     }
     break;
   }
   case QUARDRIC: {
-    // Have not reached the limit.
-    auto CurrentAddr =
-        this->Base + this->StrideJ * this->J + this->StrideI * (this->I + 1);
-    if (this->I + 1 == this->NI) {
-      // Reached the limit.
-      CurrentAddr = this->Base + this->StrideJ * (this->J + 1);
-    }
 
-    if (Addr == CurrentAddr) {
-      // We are in the same pattern, update the index.
-      this->I++;
-      if (this->I == this->NI) {
-        this->I = 0;
-        this->J++;
-      }
-    } else {
-      // This is not what we can handle, switch to random.
-      this->CurrentPattern = RANDOM;
-    }
+    // switch (this->State) {
+    // case UNKNOWN: {
+    //   this->ConfirmedAddrs.emplace_back(this->Updates - 1, Addr);
+    //   if (this->ConfirmedAddrs.size() == 3) {
+    //     auto Addr0 = this->ConfirmedAddrs.front().second;
+    //     auto Idx0 = this->ConfirmedAddrs.front().first;
+    //     auto Addr1 = this->ConfirmedAddrs.back().second;
+    //     auto Idx1 = this->ConfirmedAddrs.back().first;
+    //     // No need to worry about overflow.
+    //     auto AddrDiff = Addr1 - Addr0;
+    //     auto IdxDiff = Idx1 - Idx0;
+    //     if (AddrDiff % IdxDiff != 0) {
+    //       this->State = FAILURE;
+    //     } else {
+    //       this->StrideI = AddrDiff / IdxDiff;
+    //       this->Base = Addr0 - Idx0 * this->StrideI;
+    //       this->I = Idx1;
+    //       this->State = SUCCESS;
+    //     }
+    //   }
+    //   break;
+    // }
+    // case SUCCESS: {
+    //   auto CurrentAddr = this->Base + this->StrideI * (this->I + 1);
+    //   if (Addr == CurrentAddr) {
+    //     // We are still accessing the same address.
+    //     this->I++;
+    //   } else {
+    //     this->State = FAILURE;
+    //   }
+    //   break;
+    // }
+    // case FAILURE: {
+    //   llvm_unreachable("FAILURE state in QUARDRIC.");
+    // }
+    // default: { llvm_unreachable("Illegal state in QUARDRIC."); }
+    // }
+
+    // // Have not reached the limit.
+    // auto CurrentAddr =
+    //     this->Base + this->StrideJ * this->J + this->StrideI * (this->I + 1);
+    // if (this->I + 1 == this->NI) {
+    //   // Reached the limit.
+    //   CurrentAddr = this->Base + this->StrideJ * (this->J + 1);
+    // }
+
+    // if (Addr == CurrentAddr) {
+    //   // We are in the same pattern, update the index.
+    //   this->I++;
+    //   if (this->I == this->NI) {
+    //     this->I = 0;
+    //     this->J++;
+    //   }
+    // } else {
+    //   // This is not what we can handle, switch to random.
+    //   this->CurrentPattern = RANDOM;
+    // }
     break;
   }
   case RANDOM: {
-    // Nothing we can do now.
+    // Nothing to do. We always succeed.
     break;
   }
   case INDIRECT: {
@@ -91,31 +180,68 @@ void MemoryAccessPattern::AddressPatternFSM::update(uint64_t Addr) {
 }
 
 void MemoryAccessPattern::AddressPatternFSM::updateMissing() {
+
+  if (this->State == FAILURE) {
+    return;
+  }
+
   // Implicitly assume it follows the current pattern, and update the
   // statistics and induction variable.
   this->Updates++;
   switch (this->CurrentPattern) {
   case LINEAR: {
-    this->PrevAddress = this->Base + this->StrideI * (this->I + 1);
-    this->I++;
+    if (this->State == SUCCESS) {
+      this->PrevAddress = this->Base + this->StrideI * (this->I + 1);
+      this->I++;
+    }
     break;
   }
   case QUARDRIC: {
-    if (this->I + 1 == this->NI) {
-      // Reached the limit.
-      this->PrevAddress = this->Base + this->StrideJ * (this->J + 1);
-      this->I = 0;
-      this->J++;
-    } else {
-      this->PrevAddress =
-          this->Base + this->StrideJ * this->J + this->StrideI * (this->I + 1);
-      this->I++;
+    if (this->State == SUCCESS) {
+      if (this->I + 1 == this->NI) {
+        // Reached the limit.
+        this->PrevAddress = this->Base + this->StrideJ * (this->J + 1);
+        this->I = 0;
+        this->J++;
+      } else {
+        this->PrevAddress = this->Base + this->StrideJ * this->J +
+                            this->StrideI * (this->I + 1);
+        this->I++;
+      }
     }
 
     break;
   }
   default: { break; }
   }
+}
+
+MemoryAccessPattern::AccessPatternFSM::AccessPatternFSM(
+    AccessPattern _AccPattern, llvm::Instruction *_BaseLoad)
+    : Accesses(0), Iters(0), State(UNKNOWN), AccPattern(_AccPattern) {
+  if (_BaseLoad != nullptr) {
+    this->AddressPatterns.emplace_back(_BaseLoad,
+                                       MemoryAccessPattern::Pattern::INDIRECT);
+  } else {
+    this->AddressPatterns.emplace_back(_BaseLoad,
+                                       MemoryAccessPattern::Pattern::UNKNOWN);
+    this->AddressPatterns.emplace_back(_BaseLoad,
+                                       MemoryAccessPattern::Pattern::LINEAR);
+    this->AddressPatterns.emplace_back(_BaseLoad,
+                                       MemoryAccessPattern::Pattern::QUARDRIC);
+    this->AddressPatterns.emplace_back(_BaseLoad,
+                                       MemoryAccessPattern::Pattern::RANDOM);
+  }
+}
+
+const MemoryAccessPattern::AddressPatternFSM &
+MemoryAccessPattern::AccessPatternFSM::getAddressPattern() const {
+  for (const auto &AddrPattern : this->AddressPatterns) {
+    if (AddrPattern.State == AddressPatternFSM::StateT::SUCCESS) {
+      return AddrPattern;
+    }
+  }
+  llvm_unreachable("Failed to get one single succeeded address pattern.");
 }
 
 void MemoryAccessPattern::AccessPatternFSM::addMissingAccess() {
@@ -129,7 +255,7 @@ void MemoryAccessPattern::AccessPatternFSM::addMissingAccess() {
     return;
   }
   case MemoryAccessPattern::AccessPattern::CONDITIONAL_ACCESS_ONLY: {
-    this->AddressPattern.updateMissing();
+    this->feedUpdateMissingToAddrPatterns();
     break;
   }
   case MemoryAccessPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
@@ -152,21 +278,27 @@ void MemoryAccessPattern::AccessPatternFSM::addAccess(uint64_t Addr) {
   }
   switch (this->AccPattern) {
   case MemoryAccessPattern::AccessPattern::UNCONDITIONAL: {
-    this->AddressPattern.update(Addr);
+    this->feedUpdateToAddrPatterns(Addr);
     break;
   }
   case MemoryAccessPattern::AccessPattern::CONDITIONAL_ACCESS_ONLY: {
-    this->AddressPattern.update(Addr);
+    this->feedUpdateToAddrPatterns(Addr);
     break;
   }
   case MemoryAccessPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
-    if (Addr != this->AddressPattern.PrevAddress) {
-      this->AddressPattern.update(Addr);
+    for (auto &AddrPattern : this->AddressPatterns) {
+      if (AddrPattern.State == AddressPatternFSM::StateT::UNKNOWN) {
+        AddrPattern.update(Addr);
+      } else {
+        if (Addr != AddrPattern.PrevAddress) {
+          AddrPattern.update(Addr);
+        }
+      }
     }
     break;
   }
   case MemoryAccessPattern::AccessPattern::SAME_CONDITION: {
-    this->AddressPattern.update(Addr);
+    this->feedUpdateToAddrPatterns(Addr);
     break;
   }
   }
