@@ -151,10 +151,10 @@ public:
     // computation.
     std::unordered_map<llvm::Value *, DynamicValue> RunTimeEnv;
 
-    // Stores the dynamic value of CallInst.
+    // Stores the dynamic value of CallInst or InvokeInst.
     // Could be consumed by parseFuncEnter.
     std::vector<DynamicValue> CallStack;
-    llvm::CallInst *PrevCallInst;
+    llvm::Instruction *PrevCallInst;
     explicit DynamicFrame(
         llvm::Function *_Function,
         std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments);

@@ -1,4 +1,5 @@
 #include "DataGraph.h"
+#include "Utils.h"
 #include "trace/TraceParserGZip.h"
 #include "trace/TraceParserProtobuf.h"
 
@@ -316,7 +317,7 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
     } else {
       // Comment this out as for some call inst, if the callee is traced,
       // then we donot log the result.
-      if (!llvm::isa<llvm::CallInst>(StaticInstruction)) {
+      if (!Utils::isCallOrInvokeInst(StaticInstruction)) {
         assert(StaticInstruction->getName() == "" &&
                "Missing DynamicResult for non-call instruction.");
       }
@@ -366,7 +367,7 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
         // The only legal case for this situation is for a traced call
         // instruction, whose result will come from the traced ret inst. We
         // explicitly check this case.
-        assert(llvm::isa<llvm::CallInst>(StaticInstruction) &&
+        assert(Utils::isCallOrInvokeInst(StaticInstruction) &&
                "Missing dynamic result for non-call inst.");
       } else {
         this->DynamicFrameStack.front().insertValue(
@@ -416,9 +417,9 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
   }
 
   // Set up the call stack if this is a call.
-  if (auto StaticCall = llvm::dyn_cast<llvm::CallInst>(StaticInstruction)) {
+  if (Utils::isCallOrInvokeInst(StaticInstruction)) {
     // Set up the previous call instruction.
-    this->DynamicFrameStack.front().PrevCallInst = StaticCall;
+    this->DynamicFrameStack.front().PrevCallInst = StaticInstruction;
     auto &CallStack = this->DynamicFrameStack.front().CallStack;
     CallStack.clear();
     if (this->DetailLevel > SIMPLE) {
@@ -525,7 +526,7 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
         // incoming value is a untraced-call instruction, or this is only a
         // partial datagraph.
         if (this->DetailLevel == INTEGRATED) {
-          assert(llvm::isa<llvm::CallInst>(IncomingValue) &&
+          assert(Utils::isCallOrInvokeInst(IncomingValue) &&
                  "Non-call instruction missing dynamic value.");
         } else {
           // Simply ignore this missing value and insert ourselves.
@@ -836,7 +837,7 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
       } else {
         // We cannot find the result in the run time env. The only possible case
         // is that it is an untraced call inst.
-        assert(llvm::isa<llvm::CallInst>(Operand) &&
+        assert(Utils::isCallOrInvokeInst(Operand) &&
                "Missing dynamic value for non-call instruction.");
       }
 

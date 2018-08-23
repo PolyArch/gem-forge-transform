@@ -1,4 +1,5 @@
 #include "LoopUtils.h"
+#include "Utils.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -13,6 +14,10 @@
 //   return (Loop->getHeader() == StaticInst->getParent()) &&
 //          (StaticInst->getParent()->getFirstNonPHI() == StaticInst);
 // }
+
+const std::unordered_set<std::string> LoopUtils::SupportedMathFunctions{
+    "sin", "sqrt", "acos", "fabs", "abs",
+};
 
 std::string printLoop(const llvm::Loop *Loop) {
   return std::string(Loop->getHeader()->getParent()->getName()) +
@@ -32,25 +37,33 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
        BBIter != BBEnd; ++BBIter) {
     for (auto InstIter = (*BBIter)->begin(), InstEnd = (*BBIter)->end();
          InstIter != InstEnd; ++InstIter) {
-      if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(&*InstIter)) {
-        // This is a call inst.
-        auto Callee = CallInst->getCalledFunction();
-        if (Callee == nullptr) {
-          // Indirect call, not continuous.
-          DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
-                             << " is statically not continuous because it "
-                                "contains indirect call.\n");
-          return false;
-        }
-        // Check if calling some supported math function.
-        if (Callee->getName() != "sin") {
-          // TODO: add a set for supported functions.
-          DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
-                             << " is statically not continuous because it "
-                                "contains unsupported call.\n");
-          return false;
-        }
+      if (!Utils::isCallOrInvokeInst(&*InstIter)) {
+        continue;
       }
+      llvm::Function *Callee = Utils::getCalledFunction(&*InstIter);
+      if (Callee == nullptr) {
+        // Indirect call, not continuous.
+        DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+                           << " is statically not continuous because it "
+                              "contains indirect call.\n");
+        return false;
+      }
+      if (Callee->isIntrinsic()) {
+        continue;
+      }
+      // Check if calling some supported math function.
+      if (Callee->isDeclaration()) {
+        if (LoopUtils::SupportedMathFunctions.count(Callee->getName()) != 0) {
+        }
+        // Sliently ignore all the external calls.
+        // Not the right way to do.
+        continue;
+      }
+      DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+                         << " is statically not continuous because it "
+                            "contains unsupported call to "
+                         << Callee->getName() << "\n");
+      return false;
     }
   }
   return true;

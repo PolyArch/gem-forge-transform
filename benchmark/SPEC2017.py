@@ -9,52 +9,9 @@ import StreamStatistics
 from Benchmark import Benchmark
 
 
-"""
-Top level functions to use JobScheduler.
-"""
+class SPEC2017Benchmark(Benchmark):
 
-
-def trace(benchmark):
-    benchmark.trace()
-
-
-def collect_statistics(benchmark, trace_file, profile, debugs):
-    os.chdir(benchmark.get_run_path())
-    benchmark.benchmark.get_trace_statistics(trace_file, profile, debugs)
-    os.chdir(benchmark.cwd)
-
-
-def build_replay(benchmark, pass_name, trace_file, profile_file, output_tdg, debugs):
-    os.chdir(benchmark.get_run_path())
-    benchmark.benchmark.build_replay(
-        pass_name=pass_name,
-        trace_file=trace_file,
-        profile_file=profile_file,
-        tdg_detail='standalone',
-        output_tdg=output_tdg,
-        debugs=debugs,
-    )
-    os.chdir(benchmark.cwd)
-
-
-def run_replay(benchmark, output_tdg, result, debugs):
-    os.chdir(benchmark.get_run_path())
-    gem5_outdir = benchmark.benchmark.gem5_replay(
-        standalone=1,
-        output_tdg=output_tdg,
-        debugs=debugs,
-    )
-    Util.call_helper([
-        'cp',
-        os.path.join(gem5_outdir, 'region.stats.txt'),
-        result,
-    ])
-    os.chdir(benchmark.cwd)
-
-
-class SPEC2017Benchmark:
-
-    def __init__(self, force_rebuild, **params):
+    def __init__(self, **params):
 
         # Job ids.
         self.trace_job_id = None
@@ -66,7 +23,7 @@ class SPEC2017Benchmark:
                 'Unable to find SPEC env var. Please source shrc before using this script')
             sys.exit()
 
-        self.name = params['name']
+        self.work_load = params['name']
         self.target = params['target']
         self.trace_func = params['trace_func']
 
@@ -79,20 +36,6 @@ class SPEC2017Benchmark:
         self.trace_stdlib = False
         self.cwd = os.getcwd()
 
-        if force_rebuild:
-            # Clear the build/run path.
-            clear_cmd = [
-                'rm',
-                '-rf',
-                self.get_build_path()
-            ]
-            Util.call_helper(clear_cmd)
-            clear_cmd = [
-                'rm',
-                '-rf',
-                self.get_run_path()
-            ]
-            Util.call_helper(clear_cmd)
         # Check if build dir and run dir exists.
         if not (os.path.isdir(self.get_build_path()) and os.path.isdir(self.get_run_path())):
             self.build_raw_bc()
@@ -103,12 +46,12 @@ class SPEC2017Benchmark:
             'specinvoke',
             '-n'
         ]))
-        print('{name} has arguments {args}'.format(name=self.name, args=args))
+        print('{name} has arguments {args}'.format(name=self.get_name(), args=args))
         os.chdir(self.cwd)
 
         # Initialize the benchmark.
-        self.benchmark = Benchmark(
-            name=self.name,
+        super(SPEC2017Benchmark, self).__init__(
+            name=self.get_name(),
             raw_bc=self.get_raw_bc(),
             links=params['links'],
             args=args,
@@ -116,20 +59,20 @@ class SPEC2017Benchmark:
         )
 
     def get_name(self):
-        return self.name
+        return 'spec.' + self.work_load
 
     def get_build_path(self):
         return os.path.join(
             self.spec,
             'benchspec',
             'CPU',
-            self.name,
+            self.work_load,
             'build',
             'build_base_LLVM_TDG-m64.0000'
         )
 
     def get_run_path(self):
-        if self.name.endswith('_s'):
+        if self.work_load.endswith('_s'):
             run_dirname = 'run_base_refspeed_LLVM_TDG-m64.0000'
         else:
             run_dirname = 'run_base_refrate_LLVM_TDG-m64.0000'
@@ -137,7 +80,7 @@ class SPEC2017Benchmark:
             self.spec,
             'benchspec',
             'CPU',
-            self.name,
+            self.work_load,
             'run',
             run_dirname
         )
@@ -145,58 +88,30 @@ class SPEC2017Benchmark:
     def get_raw_bc(self):
         return self.target + '.bc'
 
-    def get_trace(self):
-        return self.target + '.trace'
-
-    def get_profile(self):
-        return self.get_trace() + '.profile'
-
-    def get_traces(self):
-        traces = list()
-        for i in xrange(self.n_traces):
-            if self.target == 'gcc_s' and i == 7:
-                # So far there is a but causing tdg #7 not transformable.
-                continue
-            traces.append('{target}.trace.{i}'.format(
-                target=self.target, i=i))
-        return traces
-
-    def get_tdgs(self, transform):
-        tdgs = list()
-        for i in xrange(self.n_traces):
-            if self.target == 'gcc_s' and i == 7:
-                # So far there is a but causing tdg #7 not transformable.
-                continue
-            tdgs.append('{run}/{target}.{transform}.tdg.{i}'.format(
-                run=self.get_run_path(),
-                target=self.target,
-                transform=transform,
-                i=i))
-        return tdgs
-
-    def get_result(self, transform):
-        results = list()
-        for i in xrange(self.n_traces):
-            if self.target == 'gcc_s' and i == 7:
-                # So far there is a but causing tdg #7 not transformable.
-                continue
-            results.append(
-                os.path.join(
-                    self.cwd,
-                    'result',
-                    'spec.{name}.{transform}.txt.{i}'.format(
-                        name=self.name, transform=transform, i=i
-                    )))
-        return results
+    def get_n_traces(self):
+        return self.n_traces
 
     def build_raw_bc(self):
+        # Clear the existing build.
+        clear_cmd = [
+            'rm',
+            '-rf',
+            self.get_build_path()
+        ]
+        Util.call_helper(clear_cmd)
+        clear_cmd = [
+            'rm',
+            '-rf',
+            self.get_run_path()
+        ]
+        Util.call_helper(clear_cmd)
         # Fake the runcpu.
         fake_cmd = [
             'runcpu',
             '--fake',
             '--config=ecc-llvm-linux-x86_64',
             '--tune=base',
-            self.name
+            self.work_load
         ]
         Util.call_helper(fake_cmd)
         # Actually build it.
@@ -263,7 +178,7 @@ class SPEC2017Benchmark:
             # Found one.
             fields = line.split()
             assert(len(fields) > 6)
-            if self.name.endswith('namd_r'):
+            if self.work_load.endswith('namd_r'):
                 # Sepcial case for namd_r, which echos to a script and use numactl to
                 # control NUMA access.
                 # I don't think we should consider this for our benchmark,
@@ -276,15 +191,15 @@ class SPEC2017Benchmark:
                     '--iterations',
                     '65',
                 ]
-            elif self.name.endswith('povray_r'):
+            elif self.work_load.endswith('povray_r'):
                 return [
                     'SPEC-benchmark-ref.ini',
                 ]
-            elif self.name.endswith('parest_r'):
+            elif self.work_load.endswith('parest_r'):
                 return [
                     'ref.prm',
                 ]
-            elif self.name.endswith('blender_r'):
+            elif self.work_load.endswith('blender_r'):
                 return [
                     'sh3_no_char.blend',
                     '--render-output',
@@ -299,9 +214,9 @@ class SPEC2017Benchmark:
     def trace(self):
         os.chdir(self.get_run_path())
         debugs = [
-            'TracePass',
+            # 'TracePass',
         ]
-        self.benchmark.build_trace(
+        self.build_trace(
             debugs=debugs,
         )
         # set the maximum number of insts.
@@ -316,99 +231,51 @@ class SPEC2017Benchmark:
             os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
         else:
             os.unsetenv('LLVM_TDG_MAX_INST')
-        self.benchmark.run_trace(self.get_trace())
+        self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def schedule_trace(self, job_scheduler):
-        # Add the trace job.
-        # Notice that there is no dependence for trace job.
-        deps = list()
-        self.trace_job_id = (
-            job_scheduler.add_job('{name}.trace'.format(
-                name=self.get_name()), trace, (self,), deps)
+    def transform(self, pass_name, trace_file, profile_file, output_tdg, debugs):
+        os.chdir(self.get_run_path())
+        self.build_replay(
+            pass_name=pass_name,
+            trace_file=trace_file,
+            profile_file=profile_file,
+            tdg_detail='standalone',
+            output_tdg=output_tdg,
+            debugs=debugs,
         )
+        os.chdir(self.cwd)
 
-    def schedule_statistics(self, job_scheduler, debugs):
-        traces = self.get_traces()
-        profile = self.get_profile()
-        deps = list()
-        if self.trace_job_id is not None:
-            deps.append(self.trace_job_id)
-        job_scheduler.add_job(
-            '{name}.statistics'.format(name=self.get_name()),
-            collect_statistics,
-            (self, traces[0], profile, debugs),
-            deps
+    def simulate(self, output_tdg, result, debugs):
+        os.chdir(self.get_run_path())
+        gem5_outdir = self.gem5_replay(
+            standalone=1,
+            output_tdg=output_tdg,
+            debugs=debugs,
         )
-
-    def schedule_transform(self, job_scheduler, transform, debugs):
-        pass_name = 'replay'
-        if transform == 'simd':
-            pass_name = 'simd-pass'
-        elif transform == 'adfa':
-            pass_name = 'abs-data-flow-acc-pass'
-        elif transform == 'replay':
-            pass_name = 'replay'
-        elif transform == 'stream':
-            pass_name = 'stream-pass'
-        else:
-            raise ValueError('Unknown transform name!')
-        profile_file = self.get_profile()
-        traces = self.get_traces()
-        tdgs = self.get_tdgs(transform)
-        assert(len(traces) == len(tdgs))
-        self.transform_job_ids[transform] = list()
-        for i in xrange(0, len(traces)):
-            # for i in [1]:
-            deps = list()
-            if self.trace_job_id is not None:
-                deps.append(self.trace_job_id)
-
-            # Schedule the build_replay job.
-            self.transform_job_ids[transform].append(
-                job_scheduler.add_job(
-                    '{name}.transform.{transform}'.format(
-                        name=self.get_name(), transform=transform),
-                    build_replay,
-                    (self, pass_name, traces[i],
-                     profile_file, tdgs[i], debugs),
-                    deps)
-            )
-        # assert(len(self.transform_job_ids[transform]) == len(traces))
-
-    def schedule_simulation(self, job_scheduler, transform, debugs):
-        tdgs = self.get_tdgs(transform)
-        results = self.get_result(transform)
-        assert(len(tdgs) == len(results))
-        for i in xrange(0, len(tdgs)):
-            deps = list()
-            if transform in self.transform_job_ids:
-                assert(len(self.transform_job_ids[transform]) == len(tdgs))
-                deps.append(self.transform_job_ids[transform][i])
-
-            job_scheduler.add_job(
-                '{name}.simulate.{transform}'.format(
-                    name=self.get_name(), transform=transform),
-                run_replay,
-                (self, tdgs[i], results[i], debugs),
-                deps,
-            )
+        Util.call_helper([
+            'cp',
+            os.path.join(gem5_outdir, 'region.stats.txt'),
+            result,
+        ])
+        os.chdir(self.cwd)
 
 
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        'lbm_s': {
-            'name': '619.lbm_s',
-            'links': ['-lm'],
-            # First 100m insts every 1b insts, skipping the first 3.3b
-            'start_inst': 33e8,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 34e8,
-            'n_traces': 1,
-            'trace_func': 'LBM_performStreamCollideTRT',
-        },
+        # 'lbm_s': {
+        #     'name': '619.lbm_s',
+        #     'links': ['-lm'],
+        #     # First 100m insts every 1b insts, skipping the first 3.3b
+        #     'start_inst': 33e8,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 34e8,
+        #     'n_traces': 1,
+        #     'trace_func': 'LBM_performStreamCollideTRT',
+        #     'lang': 'C',
+        # },
         # 'imagick_s': {
         #     'name': '638.imagick_s',
         #     'links': ['-lm'],
@@ -429,6 +296,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 121e8,
         #     'n_traces': 1,
         #     'trace_func': 'md',
+        #     'lang': 'C',
         # },
         # 'x264_s': {
         #     'name': '625.x264_s',
@@ -442,6 +310,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 28e8,
         #     'n_traces': 2,
         #     'trace_func': 'x264_encoder_encode',
+        #     'lang': 'C',
         # },
         # 'mcf_s': {
         #     'name': '605.mcf_s',
@@ -453,6 +322,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 21e8,
         #     'n_traces': 2,
         #     'trace_func': 'global_opt',
+        #     'lang': 'C',
         # },
         # 'xz_s': {
         #     'name': '657.xz_s',
@@ -466,6 +336,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 1021e8,
         #     'n_traces': 1,
         #     'trace_func': 'uncompressStream',
+        #     'lang': 'C',
         # },
         # 'gcc_s': {
         #     'name': '602.gcc_s',
@@ -476,6 +347,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 1000e8,
         #     'n_traces': 20,
         #     'trace_func': 'compile_file',
+        #     'lang': 'C',
         # },
         # # Does not work with ellcc as it uses posix io function.
         # 'perlbench_s': {
@@ -487,18 +359,20 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'C',
         # },
         # # C++ Benchmark
-        # 'deepsjeng_s': {
-        #     'name': '631.deepsjeng_s',
-        #     'links': [],
-        #     'start_inst': 0,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 0,
-        #     'end_inst': 0,
-        #     'n_traces': 1,
-        #     'trace_func': 'think(gamestate_t*, state_t*)',
-        # },
+        'deepsjeng_s': {
+            'name': '631.deepsjeng_s',
+            'links': [],
+            'start_inst': 0,
+            'max_inst': 1e8,
+            'skip_inst': 0,
+            'end_inst': 0,
+            'n_traces': 1,
+            'trace_func': 'think(gamestate_t*, state_t*)',
+            'lang': 'CPP',
+        },
         # 'leela_s': {
         #     'name': '641.leela_s',
         #     'links': [],
@@ -508,6 +382,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'CPP',
         # },
         # 'namd_r': {
         #     'name': '508.namd_r',
@@ -518,6 +393,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'CPP',
         # },
         # # Will throw exception.
         # # Does not work with ellcc as RE.
@@ -530,6 +406,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'CPP',
         # },
         # # Throws exception.
         # # Does not work with ellcc as RE.
@@ -543,6 +420,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'CPP',
         # },
 
         # # Does not work with ellcc as it uses linux header.
@@ -556,6 +434,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'CPP',
         # },
 
         # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
@@ -570,6 +449,7 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'CPP',
         # },
 
 
@@ -583,11 +463,12 @@ class SPEC2017Benchmarks:
         #     'end_inst': 100e8,
         #     'n_traces': 10,
         #     'trace_func': '',
+        #     'lang': 'CPP',
         # },
 
     }
 
-    def __init__(self, trace_stdlib, force=False):
+    def __init__(self):
         self.spec = os.environ.get('SPEC')
         if self.spec is None:
             print(
@@ -597,12 +478,7 @@ class SPEC2017Benchmarks:
         # Remember to setup gllvm.
         self.set_gllvm()
 
-        self.trace_stdlib = trace_stdlib
-        self.force = force
-
-        Util.call_helper(['mkdir', '-p', 'result'])
-
-        self.benchmarks = dict()
+        self.benchmarks = list()
         for target in SPEC2017Benchmarks.BENCHMARK_PARAMS:
             name = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['name']
 
@@ -616,34 +492,38 @@ class SPEC2017Benchmarks:
             links = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['links']
 
             # If we want to trace the std library, then we have to change the links.
-            if self.trace_stdlib:
-                links = [
-                    '-static',
-                    '-nostdlib',
-                    C.MUSL_LIBC_CRT,
-                    C.MUSL_LIBC_STATIC_LIB,
-                    C.LLVM_COMPILER_RT_BUILTIN_LIB,
-                    C.LLVM_UNWIND_STATIC_LIB,
-                    # '-lgcc_s',
-                    # '-lgcc',
-                    # C++ run time library for tracer.
-                    '-lstdc++',
-                    # '-lc++',
-                    # '-lc++abi',
-                ]
+            # if self.trace_stdlib:
+            #     links = [
+            #         '-static',
+            #         '-nostdlib',
+            #         C.MUSL_LIBC_CRT,
+            #         C.MUSL_LIBC_STATIC_LIB,
+            #         C.LLVM_COMPILER_RT_BUILTIN_LIB,
+            #         C.LLVM_UNWIND_STATIC_LIB,
+            #         # '-lgcc_s',
+            #         # '-lgcc',
+            #         # C++ run time library for tracer.
+            #         '-lstdc++',
+            #         # '-lc++',
+            #         # '-lc++abi',
+            #     ]
 
-            self.benchmarks[target] = SPEC2017Benchmark(
-                self.force,
-                name=name,
-                target=target,
-                links=links,
-                trace_func=trace_func,
-                start_inst=start_inst,
-                max_inst=max_inst,
-                skip_inst=skip_inst,
-                end_inst=end_inst,
-                n_traces=n_traces,
+            self.benchmarks.append(
+                SPEC2017Benchmark(
+                    name=name,
+                    target=target,
+                    links=links,
+                    trace_func=trace_func,
+                    start_inst=start_inst,
+                    max_inst=max_inst,
+                    skip_inst=skip_inst,
+                    end_inst=end_inst,
+                    n_traces=n_traces,
+                )
             )
+
+    def get_benchmarks(self):
+        return self.benchmarks
 
     def set_gllvm(self):
         # Set up the environment for gllvm.
@@ -659,96 +539,3 @@ class SPEC2017Benchmarks:
             os.putenv('LLVM_CXX_NAME', 'clang++')
             os.putenv('LLVM_LINK_NAME', 'llvm-link')
             os.putenv('LLVM_AR_NAME', 'llvm-ar')
-
-
-build_datagraph_debugs = {
-    'stream': [
-        'ReplayPass',
-        'StreamPass',
-        # 'DataGraph',
-    ],
-    'replay': [],
-    'adfa': [],
-    'simd': [],
-}
-
-
-simulate_datagraph_debugs = {
-    'stream': [],
-    'replay': [],
-    'adfa': [],
-    'simd': [],
-}
-
-
-def main(options):
-    trace_stdlib = False
-    job_scheduler = Util.JobScheduler(8, 1)
-    benchmarks = SPEC2017Benchmarks(trace_stdlib, options.build)
-    names = list()
-    b_list = list()
-    for benchmark_name in benchmarks.benchmarks:
-        benchmark = benchmarks.benchmarks[benchmark_name]
-        if options.trace:
-            benchmark.schedule_trace(job_scheduler)
-        # Schedule data graph transformation.
-        if options.build_datagraph:
-            if options.transform_pass == 'all':
-                for transform_pass in build_datagraph_debugs:
-                    benchmark.schedule_transform(
-                        job_scheduler,
-                        transform_pass,
-                        build_datagraph_debugs[transform_pass])
-            else:
-                benchmark.schedule_transform(
-                    job_scheduler,
-                    options.transform_pass,
-                    build_datagraph_debugs[options.transform_pass])
-        # Schedule data graph simulation.
-        if options.simulate:
-            if options.transform_pass == 'all':
-                for transform_pass in simulate_datagraph_debugs:
-                    benchmark.schedule_simulation(
-                        job_scheduler,
-                        transform_pass,
-                        simulate_datagraph_debugs[transform_pass])
-            else:
-                benchmark.schedule_simulation(
-                    job_scheduler,
-                    options.transform_pass,
-                    simulate_datagraph_debugs[options.transform_pass])
-        b_list.append(benchmark)
-
-    # Start the job.
-    job_scheduler.run()
-
-    for benchmark in b_list:
-        tdgs = benchmark.get_tdgs('stream')
-        tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
-    stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
-    print('-------------------------- ' + benchmark.get_name())
-    stream_stats.print_stats()
-    stream_stats.print_access()
-
-    Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    Util.ADFAAnalyzer.analyze_adfa(b_list)
-
-
-if __name__ == '__main__':
-    import optparse
-    parser = optparse.OptionParser()
-    parser.add_option('-b', '--build', action='store_true',
-                      dest='build', default=False)
-    parser.add_option('-t', '--trace', action='store_true',
-                      dest='trace', default=False)
-    parser.add_option('--directory', action='store',
-                      type='string', dest='directory')
-    parser.add_option('-p', '--pass', action='store',
-                      type='string', dest='transform_pass', default='all')
-    parser.add_option('-d', '--build-datagraph', action='store_true',
-                      dest='build_datagraph', default=False)
-    parser.add_option('-s', '--simulate', action='store_true',
-                      dest='simulate', default=False)
-    (options, args) = parser.parse_args()
-    # Use the current folder.
-    main(options)

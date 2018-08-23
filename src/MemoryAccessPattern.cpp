@@ -7,19 +7,15 @@
 #define DEBUG_TYPE "MemoryAccessPattern"
 
 MemoryAccessPattern::AddressPatternFSM::AddressPatternFSM(
-    llvm::Instruction *_BaseLoad, Pattern _CurrentPattern)
+    Pattern _CurrentPattern)
     : State(UNKNOWN), CurrentPattern(_CurrentPattern), Updates(0),
-      PrevAddress(0), BaseLoad(_BaseLoad), Base(0), StrideI(0), I(0), NI(0),
-      StrideJ(0), J(0) {
-  if (this->BaseLoad != nullptr) {
-    this->CurrentPattern = INDIRECT;
+      PrevAddress(0), Base(0), StrideI(0), I(0), NI(0), StrideJ(0), J(0) {
+  if (this->CurrentPattern == MemoryAccessPattern::Pattern::UNKNOWN) {
+    // Success at the beginning for unknwon pattern.
+    this->State = SUCCESS;
   }
   if (this->CurrentPattern == RANDOM) {
     // Always success for random pattern.
-    this->State = SUCCESS;
-  }
-  if (this->CurrentPattern == INDIRECT) {
-    // Always success for INDIRECT pattern.
     this->State = SUCCESS;
   }
   if (this->CurrentPattern == QUARDRIC) {
@@ -81,6 +77,8 @@ void MemoryAccessPattern::AddressPatternFSM::update(uint64_t Addr) {
           this->Base = Addr0 - Idx0 * this->StrideI;
           this->I = Idx1;
           this->State = SUCCESS;
+          DEBUG(llvm::errs() << "StrideI " << this->StrideI << " Base "
+                             << this->Base << " I " << this->I << '\n');
         }
       }
       break;
@@ -167,11 +165,6 @@ void MemoryAccessPattern::AddressPatternFSM::update(uint64_t Addr) {
     // Nothing to do. We always succeed.
     break;
   }
-  case INDIRECT: {
-    // Indirect memory access is handled when the stream is first constructed.
-    // Nothing we can do now.
-    break;
-  }
   default: {
     llvm_unreachable("Illegal memory access pattern.");
     break;
@@ -217,27 +210,19 @@ void MemoryAccessPattern::AddressPatternFSM::updateMissing() {
 }
 
 MemoryAccessPattern::AccessPatternFSM::AccessPatternFSM(
-    AccessPattern _AccPattern, llvm::Instruction *_BaseLoad)
+    AccessPattern _AccPattern)
     : Accesses(0), Iters(0), State(UNKNOWN), AccPattern(_AccPattern) {
-  if (_BaseLoad != nullptr) {
-    this->AddressPatterns.emplace_back(_BaseLoad,
-                                       MemoryAccessPattern::Pattern::INDIRECT);
-  } else {
-    this->AddressPatterns.emplace_back(_BaseLoad,
-                                       MemoryAccessPattern::Pattern::UNKNOWN);
-    this->AddressPatterns.emplace_back(_BaseLoad,
-                                       MemoryAccessPattern::Pattern::LINEAR);
-    this->AddressPatterns.emplace_back(_BaseLoad,
-                                       MemoryAccessPattern::Pattern::QUARDRIC);
-    this->AddressPatterns.emplace_back(_BaseLoad,
-                                       MemoryAccessPattern::Pattern::RANDOM);
-  }
+  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::UNKNOWN);
+  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::LINEAR);
+  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::QUARDRIC);
+  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::RANDOM);
 }
 
 const MemoryAccessPattern::AddressPatternFSM &
 MemoryAccessPattern::AccessPatternFSM::getAddressPattern() const {
   for (const auto &AddrPattern : this->AddressPatterns) {
-    if (AddrPattern.State == AddressPatternFSM::StateT::SUCCESS) {
+    if (AddrPattern.State != AddressPatternFSM::StateT::FAILURE) {
+      // UNKNOWN is also treated as SUCCESS as we are optimistic.
       return AddrPattern;
     }
   }
@@ -287,12 +272,12 @@ void MemoryAccessPattern::AccessPatternFSM::addAccess(uint64_t Addr) {
   }
   case MemoryAccessPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
     for (auto &AddrPattern : this->AddressPatterns) {
-      if (AddrPattern.State == AddressPatternFSM::StateT::UNKNOWN) {
-        AddrPattern.update(Addr);
-      } else {
-        if (Addr != AddrPattern.PrevAddress) {
-          AddrPattern.update(Addr);
+      if (Addr != AddrPattern.PrevAddress) {
+        if (AddrPattern.CurrentPattern == LINEAR) {
+          DEBUG(llvm::errs() << "Update linear with " << Addr << " Prev addr "
+                             << AddrPattern.PrevAddress << '\n');
         }
+        AddrPattern.update(Addr);
       }
     }
     break;
@@ -309,9 +294,6 @@ bool MemoryAccessPattern::isAddressPatternRelaxed(Pattern A, Pattern B) {
   switch (A) {
   case UNKNOWN: {
     return true;
-  }
-  case INDIRECT: {
-    return B == INDIRECT;
   }
   case CONSTANT: {
     switch (B) {
@@ -378,17 +360,7 @@ bool MemoryAccessPattern::isAccessPatternRelaxed(AccessPattern A,
 
 void MemoryAccessPattern::addMissingAccess() {
 
-  if (this->ComputingFSMs.empty()) {
-    auto IndirectBase = MemoryAccessPattern::isIndirect(this->MemInst);
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(UNCONDITIONAL, IndirectBase));
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(CONDITIONAL_ACCESS_ONLY, IndirectBase));
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(CONDITIONAL_UPDATE_ONLY, IndirectBase));
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(SAME_CONDITION, IndirectBase));
-  }
+  this->initialize();
 
   // Add the first missing access.
   for (auto FSM : this->ComputingFSMs) {
@@ -398,38 +370,43 @@ void MemoryAccessPattern::addMissingAccess() {
 
 void MemoryAccessPattern::addAccess(uint64_t Addr) {
 
-  if (this->ComputingFSMs.empty()) {
-    auto IndirectBase = MemoryAccessPattern::isIndirect(this->MemInst);
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(UNCONDITIONAL, IndirectBase));
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(CONDITIONAL_ACCESS_ONLY, IndirectBase));
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(CONDITIONAL_UPDATE_ONLY, IndirectBase));
-    this->ComputingFSMs.push_back(
-        new AccessPatternFSM(SAME_CONDITION, IndirectBase));
+  this->initialize();
+
+  this->Footprint.access(Addr);
+
+  if (this->MemInst->getName() == "tmp22") {
+    DEBUG(llvm::errs() << "tmp18 accessed " << Addr << '\n');
   }
 
   for (auto FSM : this->ComputingFSMs) {
+    if (FSM->getAccessPattern() == CONDITIONAL_UPDATE_ONLY) {
+      DEBUG(llvm::errs() << "update conditional update only\n");
+    }
     FSM->addAccess(Addr);
   }
 }
 
 void MemoryAccessPattern::endStream() {
-  assert(!this->ComputingFSMs.empty() && "Ending stream not computed.");
+  // this->initialize();
+  if (this->ComputingFSMs.empty()) {
+    // Somehow we failed to analyze the stream.
+    return;
+  }
 
   AccessPatternFSM *NewFSM = nullptr;
   Pattern NewAddrPattern;
   for (auto FSM : this->ComputingFSMs) {
     if (FSM->getState() == AccessPatternFSM::StateT::SUCCESS) {
 
-      if (this->MemInst->getName() == "tmp18") {
+      if (this->MemInst->getName() == "tmp22") {
         DEBUG(llvm::errs() << "tmp18 has access pattern "
                            << formatAccessPattern(FSM->getAccessPattern())
                            << " with address pattern "
                            << formatPattern(
                                   FSM->getAddressPattern().CurrentPattern)
-                           << '\n');
+                           << " with accesses " << FSM->Accesses
+                           << " with updates "
+                           << FSM->getAddressPattern().Updates << '\n');
       }
 
       if (NewFSM == nullptr) {
@@ -448,8 +425,8 @@ void MemoryAccessPattern::endStream() {
     }
   }
 
-  if (this->MemInst->getName() == "tmp18") {
-    DEBUG(llvm::errs() << "tmp18 picked access pattern "
+  if (this->MemInst->getName() == "tmp22") {
+    DEBUG(llvm::errs() << "tmp22 picked access pattern "
                        << formatAccessPattern(NewFSM->getAccessPattern())
                        << " with address pattern "
                        << formatPattern(
@@ -492,9 +469,6 @@ std::string MemoryAccessPattern::formatPattern(Pattern Pat) {
   case RANDOM: {
     return "RANDOM";
   }
-  case INDIRECT: {
-    return "INDIRECT";
-  }
   case CONSTANT: {
     return "CONSTANT";
   }
@@ -528,38 +502,6 @@ std::string MemoryAccessPattern::formatAccessPattern(AccessPattern AccPattern) {
   }
 }
 
-llvm::Instruction *MemoryAccessPattern::isIndirect(llvm::Instruction *Inst) {
-  bool IsLoad = llvm::isa<llvm::LoadInst>(Inst);
-  llvm::Value *Addr = nullptr;
-  if (IsLoad) {
-    Addr = Inst->getOperand(0);
-  } else {
-    Addr = Inst->getOperand(1);
-  }
-  if (llvm::isa<llvm::Instruction>(Addr)) {
-    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(Addr)) {
-      return LoadInst;
-    }
-    if (auto GEPInst = llvm::dyn_cast<llvm::GetElementPtrInst>(Addr)) {
-      // Search one more level.
-      size_t LoadCount = 0;
-      llvm::Instruction *LoadInst = nullptr;
-      for (unsigned Idx = 0, NumOperands = GEPInst->getNumOperands();
-           Idx < NumOperands; ++Idx) {
-        auto Operand = GEPInst->getOperand(Idx);
-        if (auto OperandInst = llvm::dyn_cast<llvm::LoadInst>(Operand)) {
-          LoadCount++;
-          LoadInst = OperandInst;
-        }
-      }
-      if (LoadCount == 1) {
-        return LoadInst;
-      }
-    }
-  }
-  return nullptr;
-}
-
 void MemoryAccessPattern::ComputedPattern::merge(
     const AccessPatternFSM &NewFSM) {
   const auto &AddrPatternFSM = NewFSM.getAddressPattern();
@@ -586,7 +528,18 @@ void MemoryAccessPattern::finalizePattern() {
           static_cast<float>(this->ComputedPatternPtr->StreamCount) <
       3.0) {
     // In such case we believe this is not a stream.
-    this->ComputedPatternPtr->CurrentPattern = RANDOM;
+    // this->ComputedPatternPtr->CurrentPattern = RANDOM;
+  }
+}
+
+void MemoryAccessPattern::initialize() {
+  if (this->ComputingFSMs.empty()) {
+    this->ComputingFSMs.push_back(new AccessPatternFSM(UNCONDITIONAL));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(CONDITIONAL_ACCESS_ONLY));
+    this->ComputingFSMs.push_back(
+        new AccessPatternFSM(CONDITIONAL_UPDATE_ONLY));
+    this->ComputingFSMs.push_back(new AccessPatternFSM(SAME_CONDITION));
   }
 }
 

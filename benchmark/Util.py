@@ -8,6 +8,7 @@ import sys
 import unittest
 import time
 import traceback
+import prettytable
 
 
 def error(msg, *args):
@@ -623,6 +624,44 @@ class RegionAggStats:
         except Exception as e:
             print('warn: {region} found in stream'.format(region=self.region))
 
+    @staticmethod
+    def print_table(selves):
+        title = [
+            'REGION',
+            'INSTS',
+            'RATIO',
+            'ISSUE',
+            'BPKI',
+            'BMPKI',
+            'CMPKI',
+        ]
+        assert(selves)
+        if selves[0].stream_analyzed:
+            title += [
+                'STM_SPD',
+            ]
+        table = prettytable.PrettyTable(
+            field_names=title,
+        )
+        table.float_format = '.3'
+        table.align = 'r'
+        for s in selves:
+            values = [
+                s.name,
+                int(s.base_insts),
+                s.base_issue,
+                s.base_ratio*100.0,
+                s.base_br,
+                s.base_bm,
+                s.base_cm,
+            ]
+            if s.stream_analyzed:
+                values += [
+                    s.stream_speedup,
+                ]
+            table.add_row(values)
+        print(table)
+
     def print_title(self):
         title = (
             '{name:>50}| '
@@ -710,18 +749,6 @@ class RegionAggStats:
             bpki=self.base_br,
             bmpki=self.base_bm,
             cmpki=self.base_cm,
-            adfa_spd=self.adfa_speedup,
-            adfa_cfgs=self.adfa_cfgs,
-            adfa_dfs=self.adfa_dfs,
-            adfa_ratio=self.adfa_ratio,
-            adfa_df_len=self.adfa_df_len,
-            adfa_issue=self.adfa_issue,
-            simd_spd=self.simd_speedup,
-            simd_insts=self.simd_insts,
-            simd_issue=self.simd_issue,
-            simd_bpki=self.simd_br,
-            simd_bmpki=self.simd_bm,
-            simd_cmpki=self.simd_cm,
         ))
 
         if self.adfa_analyzed:
@@ -798,10 +825,10 @@ class ADFAAnalyzer:
         regions = dict()
         for b in benchmarks:
             name = b.get_name()
-            baseline = Gem5RegionStats(name, b.get_result('replay'))
+            baseline = Gem5RegionStats(name, b.get_results('replay'))
             # adfa = Gem5RegionStats(name, b.get_result('adfa'))
             # simd = Gem5RegionStats(name, b.get_result('simd'))
-            stream = Gem5RegionStats(name, b.get_result('stream'))
+            stream = Gem5RegionStats(name, b.get_results('stream'))
 
             regions[name] = list()
 
@@ -828,8 +855,9 @@ class ADFAAnalyzer:
         baseline.print_regions()
         title_printed = False
         for benchmark_name in regions:
-            for region in regions[benchmark_name]:
-                if not title_printed:
-                    region.print_title()
-                    title_printed = True
-                region.print_line()
+            RegionAggStats.print_table(regions[benchmark_name])
+            # for region in regions[benchmark_name]:
+            #     if not title_printed:
+            #         region.print_title()
+            #         title_printed = True
+            #     region.print_line()
