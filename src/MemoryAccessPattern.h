@@ -1,6 +1,8 @@
 #ifndef LLVM_TDG_MEMORY_ACCESS_PATTERN_H
 #define LLVM_TDG_MEMORY_ACCESS_PATTERN_H
 
+#include "MemoryFootprint.h"
+
 #include "llvm/IR/Instruction.h"
 
 #include <list>
@@ -15,14 +17,10 @@
  * hierarchy.
  *
  * UNKNOWN -> CONSTANT -> LINEAR -> QUARDRIC -> RANDOM
- *         -> INDIRECT
  *
  * The address pattern starts from UNKNOWN, representing that there is no memory
  * access seen so far. As the user provides more accessed address, we gradually
  * relax our constraints to RANDOM.
- *
- * An indirect address pattern is identified by checking if its address comes
- * from a load.
  *
  * 2. The access pattern describes how the address is accessed. It has a five
  * categories:
@@ -54,6 +52,16 @@
  */
 class MemoryAccessPattern {
 public:
+  /**
+   */
+  enum Pattern {
+    UNKNOWN,
+    CONSTANT,
+    LINEAR,
+    QUARDRIC,
+    RANDOM,
+  };
+
   MemoryAccessPattern(llvm::Instruction *_MemInst)
       : MemInst(_MemInst), ComputedPatternPtr(nullptr) {}
   ~MemoryAccessPattern() {
@@ -90,18 +98,9 @@ public:
    */
   void finalizePattern();
 
-  bool computed() const;
+  const MemoryFootprint &getFootprint() const { return this->Footprint; }
 
-  /**
-   */
-  enum Pattern {
-    UNKNOWN,
-    INDIRECT,
-    CONSTANT,
-    LINEAR,
-    QUARDRIC,
-    RANDOM,
-  };
+  bool computed() const;
 
   enum AccessPattern {
     UNCONDITIONAL,
@@ -128,8 +127,6 @@ private:
     Pattern CurrentPattern;
     uint64_t Updates;
     uint64_t PrevAddress;
-    // INDIRECT
-    llvm::Instruction *BaseLoad;
     // CONSTANT.
     uint64_t Base;
     // LINEAR.
@@ -140,7 +137,7 @@ private:
     int64_t StrideJ;
     uint64_t J;
 
-    AddressPatternFSM(llvm::Instruction *_BaseLoad, Pattern _CurrentPattern);
+    AddressPatternFSM(Pattern _CurrentPattern);
 
     void update(uint64_t Addr);
     void updateMissing();
@@ -170,7 +167,7 @@ private:
 
     AccessPattern getAccessPattern() const { return this->AccPattern; }
 
-    AccessPatternFSM(AccessPattern _AccPattern, llvm::Instruction *_BaseLoad);
+    AccessPatternFSM(AccessPattern _AccPattern);
 
   protected:
     StateT State;
@@ -193,12 +190,12 @@ private:
 
   llvm::Instruction *MemInst;
 
+  MemoryFootprint Footprint;
+
   /**
    * Representing an ongoing computation.
    */
   std::vector<AccessPatternFSM *> ComputingFSMs;
-
-  static llvm::Instruction *isIndirect(llvm::Instruction *Inst);
 
   /**
    * Implement the address pattern hierarchy.
@@ -220,13 +217,13 @@ public:
     uint64_t Updates;
     uint64_t Iters;
     uint64_t StreamCount;
-    // For indirect memory access.
-    llvm::Instruction *BaseLoad;
     ComputedPattern(const AccessPatternFSM &NewFSM)
         : CurrentPattern(NewFSM.getAddressPattern().CurrentPattern),
           AccPattern(NewFSM.getAccessPattern()), Accesses(NewFSM.Accesses),
           Updates(NewFSM.getAddressPattern().Updates), Iters(NewFSM.Iters),
-          StreamCount(1), BaseLoad(NewFSM.getAddressPattern().BaseLoad) {}
+          StreamCount(1) {}
+
+    ComputedPattern() {}
 
     void merge(const AccessPatternFSM &NewFSM);
   };
@@ -235,6 +232,8 @@ public:
 
 private:
   ComputedPattern *ComputedPatternPtr;
+
+  void initialize();
 };
 
 #endif

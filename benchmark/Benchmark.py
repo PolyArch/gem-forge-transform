@@ -8,18 +8,17 @@ import Util
 class Benchmark(object):
 
     def __init__(self, name, raw_bc, links, args=None, trace_func=None,
-                 trace_lib='Protobuf'):
+                 trace_lib='Protobuf', lang='C'):
         self.name = name
         self.raw_bc = raw_bc
         self.links = links
         self.args = args
         self.trace_func = trace_func
+        self.lang = lang
 
         self.pass_so = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
 
-        self.trace_bin = name + '.traced'
-        self.trace_bc = self.trace_bin + '.bc'
         if trace_lib == 'Protobuf':
             self.trace_links = links + [
                 C.PROTOBUF_LIB,
@@ -39,23 +38,78 @@ class Benchmark(object):
             )
             self.trace_format = 'gzip'
 
-        self.gem5_pseudo = os.path.join(
-            C.GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
-        self.replay_c = os.path.join(
-            C.LLVM_TDG_DIR, 'benchmark', 'replay.c')
-        self.replay_bin = name + '.replay'
-        self.replay_bc = self.replay_bin + '.bc'
-
     def clean(self):
         clean_cmd = [
             'rm',
             '-f',
-            self.trace_bin,
-            self.trace_bc,
-            self.replay_bin,
-            self.replay_bc,
+            self.get_trace_bin(),
+            self.get_trace_bc(),
+            self.get_replay_bin(),
+            self.get_replay_bc(),
         ]
         Util.call_helper(clean_cmd)
+
+    def get_name(self):
+        assert('get_name is not implemented by derived class')
+
+    def get_trace_bc(self):
+        return '{name}.traced.bc'.format(name=self.get_name())
+
+    def get_trace_bin(self):
+        return '{name}.traced.exe'.format(name=self.get_name())
+
+    def get_replay_bc(self):
+        return '{name}.replay.bc'.format(name=self.get_name())
+
+    def get_replay_bin(self):
+        return '{name}.replay.exe'.format(name=self.get_name())
+
+    def get_profile(self):
+        return '{name}.profile'.format(name=self.get_name())
+
+    def get_traces(self):
+        traces = list()
+        name = self.get_name()
+        for i in xrange(self.get_n_traces()):
+            if name.endswith('gcc_s') and i == 7:
+                # So far there is a bug causing tdg #7 not transformable.
+                continue
+            traces.append('{run}/{name}.{i}.trace'.format(
+                run=self.get_run_path(),
+                name=name,
+                i=i))
+        return traces
+
+    def get_tdgs(self, transform_pass):
+        tdgs = list()
+        name = self.get_name()
+        for i in xrange(self.get_n_traces()):
+            if name.endswith('gcc_s') and i == 7:
+                # So far there is a but causing tdg #7 not transformable.
+                continue
+            tdgs.append('{run}/{name}.{transform_pass}.{i}.tdg'.format(
+                run=self.get_run_path(),
+                name=name,
+                transform_pass=transform_pass,
+                i=i))
+        return tdgs
+
+    def get_results(self, transform_pass):
+        results = list()
+        name = self.get_name()
+        Util.call_helper(
+            ['mkdir', '-p', C.LLVM_TDG_RESULT_DIR])
+        for i in xrange(self.get_n_traces()):
+            if name.endswith('gcc_s') and i == 7:
+                # So far there is a but causing tdg #7 not transformable.
+                continue
+            results.append(
+                os.path.join(
+                    C.LLVM_TDG_RESULT_DIR,
+                    '{name}.{transform_pass}.{i}.txt'.format(
+                        name=name, transform_pass=transform_pass, i=i
+                    )))
+        return results
 
     """
     Generate the trace.
@@ -65,7 +119,7 @@ class Benchmark(object):
         # Remember to set the environment for trace.
         os.putenv('LLVM_TDG_TRACE_FILE', trace_file)
         run_cmd = [
-            './' + self.trace_bin,
+            './' + self.get_trace_bin(),
         ]
         if self.args is not None:
             run_cmd += self.args
@@ -83,7 +137,7 @@ class Benchmark(object):
             '-trace-pass',
             self.raw_bc,
             '-o',
-            self.trace_bc,
+            self.get_trace_bc(),
         ]
         if self.trace_func is not None and len(self.trace_func) > 0:
             trace_cmd.append('-trace-function=' + self.trace_func)
@@ -101,21 +155,21 @@ class Benchmark(object):
                 '-O3',
                 '-nostdlib',
                 '-static',
-                self.trace_bc,
+                self.get_trace_bc(),
                 self.trace_lib,
                 C.MUSL_LIBC_STATIC_LIB,
                 '-lc++',
                 '-o',
-                self.trace_bin,
+                self.get_trace_bin(),
             ]
         else:
             link_cmd = [
                 C.CXX,
                 '-O3',
-                self.trace_bc,
+                self.get_trace_bc(),
                 self.trace_lib,
                 '-o',
-                self.trace_bin,
+                self.get_trace_bin(),
             ]
         link_cmd += self.trace_links
         print('# Link to traced binary...')
@@ -144,7 +198,7 @@ class Benchmark(object):
             '-datagraph-detail={detail}'.format(detail=tdg_detail),
             self.raw_bc,
             '-o',
-            self.replay_bc,
+            self.get_replay_bc(),
         ]
         if output_tdg is not None:
             opt_cmd.append('-output-datagraph=' + output_tdg)
@@ -154,14 +208,14 @@ class Benchmark(object):
         print('# Processing trace...')
         Util.call_helper(opt_cmd)
         build_cmd = [
-            C.CC,
+            C.CC if self.lang == 'C' else C.CXX,
             '-static',
             '-o',
-            self.replay_bin,
+            self.get_replay_bin(),
             '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
-            self.gem5_pseudo,
-            self.replay_c,
-            self.replay_bc,
+            C.GEM5_M5OPS_X86,
+            C.LLVM_TDG_REPLAY_C,
+            self.get_replay_bc(),
         ]
         build_cmd += self.links
         print('# Building replay binary...')
@@ -214,7 +268,7 @@ class Benchmark(object):
             C.GEM5_X86,
             '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
             C.GEM5_LLVM_TRACE_SE_CONFIG,
-            '--cmd={cmd}'.format(cmd=self.replay_bin),
+            '--cmd={cmd}'.format(cmd=self.get_replay_bin()),
             '--llvm-standalone={standlone}'.format(standlone=standalone),
             '--llvm-trace-file={trace_file}'.format(trace_file=LLVM_TRACE_FN),
             '--llvm-issue-width={ISSUE_WIDTH}'.format(

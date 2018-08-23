@@ -8,7 +8,7 @@ import StreamStatistics
 from Benchmark import Benchmark
 
 
-class MachSuiteBenchmark:
+class MachSuiteBenchmark(Benchmark):
 
     COMMON_SOURCES = [
         'local_support.c',
@@ -41,7 +41,7 @@ class MachSuiteBenchmark:
             self.folder,
             self.benchmark_name,
             self.subbenchmark_name)
-        self.benchmark = Benchmark(
+        super(MachSuiteBenchmark, self).__init__(
             name=self.get_name(),
             raw_bc=self.get_raw_bc(),
             links=['-lm'],
@@ -55,37 +55,14 @@ class MachSuiteBenchmark:
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
 
+    def get_n_traces(self):
+        return 1
+
+    def get_run_path(self):
+        return self.work_path
+
     def get_baseline_binary(self):
         return '{name}.baseline'.format(name=self.get_name())
-
-    def get_result(self, transform):
-        return os.path.join(
-            self.cwd,
-            'result',
-            '{name}.{transform}.txt'.format(name=self.get_name(), transform=transform))
-
-    def get_trace(self):
-        return '{name}.trace'.format(name=self.get_name())
-
-    def get_trace_result(self):
-        # Guarantee that there is only one trace result.
-        return self.get_trace() + '.0'
-
-    def get_profile(self):
-        return self.get_trace() + '.profile'
-
-    def get_profile(self):
-        return self.get_trace() + '.profile'
-
-    def get_tdg(self, transform):
-        return os.path.join(
-            self.work_path,
-            '{name}.{transform}.tdg'.format(
-                name=self.get_name(), transform=transform)
-        )
-
-    def get_tdgs(self, transform):
-        return [self.get_tdg(transform), ]
 
     def compile(self, output_bc, defines=[], includes=[]):
         sources = list(MachSuiteBenchmark.COMMON_SOURCES)
@@ -199,47 +176,37 @@ class MachSuiteBenchmark:
 
     def trace(self):
         os.chdir(self.work_path)
-        self.benchmark.build_trace()
-        self.benchmark.run_trace(self.get_trace())
+        self.build_trace()
+        self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def transform(self, transform, debugs):
-        pass_name = 'replay'
-        if transform == 'adfa':
-            pass_name = 'abs-data-flow-acc-pass'
-        elif transform == 'stream':
-            pass_name = 'stream-pass'
-        elif transform == 'replay':
-            pass_name = 'replay'
-        else:
-            assert(False)
-
+    def transform(self, pass_name, trace, profile_file, tdg, debugs):
         os.chdir(self.work_path)
 
-        self.benchmark.build_replay(
+        self.build_replay(
             pass_name=pass_name,
-            trace_file=self.get_trace_result(),
-            profile_file=self.get_profile(),
+            trace_file=trace,
+            profile_file=profile_file,
             tdg_detail='integrated',
             # tdg_detail='standalone',
-            output_tdg=self.get_tdg(transform),
+            output_tdg=tdg,
             debugs=debugs,
         )
 
         os.chdir(self.cwd)
 
-    def simulate(self, transform, debugs):
+    def simulate(self, tdg, result, debugs):
         os.chdir(self.work_path)
-        gem5_outdir = self.benchmark.gem5_replay(
+        gem5_outdir = self.gem5_replay(
             standalone=0,
-            output_tdg=self.get_tdg(transform),
+            output_tdg=tdg,
             debugs=debugs,
         )
         Util.call_helper([
             'cp',
             # os.path.join(gem5_outdir, 'stats.txt'),
             os.path.join(gem5_outdir, 'region.stats.txt'),
-            self.get_result(transform),
+            result,
         ])
         os.chdir(self.cwd)
 
@@ -248,7 +215,7 @@ class MachSuiteBenchmark:
         debugs = [
             'TraceStatisticPass',
         ]
-        self.benchmark.get_trace_statistics(
+        self.get_trace_statistics(
             trace_file=self.get_trace_result(),
             profile_file=self.get_profile(),
             debugs=debugs,
@@ -305,10 +272,6 @@ class MachSuiteBenchmarks:
     }
 
     def __init__(self, folder):
-        self.folder = folder
-        self.cwd = os.getcwd()
-
-        Util.call_helper(['mkdir', '-p', 'result'])
 
         self.benchmarks = dict()
         for benchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS:
@@ -316,6 +279,14 @@ class MachSuiteBenchmarks:
             for subbenchmark in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark]:
                 self.benchmarks[benchmark][subbenchmark] = MachSuiteBenchmark(
                     folder, benchmark, subbenchmark)
+
+    def get_benchmarks(self):
+        results = list()
+        for benchmark_name in MachSuiteBenchmarks.BENCHMARK_PARAMS:
+            for subbenchmark_name in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark_name]:
+                benchmark = self.benchmarks[benchmark_name][subbenchmark_name]
+                results.append(benchmark)
+        return results
 
     def draw(self, pdf_fn, baseline, test, names):
         results = Util.Results()
@@ -346,128 +317,9 @@ class MachSuiteBenchmarks:
 
         results.draw(pdf_fn, baseline, test, variables)
 
-
-def run_benchmark(benchmark, options):
-    print('start run benchmark ' + benchmark.get_name())
-    # benchmark.baseline()
-    if options.build:
-        benchmark.build_raw_bc()
-    if options.trace:
-        benchmark.trace()
-    # benchmark.statistics()
-
-    # Basic replay.
-    debugs = [
-        'ReplayPass',
-        # 'DataGraph',
-        # 'TDGSerializer'
-    ]
-    if options.build_datagraph:
-        if options.transform_pass == 'replay' or options.transform_pass == 'all':
-            benchmark.transform('replay', debugs)
-    debugs = [
-        # 'LLVMTraceCPU',
-        'RegionStats',
-    ]
-    if options.simulate:
-        if options.transform_pass == 'replay' or options.transform_pass == 'all':
-            benchmark.simulate('replay', debugs)
-
-    # Abstract data flow replay.
-    debugs = [
-        'ReplayPass',
-        'DynamicInstruction',
-        'TDGSerializer',
-        # 'AbstractDataFlowAcceleratorPass',
-        # 'LoopUtils',
-    ]
-    if options.build_datagraph:
-        if options.transform_pass == 'adfa' or options.transform_pass == 'all':
-            benchmark.transform('adfa', debugs)
-    debugs = [
-        # 'AbstractDataFlowAccelerator',
-        # 'LLVMTraceCPU',
-        'RegionStats',
-    ]
-    if options.simulat:
-        if options.transform_pass == 'adfa' or options.transform_pass == 'all':
-            benchmark.simulate('adfa', debugs)
-
-    # Stream.
-    debugs = [
-        'ReplayPass',
-        'StreamPass',
-        # 'MemoryAccessPattern',
-    ]
-    if options.build_datagraph:
-        if options.transform_pass == 'stream' or options.transform_pass == 'all':
-            benchmark.transform('stream', debugs)
-    debugs = [
-        # 'LLVMTraceCPU',
-    ]
-    if options.simulat:
-        if options.transform_pass == 'stream' or options.transform_pass == 'all':
-            benchmark.simulate('stream', debugs)
-
-
-def main(options):
-    benchmarks = MachSuiteBenchmarks(options.directory)
-    names = list()
-    processes = list()
-    bs = list()
-    for benchmark_name in MachSuiteBenchmarks.BENCHMARK_PARAMS:
-        for subbenchmark_name in MachSuiteBenchmarks.BENCHMARK_PARAMS[benchmark_name]:
-            benchmark = benchmarks.benchmarks[benchmark_name][subbenchmark_name]
-            processes.append(multiprocessing.Process(
-                target=run_benchmark, args=(benchmark, options,)))
-            names.append(benchmark.get_name())
-            bs.append(benchmark)
-
-    # We start 4 processes each time until we are done.
-    prev = 0
-    issue_width = 8
-    for i in xrange(len(processes)):
-        processes[i].start()
-        if (i + 1) % issue_width == 0:
-            while prev < i:
-                processes[prev].join()
-                prev += 1
-    while prev < len(processes):
-        processes[prev].join()
-        prev += 1
-
-    for benchmark in bs:
-        tdgs = benchmark.get_tdgs('stream')
-        tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
-        stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
-        print('-------------------------- ' + benchmark.get_name())
-        stream_stats.print_stats()
-        stream_stats.print_access()
-
     # Util.ADFAAnalyzer.analyze_adfa(bs)
 
     # benchmarks.draw('MachSuite.baseline.replay.pdf',
     #                 'baseline', 'replay', names)
     # benchmarks.draw('MachSuite.standalone.replay.pdf',
     #                 'standalone', 'replay', names)
-
-
-if __name__ == '__main__':
-    import sys
-    import optparse
-    parser = optparse.OptionParser()
-    parser.add_option('-b', '--build', action='store_true',
-                      dest='build', default=False)
-    parser.add_option('-t', '--trace', action='store_true',
-                      dest='trace', default=False)
-    parser.add_option('--directory', action='store',
-                      type='string', dest='directory')
-    parser.add_option('-p', '--pass', action='store',
-                      type='string', dest='transform_pass', )
-    parser.add_option('-d', '--build-datagraph', action='store_true',
-                      dest='build_datagraph', default=False)
-    parser.add_option('-s', '--simulate', action='store_true',
-                      dest='simulate', default=False)
-    (options, args) = parser.parse_args()
-    print options
-    main(options)

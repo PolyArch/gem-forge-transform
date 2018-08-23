@@ -35,6 +35,7 @@ add_library(LLVMTDGPass MODULE
     LoopUnroller.cpp
     PostDominanceFrontier.cpp
     DynamicLoopTree.cpp
+    MemoryFootprint.cpp
     MemoryAccessPattern.cpp
     LocateAccelerableFunctions.cpp
     Replay.cpp

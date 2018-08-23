@@ -3,6 +3,9 @@ import os
 
 LLVM_TDG_DIR = '/home/zhengrong/Documents/LLVM-TDG'
 LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'src')
+LLVM_TDG_RESULT_DIR = os.path.join(LLVM_TDG_DIR, 'benchmark', 'result')
+
+LLVM_TDG_REPLAY_C = os.path.join(LLVM_TDG_DIR, 'benchmark', 'replay.c')
 
 """
 Normal llvm install path.
@@ -56,7 +59,7 @@ GEM5_M5OPS_X86 = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
 Gem5 parameters.
 """
 CPU_TYPE = 'DerivO3CPU'
-ISSUE_WIDTH = 4
+ISSUE_WIDTH = 2
 STORE_QUEUE_SIZE = 32
 GEM5_L1D_SIZE = '32kB'
 GEM5_L1I_SIZE = '32kB'

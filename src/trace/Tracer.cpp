@@ -43,7 +43,7 @@ enum TypeID {
 };
 
 // Contain some common definitions
-const char *DEFAULT_TRACE_FILE_NAME = "llvm_trace";
+const char *DEFAULT_TRACE_FILE_NAME = "llvm";
 const char *getNewTraceFileName() {
   static size_t samples = 0;
   static char fileName[128];
@@ -55,7 +55,7 @@ const char *getNewTraceFileName() {
   } else {
     traceFileName = DEFAULT_TRACE_FILE_NAME;
   }
-  std::sprintf(fileName, "%s.%zu", traceFileName, samples);
+  std::sprintf(fileName, "%s.%zu.trace", traceFileName, samples);
   samples++;
   return fileName;
 }
