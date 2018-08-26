@@ -181,8 +181,8 @@ class Benchmark(object):
 
     def build_replay(self,
                      pass_name='replay',
-                     trace_file='llvm_trace',
-                     profile_file='llvm_trace.profile',
+                     trace_file='llvm.0.trace',
+                     profile_file='llvm.profile',
                      tdg_detail='integrated',
                      output_tdg=None,
                      debugs=[]

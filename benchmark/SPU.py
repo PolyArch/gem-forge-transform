@@ -140,7 +140,6 @@ class SPUBenchmark(Benchmark):
             self.get_trace(),
         ]
         Util.call_helper(clean_cmd)
-        # self.clean()
 
     def build_raw_bc(self):
         # By defining the TEST we control which test cases

@@ -1,5 +1,6 @@
 import SPEC2017
 import MachSuite
+import TestHelloWorld
 import Util
 import StreamStatistics
 import SPU
@@ -135,6 +136,7 @@ build_datagraph_debugs = {
         # 'StreamPass',
         # 'DataGraph',
         'LoopUtils',
+        # 'MemoryAccessPattern',
     ],
     'replay': [],
     'adfa': [],
@@ -157,6 +159,8 @@ def choose_suite(options):
         return SPU.SPUBenchmarks(options.directory)
     elif options.suite == 'mach':
         return MachSuite.MachSuiteBenchmarks(options.directory)
+    elif options.suite == 'hello':
+        return TestHelloWorld.TestHelloWorldBenchmarks()
     else:
         print('Unknown suite ' + options.suite)
         assert(False)
@@ -194,6 +198,7 @@ def main(options):
         stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
         print('-------------------------- ' + benchmark.get_name())
         stream_stats.print_stats()
+        stream_stats.print_stream_breakdown()
         stream_stats.print_access()
         stream_stats.dump_csv(os.path.join(
             C.LLVM_TDG_RESULT_DIR,
