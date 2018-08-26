@@ -124,26 +124,127 @@ private:
 
     StateT State;
 
-    Pattern CurrentPattern;
     uint64_t Updates;
     uint64_t PrevAddress;
-    // CONSTANT.
+    // // CONSTANT.
+    // uint64_t Base;
+    // // LINEAR.
+    // int64_t StrideI;
+    // uint64_t I;
+    // // QUARDRIC.
+    // uint64_t NI;
+    // int64_t StrideJ;
+    // uint64_t J;
+
+    AddressPatternFSM() : State(UNKNOWN), Updates(0), PrevAddress(0) {}
+
+    virtual Pattern getPattern() const = 0;
+    virtual void update(uint64_t Addr) = 0;
+    virtual void updateMissing() = 0;
+
+    // Some helper functions
+    static std::pair<uint64_t, int64_t>
+    computeLinearBaseStride(const std::pair<uint64_t, uint64_t> &Record0,
+                            const std::pair<uint64_t, uint64_t> &Record1) {
+      auto Idx0 = Record0.first;
+      auto Addr0 = Record0.second;
+      auto Idx1 = Record1.first;
+      auto Addr1 = Record1.second;
+      auto AddrDiff = Addr1 - Addr0;
+      auto IdxDiff = Idx1 - Idx0;
+      if (AddrDiff == 0 || IdxDiff == 0) {
+        return std::make_pair(static_cast<uint64_t>(0),
+                              static_cast<int64_t>(0));
+      }
+      if (AddrDiff % IdxDiff != 0) {
+        return std::make_pair(static_cast<uint64_t>(0),
+                              static_cast<int64_t>(0));
+      }
+
+      int64_t Stride = AddrDiff / IdxDiff;
+      return std::make_pair(static_cast<uint64_t>(Addr0 - Idx0 * Stride),
+                            Stride);
+    }
+
+    // private:
+    //   std::list<std::pair<uint64_t, uint64_t>> ConfirmedAddrs;
+  };
+
+  class UnknownAddressPatternFSM : public AddressPatternFSM {
+  public:
+    UnknownAddressPatternFSM() : AddressPatternFSM() {
+      // Unknown starts as success.
+      this->State = SUCCESS;
+    }
+    void update(uint64_t Addr) override;
+    void updateMissing() override;
+    Pattern getPattern() const override { return Pattern::UNKNOWN; }
+  };
+
+  class ConstAddressPatternFSM : public AddressPatternFSM {
+  public:
+    ConstAddressPatternFSM() : AddressPatternFSM() {}
+    void update(uint64_t Addr) override;
+    void updateMissing() override;
+    Pattern getPattern() const override { return Pattern::CONSTANT; }
+  };
+
+  class LinearAddressPatternFSM : public AddressPatternFSM {
+  public:
+    LinearAddressPatternFSM() : AddressPatternFSM(), Base(0), Stride(0), I(0) {}
+    void update(uint64_t Addr) override;
+    void updateMissing() override;
+    Pattern getPattern() const override { return Pattern::LINEAR; }
+
+  private:
     uint64_t Base;
-    // LINEAR.
+    int64_t Stride;
+    uint64_t I;
+    std::list<std::pair<uint64_t, uint64_t>> ConfirmedAddrs;
+    uint64_t computeNextAddr() const;
+  };
+
+  class QuardricAddressPatternFSM : public AddressPatternFSM {
+  public:
+    QuardricAddressPatternFSM()
+        : AddressPatternFSM(), Base(0), StrideI(0), I(0), NI(0), StrideJ(0),
+          J(0) {
+      // For now always failed quardric pattern.
+      // this->State == FAILURE;
+    }
+    void update(uint64_t Addr) override;
+    void updateMissing() override;
+    Pattern getPattern() const override { return Pattern::QUARDRIC; }
+
+  private:
+    uint64_t Base;
     int64_t StrideI;
     uint64_t I;
-    // QUARDRIC.
     uint64_t NI;
     int64_t StrideJ;
     uint64_t J;
-
-    AddressPatternFSM(Pattern _CurrentPattern);
-
-    void update(uint64_t Addr);
-    void updateMissing();
-
-  private:
     std::list<std::pair<uint64_t, uint64_t>> ConfirmedAddrs;
+
+    // Helper function to check if the 3 confirmed address is actually aligned
+    // on the same line.
+    bool isAligned() const;
+
+    // Compute the next address.
+    uint64_t computeNextAddr() const;
+
+    // Step the I, J to the next iteration.
+    void step();
+  };
+
+  class RandomAddressPatternFSM : public AddressPatternFSM {
+  public:
+    RandomAddressPatternFSM() : AddressPatternFSM() {
+      // Always success for random pattern.
+      this->State = SUCCESS;
+    }
+    void update(uint64_t Addr) override;
+    void updateMissing() override;
+    Pattern getPattern() const override { return Pattern::RANDOM; }
   };
 
   class AccessPatternFSM {
@@ -168,22 +269,23 @@ private:
     AccessPattern getAccessPattern() const { return this->AccPattern; }
 
     AccessPatternFSM(AccessPattern _AccPattern);
+    ~AccessPatternFSM();
 
   protected:
     StateT State;
 
     const AccessPattern AccPattern;
 
-    std::list<AddressPatternFSM> AddressPatterns;
+    std::list<AddressPatternFSM *> AddressPatterns;
 
     void feedUpdateMissingToAddrPatterns() {
       for (auto &AddrPattern : this->AddressPatterns) {
-        AddrPattern.updateMissing();
+        AddrPattern->updateMissing();
       }
     }
     void feedUpdateToAddrPatterns(uint64_t Addr) {
       for (auto &AddrPattern : this->AddressPatterns) {
-        AddrPattern.update(Addr);
+        AddrPattern->update(Addr);
       }
     }
   };
@@ -218,7 +320,7 @@ public:
     uint64_t Iters;
     uint64_t StreamCount;
     ComputedPattern(const AccessPatternFSM &NewFSM)
-        : CurrentPattern(NewFSM.getAddressPattern().CurrentPattern),
+        : CurrentPattern(NewFSM.getAddressPattern().getPattern()),
           AccPattern(NewFSM.getAccessPattern()), Accesses(NewFSM.Accesses),
           Updates(NewFSM.getAddressPattern().Updates), Iters(NewFSM.Iters),
           StreamCount(1) {}

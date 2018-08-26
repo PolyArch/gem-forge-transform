@@ -6,224 +6,230 @@
 
 #define DEBUG_TYPE "MemoryAccessPattern"
 
-MemoryAccessPattern::AddressPatternFSM::AddressPatternFSM(
-    Pattern _CurrentPattern)
-    : State(UNKNOWN), CurrentPattern(_CurrentPattern), Updates(0),
-      PrevAddress(0), Base(0), StrideI(0), I(0), NI(0), StrideJ(0), J(0) {
-  if (this->CurrentPattern == MemoryAccessPattern::Pattern::UNKNOWN) {
-    // Success at the beginning for unknwon pattern.
-    this->State = SUCCESS;
-  }
-  if (this->CurrentPattern == RANDOM) {
-    // Always success for random pattern.
-    this->State = SUCCESS;
-  }
-  if (this->CurrentPattern == QUARDRIC) {
-    // Always fail for QUARDRIC pattern for now.
-    this->State = FAILURE;
-  }
-}
-
-void MemoryAccessPattern::AddressPatternFSM::update(uint64_t Addr) {
-
+void MemoryAccessPattern::UnknownAddressPatternFSM::update(uint64_t Addr) {
   if (this->State == FAILURE) {
     return;
   }
-
   this->PrevAddress = Addr;
   this->Updates++;
-  switch (this->CurrentPattern) {
-  case UNKNOWN: {
-    // We have at least one confirmed address, not unknown.
-    this->State = FAILURE;
-    break;
-  }
-  case CONSTANT: {
-    switch (this->State) {
-    case UNKNOWN: {
-      this->State = SUCCESS;
-      this->Base = Addr;
-      break;
-    }
-    case SUCCESS: {
-      if (this->Base != Addr) {
-        this->State = FAILURE;
-      }
-      break;
-    }
-    case FAILURE: {
-      llvm_unreachable("FAILURE state in CONSTANT.");
-    }
-    default: { llvm_unreachable("Illegal state in CONSTANT."); }
-    }
-    break;
-  }
-  case LINEAR: {
-    switch (this->State) {
-    case UNKNOWN: {
-      this->ConfirmedAddrs.emplace_back(this->Updates - 1, Addr);
-      if (this->ConfirmedAddrs.size() == 2) {
-        auto Addr0 = this->ConfirmedAddrs.front().second;
-        auto Idx0 = this->ConfirmedAddrs.front().first;
-        auto Addr1 = this->ConfirmedAddrs.back().second;
-        auto Idx1 = this->ConfirmedAddrs.back().first;
-        // No need to worry about overflow.
-        auto AddrDiff = Addr1 - Addr0;
-        auto IdxDiff = Idx1 - Idx0;
-        if (AddrDiff % IdxDiff != 0) {
-          this->State = FAILURE;
-        } else {
-          this->StrideI = AddrDiff / IdxDiff;
-          this->Base = Addr0 - Idx0 * this->StrideI;
-          this->I = Idx1;
-          this->State = SUCCESS;
-          DEBUG(llvm::errs() << "StrideI " << this->StrideI << " Base "
-                             << this->Base << " I " << this->I << '\n');
-        }
-      }
-      break;
-    }
-    case SUCCESS: {
-      auto CurrentAddr = this->Base + this->StrideI * (this->I + 1);
-      if (Addr == CurrentAddr) {
-        // We are still accessing the same address.
-        this->I++;
-      } else {
-        this->State = FAILURE;
-      }
-      break;
-    }
-    case FAILURE: {
-      llvm_unreachable("FAILURE state in LINEAR.");
-    }
-    default: { llvm_unreachable("Illegal state in LINEAR."); }
-    }
-    break;
-  }
-  case QUARDRIC: {
-
-    // switch (this->State) {
-    // case UNKNOWN: {
-    //   this->ConfirmedAddrs.emplace_back(this->Updates - 1, Addr);
-    //   if (this->ConfirmedAddrs.size() == 3) {
-    //     auto Addr0 = this->ConfirmedAddrs.front().second;
-    //     auto Idx0 = this->ConfirmedAddrs.front().first;
-    //     auto Addr1 = this->ConfirmedAddrs.back().second;
-    //     auto Idx1 = this->ConfirmedAddrs.back().first;
-    //     // No need to worry about overflow.
-    //     auto AddrDiff = Addr1 - Addr0;
-    //     auto IdxDiff = Idx1 - Idx0;
-    //     if (AddrDiff % IdxDiff != 0) {
-    //       this->State = FAILURE;
-    //     } else {
-    //       this->StrideI = AddrDiff / IdxDiff;
-    //       this->Base = Addr0 - Idx0 * this->StrideI;
-    //       this->I = Idx1;
-    //       this->State = SUCCESS;
-    //     }
-    //   }
-    //   break;
-    // }
-    // case SUCCESS: {
-    //   auto CurrentAddr = this->Base + this->StrideI * (this->I + 1);
-    //   if (Addr == CurrentAddr) {
-    //     // We are still accessing the same address.
-    //     this->I++;
-    //   } else {
-    //     this->State = FAILURE;
-    //   }
-    //   break;
-    // }
-    // case FAILURE: {
-    //   llvm_unreachable("FAILURE state in QUARDRIC.");
-    // }
-    // default: { llvm_unreachable("Illegal state in QUARDRIC."); }
-    // }
-
-    // // Have not reached the limit.
-    // auto CurrentAddr =
-    //     this->Base + this->StrideJ * this->J + this->StrideI * (this->I + 1);
-    // if (this->I + 1 == this->NI) {
-    //   // Reached the limit.
-    //   CurrentAddr = this->Base + this->StrideJ * (this->J + 1);
-    // }
-
-    // if (Addr == CurrentAddr) {
-    //   // We are in the same pattern, update the index.
-    //   this->I++;
-    //   if (this->I == this->NI) {
-    //     this->I = 0;
-    //     this->J++;
-    //   }
-    // } else {
-    //   // This is not what we can handle, switch to random.
-    //   this->CurrentPattern = RANDOM;
-    // }
-    break;
-  }
-  case RANDOM: {
-    // Nothing to do. We always succeed.
-    break;
-  }
-  default: {
-    llvm_unreachable("Illegal memory access pattern.");
-    break;
-  }
-  }
+  // We have at least one confirmed address, not unknown.
+  this->State = FAILURE;
 }
 
-void MemoryAccessPattern::AddressPatternFSM::updateMissing() {
+void MemoryAccessPattern::UnknownAddressPatternFSM::updateMissing() {
+  // Do nothing for unknown pattern.
+}
 
+void MemoryAccessPattern::ConstAddressPatternFSM::update(uint64_t Addr) {
   if (this->State == FAILURE) {
     return;
   }
+  this->Updates++;
+  if (this->State == SUCCESS && this->PrevAddress != Addr) {
+    this->State = FAILURE;
+  } else if (this->State == UNKNOWN) {
+    this->PrevAddress = Addr;
+    this->State = SUCCESS;
+  }
+}
 
+void MemoryAccessPattern::ConstAddressPatternFSM::updateMissing() {
+  // Do nothing here for constant pattern.
+}
+
+void MemoryAccessPattern::LinearAddressPatternFSM::update(uint64_t Addr) {
+  if (this->State == FAILURE) {
+    return;
+  }
+  this->PrevAddress = Addr;
+  this->Updates++;
+  if (this->State == UNKNOWN) {
+    this->ConfirmedAddrs.emplace_back(this->Updates - 1, Addr);
+    if (this->ConfirmedAddrs.size() == 2) {
+      auto BaseStridePair = AddressPatternFSM::computeLinearBaseStride(
+          this->ConfirmedAddrs.front(), this->ConfirmedAddrs.back());
+      this->Base = BaseStridePair.first;
+      this->Stride = BaseStridePair.second;
+      if (this->Base == 0 || this->Stride == 0) {
+        this->State = FAILURE;
+      } else {
+        this->I = this->Updates - 1;
+        this->State = SUCCESS;
+        // DEBUG(llvm::errs() << "Stride " << this->Stride << " Base "
+        //                    << this->Base << " I " << this->I << '\n');
+      }
+    }
+  } else if (this->State == SUCCESS) {
+    auto CurrentAddr = this->computeNextAddr();
+    if (Addr == CurrentAddr) {
+      // We are still accessing the same address.
+      this->I++;
+    } else {
+      this->State = FAILURE;
+    }
+  }
+}
+
+void MemoryAccessPattern::LinearAddressPatternFSM::updateMissing() {
+  if (this->State == FAILURE) {
+    return;
+  }
   // Implicitly assume it follows the current pattern, and update the
   // statistics and induction variable.
   this->Updates++;
-  switch (this->CurrentPattern) {
-  case LINEAR: {
-    if (this->State == SUCCESS) {
-      this->PrevAddress = this->Base + this->StrideI * (this->I + 1);
-      this->I++;
-    }
-    break;
+  if (this->State == SUCCESS) {
+    this->PrevAddress = this->computeNextAddr();
+    this->I++;
   }
-  case QUARDRIC: {
-    if (this->State == SUCCESS) {
-      if (this->I + 1 == this->NI) {
-        // Reached the limit.
-        this->PrevAddress = this->Base + this->StrideJ * (this->J + 1);
-        this->I = 0;
-        this->J++;
+}
+
+uint64_t MemoryAccessPattern::LinearAddressPatternFSM::computeNextAddr() const {
+  return this->Base + this->Stride * (this->I + 1);
+}
+
+void MemoryAccessPattern::QuardricAddressPatternFSM::update(uint64_t Addr) {
+  if (this->State == FAILURE) {
+    return;
+  }
+
+  this->Updates++;
+  this->PrevAddress = Addr;
+  DEBUG(llvm::errs() << "get address " << Addr << " confirmed size "
+                     << this->ConfirmedAddrs.size() << '\n');
+  if (this->State == UNKNOWN) {
+    this->ConfirmedAddrs.emplace_back(this->Updates - 1, Addr);
+    if (this->ConfirmedAddrs.size() == 3) {
+      if (this->isAligned()) {
+        DEBUG(llvm::errs() << "Is aligned\n");
+        // The three confirmed addresses is still aligned, remove the middle one
+        // and keep waiting for future access.
+        auto Iter = this->ConfirmedAddrs.begin();
+        Iter++;
+        this->ConfirmedAddrs.erase(Iter);
       } else {
-        this->PrevAddress = this->Base + this->StrideJ * this->J +
-                            this->StrideI * (this->I + 1);
-        this->I++;
+        // This is not not aligned, we assume the third one is the first one in
+        // the next row.
+        auto SecondPairIter = this->ConfirmedAddrs.begin();
+        SecondPairIter++;
+        auto BaseStridePair = AddressPatternFSM::computeLinearBaseStride(
+            this->ConfirmedAddrs.front(), *SecondPairIter);
+        if (BaseStridePair.first == 0 || BaseStridePair.second == 0) {
+          DEBUG(llvm::errs() << "Failed to compute the base stride for "
+                                "quardric address pattern.\n");
+          this->State = FAILURE;
+        } else {
+          this->Base = BaseStridePair.first;
+          this->StrideI = BaseStridePair.second;
+          this->I = 0;
+          this->NI = this->Updates - 1;
+          this->StrideJ = Addr - this->Base;
+          this->J = 1;
+          this->State = SUCCESS;
+          DEBUG(llvm::errs()
+                << "StrideJ " << this->StrideJ << " NI " << NI << '\n');
+        }
       }
     }
+  } else if (this->State == SUCCESS) {
+    auto NextAddr = this->computeNextAddr();
+    if (NextAddr != Addr) {
+      this->State = FAILURE;
+    } else {
+      this->step();
+    }
+  }
+}
 
-    break;
+void MemoryAccessPattern::QuardricAddressPatternFSM::updateMissing() {
+  if (this->State == FAILURE) {
+    return;
   }
-  default: { break; }
+  this->Updates++;
+  if (this->State == SUCCESS) {
+    this->PrevAddress = this->computeNextAddr();
+    this->step();
   }
+}
+
+bool MemoryAccessPattern::QuardricAddressPatternFSM::isAligned() const {
+  /**
+   * Check if the three address is aligned.
+   * i  j  k
+   * vi vj vk
+   * (vj - vi) * (j - i) = (vk - vi) * (k - i)
+   */
+  assert(this->ConfirmedAddrs.size() == 3 &&
+         "There should be at least three addresses to check if aligned.");
+
+  auto Iter = this->ConfirmedAddrs.begin();
+  auto I = Iter->first;
+  auto VI = Iter->second;
+  Iter++;
+  auto J = Iter->first;
+  auto VJ = Iter->second;
+  Iter++;
+  auto K = Iter->first;
+  auto VK = Iter->second;
+
+  return (VJ - VI) * (K - I) == (VK - VI) * (J - I);
+}
+
+uint64_t
+MemoryAccessPattern::QuardricAddressPatternFSM::computeNextAddr() const {
+  if (this->I + 1 == this->NI) {
+    return this->Base + (this->J + 1) * this->StrideJ;
+  } else {
+    return this->Base + this->J * this->StrideJ + (this->I + 1) * this->StrideI;
+  }
+}
+
+void MemoryAccessPattern::QuardricAddressPatternFSM::step() {
+  if (this->I + 1 == this->NI) {
+    this->I = 0;
+    this->J++;
+  } else {
+    this->I++;
+  }
+}
+
+void MemoryAccessPattern::RandomAddressPatternFSM::update(uint64_t Addr) {
+  this->Updates++;
+  this->PrevAddress = Addr;
+}
+
+void MemoryAccessPattern::RandomAddressPatternFSM::updateMissing() {
+  this->Updates++;
 }
 
 MemoryAccessPattern::AccessPatternFSM::AccessPatternFSM(
     AccessPattern _AccPattern)
     : Accesses(0), Iters(0), State(UNKNOWN), AccPattern(_AccPattern) {
-  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::UNKNOWN);
-  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::LINEAR);
-  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::QUARDRIC);
-  this->AddressPatterns.emplace_back(MemoryAccessPattern::Pattern::RANDOM);
+  this->AddressPatterns.emplace_back(
+      new MemoryAccessPattern::UnknownAddressPatternFSM());
+  this->AddressPatterns.emplace_back(
+      new MemoryAccessPattern::ConstAddressPatternFSM());
+  this->AddressPatterns.emplace_back(
+      new MemoryAccessPattern::LinearAddressPatternFSM());
+  this->AddressPatterns.emplace_back(
+      new MemoryAccessPattern::QuardricAddressPatternFSM());
+  this->AddressPatterns.emplace_back(
+      new MemoryAccessPattern::RandomAddressPatternFSM());
+}
+
+MemoryAccessPattern::AccessPatternFSM::~AccessPatternFSM() {
+  for (auto &AddressFSM : this->AddressPatterns) {
+    delete AddressFSM;
+    AddressFSM = nullptr;
+  }
+  this->AddressPatterns.clear();
 }
 
 const MemoryAccessPattern::AddressPatternFSM &
 MemoryAccessPattern::AccessPatternFSM::getAddressPattern() const {
   for (const auto &AddrPattern : this->AddressPatterns) {
-    if (AddrPattern.State != AddressPatternFSM::StateT::FAILURE) {
+    if (AddrPattern->State != AddressPatternFSM::StateT::FAILURE) {
       // UNKNOWN is also treated as SUCCESS as we are optimistic.
-      return AddrPattern;
+      return *AddrPattern;
     }
   }
   llvm_unreachable("Failed to get one single succeeded address pattern.");
@@ -272,12 +278,8 @@ void MemoryAccessPattern::AccessPatternFSM::addAccess(uint64_t Addr) {
   }
   case MemoryAccessPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
     for (auto &AddrPattern : this->AddressPatterns) {
-      if (Addr != AddrPattern.PrevAddress) {
-        if (AddrPattern.CurrentPattern == LINEAR) {
-          DEBUG(llvm::errs() << "Update linear with " << Addr << " Prev addr "
-                             << AddrPattern.PrevAddress << '\n');
-        }
-        AddrPattern.update(Addr);
+      if (Addr != AddrPattern->PrevAddress) {
+        AddrPattern->update(Addr);
       }
     }
     break;
@@ -374,14 +376,11 @@ void MemoryAccessPattern::addAccess(uint64_t Addr) {
 
   this->Footprint.access(Addr);
 
-  if (this->MemInst->getName() == "tmp22") {
-    DEBUG(llvm::errs() << "tmp18 accessed " << Addr << '\n');
+  if (this->MemInst->getName() == "tmp14") {
+    DEBUG(llvm::errs() << "tmp14 accessed " << Addr << '\n');
   }
 
   for (auto FSM : this->ComputingFSMs) {
-    if (FSM->getAccessPattern() == CONDITIONAL_UPDATE_ONLY) {
-      DEBUG(llvm::errs() << "update conditional update only\n");
-    }
     FSM->addAccess(Addr);
   }
 }
@@ -398,23 +397,23 @@ void MemoryAccessPattern::endStream() {
   for (auto FSM : this->ComputingFSMs) {
     if (FSM->getState() == AccessPatternFSM::StateT::SUCCESS) {
 
-      if (this->MemInst->getName() == "tmp22") {
-        DEBUG(llvm::errs() << "tmp18 has access pattern "
-                           << formatAccessPattern(FSM->getAccessPattern())
-                           << " with address pattern "
-                           << formatPattern(
-                                  FSM->getAddressPattern().CurrentPattern)
-                           << " with accesses " << FSM->Accesses
-                           << " with updates "
-                           << FSM->getAddressPattern().Updates << '\n');
+      if (this->MemInst->getName() == "tmp14") {
+        DEBUG(
+            llvm::errs() << "tmp14 has access pattern "
+                         << formatAccessPattern(FSM->getAccessPattern())
+                         << " with address pattern "
+                         << formatPattern(FSM->getAddressPattern().getPattern())
+                         << " with accesses " << FSM->Accesses
+                         << " with updates " << FSM->getAddressPattern().Updates
+                         << '\n');
       }
 
       if (NewFSM == nullptr) {
         NewFSM = FSM;
-        NewAddrPattern = FSM->getAddressPattern().CurrentPattern;
+        NewAddrPattern = FSM->getAddressPattern().getPattern();
       } else {
         // Try to find the most constrainted FSM.
-        auto AddrPattern = FSM->getAddressPattern().CurrentPattern;
+        auto AddrPattern = FSM->getAddressPattern().getPattern();
         if (AddrPattern != NewAddrPattern &&
             MemoryAccessPattern::isAddressPatternRelaxed(AddrPattern,
                                                          NewAddrPattern)) {
@@ -425,13 +424,13 @@ void MemoryAccessPattern::endStream() {
     }
   }
 
-  if (this->MemInst->getName() == "tmp22") {
-    DEBUG(llvm::errs() << "tmp22 picked access pattern "
-                       << formatAccessPattern(NewFSM->getAccessPattern())
-                       << " with address pattern "
-                       << formatPattern(
-                              NewFSM->getAddressPattern().CurrentPattern)
-                       << '\n');
+  if (this->MemInst->getName() == "tmp14") {
+    DEBUG(
+        llvm::errs() << "tmp14 picked access pattern "
+                     << formatAccessPattern(NewFSM->getAccessPattern())
+                     << " with address pattern "
+                     << formatPattern(NewFSM->getAddressPattern().getPattern())
+                     << '\n');
   }
 
   if (this->ComputedPatternPtr == nullptr) {
@@ -510,8 +509,8 @@ void MemoryAccessPattern::ComputedPattern::merge(
   this->Iters += NewFSM.Iters;
   this->StreamCount++;
   if (MemoryAccessPattern::isAddressPatternRelaxed(
-          this->CurrentPattern, AddrPatternFSM.CurrentPattern)) {
-    this->CurrentPattern = AddrPatternFSM.CurrentPattern;
+          this->CurrentPattern, AddrPatternFSM.getPattern())) {
+    this->CurrentPattern = AddrPatternFSM.getPattern();
   }
   auto NewAccPattern = NewFSM.getAccessPattern();
   if (MemoryAccessPattern::isAccessPatternRelaxed(this->AccPattern,

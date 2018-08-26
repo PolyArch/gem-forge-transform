@@ -76,6 +76,13 @@ public:
 
   // API related to indirect streams.
   bool isIndirect() const { return !this->BaseLoads.empty(); }
+  bool isPointerChase() const {
+    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(this->MemInst)) {
+      return this->BaseLoads.count(LoadInst) != 0;
+    } else {
+      return false;
+    }
+  }
   size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
   const std::set<llvm::LoadInst *> &getBaseLoads() const {
     return this->BaseLoads;
@@ -171,6 +178,8 @@ protected:
 
   void computeStreamStatistics();
 
+  std::string classifyStream(const Stream &S) const;
+
   enum {
     SEARCHING,
     STREAMING,
@@ -205,7 +214,6 @@ protected:
 
   std::unordered_map<llvm::Loop *, size_t> LoopOngoingIters;
 
-
   /*******************************************************
    * Statistics.
    *******************************************************/
@@ -226,6 +234,44 @@ protected:
   std::unordered_map<llvm::Instruction *, uint64_t> MemAccessInstCount;
 }; // namespace
 
+std::string StreamPass::classifyStream(const Stream &S) const {
+  if (S.getNumBaseLoads() > 1) {
+    return "MULTI_BASE";
+  }
+  if (S.getNumBaseLoads() == 1) {
+    auto BaseLoad = *S.getBaseLoads().begin();
+    if (BaseLoad == S.getMemInst()) {
+      return "POINTER_CHASE";
+    }
+    const auto &BaseStreams = this->MemInstToStreamMap.at(BaseLoad);
+    for (const auto &BaseStream : BaseStreams) {
+      if (BaseStream.getLoop() == S.getLoop()) {
+        if (BaseStream.getNumBaseLoads() != 0) {
+          return "CHAIN_BASE";
+        }
+        if (BaseStream.getPattern().computed()) {
+          auto Pattern = BaseStream.getPattern().getPattern().CurrentPattern;
+          if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
+            return "AFFINE_BASE";
+          }
+        }
+      }
+    }
+    return "RANDOM_BASE";
+  } else {
+    if (S.getPattern().computed()) {
+      auto Pattern = S.getPattern().getPattern().CurrentPattern;
+      if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
+        return "AFFINE";
+      } else {
+        return "RANDOM";
+      }
+    } else {
+      return "RANDOM";
+    }
+  }
+}
+
 void StreamPass::dumpStats(std::ostream &O) {
   O << "--------------- Stream -----------------\n";
   this->DynInstCount.print(O);
@@ -242,7 +288,7 @@ void StreamPass::dumpStats(std::ostream &O) {
 
   /**
    * Loop Inst AddrPat AccPat Iters Accs Updates StreamCount BaseLoads
-   * Footprint AddrInsts Chosen
+   * StreamClass Footprint AddrInsts Chosen
    */
 
   for (auto &MemInstStreamEntry : this->MemInstToStreamMap) {
@@ -258,10 +304,13 @@ void StreamPass::dumpStats(std::ostream &O) {
         }
       }
 
+      std::string StreamClass = this->classifyStream(Stream);
+
       if (!Stream.getPattern().computed()) {
         O << "NOT_COMPUTED NOT_COMPUTED 0 "
           << this->MemAccessInstCount[Stream.getMemInst()] << " 0 0 "
-          << Stream.getNumBaseLoads() << " 0 "
+          << Stream.getNumBaseLoads();
+        O << ' ' << StreamClass << " 0 "
           << Stream.getNumAddressComputeInstructions() << ' ' << Chosen << "\n";
         continue;
       }
@@ -270,6 +319,7 @@ void StreamPass::dumpStats(std::ostream &O) {
         << MemoryAccessPattern::formatAccessPattern(Pattern.AccPattern) << ' '
         << Pattern.Iters << ' ' << Pattern.Accesses << ' ' << Pattern.Updates
         << ' ' << Pattern.StreamCount << ' ' << Stream.getNumBaseLoads();
+      O << ' ' << StreamClass;
       O << ' ' << Stream.getPattern().getFootprint().getNumCacheLinesAccessed();
       O << ' ' << Stream.getNumAddressComputeInstructions();
       O << ' ' << Chosen;
@@ -286,8 +336,14 @@ void StreamPass::dumpStats(std::ostream &O) {
     }
     O << "UNKNOWN " << LoopUtils::formatLLVMInst(Inst) << ' ' << "NOT_STREAM"
       << ' ' << "NOT_STREAM" << ' ' << 0 << ' ' << Entry.second << ' ' << 0
-      << ' ' << 0 << ' ' << -1 << ' ' << 0;
+      << ' ' << 0 << ' ' << -1;
+    // Pointer chase.
+    O << ' ' << "NOT_STREAM";
+    // Footprint
+    O << ' ' << 0;
+    // Addr Insts
     O << ' ' << -1;
+    // Chosen
     O << ' ' << "NO" << '\n';
   }
 }

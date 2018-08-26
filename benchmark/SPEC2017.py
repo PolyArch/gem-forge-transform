@@ -56,6 +56,7 @@ class SPEC2017Benchmark(Benchmark):
             links=params['links'],
             args=args,
             trace_func=self.trace_func,
+            lang=params['lang'],
         )
 
     def get_name(self):
@@ -285,19 +286,20 @@ class SPEC2017Benchmarks:
         #     'end_inst': 200e8,
         #     'n_traces': 22,
         #     'trace_func': 'MagickCommandGenesis',
-        # },
-        # 'nab_s': {
-        #     'name': '644.nab_s',
-        #     'links': ['-lm'],
-        #     # md start from 100b
-        #     'start_inst': 0,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 121e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'md',
         #     'lang': 'C',
         # },
+        'nab_s': {
+            'name': '644.nab_s',
+            'links': ['-lm'],
+            # md start from 100b
+            'start_inst': 0,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 121e8,
+            'n_traces': 1,
+            'trace_func': 'md',
+            'lang': 'C',
+        },
         # 'x264_s': {
         #     'name': '625.x264_s',
         #     'links': [],
@@ -362,17 +364,17 @@ class SPEC2017Benchmarks:
         #     'lang': 'C',
         # },
         # # C++ Benchmark
-        'deepsjeng_s': {
-            'name': '631.deepsjeng_s',
-            'links': [],
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 0,
-            'end_inst': 0,
-            'n_traces': 1,
-            'trace_func': 'think(gamestate_t*, state_t*)',
-            'lang': 'CPP',
-        },
+        # 'deepsjeng_s': {
+        #     'name': '631.deepsjeng_s',
+        #     'links': [],
+        #     'start_inst': 0,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 0,
+        #     'end_inst': 0,
+        #     'n_traces': 1,
+        #     'trace_func': 'think(gamestate_t*, state_t*)',
+        #     'lang': 'CPP',
+        # },
         # 'leela_s': {
         #     'name': '641.leela_s',
         #     'links': [],
@@ -437,9 +439,9 @@ class SPEC2017Benchmarks:
         #     'lang': 'CPP',
         # },
 
-        # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
-        # Does not throw.
-        # Haven't tested with ellcc.
+        # # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
+        # # Does not throw.
+        # # Haven't tested with ellcc.
         # 'blender_r': {
         #     'name': '526.blender_r',
         #     'links': [],
@@ -487,6 +489,7 @@ class SPEC2017Benchmarks:
             skip_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['skip_inst']
             end_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['end_inst']
             n_traces = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['n_traces']
+            lang = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['lang']
 
             trace_func = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['trace_func']
             links = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['links']
@@ -519,6 +522,7 @@ class SPEC2017Benchmarks:
                     skip_inst=skip_inst,
                     end_inst=end_inst,
                     n_traces=n_traces,
+                    lang=lang,
                 )
             )
 
