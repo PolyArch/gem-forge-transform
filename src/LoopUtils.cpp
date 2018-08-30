@@ -16,8 +16,7 @@
 // }
 
 const std::unordered_set<std::string> LoopUtils::SupportedMathFunctions{
-    "sin", "sqrt", "acos", "fabs", "abs",
-};
+    "exp", "sin", "sqrt", "acos", "fabs", "abs", "rand"};
 
 std::string printLoop(const llvm::Loop *Loop) {
   return std::string(Loop->getHeader()->getParent()->getName()) +
@@ -86,7 +85,7 @@ uint64_t LoopUtils::getNumStaticInstInLoop(llvm::Loop *Loop) {
   return StaticInsts;
 }
 
-std::string LoopUtils::formatLLVMInst(llvm::Instruction *Inst) {
+std::string LoopUtils::formatLLVMInst(const llvm::Instruction *Inst) {
   if (Inst->getName() != "") {
     return (llvm::Twine(Inst->getFunction()->getName()) +
             "::" + Inst->getParent()->getName() + "::" + Inst->getName() + "(" +

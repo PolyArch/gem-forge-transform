@@ -127,6 +127,8 @@ class StreamStatistics:
             # Ignore the out of region accesses.
             if access.loop == 'UNKNOWN':
                 continue
+            if access.stream_class == 'NOT_STREAM':
+                continue
             if access.inst not in self.inst_to_loop_level:
                 self.inst_to_loop_level[access.inst] = list()
             self.inst_to_loop_level[access.inst].append(access)
@@ -140,14 +142,16 @@ class StreamStatistics:
     def parse(self, file):
         self.stats = dict()
         self.accesses = dict()
+        section = 0
         with open(file) as f:
             for line in f:
                 if line.startswith('----'):
-                    # Ignore the header line.
+                    # Move to the next section
+                    section += 1
                     continue
-                if '::' in line:
+                if section == 2:
                     self.parse_access(line)
-                else:
+                elif section == 1:
                     self.parse_stat(line)
 
     def parse_stat(self, line):
@@ -224,10 +228,17 @@ class StreamStatistics:
             reuse = 0.0
         return (footprint_weighted, reuse)
 
-    def calculate_out_of_region(self):
+    def calculate_out_of_loop(self):
         total = 0
         for access in self.accesses.values():
             if access.loop == 'UNKNOWN':
+                total += access.accesses
+        return total
+
+    def calculate_out_of_region(self):
+        total = 0
+        for access in self.accesses.values():
+            if access.loop != 'UNKNOWN' and access.stream_class == 'NOT_STREAM':
                 total += access.accesses
         return total
 
@@ -240,6 +251,8 @@ class StreamStatistics:
                 continue
             filtered.append(streams[level])
         result = {
+            'INCONTINUOUS': 0,
+            'RECURSIVE': 0,
             'AFFINE': 0,
             'RANDOM': 0,
             'AFFINE_BASE': 0,
@@ -254,7 +267,9 @@ class StreamStatistics:
 
     def print_stream_breakdown(self):
         table = prettytable.PrettyTable([
-            'OutOfRegion',
+            'OutOfLoop',
+            'Recursive',
+            'Incontinuous',
             'L0_AFFINE',
             'L0_RAMDOM',
             'L0_AFFINE_BASE',
@@ -275,12 +290,17 @@ class StreamStatistics:
         ])
         table.float_format = '.4'
         total_mem_insts = self.stats['DynMemInstCount']
-        out_of_region = self.calculate_out_of_region() / total_mem_insts
-        row = [out_of_region]
+        out_of_loop = self.calculate_out_of_loop() / total_mem_insts
+        row = [out_of_loop]
         for level in xrange(1):
             result = (
                 self.calculate_stream_breakdown(level)
             )
+            if level == 0:
+                row += [
+                    result['RECURSIVE'] / total_mem_insts,
+                    result['INCONTINUOUS'] / total_mem_insts,
+                ]
             row += [
                 result['AFFINE'] / total_mem_insts,
                 result['RANDOM'] / total_mem_insts,
@@ -291,6 +311,32 @@ class StreamStatistics:
                 result['MULTI_BASE'] / total_mem_insts,
             ]
         table.add_row(row)
+        print(table)
+
+    def print_stream_length(self):
+        table = prettytable.PrettyTable([
+            '<10',
+            '<100',
+            '<1000',
+            'inf'
+        ])
+        summed_accesses = [0, 0, 0, 0]
+        for inst in self.inst_to_loop_level:
+            streams = self.inst_to_loop_level[inst]
+            access = streams[-1]
+            if access.accesses == 0 or access.streams == 0:
+                continue
+            avg_len = access.accesses / float(access.streams)
+            if avg_len < 10.0:
+                summed_accesses[0] += access.accesses
+            elif avg_len < 100.0:
+                summed_accesses[1] += access.accesses
+            elif avg_len < 1000.0:
+                summed_accesses[2] += access.accesses
+            else:
+                summed_accesses[3] += access.accesses
+        total_mem_insts = self.stats['DynMemInstCount']
+        table.add_row([x / total_mem_insts for x in summed_accesses])
         print(table)
 
     def print_stats(self):

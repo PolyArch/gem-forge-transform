@@ -5,7 +5,7 @@
 
 class Utils {
 public:
-  static bool isCallOrInvokeInst(llvm::Value *Value) {
+  static bool isCallOrInvokeInst(const llvm::Value *Value) {
     return llvm::isa<llvm::CallInst>(Value) ||
            llvm::isa<llvm::InvokeInst>(Value);
   }
@@ -18,6 +18,18 @@ public:
     } else {
       llvm_unreachable(
           "Should not send no call/invoke instruction to getCalledFunction.");
+    }
+  }
+
+  static llvm::Value *getArgOperand(llvm::Instruction *Inst, unsigned Idx) {
+
+    if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
+      return CallInst->getArgOperand(Idx);
+    } else if (auto InvokeInst = llvm::dyn_cast<llvm::InvokeInst>(Inst)) {
+      return InvokeInst->getArgOperand(Idx);
+    } else {
+      llvm_unreachable(
+          "Should not send no call/invoke instruction to getArgOperand.");
     }
   }
 };
