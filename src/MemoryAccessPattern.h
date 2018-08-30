@@ -62,7 +62,7 @@ public:
     RANDOM,
   };
 
-  MemoryAccessPattern(llvm::Instruction *_MemInst)
+  MemoryAccessPattern(const llvm::Instruction *_MemInst)
       : MemInst(_MemInst), ComputedPatternPtr(nullptr) {}
   ~MemoryAccessPattern() {
     if (this->ComputedPatternPtr != nullptr) {
@@ -126,15 +126,6 @@ private:
 
     uint64_t Updates;
     uint64_t PrevAddress;
-    // // CONSTANT.
-    // uint64_t Base;
-    // // LINEAR.
-    // int64_t StrideI;
-    // uint64_t I;
-    // // QUARDRIC.
-    // uint64_t NI;
-    // int64_t StrideJ;
-    // uint64_t J;
 
     AddressPatternFSM() : State(UNKNOWN), Updates(0), PrevAddress(0) {}
 
@@ -165,9 +156,6 @@ private:
       return std::make_pair(static_cast<uint64_t>(Addr0 - Idx0 * Stride),
                             Stride);
     }
-
-    // private:
-    //   std::list<std::pair<uint64_t, uint64_t>> ConfirmedAddrs;
   };
 
   class UnknownAddressPatternFSM : public AddressPatternFSM {
@@ -290,7 +278,7 @@ private:
     }
   };
 
-  llvm::Instruction *MemInst;
+  const llvm::Instruction *MemInst;
 
   MemoryFootprint Footprint;
 

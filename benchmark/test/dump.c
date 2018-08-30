@@ -1,1 +1,3 @@
-void dump(int* arr) {}
+void dump(int* arr) {
+    *arr += 1;
+}

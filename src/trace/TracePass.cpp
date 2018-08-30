@@ -626,7 +626,9 @@ private:
       auto TypeBytes = VectorType->getBitWidth() / 8;
       // Since the buffer can be allocated from other vector, do a bitcast.
       auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
-      auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
+      // Align with 1 byte is always safe.
+      // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
+      auto AlignBytes = 1;
       Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
       // The first additional arguments will be the size of the buffer.
       AdditionalArgValues.push_back(llvm::ConstantInt::get(

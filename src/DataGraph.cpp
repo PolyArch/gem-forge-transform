@@ -734,6 +734,17 @@ DataGraph::getLLVMInstruction(const std::string &FunctionName,
   assert(Index >= 0 && Index < InstVec.size() && "Invalid Index.");
   auto Inst = InstVec[Index];
 
+  // If this is a landing pad, we try to find the match function.
+  // This is not 100% current, if an exception is thrown from a recursive
+  // function.
+  if (Inst->getOpcode() == llvm::Instruction::LandingPad ||
+      Inst->getOpcode() == llvm::Instruction::CleanupPad) {
+    while (this->DynamicFrameStack.empty() &&
+           this->DynamicFrameStack.front().Function != Func) {
+      this->DynamicFrameStack.pop_front();
+    }
+  }
+
   // If we are in integrated mode, sanity check to make sure that we are in the
   // correct frame.
   if (this->DetailLevel == INTEGRATED) {
