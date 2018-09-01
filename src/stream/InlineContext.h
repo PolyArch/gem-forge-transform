@@ -6,25 +6,26 @@
 #include "llvm/IR/Instruction.h"
 
 #include <list>
+/**
+ * InlineContext will be used in a lot of places, and to optimize it we use a
+ * tree and only expose the pointer to user.
+ *
+ * The context is allocated but never freed.
+ */
 
-struct InlineContext {
+struct InlineContext;
+
+using InlineContextPtr = const InlineContext *;
+
+class InlineContext {
 public:
-  InlineContext() = default;
-  InlineContext(const InlineContext &Other);
-  InlineContext(InlineContext &&Other) = delete;
-
-  InlineContext &operator=(const InlineContext &Other);
-  InlineContext &operator=(InlineContext &&Other) = delete;
-
-  bool operator==(const InlineContext &Other) const;
-  bool operator!=(const InlineContext &Other) const {
-    return !(this->operator==(Other));
-  }
+  static InlineContextPtr getEmptyContext();
 
   bool contains(const InlineContext &Other) const;
 
-  void push(llvm::Instruction *Inst);
-  void pop();
+  InlineContextPtr push(llvm::Instruction *Inst) const;
+  InlineContextPtr pop() const;
+
   bool empty() const { return this->Context.empty(); }
   size_t size() const { return this->Context.size(); }
 
@@ -35,22 +36,47 @@ public:
   bool isRecursive(llvm::Function *Func) const;
 
   std::string format() const;
+  std::string beautify() const;
 
-  std::list<llvm::Instruction *> Context;
+  const std::list<llvm::Instruction *> Context;
+
+private:
+  InlineContext();
+  InlineContext(InlineContextPtr _Parent,
+                std::list<llvm::Instruction *> &&_Context);
+  InlineContext(const InlineContext &Other) = delete;
+  InlineContext(InlineContext &&Other) = delete;
+
+  InlineContext &operator=(const InlineContext &Other) = delete;
+  InlineContext &operator=(InlineContext &&Other) = delete;
+
+  bool operator==(const InlineContext &Other) const;
+  bool operator!=(const InlineContext &Other) const {
+    return !(this->operator==(Other));
+  }
+
+  mutable std::unordered_map<llvm::Instruction *, InlineContextPtr> Children;
+  const InlineContextPtr Parent;
+
+  static InlineContext EmptyRoot;
 };
 
 struct ContextInst {
 public:
-  ContextInst(const InlineContext &_Context, llvm::Instruction *_Inst)
+  ContextInst(const InlineContextPtr &_Context, llvm::Instruction *_Inst)
       : Context(_Context), Inst(_Inst) {
     assert(this->Inst != nullptr &&
            "Inst is nullptr when constructing ContextInst.");
+    assert(this->Context != nullptr &&
+           "Context is nullptr when constructing ContextInst.");
   }
 
   ContextInst(const ContextInst &Other)
       : Context(Other.Context), Inst(Other.Inst) {
     assert(this->Inst != nullptr &&
            "Inst is nullptr when constructing ContextInst.");
+    assert(this->Context != nullptr &&
+           "Context is nullptr when constructing ContextInst.");
   }
   ContextInst &operator=(const ContextInst &Other) = delete;
   ContextInst(ContextInst &&Other) = delete;
@@ -70,29 +96,35 @@ public:
   std::string format() const {
     assert(this->Inst != nullptr &&
            "Inst is nullptr when formating ContextInst.");
-    return this->Context.format() + "->" +
+    return this->Context->format() + "->" +
            LoopUtils::formatLLVMInst(this->Inst);
   }
 
-  InlineContext Context;
+  std::string beautify() const {
+    return this->Context->beautify() + "->" +
+           LoopUtils::formatLLVMInst(this->Inst);
+  }
+
+  const InlineContextPtr Context;
   const llvm::Instruction *const Inst;
 };
 
 struct ContextLoop {
 public:
-  ContextLoop(const InlineContext &_Context, llvm::Loop *_Loop)
+  ContextLoop(const InlineContextPtr &_Context, llvm::Loop *_Loop)
       : Context(_Context), Loop(_Loop) {}
   ContextLoop(const ContextLoop &Other)
       : Context(Other.Context), Loop(Other.Loop) {}
   ContextLoop(ContextLoop &&Other) = delete;
-  ContextLoop &operator=(const ContextLoop &Other) {
-    if (this == &Other) {
-      return *this;
-    }
-    this->Context = Other.Context;
-    this->Loop = Other.Loop;
-    return *this;
-  }
+  ContextLoop &operator=(ContextLoop &Other) = delete;
+  // ContextLoop &operator=(const ContextLoop &Other) {
+  //   if (this == &Other) {
+  //     return *this;
+  //   }
+  //   this->Context = Other.Context;
+  //   this->Loop = Other.Loop;
+  //   return *this;
+  // }
   ContextLoop &operator=(ContextLoop &&Other) = delete;
 
   bool operator==(const ContextLoop &Other) const {
@@ -110,10 +142,14 @@ public:
   bool contains(const ContextInst &Inst) const;
 
   std::string format() const {
-    return this->Context.format() + "->" + LoopUtils::getLoopId(this->Loop);
+    return this->Context->format() + "->" + LoopUtils::getLoopId(this->Loop);
   }
 
-  InlineContext Context;
+  std::string beautify() const {
+    return this->Context->beautify() + "->" + LoopUtils::getLoopId(this->Loop);
+  }
+
+  const InlineContextPtr Context;
   const llvm::Loop *Loop;
 };
 
@@ -124,25 +160,25 @@ namespace std {
  * However here I abuse it as I know for sure that the they are unique per
  * address.
  */
-template <> struct hash<InlineContext> {
-  std::size_t operator()(const InlineContext &Context) const {
+// template <> struct hash<InlineContext> {
+//   std::size_t operator()(const InlineContext &Context) const {
 
-    size_t Result = 0xabcdef01;
-    for (const auto &Inst : Context.Context) {
-      Result >>= 1;
-      Result ^= (hash<uint64_t>()(reinterpret_cast<uint64_t>(Inst)) << 1);
-    }
+//     size_t Result = 0xabcdef01;
+//     for (const auto &Inst : Context.Context) {
+//       Result >>= 1;
+//       Result ^= (hash<uint64_t>()(reinterpret_cast<uint64_t>(Inst)) << 1);
+//     }
 
-    return Result;
-  }
-};
+//     return Result;
+//   }
+// };
 
 template <> struct hash<ContextInst> {
   std::size_t operator()(const ContextInst &Inst) const {
     using std::hash;
     using std::size_t;
 
-    return hash<InlineContext>()(Inst.Context) ^
+    return hash<uint64_t>()(reinterpret_cast<uint64_t>(Inst.Context)) ^
            (hash<uint64_t>()(reinterpret_cast<uint64_t>(Inst.Inst)) << 1);
   }
 };
@@ -152,7 +188,7 @@ template <> struct hash<ContextLoop> {
     using std::hash;
     using std::size_t;
 
-    return hash<InlineContext>()(Loop.Context) ^
+    return hash<uint64_t>()(reinterpret_cast<uint64_t>(Loop.Context)) ^
            (hash<uint64_t>()(reinterpret_cast<uint64_t>(Loop.Loop)) << 1);
   }
 };

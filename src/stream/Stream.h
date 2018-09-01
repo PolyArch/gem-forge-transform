@@ -6,9 +6,11 @@
 
 class Stream {
 public:
-  Stream(const ContextInst &_CInst, const ContextLoop &_CLoop)
-      : CInst(_CInst), CLoop(_CLoop), TotalIters(0), TotalAccesses(0),
-        TotalStreams(0), Iters(1), LastAccessIters(0), Pattern(_CInst.Inst) {
+  Stream(const ContextInst &_CInst, const ContextLoop &_CLoop,
+         size_t _LoopLevel)
+      : CInst(_CInst), CLoop(_CLoop), LoopLevel(_LoopLevel), TotalIters(0),
+        TotalAccesses(0), TotalStreams(0), Iters(1), LastAccessIters(0),
+        Pattern(_CInst.Inst) {
     auto Opcode = this->CInst.Inst->getOpcode();
     assert((Opcode == llvm::Instruction::Load ||
             Opcode == llvm::Instruction::Store) &&
@@ -39,6 +41,7 @@ public:
 
   const ContextLoop &getContextLoop() const { return this->CLoop; }
   const ContextInst &getContextInst() const { return this->CInst; }
+  size_t getLoopLevel() const { return this->LoopLevel; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
   size_t getTotalStreams() const { return this->TotalStreams; }
@@ -54,6 +57,7 @@ public:
 private:
   const ContextInst CInst;
   ContextLoop CLoop;
+  const size_t LoopLevel;
   std::unordered_set<ContextInst> BaseLoads;
   std::unordered_set<ContextInst> AddrInsts;
 
@@ -85,7 +89,7 @@ private:
    * Helper function to look up into the context to resolve argument to
    * instruction.
    */
-  static llvm::Instruction *resolveArgument(InlineContext &Context,
+  static llvm::Instruction *resolveArgument(InlineContextPtr &Context,
                                             llvm::Argument *Arg);
 };
 
