@@ -170,13 +170,13 @@ protected:
    */
   void analyzeStream();
 
-  void addAccess(const InlineContext &CurrentContext,
+  void addAccess(const InlineContextPtr &CurrentContext,
                  const std::list<ContextLoop> &LoopStack,
                  ActiveStreamMap &ActiveStreams,
                  DynamicInstruction *DynamicInst);
   void endIter(const std::list<ContextLoop> &LoopStack,
                ActiveStreamMap &ActiveStreams);
-  void pushLoopStack(const InlineContext &CurrentContext,
+  void pushLoopStack(const InlineContextPtr &CurrentContext,
                      std::list<ContextLoop> &LoopStack,
                      ActiveStreamMap &ActiveStreams,
                      const ContextLoop &NewContextLoop);
@@ -227,6 +227,7 @@ protected:
   enum LoopStatusT {
     CONTINUOUS,
     INLINE_CONTINUOUS,
+    INDIRECT_CONTINUOUS,
     INCONTINUOUS,
     RECURSIVE,
   };
@@ -237,6 +238,8 @@ protected:
       return "CONTINUOUS";
     case INLINE_CONTINUOUS:
       return "INLINE_CONTINUOUS";
+    case INDIRECT_CONTINUOUS:
+      return "INDIRECT_CONTINUOUS";
     case INCONTINUOUS:
       return "INCONTINUOUS";
     case RECURSIVE:
@@ -249,11 +252,12 @@ protected:
   }
 
   static LoopStatusT initLoopStatusT(const LoopStatusT NestedLoopStatus) {
-    if (NestedLoopStatus == RECURSIVE) {
-      return RECURSIVE;
-    } else {
-      return CONTINUOUS;
-    }
+    // if (NestedLoopStatus == RECURSIVE) {
+    //   return RECURSIVE;
+    // } else {
+    //   return CONTINUOUS;
+    // }
+    return CONTINUOUS;
   }
 
   static LoopStatusT updateLoopStatusT(const LoopStatusT CurrentStatus,
@@ -296,7 +300,8 @@ protected:
   // DynamicLoopIteration *LoopTree;
 
   // std::unordered_map<llvm::Loop *, bool> MemorizedLoopStream;
-  std::unordered_map<llvm::Loop *, std::unordered_set<llvm::Instruction *>>
+  std::unordered_map<const llvm::Loop *,
+                     std::unordered_set<llvm::Instruction *>>
       MemorizedMemoryAccess;
 
   // std::unordered_map<llvm::Loop *, size_t> LoopOngoingIters;
@@ -330,6 +335,8 @@ std::string StreamPass::classifyStream(const Stream &S) const {
     return "RECURSIVE";
   } else if (Status == INCONTINUOUS) {
     return "INCONTINUOUS";
+  } else if (Status == INDIRECT_CONTINUOUS) {
+    return "INDIRECT_CONTINUOUS";
   }
 
   // The loop is continuous or inline continous.
@@ -386,7 +393,7 @@ void StreamPass::dumpStats(std::ostream &O) {
   this->RemovedAddrInstCount.print(O);
 
   /**
-   * Loop Inst AddrPat AccPat Iters Accs Updates StreamCount BaseLoads
+   * Loop Inst AddrPat AccPat Iters Accs Updates StreamCount LoopLevel BaseLoads
    * StreamClass Footprint AddrInsts Chosen
    */
 
@@ -404,6 +411,7 @@ void StreamPass::dumpStats(std::ostream &O) {
       size_t Accesses = Stream.getTotalAccesses();
       size_t Updates = 0;
       size_t StreamCount = Stream.getTotalStreams();
+      size_t LoopLevel = Stream.getLoopLevel();
       size_t BaseLoads = Stream.getNumBaseLoads();
 
       std::string StreamClass = this->classifyStream(Stream);
@@ -435,6 +443,7 @@ void StreamPass::dumpStats(std::ostream &O) {
       O << ' ' << Accesses;
       O << ' ' << Updates;
       O << ' ' << StreamCount;
+      O << ' ' << LoopLevel;
       O << ' ' << BaseLoads;
       O << ' ' << StreamClass;
       O << ' ' << Footprint;
@@ -445,8 +454,10 @@ void StreamPass::dumpStats(std::ostream &O) {
   }
 
   // Also dump statistics for all the unanalyzed memory accesses.
+  size_t TotalAccesses = 0;
   for (const auto &Entry : this->MemAccessInstCount) {
     const auto &CInst = Entry.first;
+    TotalAccesses += Entry.second;
     if (this->InstStreamMap.count(CInst) != 0) {
       // This instruction is already dumped.
       if (!this->InstStreamMap.at(CInst).empty()) {
@@ -468,12 +479,16 @@ void StreamPass::dumpStats(std::ostream &O) {
     O << ' ' << Entry.second;   // Accesses
     O << ' ' << 0;              // Updates
     O << ' ' << 0;              // StreamCount
+    O << ' ' << -1;             // LoopLevel
     O << ' ' << -1;             // BaseLoads
     O << ' ' << "NOT_STREAM";   // Stream class
     O << ' ' << 0;              // Footprint
     O << ' ' << -1;             // AddrInsts
     O << ' ' << "NO" << '\n';   // Chosen
   }
+
+  assert(TotalAccesses == this->DynMemInstCount.Val &&
+         "Mismatch total accesses.");
 
   O << "--------------- Loop -----------------\n";
   for (const auto &LoopStatusEntry : this->LoopStatus) {
@@ -1169,22 +1184,75 @@ void StreamPass::computeStreamStatistics() {
 //   }
 // }
 
+#define DEBUG_TARGET_CINST                                                     \
+  "Main->lib_link_all::bb399::0(call)->lib_link_all::bb634::tmp635(load)"
+
+#define DEBUG_TARGET_CLOOP                                                     \
+  "Main->lib_link_all::bb399::0(call)->lib_link_all::bb119"
+
 bool StreamPass::initializeStreamIfNecessary(
     const std::list<ContextLoop> &LoopStack, const ContextInst &CInst) {
+
+  // Initialize the global count.
+  {
+    auto Iter = this->MemAccessInstCount.find(CInst);
+    if (Iter == this->MemAccessInstCount.end()) {
+      this->MemAccessInstCount.emplace(CInst, 0);
+    }
+  }
+
   // Check if this is the first time we encounter this access.
   auto Iter = this->InstStreamMap.find(CInst);
   if (Iter == this->InstStreamMap.end()) {
-    // This is the first time.
     Iter = this->InstStreamMap.emplace(CInst, std::list<Stream>()).first;
-    // Try to analyze the stream at all context loop.
-    auto &StreamList = Iter->second;
-    for (const auto &CLoop : LoopStack) {
-      // Make sure that the inner most loop stays at the front of the list.
-      StreamList.emplace_front(CInst, CLoop);
-    }
-    return true;
   }
-  return false;
+
+#ifdef DEBUG_TARGET_CINST
+  if (CInst.format() == DEBUG_TARGET_CINST) {
+    DEBUG(llvm::errs() << "Handling initializing stream for " << CInst.format()
+                       << "\n");
+  }
+#endif
+
+  auto &Streams = Iter->second;
+  auto CLoopIter = LoopStack.rbegin();
+  for (const auto &Stream : Streams) {
+    if (CLoopIter == LoopStack.rend()) {
+      break;
+    }
+    if (Stream.getContextLoop() != (*CLoopIter)) {
+      DEBUG(llvm::errs() << "CInst --------------\n");
+      DEBUG(llvm::errs() << CInst.beautify() << '\n');
+      DEBUG(llvm::errs() << "LoopStack --------------\n");
+      for (const auto &CLoop : LoopStack) {
+        DEBUG(llvm::errs() << CLoop.beautify() << "\n----------------\n");
+      }
+      DEBUG(llvm::errs() << "Stream Context --------------\n");
+      DEBUG(llvm::errs() << Stream.getContextLoop().beautify() << '\n');
+      DEBUG(llvm::errs() << "Current Loop --------------\n");
+      DEBUG(llvm::errs() << CLoopIter->beautify() << '\n');
+    }
+    assert(Stream.getContextLoop() == (*CLoopIter) &&
+           "Mismatch initialized stream.");
+    ++CLoopIter;
+  }
+
+  // Initialize the remaining loops.
+  while (CLoopIter != LoopStack.rend()) {
+#ifdef DEBUG_TARGET_CINST
+    if (CInst.format() == DEBUG_TARGET_CINST) {
+      DEBUG(llvm::errs() << "Initialize stream for " DEBUG_TARGET_CINST
+                            " at level "
+                         << CLoopIter->beautify() << '\n');
+    }
+#endif
+
+    auto LoopLevel = Streams.size();
+    Streams.emplace_back(CInst, *CLoopIter, LoopLevel);
+    ++CLoopIter;
+  }
+
+  return true;
 }
 
 void StreamPass::activateStream(ActiveStreamMap &ActiveStreams,
@@ -1213,7 +1281,7 @@ void StreamPass::activateStream(ActiveStreamMap &ActiveStreams,
   }
 }
 
-void StreamPass::pushLoopStack(const InlineContext &CurrentContext,
+void StreamPass::pushLoopStack(const InlineContextPtr &CurrentContext,
                                std::list<ContextLoop> &LoopStack,
                                ActiveStreamMap &ActiveStreams,
                                const ContextLoop &NewContextLoop) {
@@ -1237,59 +1305,107 @@ void StreamPass::pushLoopStack(const InlineContext &CurrentContext,
   //                           this->LoopStatus.at(NewContextLoop))
   //                    << '\n');
 
+#ifdef DEBUG_TARGET_CLOOP
+  if (NewContextLoop.format() == DEBUG_TARGET_CLOOP) {
+    DEBUG(llvm::errs() << "Push loop stack with context loop:\n"
+                       << NewContextLoop.beautify() << '\n');
+  }
+#endif
+
   LoopStack.emplace_back(NewContextLoop);
   // Iterate through all the memory access instructions at this level of loop.
-  const auto &SubLoops = NewContextLoop.Loop->getSubLoops();
-  for (auto BBIter = NewContextLoop.Loop->block_begin(),
-            BBEnd = NewContextLoop.Loop->block_end();
-       BBIter != BBEnd; ++BBIter) {
-    auto BB = *BBIter;
-    bool IsAtThisLevel = true;
-    for (const auto &SubLoop : SubLoops) {
-      if (SubLoop->contains(BB)) {
-        IsAtThisLevel = false;
-        break;
-      }
-    }
-    if (!IsAtThisLevel) {
-      continue;
-    }
+  // Memorize this.
+  auto Iter = this->MemorizedMemoryAccess.find(NewContextLoop.Loop);
+  if (Iter == this->MemorizedMemoryAccess.end()) {
 
-    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
-         ++InstIter) {
-      auto StaticInst = &*InstIter;
-      if ((!llvm::isa<llvm::LoadInst>(StaticInst)) &&
-          (!llvm::isa<llvm::StoreInst>(StaticInst))) {
-        // This is not a memory access instruction.
+    // if (LoopUtils::getLoopId(NewContextLoop.Loop) == "VerticalFilter::bb268")
+    // {
+    //   DEBUG(llvm::errs()
+    //         << "Initialize memory accesses for loop
+    //         VerticalFilter::bb268\n");
+    // }
+
+    Iter = this->MemorizedMemoryAccess
+               .emplace(NewContextLoop.Loop,
+                        std::unordered_set<llvm::Instruction *>())
+               .first;
+
+    const auto &SubLoops = NewContextLoop.Loop->getSubLoops();
+    for (auto BBIter = NewContextLoop.Loop->block_begin(),
+              BBEnd = NewContextLoop.Loop->block_end();
+         BBIter != BBEnd; ++BBIter) {
+      auto BB = *BBIter;
+      bool IsAtThisLevel = true;
+      for (const auto &SubLoop : SubLoops) {
+        if (SubLoop->contains(BB)) {
+          IsAtThisLevel = false;
+          break;
+        }
+      }
+      if (!IsAtThisLevel) {
         continue;
       }
 
-      ContextInst CInst(CurrentContext, StaticInst);
-      this->initializeStreamIfNecessary(LoopStack, CInst);
-      this->activateStream(ActiveStreams, CInst);
+      // if (LoopUtils::getLoopId(NewContextLoop.Loop) ==
+      //     "VerticalFilter::bb268") {
+      //   DEBUG(llvm::errs()
+      //         << "Initialize memory accesses for loop VerticalFilter::bb268 "
+      //         << BB->getName() << "\n");
+      // }
+
+      for (auto InstIter = BB->begin(), InstEnd = BB->end();
+           InstIter != InstEnd; ++InstIter) {
+        auto StaticInst = &*InstIter;
+        if ((!llvm::isa<llvm::LoadInst>(StaticInst)) &&
+            (!llvm::isa<llvm::StoreInst>(StaticInst))) {
+          // This is not a memory access instruction.
+          continue;
+        }
+
+        // if (LoopUtils::getLoopId(NewContextLoop.Loop) ==
+        //     "VerticalFilter::bb268") {
+        //   DEBUG(llvm::errs()
+        //         << "Initialize memory accesses for loop VerticalFilter::bb268
+        //         "
+        //         << LoopUtils::formatLLVMInst(StaticInst) << "\n");
+        // }
+        Iter->second.insert(StaticInst);
+      }
     }
+  }
+
+  for (auto StaticInst : Iter->second) {
+    ContextInst CInst(CurrentContext, StaticInst);
+
+    // if (LoopUtils::formatLLVMInst(CInst.Inst) ==
+    //     "_ZN3povL31All_CSG_Intersect_IntersectionsEPNS_13Object_StructEPNS_"
+    //     "10Ray_StructEPNS_13istack_structE::bb86::tmp89(load)") {
+    //   DEBUG(llvm::errs() << "push loop level for to our target
+    //   instruction\n");
+    // }
+
+    this->initializeStreamIfNecessary(LoopStack, CInst);
+    this->activateStream(ActiveStreams, CInst);
   }
 }
 
-void StreamPass::addAccess(const InlineContext &CurrentContext,
+void StreamPass::addAccess(const InlineContextPtr &CurrentContext,
                            const std::list<ContextLoop> &LoopStack,
                            ActiveStreamMap &ActiveStreams,
                            DynamicInstruction *DynamicInst) {
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Invalid llvm static instruction.");
   ContextInst CInst(CurrentContext, StaticInst);
+  // if (LoopUtils::formatLLVMInst(CInst.Inst) ==
+  //     "_ZN3povL31All_CSG_Intersect_IntersectionsEPNS_13Object_StructEPNS_"
+  //     "10Ray_StructEPNS_13istack_structE::bb86::tmp89(load)") {
+  //   DEBUG(llvm::errs() << "add access to our target instruction\n");
+  // }
+  this->initializeStreamIfNecessary(LoopStack, CInst);
 
   // Update the global count.
-  {
-    auto Iter = this->MemAccessInstCount.find(CInst);
-    if (Iter == this->MemAccessInstCount.end()) {
-      this->MemAccessInstCount.emplace(CInst, 1);
-    } else {
-      this->MemAccessInstCount.at(CInst)++;
-    }
-  }
+  { this->MemAccessInstCount.at(CInst)++; }
 
-  this->initializeStreamIfNecessary(LoopStack, CInst);
   this->activateStream(ActiveStreams, CInst);
   auto Iter = this->InstStreamMap.find(CInst);
   if (Iter == this->InstStreamMap.end()) {
@@ -1339,6 +1455,13 @@ void StreamPass::popLoopStack(std::list<ContextLoop> &LoopStack,
     ActiveStreams.erase(ActiveStreamIter);
   }
 
+#ifdef DEBUG_TARGET_CLOOP
+  if (EndedContextLoop.format() == DEBUG_TARGET_CLOOP) {
+    DEBUG(llvm::errs() << "Pop loop stack with context loop:\n"
+                       << EndedContextLoop.beautify() << '\n');
+  }
+#endif
+
   // Pop from the loop stack.
   LoopStack.pop_back();
 }
@@ -1348,7 +1471,7 @@ void StreamPass::analyzeStream() {
   DEBUG(llvm::errs() << "Stream: Start analysis.\n");
 
   std::list<ContextLoop> LoopStack;
-  InlineContext CurrentContext;
+  InlineContextPtr CurrentContext = InlineContext::getEmptyContext();
   ActiveStreamMap ActiveStreams;
   llvm::Instruction *PrevCallInst = nullptr;
 
@@ -1418,7 +1541,7 @@ void StreamPass::analyzeStream() {
         IsCalleeTraced =
             NewStaticInst->getFunction() != PrevCallInst->getFunction();
       } else {
-        auto ContextSize = CurrentContext.size();
+        auto ContextSize = CurrentContext->size();
         auto DynamicFrameStackSize = this->Trace->DynamicFrameStack.size();
         IsCalleeTraced = ContextSize + 2 == DynamicFrameStackSize;
       }
@@ -1426,11 +1549,20 @@ void StreamPass::analyzeStream() {
       // DEBUG(llvm::errs() << "IsCalleeTraced " << IsCalleeTraced << '\n');
 
       if (IsCalleeTraced) {
-        CurrentContext.push(PrevCallInst);
+        CurrentContext = CurrentContext->push(PrevCallInst);
+        // DEBUG(llvm::errs() << "Pushed context.\n");
+        // DEBUG(llvm::errs() << CurrentContext->beautify() << '\n');
+        auto Callee = Utils::getCalledFunction(PrevCallInst);
+        auto NewLoopStatus = INLINE_CONTINUOUS;
+        if (Callee == nullptr) {
+          // This is an indirect call or something.
+          NewLoopStatus = INDIRECT_CONTINUOUS;
+        }
+
         for (const auto &CLoop : LoopStack) {
           auto &CurrentStatus = this->LoopStatus.at(CLoop);
           CurrentStatus =
-              StreamPass::updateLoopStatusT(CurrentStatus, INLINE_CONTINUOUS);
+              StreamPass::updateLoopStatusT(CurrentStatus, NewLoopStatus);
         }
       } else {
         // Untraced calls, we have to check if we support this function.
@@ -1458,23 +1590,48 @@ void StreamPass::analyzeStream() {
 
     // DEBUG(llvm::errs() << "Done handling previous call inst.\n");
 
+    ContextInst NewCInst(CurrentContext, NewStaticInst);
+
     /**
-     * Pop the loop stack.
-     * First is the loop within the same function.
+     * Pop the loop stack if it doesn't contain the new context inst.
      */
     while (!LoopStack.empty()) {
-      auto Loop = LoopStack.back().Loop;
-      auto LoopFunc = Loop->getHeader()->getParent();
-      if (LoopFunc == NewStaticInst->getFunction() &&
-          !Loop->contains(NewStaticInst)) {
-        // This loop is from the same function but not contains the new inst.
-        this->popLoopStack(LoopStack, ActiveStreams);
-      } else {
-        // Either we poped to some upper function or the loop contains the new
-        // inst.
+      if (LoopStack.back().contains(NewCInst)) {
         break;
       }
+#ifdef DEBUG_TARGET_LOOP
+      if (LoopUtils::getLoopId(LoopStack.back().Loop) == DEBUG_TARGET_LOOP) {
+        DEBUG(llvm::errs() << "pop our target loop at inst "
+                           << LoopUtils::formatLLVMInst(NewStaticInst)
+                           << ".\n");
+      }
+#endif
+      this->popLoopStack(LoopStack, ActiveStreams);
     }
+
+    // /**
+    //  * Pop the loop stack.
+    //  * First is the loop within the same function.
+    //  */
+    // while (!LoopStack.empty()) {
+    //   auto Loop = LoopStack.back().Loop;
+    //   auto LoopFunc = Loop->getHeader()->getParent();
+    //   if (LoopFunc == NewStaticInst->getFunction() &&
+    //       !Loop->contains(NewStaticInst)) {
+    //     // This loop is from the same function but not contains the new inst.
+    //     if (LoopUtils::getLoopId(Loop) == DEBUG_TARGET_LOOP) {
+    //       DEBUG(llvm::errs()
+    //             << "pop our target loop at inst "
+    //             << LoopUtils::formatLLVMInst(NewStaticInst) << ".\n");
+    //     }
+    //     this->popLoopStack(LoopStack, ActiveStreams);
+    //   } else {
+    //     // Either we poped to some upper function or the loop contains the
+    //     new
+    //     // inst.
+    //     break;
+    //   }
+    // }
 
     /**
      * Keep pop the loop stack if this is a ret instruction.
@@ -1482,13 +1639,21 @@ void StreamPass::analyzeStream() {
      */
     if (llvm::isa<llvm::ReturnInst>(NewStaticInst)) {
       // Pop the loops.
-      while (!LoopStack.empty() &&
-             LoopStack.back().Loop->contains(NewStaticInst)) {
-        this->popLoopStack(LoopStack, ActiveStreams);
-      }
-      if (!CurrentContext.empty()) {
+      // while (!LoopStack.empty() &&
+      //        LoopStack.back().Loop->contains(NewStaticInst)) {
+      //   if (LoopUtils::getLoopId(LoopStack.back().Loop) == DEBUG_TARGET_LOOP)
+      //   {
+      //     DEBUG(llvm::errs()
+      //           << "pop our target loop at ret inst "
+      //           << LoopUtils::formatLLVMInst(NewStaticInst) << ".\n");
+      //   }
+      //   this->popLoopStack(LoopStack, ActiveStreams);
+      // }
+      if (!CurrentContext->empty()) {
         // Pop one context call site.
-        CurrentContext.pop();
+        CurrentContext = CurrentContext->pop();
+        // DEBUG(llvm::errs() << "Popped context.\n");
+        // DEBUG(llvm::errs() << CurrentContext->beautify() << '\n');
       }
     }
 
@@ -1510,10 +1675,10 @@ void StreamPass::analyzeStream() {
     /**
      * If there is recursion, we have to mark all the context loops recursive.
      */
-    if (CurrentContext.isRecursive(NewStaticInst->getFunction())) {
+    if (CurrentContext->isRecursive(NewStaticInst->getFunction())) {
       for (const auto &ContextLoop : LoopStack) {
         auto &CurrentStatus = this->LoopStatus.at(ContextLoop);
-        DEBUG(llvm::errs() << "This is recursive.\n");
+        // DEBUG(llvm::errs() << "This is recursive.\n");
         CurrentStatus = StreamPass::updateLoopStatusT(CurrentStatus, RECURSIVE);
       }
     }
@@ -1525,7 +1690,12 @@ void StreamPass::analyzeStream() {
       // We do not know if the callee is actually traced.
       assert(PrevCallInst == nullptr &&
              "Unresolved previous call instruction.");
-      PrevCallInst = NewStaticInst;
+      auto Callee = Utils::getCalledFunction(NewStaticInst);
+      if (Callee != nullptr && Callee->isIntrinsic()) {
+        // Ignore intrinsic function calls.
+      } else {
+        PrevCallInst = NewStaticInst;
+      }
     }
 
     /**

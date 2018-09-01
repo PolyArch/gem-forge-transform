@@ -50,7 +50,7 @@ void Stream::searchAddressComputeInstructions() {
       } else if (auto OperandArg =
                      llvm::dyn_cast<llvm::Argument>(OperandValue)) {
         // This is an argument. Try to search upwards in the context.
-        InlineContext NewContext(CurrentInst.Context);
+        InlineContextPtr NewContext = CurrentInst.Context;
         auto ArgInst = Stream::resolveArgument(NewContext, OperandArg);
         if (ArgInst != nullptr) {
           // We successfully resolve the argument.
@@ -61,20 +61,20 @@ void Stream::searchAddressComputeInstructions() {
   }
 }
 
-llvm::Instruction *Stream::resolveArgument(InlineContext &Context,
+llvm::Instruction *Stream::resolveArgument(InlineContextPtr &Context,
                                            llvm::Argument *Arg) {
-  while (!Context.empty()) {
+  while (!Context->empty()) {
     auto ArgNo = Arg->getArgNo();
-    auto CallSiteInst = Context.Context.back();
+    auto CallSiteInst = Context->Context.back();
     auto ArgOperandValue = Utils::getArgOperand(CallSiteInst, ArgNo);
     if (auto ArgOperandInst =
             llvm::dyn_cast<llvm::Instruction>(ArgOperandValue)) {
-      Context.pop();
+      Context = Context->pop();
       return ArgOperandInst;
     } else if (auto ArgOperandArg =
                    llvm::dyn_cast<llvm::Argument>(ArgOperandValue)) {
       // This is another operand. Keep search upwards.
-      Context.pop();
+      Context = Context->pop();
       Arg = ArgOperandArg;
     } else {
       // Some how this is not an instruction. (May be constant).
