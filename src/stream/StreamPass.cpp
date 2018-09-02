@@ -224,6 +224,8 @@ protected:
    */
   std::unordered_map<ContextInst, std::list<Stream>> InstStreamMap;
 
+  static void DEBUG_LOOP_STACK(const std::list<ContextLoop> &LoopStack);
+
   enum LoopStatusT {
     CONTINUOUS,
     INLINE_CONTINUOUS,
@@ -1185,10 +1187,20 @@ void StreamPass::computeStreamStatistics() {
 // }
 
 #define DEBUG_TARGET_CINST                                                     \
-  "Main->lib_link_all::bb399::0(call)->lib_link_all::bb634::tmp635(load)"
+  "Main->spec_qsort::bb711::1(call)->spec_qsort::bb197::tmp201(call)->cost_"   \
+  "compare::bb::tmp(load)"
 
 #define DEBUG_TARGET_CLOOP                                                     \
   "Main->lib_link_all::bb399::0(call)->lib_link_all::bb119"
+
+void StreamPass::DEBUG_LOOP_STACK(const std::list<ContextLoop> &LoopStack) {
+  DEBUG(llvm::errs() << "LoopStack Top --------------------------\n");
+  for (auto Iter = LoopStack.rbegin(), End = LoopStack.rend(); Iter != End;
+       ++Iter) {
+    DEBUG(llvm::errs() << Iter->beautify() << "\n----------------\n");
+  }
+  DEBUG(llvm::errs() << "LoopStack Bottom -----------------------\n");
+}
 
 bool StreamPass::initializeStreamIfNecessary(
     const std::list<ContextLoop> &LoopStack, const ContextInst &CInst) {
@@ -1211,6 +1223,7 @@ bool StreamPass::initializeStreamIfNecessary(
   if (CInst.format() == DEBUG_TARGET_CINST) {
     DEBUG(llvm::errs() << "Handling initializing stream for " << CInst.format()
                        << "\n");
+    DEBUG(StreamPass::DEBUG_LOOP_STACK(LoopStack));
   }
 #endif
 
@@ -1223,10 +1236,7 @@ bool StreamPass::initializeStreamIfNecessary(
     if (Stream.getContextLoop() != (*CLoopIter)) {
       DEBUG(llvm::errs() << "CInst --------------\n");
       DEBUG(llvm::errs() << CInst.beautify() << '\n');
-      DEBUG(llvm::errs() << "LoopStack --------------\n");
-      for (const auto &CLoop : LoopStack) {
-        DEBUG(llvm::errs() << CLoop.beautify() << "\n----------------\n");
-      }
+      DEBUG(StreamPass::DEBUG_LOOP_STACK(LoopStack));
       DEBUG(llvm::errs() << "Stream Context --------------\n");
       DEBUG(llvm::errs() << Stream.getContextLoop().beautify() << '\n');
       DEBUG(llvm::errs() << "Current Loop --------------\n");
@@ -1609,46 +1619,11 @@ void StreamPass::analyzeStream() {
       this->popLoopStack(LoopStack, ActiveStreams);
     }
 
-    // /**
-    //  * Pop the loop stack.
-    //  * First is the loop within the same function.
-    //  */
-    // while (!LoopStack.empty()) {
-    //   auto Loop = LoopStack.back().Loop;
-    //   auto LoopFunc = Loop->getHeader()->getParent();
-    //   if (LoopFunc == NewStaticInst->getFunction() &&
-    //       !Loop->contains(NewStaticInst)) {
-    //     // This loop is from the same function but not contains the new inst.
-    //     if (LoopUtils::getLoopId(Loop) == DEBUG_TARGET_LOOP) {
-    //       DEBUG(llvm::errs()
-    //             << "pop our target loop at inst "
-    //             << LoopUtils::formatLLVMInst(NewStaticInst) << ".\n");
-    //     }
-    //     this->popLoopStack(LoopStack, ActiveStreams);
-    //   } else {
-    //     // Either we poped to some upper function or the loop contains the
-    //     new
-    //     // inst.
-    //     break;
-    //   }
-    // }
-
     /**
      * Keep pop the loop stack if this is a ret instruction.
      * And also modify the InlineContext.
      */
     if (llvm::isa<llvm::ReturnInst>(NewStaticInst)) {
-      // Pop the loops.
-      // while (!LoopStack.empty() &&
-      //        LoopStack.back().Loop->contains(NewStaticInst)) {
-      //   if (LoopUtils::getLoopId(LoopStack.back().Loop) == DEBUG_TARGET_LOOP)
-      //   {
-      //     DEBUG(llvm::errs()
-      //           << "pop our target loop at ret inst "
-      //           << LoopUtils::formatLLVMInst(NewStaticInst) << ".\n");
-      //   }
-      //   this->popLoopStack(LoopStack, ActiveStreams);
-      // }
       if (!CurrentContext->empty()) {
         // Pop one context call site.
         CurrentContext = CurrentContext->pop();
@@ -1663,9 +1638,9 @@ void StreamPass::analyzeStream() {
      * Insert new loop if we are at the head.
      */
     if (NewLoop != nullptr && IsAtHeadOfCandidate) {
-      if (LoopStack.empty() || LoopStack.back().Loop != NewLoop) {
-        this->pushLoopStack(CurrentContext, LoopStack, ActiveStreams,
-                            ContextLoop(CurrentContext, NewLoop));
+      ContextLoop NewCLoop(CurrentContext, NewLoop);
+      if (LoopStack.empty() || LoopStack.back() != NewCLoop) {
+        this->pushLoopStack(CurrentContext, LoopStack, ActiveStreams, NewCLoop);
       } else {
         // This means that we are at a new iteration.
         this->endIter(LoopStack, ActiveStreams);
