@@ -288,21 +288,21 @@ class SPEC2017Benchmarks:
         #     'trace_func': 'MagickCommandGenesis',
         #     'lang': 'C',
         # },
-        'nab_s': {
-            'name': '644.nab_s',
-            'links': ['-lm'],
-            # md start from 100b
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 121e8,
-            'n_traces': 1,
-            'trace_func': 'md',
-            'lang': 'C',
-        },
+        # 'nab_s': {
+        #     'name': '644.nab_s',
+        #     'links': ['-lm'],
+        #     # md start from 100b
+        #     'start_inst': 0,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 121e8,
+        #     'n_traces': 1,
+        #     'trace_func': 'md',
+        #     'lang': 'C',
+        # },
         # 'x264_s': {
         #     'name': '625.x264_s',
-        #     'links': [],
+        #     'links': ['-lm'],
         #     # x264_encoder_encode starts around 0.1e8.
         #     # x264_adaptive_quant_frame starts around 4e8
         #     # x264_lookahead_get_frames starts around 21e8
@@ -442,17 +442,17 @@ class SPEC2017Benchmarks:
         # # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
         # # Does not throw.
         # # Haven't tested with ellcc.
-        # 'blender_r': {
-        #     'name': '526.blender_r',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'blender_r': {
+            'name': '526.blender_r',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 110e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
 
         # # Not working so far due to setjmp/longjmp.

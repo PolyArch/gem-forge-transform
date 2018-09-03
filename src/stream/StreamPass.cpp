@@ -163,7 +163,9 @@ protected:
    * at that level of loop.
    * The list stores only reference, as the object is stored in InstStreamMap.
    */
-  using ActiveStreamMap = std::unordered_map<ContextLoop, std::list<Stream *>>;
+  using ActiveStreamMap =
+      std::unordered_map<ContextLoop,
+                         std::unordered_map<ContextInst, Stream *>>;
 
   /**
    * Analyze the stream pattern in the first pass.
@@ -225,6 +227,8 @@ protected:
   std::unordered_map<ContextInst, std::list<Stream>> InstStreamMap;
 
   static void DEBUG_LOOP_STACK(const std::list<ContextLoop> &LoopStack);
+  static void DEBUG_ACTIVE_STREAM_MAP(const std::list<ContextLoop> &LoopStack,
+                                      const ActiveStreamMap &ActiveStreams);
 
   enum LoopStatusT {
     CONTINUOUS,
@@ -351,16 +355,19 @@ std::string StreamPass::classifyStream(const Stream &S) const {
       // Chasing myself.
       return "POINTER_CHASE";
     }
-    const auto &BaseStreams = this->InstStreamMap.at(BaseLoad);
-    for (const auto &BaseStream : BaseStreams) {
-      if (BaseStream.getContextLoop() == S.getContextLoop()) {
-        if (BaseStream.getNumBaseLoads() != 0) {
-          return "CHAIN_BASE";
-        }
-        if (BaseStream.getPattern().computed()) {
-          auto Pattern = BaseStream.getPattern().getPattern().CurrentPattern;
-          if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
-            return "AFFINE_BASE";
+    auto BaseStreamsIter = this->InstStreamMap.find(BaseLoad);
+    if (BaseStreamsIter != this->InstStreamMap.end()) {
+      const auto &BaseStreams = BaseStreamsIter->second;
+      for (const auto &BaseStream : BaseStreams) {
+        if (BaseStream.getContextLoop() == S.getContextLoop()) {
+          if (BaseStream.getNumBaseLoads() != 0) {
+            return "CHAIN_BASE";
+          }
+          if (BaseStream.getPattern().computed()) {
+            auto Pattern = BaseStream.getPattern().getPattern().CurrentPattern;
+            if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
+              return "AFFINE_BASE";
+            }
           }
         }
       }
@@ -1202,6 +1209,22 @@ void StreamPass::DEBUG_LOOP_STACK(const std::list<ContextLoop> &LoopStack) {
   DEBUG(llvm::errs() << "LoopStack Bottom -----------------------\n");
 }
 
+void StreamPass::DEBUG_ACTIVE_STREAM_MAP(
+    const std::list<ContextLoop> &LoopStack,
+    const ActiveStreamMap &ActiveStreams) {
+  DEBUG(llvm::errs() << "ActiveStreams Top ----------------------\n");
+  for (auto Iter = LoopStack.rbegin(), End = LoopStack.rend(); Iter != End;
+       ++Iter) {
+    auto ActiveStreamsAtCLoopIter = ActiveStreams.find(*Iter);
+    if (ActiveStreamsAtCLoopIter != ActiveStreams.end()) {
+      DEBUG(llvm::errs() << ActiveStreamsAtCLoopIter->second.size() << '\n');
+    } else {
+      DEBUG(llvm::errs() << 0 << '\n');
+    }
+  }
+  DEBUG(llvm::errs() << "ActiveStreams Bottom -------------------\n");
+}
+
 bool StreamPass::initializeStreamIfNecessary(
     const std::list<ContextLoop> &LoopStack, const ContextInst &CInst) {
 
@@ -1270,23 +1293,27 @@ void StreamPass::activateStream(ActiveStreamMap &ActiveStreams,
   auto InstStreamIter = this->InstStreamMap.find(CInst);
   assert(InstStreamIter != this->InstStreamMap.end() &&
          "Failed to look up streams to activate.");
+  /**
+   * This two fold loop is very expensive.
+   * Can we optimize it?
+   */
   for (auto &S : InstStreamIter->second) {
     const auto &CLoop = S.getContextLoop();
     auto ActiveStreamsIter = ActiveStreams.find(CLoop);
     if (ActiveStreamsIter == ActiveStreams.end()) {
       ActiveStreamsIter =
-          ActiveStreams.emplace(CLoop, std::list<Stream *>()).first;
+          ActiveStreams
+              .emplace(CLoop, std::unordered_map<ContextInst, Stream *>())
+              .first;
     }
-    bool AlreadyActive = false;
-    for (const auto &ActiveStream : ActiveStreamsIter->second) {
-      // Here actually we can compare by address.
-      if ((ActiveStream) == (&S)) {
-        AlreadyActive = true;
-        break;
-      }
-    }
-    if (!AlreadyActive) {
-      ActiveStreamsIter->second.emplace_back(&S);
+    auto &ActiveStreamsInstMap = ActiveStreamsIter->second;
+
+    auto ActiveStreamsInstMapIter = ActiveStreamsInstMap.find(CInst);
+    if (ActiveStreamsInstMap.count(CInst) == 0) {
+      ActiveStreamsInstMap.emplace(CInst, &S);
+    } else {
+      // Otherwise, the stream is already activated.
+      // Ignore this case.
     }
   }
 }
@@ -1439,12 +1466,13 @@ void StreamPass::endIter(const std::list<ContextLoop> &LoopStack,
   const auto &EndedContextLoop = LoopStack.back();
   auto ActiveStreamIter = ActiveStreams.find(EndedContextLoop);
   if (ActiveStreamIter != ActiveStreams.end()) {
-    for (auto &Stream : ActiveStreamIter->second) {
+    for (auto &InstStream : ActiveStreamIter->second) {
       // Only call endIter for those streams at my level.
-      if (Stream->getContextLoop() == EndedContextLoop) {
-        // This will implicitly call the addMissingAccess.
-        Stream->endIter();
-      }
+      auto &Stream = InstStream.second;
+      assert(Stream->getContextLoop() == EndedContextLoop &&
+             "Mismatch on ContextLoop for streams in ActiveStreams");
+      // This will implicitly call the addMissingAccess.
+      Stream->endIter();
     }
   }
 }
@@ -1459,8 +1487,8 @@ void StreamPass::popLoopStack(std::list<ContextLoop> &LoopStack,
   const auto &EndedContextLoop = LoopStack.back();
   auto ActiveStreamIter = ActiveStreams.find(EndedContextLoop);
   if (ActiveStreamIter != ActiveStreams.end()) {
-    for (auto &ActiveStream : ActiveStreamIter->second) {
-      ActiveStream->endStream();
+    for (auto &ActiveInstStream : ActiveStreamIter->second) {
+      ActiveInstStream.second->endStream();
     }
     ActiveStreams.erase(ActiveStreamIter);
   }
@@ -1526,6 +1554,50 @@ void StreamPass::analyzeStream() {
       }
       break;
     }
+
+/**
+ * ad-hoc debug section.
+ */
+#define DEBUG_RECURSIVE_DEPTH
+#ifdef DEBUG_RECURSIVE_DEPTH
+
+    {
+      static size_t MaxDepth = 0;
+      if (CurrentContext->size() > MaxDepth) {
+        MaxDepth = CurrentContext->size();
+        DEBUG(llvm::errs() << "Maximum recursive depth updated to " << MaxDepth
+                           << '\n');
+        DEBUG(llvm::errs() << "------- Context ---------\n");
+        DEBUG(llvm::errs() << CurrentContext->beautify() << '\n');
+        DEBUG(StreamPass::DEBUG_LOOP_STACK(LoopStack));
+      }
+    }
+
+#endif
+
+// #define DEBUG_ACTIVE_STREAMS
+#ifdef DEBUG_ACTIVE_STREAMS
+    {
+      static size_t BottomActiveStreams = 0;
+      if (!LoopStack.empty()) {
+        const auto &BottomCLoop = LoopStack.front();
+        auto ActiveStreamIter = ActiveStreams.find(BottomCLoop);
+        if (ActiveStreamIter != ActiveStreams.end()) {
+          auto CurrentBottomActiveStreams = ActiveStreamIter->second.size();
+          if (CurrentBottomActiveStreams > BottomActiveStreams) {
+            BottomActiveStreams = CurrentBottomActiveStreams;
+            DEBUG(llvm::errs() << "Max bottom active streams updated to "
+                               << BottomActiveStreams << '\n');
+            DEBUG(llvm::errs() << "------- Context ---------\n");
+            DEBUG(llvm::errs() << CurrentContext->beautify() << '\n');
+            DEBUG(StreamPass::DEBUG_LOOP_STACK(LoopStack));
+            DEBUG(
+                StreamPass::DEBUG_ACTIVE_STREAM_MAP(LoopStack, ActiveStreams));
+          }
+        }
+      }
+    }
+#endif
 
     /**
      * Handle the previous call/invoke instruction by checking the datagraph's
