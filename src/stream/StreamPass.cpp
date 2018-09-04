@@ -1751,6 +1751,7 @@ void StreamPass::analyzeStream() {
     if (IsMemAccess) {
       this->DynMemInstCount.Val++;
       this->addAccess(CurrentContext, LoopStack, ActiveStreams, *NewInstIter);
+      this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*NewInstIter));
     }
   }
 }

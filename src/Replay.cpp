@@ -1,4 +1,5 @@
 #include "Replay.h"
+#include "Utils.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
@@ -95,7 +96,8 @@ public:
 
 ReplayTrace::ReplayTrace(char _ID)
     : llvm::ModulePass(_ID), Trace(nullptr),
-      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr) {
+      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr),
+      CacheWarmerPtr(nullptr) {
   if (OutputDataGraphFileName.getNumOccurrences() == 1) {
     this->OutTraceName = OutputDataGraphFileName.getValue();
   }
@@ -121,6 +123,9 @@ bool ReplayTrace::runOnModule(llvm::Module &Module) {
   std::ofstream OStats(Stats);
   this->dumpStats(OStats);
   OStats.close();
+
+  // Dump the cache warmer record.
+  this->CacheWarmerPtr->dumpToFile();
 
   bool Modified = false;
   if (this->Trace->DetailLevel == DataGraph::DataGraphDetailLv::INTEGRATED) {
@@ -162,6 +167,7 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
                      << this->DGDetailLevel << ".\n");
   this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
   this->Serializer = new TDGSerializer(this->OutTraceName);
+  this->CacheWarmerPtr = new CacheWarmer(this->OutTraceName + ".cache");
 
   this->CachedLI = new CachedLoopInfo(
       [this]() -> llvm::TargetLibraryInfo & {
@@ -186,6 +192,11 @@ bool ReplayTrace::finalize(llvm::Module &Module) {
   DEBUG(llvm::errs() << "Releasing serializer at " << this->Serializer << '\n');
   delete this->Serializer;
   this->Serializer = nullptr;
+
+  DEBUG(llvm::errs() << "Releasing cache warmer at " << this->CacheWarmerPtr
+                     << '\n');
+  delete this->CacheWarmerPtr;
+  this->CacheWarmerPtr = nullptr;
   DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
   delete this->Trace;
   this->Trace = nullptr;
@@ -659,6 +670,11 @@ void ReplayTrace::transform() {
     if (Count > Window || Ended) {
       auto Iter = this->Trace->DynamicInstructionList.begin();
       this->Serializer->serialize(*Iter, this->Trace);
+
+      // Special case for the memory access instruction to handle cache warmer.
+      if (Utils::isMemAccessInst((*Iter)->getStaticInstruction())) {
+        this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*Iter));
+      }
       this->StatsDynamicInsts++;
       Count--;
       this->Trace->commitOneDynamicInst();

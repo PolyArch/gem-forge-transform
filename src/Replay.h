@@ -2,6 +2,7 @@
 #ifndef LLVM_TDG_REPLAY_TRACE_H
 #define LLVM_TDG_REPLAY_TRACE_H
 
+#include "CacheWarmer.h"
 #include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
 #include "LoopUtils.h"
@@ -45,6 +46,7 @@ protected:
   std::string OutTraceName;
 
   TDGSerializer *Serializer;
+  CacheWarmer *CacheWarmerPtr;
 
   llvm::Module *Module;
 
