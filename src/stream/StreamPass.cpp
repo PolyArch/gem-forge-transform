@@ -1,5 +1,5 @@
 
-#include "MemoryAccessPattern.h"
+#include "MemoryPattern.h"
 #include "Replay.h"
 #include "Utils.h"
 
@@ -58,7 +58,7 @@ public:
   size_t getTotalAccesses() const { return this->TotalAccesses; }
   size_t getTotalStreams() const { return this->TotalStreams; }
   DynamicInstruction::DynamicId getStartId() const { return this->StartId; }
-  const MemoryAccessPattern &getPattern() const { return this->Pattern; }
+  const MemoryPattern &getPattern() const { return this->Pattern; }
 
   bool isIndirect() const { return !this->BaseLoads.empty(); }
   size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
@@ -112,7 +112,7 @@ private:
    * Stores the dynamic id of the first access in the current stream.
    */
   DynamicInstruction::DynamicId StartId;
-  MemoryAccessPattern Pattern;
+  MemoryPattern Pattern;
 
   void searchAddressComputeInstructions();
 };
@@ -202,8 +202,8 @@ std::string StreamPass::classifyStream(const Stream &S) const {
             return "CHAIN_BASE";
           }
           if (BaseStream.getPattern().computed()) {
-            auto Pattern = BaseStream.getPattern().getPattern().CurrentPattern;
-            if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
+            auto Pattern = BaseStream.getPattern().getPattern().AddrPattern;
+            if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
               return "AFFINE_BASE";
             }
           }
@@ -213,8 +213,8 @@ std::string StreamPass::classifyStream(const Stream &S) const {
     return "RANDOM_BASE";
   } else {
     if (S.getPattern().computed()) {
-      auto Pattern = S.getPattern().getPattern().CurrentPattern;
-      if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
+      auto Pattern = S.getPattern().getPattern().AddrPattern;
+      if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
         return "AFFINE";
       } else {
         return "RANDOM";
@@ -232,7 +232,6 @@ void StreamPass::dumpStats(std::ostream &O) {
   print(DynInstCount);
   print(DynMemInstCount);
 #undef print
-
   /**
    * Loop
    * Inst
@@ -283,10 +282,8 @@ void StreamPass::dumpStats(std::ostream &O) {
 
       if (Stream.getPattern().computed()) {
         const auto &Pattern = Stream.getPattern().getPattern();
-        AddrPattern =
-            MemoryAccessPattern::formatPattern(Pattern.CurrentPattern);
-        AccPattern =
-            MemoryAccessPattern::formatAccessPattern(Pattern.AccPattern);
+        AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
+        AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
         Updates = Pattern.Updates;
         Footprint =
             Stream.getPattern().getFootprint().getNumCacheLinesAccessed();

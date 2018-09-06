@@ -1,5 +1,4 @@
 #include "DynamicLoopTree.h"
-#include "MemoryAccessPattern.h"
 #include "Replay.h"
 #include "Utils.h"
 #include "stream/InlineContext.h"
@@ -364,8 +363,8 @@ InlineContextStreamPass::classifyStream(const InlineContextStream &S) const {
             return "CHAIN_BASE";
           }
           if (BaseStream.getPattern().computed()) {
-            auto Pattern = BaseStream.getPattern().getPattern().CurrentPattern;
-            if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
+            auto Pattern = BaseStream.getPattern().getPattern().AddrPattern;
+            if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
               return "AFFINE_BASE";
             }
           }
@@ -375,8 +374,8 @@ InlineContextStreamPass::classifyStream(const InlineContextStream &S) const {
     return "RANDOM_BASE";
   } else {
     if (S.getPattern().computed()) {
-      auto Pattern = S.getPattern().getPattern().CurrentPattern;
-      if (Pattern <= MemoryAccessPattern::Pattern::QUARDRIC) {
+      auto Pattern = S.getPattern().getPattern().AddrPattern;
+      if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
         return "AFFINE";
       } else {
         return "RANDOM";
@@ -450,10 +449,8 @@ void InlineContextStreamPass::dumpStats(std::ostream &O) {
 
       if (Stream.getPattern().computed()) {
         const auto &Pattern = Stream.getPattern().getPattern();
-        AddrPattern =
-            MemoryAccessPattern::formatPattern(Pattern.CurrentPattern);
-        AccPattern =
-            MemoryAccessPattern::formatAccessPattern(Pattern.AccPattern);
+        AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
+        AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
         Updates = Pattern.Updates;
         Footprint =
             Stream.getPattern().getFootprint().getNumCacheLinesAccessed();

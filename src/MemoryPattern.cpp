@@ -1,12 +1,12 @@
-#include "MemoryAccessPattern.h"
+#include "MemoryPattern.h"
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
-#define DEBUG_TYPE "MemoryAccessPattern"
+#define DEBUG_TYPE "MemoryPattern"
 
-void MemoryAccessPattern::UnknownAddressPatternFSM::update(uint64_t Addr) {
+void MemoryPattern::UnknownAddressPatternFSM::update(uint64_t Addr) {
   if (this->State == FAILURE) {
     return;
   }
@@ -16,11 +16,11 @@ void MemoryAccessPattern::UnknownAddressPatternFSM::update(uint64_t Addr) {
   this->State = FAILURE;
 }
 
-void MemoryAccessPattern::UnknownAddressPatternFSM::updateMissing() {
+void MemoryPattern::UnknownAddressPatternFSM::updateMissing() {
   // Do nothing for unknown pattern.
 }
 
-void MemoryAccessPattern::ConstAddressPatternFSM::update(uint64_t Addr) {
+void MemoryPattern::ConstAddressPatternFSM::update(uint64_t Addr) {
   if (this->State == FAILURE) {
     return;
   }
@@ -33,11 +33,11 @@ void MemoryAccessPattern::ConstAddressPatternFSM::update(uint64_t Addr) {
   }
 }
 
-void MemoryAccessPattern::ConstAddressPatternFSM::updateMissing() {
+void MemoryPattern::ConstAddressPatternFSM::updateMissing() {
   // Do nothing here for constant pattern.
 }
 
-void MemoryAccessPattern::LinearAddressPatternFSM::update(uint64_t Addr) {
+void MemoryPattern::LinearAddressPatternFSM::update(uint64_t Addr) {
   if (this->State == FAILURE) {
     return;
   }
@@ -70,7 +70,7 @@ void MemoryAccessPattern::LinearAddressPatternFSM::update(uint64_t Addr) {
   }
 }
 
-void MemoryAccessPattern::LinearAddressPatternFSM::updateMissing() {
+void MemoryPattern::LinearAddressPatternFSM::updateMissing() {
   if (this->State == FAILURE) {
     return;
   }
@@ -83,11 +83,11 @@ void MemoryAccessPattern::LinearAddressPatternFSM::updateMissing() {
   }
 }
 
-uint64_t MemoryAccessPattern::LinearAddressPatternFSM::computeNextAddr() const {
+uint64_t MemoryPattern::LinearAddressPatternFSM::computeNextAddr() const {
   return this->Base + this->Stride * (this->I + 1);
 }
 
-void MemoryAccessPattern::QuardricAddressPatternFSM::update(uint64_t Addr) {
+void MemoryPattern::QuardricAddressPatternFSM::update(uint64_t Addr) {
   if (this->State == FAILURE) {
     return;
   }
@@ -140,7 +140,7 @@ void MemoryAccessPattern::QuardricAddressPatternFSM::update(uint64_t Addr) {
   }
 }
 
-void MemoryAccessPattern::QuardricAddressPatternFSM::updateMissing() {
+void MemoryPattern::QuardricAddressPatternFSM::updateMissing() {
   if (this->State == FAILURE) {
     return;
   }
@@ -151,7 +151,7 @@ void MemoryAccessPattern::QuardricAddressPatternFSM::updateMissing() {
   }
 }
 
-bool MemoryAccessPattern::QuardricAddressPatternFSM::isAligned() const {
+bool MemoryPattern::QuardricAddressPatternFSM::isAligned() const {
   /**
    * Check if the three address is aligned.
    * i  j  k
@@ -174,8 +174,7 @@ bool MemoryAccessPattern::QuardricAddressPatternFSM::isAligned() const {
   return (VJ - VI) * (K - I) == (VK - VI) * (J - I);
 }
 
-uint64_t
-MemoryAccessPattern::QuardricAddressPatternFSM::computeNextAddr() const {
+uint64_t MemoryPattern::QuardricAddressPatternFSM::computeNextAddr() const {
   if (this->I + 1 == this->NI) {
     return this->Base + (this->J + 1) * this->StrideJ;
   } else {
@@ -183,7 +182,7 @@ MemoryAccessPattern::QuardricAddressPatternFSM::computeNextAddr() const {
   }
 }
 
-void MemoryAccessPattern::QuardricAddressPatternFSM::step() {
+void MemoryPattern::QuardricAddressPatternFSM::step() {
   if (this->I + 1 == this->NI) {
     this->I = 0;
     this->J++;
@@ -192,31 +191,30 @@ void MemoryAccessPattern::QuardricAddressPatternFSM::step() {
   }
 }
 
-void MemoryAccessPattern::RandomAddressPatternFSM::update(uint64_t Addr) {
+void MemoryPattern::RandomAddressPatternFSM::update(uint64_t Addr) {
   this->Updates++;
   this->PrevAddress = Addr;
 }
 
-void MemoryAccessPattern::RandomAddressPatternFSM::updateMissing() {
+void MemoryPattern::RandomAddressPatternFSM::updateMissing() {
   this->Updates++;
 }
 
-MemoryAccessPattern::AccessPatternFSM::AccessPatternFSM(
-    AccessPattern _AccPattern)
+MemoryPattern::AccessPatternFSM::AccessPatternFSM(AccessPattern _AccPattern)
     : Accesses(0), Iters(0), State(UNKNOWN), AccPattern(_AccPattern) {
   this->AddressPatterns.emplace_back(
-      new MemoryAccessPattern::UnknownAddressPatternFSM());
+      new MemoryPattern::UnknownAddressPatternFSM());
   this->AddressPatterns.emplace_back(
-      new MemoryAccessPattern::ConstAddressPatternFSM());
+      new MemoryPattern::ConstAddressPatternFSM());
   this->AddressPatterns.emplace_back(
-      new MemoryAccessPattern::LinearAddressPatternFSM());
+      new MemoryPattern::LinearAddressPatternFSM());
   this->AddressPatterns.emplace_back(
-      new MemoryAccessPattern::QuardricAddressPatternFSM());
+      new MemoryPattern::QuardricAddressPatternFSM());
   this->AddressPatterns.emplace_back(
-      new MemoryAccessPattern::RandomAddressPatternFSM());
+      new MemoryPattern::RandomAddressPatternFSM());
 }
 
-MemoryAccessPattern::AccessPatternFSM::~AccessPatternFSM() {
+MemoryPattern::AccessPatternFSM::~AccessPatternFSM() {
   for (auto &AddressFSM : this->AddressPatterns) {
     delete AddressFSM;
     AddressFSM = nullptr;
@@ -224,8 +222,8 @@ MemoryAccessPattern::AccessPatternFSM::~AccessPatternFSM() {
   this->AddressPatterns.clear();
 }
 
-const MemoryAccessPattern::AddressPatternFSM &
-MemoryAccessPattern::AccessPatternFSM::getAddressPattern() const {
+const MemoryPattern::AddressPatternFSM &
+MemoryPattern::AccessPatternFSM::getAddressPatternFSM() const {
   for (const auto &AddrPattern : this->AddressPatterns) {
     if (AddrPattern->State != AddressPatternFSM::StateT::FAILURE) {
       // UNKNOWN is also treated as SUCCESS as we are optimistic.
@@ -235,25 +233,25 @@ MemoryAccessPattern::AccessPatternFSM::getAddressPattern() const {
   llvm_unreachable("Failed to get one single succeeded address pattern.");
 }
 
-void MemoryAccessPattern::AccessPatternFSM::addMissingAccess() {
+void MemoryPattern::AccessPatternFSM::addMissingAccess() {
   this->Iters++;
   if (this->State == FAILURE) {
     return;
   }
   switch (this->AccPattern) {
-  case MemoryAccessPattern::AccessPattern::UNCONDITIONAL: {
+  case MemoryPattern::AccessPattern::UNCONDITIONAL: {
     this->State = FAILURE;
     return;
   }
-  case MemoryAccessPattern::AccessPattern::CONDITIONAL_ACCESS_ONLY: {
+  case MemoryPattern::AccessPattern::CONDITIONAL_ACCESS_ONLY: {
     this->feedUpdateMissingToAddrPatterns();
     break;
   }
-  case MemoryAccessPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
+  case MemoryPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
     this->State = FAILURE;
     return;
   }
-  case MemoryAccessPattern::AccessPattern::SAME_CONDITION: {
+  case MemoryPattern::AccessPattern::SAME_CONDITION: {
     break;
   }
   default: { llvm_unreachable("Illegal access pattern."); }
@@ -261,22 +259,22 @@ void MemoryAccessPattern::AccessPatternFSM::addMissingAccess() {
   this->State = SUCCESS;
 }
 
-void MemoryAccessPattern::AccessPatternFSM::addAccess(uint64_t Addr) {
+void MemoryPattern::AccessPatternFSM::addAccess(uint64_t Addr) {
   this->Iters++;
   this->Accesses++;
   if (this->State == FAILURE) {
     return;
   }
   switch (this->AccPattern) {
-  case MemoryAccessPattern::AccessPattern::UNCONDITIONAL: {
+  case MemoryPattern::AccessPattern::UNCONDITIONAL: {
     this->feedUpdateToAddrPatterns(Addr);
     break;
   }
-  case MemoryAccessPattern::AccessPattern::CONDITIONAL_ACCESS_ONLY: {
+  case MemoryPattern::AccessPattern::CONDITIONAL_ACCESS_ONLY: {
     this->feedUpdateToAddrPatterns(Addr);
     break;
   }
-  case MemoryAccessPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
+  case MemoryPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
     for (auto &AddrPattern : this->AddressPatterns) {
       if (Addr != AddrPattern->PrevAddress) {
         AddrPattern->update(Addr);
@@ -284,7 +282,7 @@ void MemoryAccessPattern::AccessPatternFSM::addAccess(uint64_t Addr) {
     }
     break;
   }
-  case MemoryAccessPattern::AccessPattern::SAME_CONDITION: {
+  case MemoryPattern::AccessPattern::SAME_CONDITION: {
     this->feedUpdateToAddrPatterns(Addr);
     break;
   }
@@ -292,7 +290,8 @@ void MemoryAccessPattern::AccessPatternFSM::addAccess(uint64_t Addr) {
   this->State = SUCCESS;
 }
 
-bool MemoryAccessPattern::isAddressPatternRelaxed(Pattern A, Pattern B) {
+bool MemoryPattern::isAddressPatternRelaxed(AddressPattern A,
+                                            AddressPattern B) {
   switch (A) {
   case UNKNOWN: {
     return true;
@@ -337,8 +336,7 @@ bool MemoryAccessPattern::isAddressPatternRelaxed(Pattern A, Pattern B) {
   }
 }
 
-bool MemoryAccessPattern::isAccessPatternRelaxed(AccessPattern A,
-                                                 AccessPattern B) {
+bool MemoryPattern::isAccessPatternRelaxed(AccessPattern A, AccessPattern B) {
   if (A == B) {
     return true;
   }
@@ -360,7 +358,7 @@ bool MemoryAccessPattern::isAccessPatternRelaxed(AccessPattern A,
   }
 }
 
-void MemoryAccessPattern::addMissingAccess() {
+void MemoryPattern::addMissingAccess() {
 
   this->initialize();
 
@@ -370,7 +368,7 @@ void MemoryAccessPattern::addMissingAccess() {
   }
 }
 
-void MemoryAccessPattern::addAccess(uint64_t Addr) {
+void MemoryPattern::addAccess(uint64_t Addr) {
 
   this->initialize();
 
@@ -385,7 +383,7 @@ void MemoryAccessPattern::addAccess(uint64_t Addr) {
   }
 }
 
-void MemoryAccessPattern::endStream() {
+void MemoryPattern::endStream() {
   // this->initialize();
   if (this->ComputingFSMs.empty()) {
     // Somehow we failed to analyze the stream.
@@ -393,7 +391,7 @@ void MemoryAccessPattern::endStream() {
   }
 
   AccessPatternFSM *NewFSM = nullptr;
-  Pattern NewAddrPattern;
+  AddressPattern NewAddrPattern;
   for (auto FSM : this->ComputingFSMs) {
     if (FSM->getState() == AccessPatternFSM::StateT::SUCCESS) {
 
@@ -402,21 +400,22 @@ void MemoryAccessPattern::endStream() {
             llvm::errs() << "tmp14 has access pattern "
                          << formatAccessPattern(FSM->getAccessPattern())
                          << " with address pattern "
-                         << formatPattern(FSM->getAddressPattern().getPattern())
+                         << formatAddressPattern(
+                                FSM->getAddressPatternFSM().getAddressPattern())
                          << " with accesses " << FSM->Accesses
-                         << " with updates " << FSM->getAddressPattern().Updates
-                         << '\n');
+                         << " with updates "
+                         << FSM->getAddressPatternFSM().Updates << '\n');
       }
 
       if (NewFSM == nullptr) {
         NewFSM = FSM;
-        NewAddrPattern = FSM->getAddressPattern().getPattern();
+        NewAddrPattern = FSM->getAddressPatternFSM().getAddressPattern();
       } else {
         // Try to find the most constrainted FSM.
-        auto AddrPattern = FSM->getAddressPattern().getPattern();
+        auto AddrPattern = FSM->getAddressPatternFSM().getAddressPattern();
         if (AddrPattern != NewAddrPattern &&
-            MemoryAccessPattern::isAddressPatternRelaxed(AddrPattern,
-                                                         NewAddrPattern)) {
+            MemoryPattern::isAddressPatternRelaxed(AddrPattern,
+                                                   NewAddrPattern)) {
           // NewFSM is more relaxted than FSM (not equal).
           NewFSM = FSM;
         }
@@ -429,7 +428,8 @@ void MemoryAccessPattern::endStream() {
         llvm::errs() << "tmp14 picked access pattern "
                      << formatAccessPattern(NewFSM->getAccessPattern())
                      << " with address pattern "
-                     << formatPattern(NewFSM->getAddressPattern().getPattern())
+                     << formatAddressPattern(
+                            NewFSM->getAddressPatternFSM().getAddressPattern())
                      << '\n');
   }
 
@@ -447,8 +447,7 @@ void MemoryAccessPattern::endStream() {
   this->ComputingFSMs.clear();
 }
 
-const MemoryAccessPattern::ComputedPattern &
-MemoryAccessPattern::getPattern() const {
+const MemoryPattern::ComputedPattern &MemoryPattern::getPattern() const {
   // We are not sure about the pattern.
   assert(this->ComputedPatternPtr != nullptr &&
          "Failed getting memory access pattern for static instruction.");
@@ -456,12 +455,12 @@ MemoryAccessPattern::getPattern() const {
   return *this->ComputedPatternPtr;
 }
 
-bool MemoryAccessPattern::computed() const {
+bool MemoryPattern::computed() const {
   return this->ComputedPatternPtr != nullptr;
 }
 
-std::string MemoryAccessPattern::formatPattern(Pattern Pat) {
-  switch (Pat) {
+std::string MemoryPattern::formatAddressPattern(AddressPattern AddrPattern) {
+  switch (AddrPattern) {
   case UNKNOWN: {
     return "UNKNOWN";
   }
@@ -481,7 +480,7 @@ std::string MemoryAccessPattern::formatPattern(Pattern Pat) {
   }
 }
 
-std::string MemoryAccessPattern::formatAccessPattern(AccessPattern AccPattern) {
+std::string MemoryPattern::formatAccessPattern(AccessPattern AccPattern) {
   switch (AccPattern) {
   case UNCONDITIONAL: {
     return "UNCOND";
@@ -501,25 +500,23 @@ std::string MemoryAccessPattern::formatAccessPattern(AccessPattern AccPattern) {
   }
 }
 
-void MemoryAccessPattern::ComputedPattern::merge(
-    const AccessPatternFSM &NewFSM) {
-  const auto &AddrPatternFSM = NewFSM.getAddressPattern();
+void MemoryPattern::ComputedPattern::merge(const AccessPatternFSM &NewFSM) {
+  const auto &AddrPatternFSM = NewFSM.getAddressPatternFSM();
   this->Accesses += NewFSM.Accesses;
   this->Updates += AddrPatternFSM.Updates;
   this->Iters += NewFSM.Iters;
   this->StreamCount++;
-  if (MemoryAccessPattern::isAddressPatternRelaxed(
-          this->CurrentPattern, AddrPatternFSM.getPattern())) {
-    this->CurrentPattern = AddrPatternFSM.getPattern();
+  if (MemoryPattern::isAddressPatternRelaxed(
+          this->AddrPattern, AddrPatternFSM.getAddressPattern())) {
+    this->AddrPattern = AddrPatternFSM.getAddressPattern();
   }
   auto NewAccPattern = NewFSM.getAccessPattern();
-  if (MemoryAccessPattern::isAccessPatternRelaxed(this->AccPattern,
-                                                  NewAccPattern)) {
+  if (MemoryPattern::isAccessPatternRelaxed(this->AccPattern, NewAccPattern)) {
     this->AccPattern = NewAccPattern;
   }
 }
 
-void MemoryAccessPattern::finalizePattern() {
+void MemoryPattern::finalizePattern() {
   if (this->ComputedPatternPtr == nullptr) {
     return;
   }
@@ -531,7 +528,7 @@ void MemoryAccessPattern::finalizePattern() {
   }
 }
 
-void MemoryAccessPattern::initialize() {
+void MemoryPattern::initialize() {
   if (this->ComputingFSMs.empty()) {
     this->ComputingFSMs.push_back(new AccessPatternFSM(UNCONDITIONAL));
     this->ComputingFSMs.push_back(

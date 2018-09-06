@@ -36,7 +36,7 @@ add_library(LLVMTDGPass MODULE
     PostDominanceFrontier.cpp
     DynamicLoopTree.cpp
     MemoryFootprint.cpp
-    MemoryAccessPattern.cpp
+    MemoryPattern.cpp
     LocateAccelerableFunctions.cpp
     Replay.cpp
     TraceStatisticPass.cpp
@@ -47,9 +47,10 @@ add_library(LLVMTDGPass MODULE
     # Abstract data flow accelerator
     adfa/AbstractDataFlowAcceleratorPass.cpp
     # Stream
-    stream/StreamPass.cpp
+    stream/InlineContextStreamPass.cpp
     stream/InlineContext.cpp
-    stream/Stream.cpp
+    stream/InlineContextStream.cpp
+    stream/StreamPass.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
 )

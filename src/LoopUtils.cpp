@@ -53,10 +53,8 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
       // Check if calling some supported math function.
       if (Callee->isDeclaration()) {
         if (LoopUtils::SupportedMathFunctions.count(Callee->getName()) != 0) {
+          continue;
         }
-        // Sliently ignore all the external calls.
-        // Not the right way to do.
-        continue;
       }
       DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
                          << " is statically not continuous because it "
