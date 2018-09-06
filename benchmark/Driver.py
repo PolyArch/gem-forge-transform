@@ -1,9 +1,11 @@
 import SPEC2017
 import MachSuite
 import TestHelloWorld
+import SPU
+import Graph500
+
 import Util
 import StreamStatistics
-import SPU
 import Constants as C
 
 import os
@@ -45,12 +47,14 @@ class Driver:
         'replay': 'replay',
         'adfa': 'abs-data-flow-acc-pass',
         'stream': 'stream-pass',
+        'inline-stream': 'inline-stream-pass',
         'simd': 'simd-pass',
     }
 
-    def __init__(self):
+    def __init__(self, options):
         self.trace_jobs = dict()
         self.transform_jobs = dict()
+        self.options = options
 
     def schedule_trace(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -74,15 +78,19 @@ class Driver:
         if name not in self.transform_jobs:
             self.transform_jobs[name] = dict()
         assert(transform_pass not in self.transform_jobs[name])
-        self.transform_jobs[name][transform_pass] = list()
+        self.transform_jobs[name][transform_pass] = dict()
 
         for i in xrange(0, len(traces)):
+            if self.options.trace_id:
+                if i not in self.options.trace_id:
+                    # Ignore those traces if not specified
+                    continue
             deps = list()
             if name in self.trace_jobs:
                 deps.append(self.trace_jobs[name])
 
             # Schedule the job.
-            self.transform_jobs[name][transform_pass].append(
+            self.transform_jobs[name][transform_pass][i] = (
                 job_scheduler.add_job(
                     '{name}.{transform_pass}.transform'.format(
                         name=name,
@@ -107,6 +115,10 @@ class Driver:
         results = benchmark.get_results(transform_pass)
 
         for i in xrange(0, len(tdgs)):
+            if self.options.trace_id:
+                if i not in self.options.trace_id:
+                    # Ignore those traces if not specified
+                    continue
             deps = list()
             if name in self.transform_jobs:
                 if transform_pass in self.transform_jobs[name]:
@@ -131,9 +143,16 @@ class Driver:
 
 
 build_datagraph_debugs = {
+    'inline-stream': [
+        'ReplayPass',
+        'InlineContextStreamPass',
+        # 'DataGraph',
+        'LoopUtils',
+        # 'MemoryAccessPattern',
+    ],
     'stream': [
         'ReplayPass',
-        # 'StreamPass',
+        'StreamPass',
         # 'DataGraph',
         'LoopUtils',
         # 'MemoryAccessPattern',
@@ -146,6 +165,7 @@ build_datagraph_debugs = {
 
 simulate_datagraph_debugs = {
     'stream': [],
+    'inline-stream': [],
     'replay': [],
     'adfa': [],
     'simd': [],
@@ -161,6 +181,8 @@ def choose_suite(options):
         return MachSuite.MachSuiteBenchmarks(options.directory)
     elif options.suite == 'hello':
         return TestHelloWorld.TestHelloWorldBenchmarks()
+    elif options.suite == 'graph500':
+        return Graph500.Graph500Benchmarks()
     else:
         print('Unknown suite ' + options.suite)
         assert(False)
@@ -170,7 +192,7 @@ def main(options):
     job_scheduler = Util.JobScheduler(8, 1)
     test_suite = choose_suite(options)
     benchmarks = test_suite.get_benchmarks()
-    driver = Driver()
+    driver = Driver(options)
     for benchmark in benchmarks:
         if options.build:
             benchmark.build_raw_bc()
@@ -195,15 +217,19 @@ def main(options):
     for benchmark in benchmarks:
         tdgs = benchmark.get_tdgs('stream')
         tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
+        # stream_stats = StreamStatistics.StreamStatistics(tdg_stats[0])
         stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
         print('-------------------------- ' + benchmark.get_name())
-        stream_stats.print_stats()
+        # stream_stats.print_stats()
         stream_stats.print_stream_breakdown()
-        stream_stats.print_access()
-        stream_stats.dump_csv(os.path.join(
-            C.LLVM_TDG_RESULT_DIR,
-            benchmark.get_name() + '.stream.stats.csv'
-        ))
+        # stream_stats.print_access()
+        # stream_stats.print_stream_length()
+        # stream_stats.print_stream_addr()
+        stream_stats.print_stream_alias()
+        # stream_stats.dump_csv(os.path.join(
+        #     C.LLVM_TDG_RESULT_DIR,
+        #     benchmark.get_name() + '.stream.stats.csv'
+        # ))
 
     # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
     # Util.ADFAAnalyzer.analyze_adfa(benchmarks)
@@ -220,6 +246,8 @@ if __name__ == '__main__':
                       type='string', dest='directory')
     parser.add_option('-p', '--pass', action='append',
                       type='string', dest='transform_passes')
+    parser.add_option('--trace-id', action='append', type='int',
+                      dest='trace_id')
     parser.add_option('-d', '--build-datagraph', action='store_true',
                       dest='build_datagraph', default=False)
     parser.add_option('-s', '--simulate', action='store_true',

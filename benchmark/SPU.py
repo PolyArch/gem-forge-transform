@@ -1,9 +1,7 @@
-import subprocess
 import os
 
 from Benchmark import Benchmark
 import Util
-import StreamStatistics
 import Constants as C
 
 
@@ -57,11 +55,11 @@ def compile(source, vectorize, output_bc, defines=[], includes=[], link_stdlib=F
 class SPUBenchmark(Benchmark):
 
     TESTS = [
-        # 'ac',
-        # 'fc-layer',
-        # 'ksvm',
-        # 'scnn',
-        'gbdt'
+        'ac',
+        'fc-layer',
+        'ksvm',
+        'scnn',
+        'gbdt',
     ]
 
     LANG = {
