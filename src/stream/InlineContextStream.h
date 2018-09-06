@@ -1,7 +1,7 @@
 #ifndef LLVM_TDG_STREAM_H
 #define LLVM_TDG_STREAM_H
 
-#include "MemoryAccessPattern.h"
+#include "MemoryPattern.h"
 #include "stream/InlineContext.h"
 
 class InlineContextStream {
@@ -45,7 +45,7 @@ public:
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
   size_t getTotalStreams() const { return this->TotalStreams; }
-  const MemoryAccessPattern &getPattern() const { return this->Pattern; }
+  const MemoryPattern &getPattern() const { return this->Pattern; }
 
   bool isIndirect() const { return !this->BaseLoads.empty(); }
   size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
@@ -81,7 +81,7 @@ private:
    * It should be reset to 0 (should be less than reset value of Iters).
    */
   size_t LastAccessIters;
-  MemoryAccessPattern Pattern;
+  MemoryPattern Pattern;
 
   void searchAddressComputeInstructions();
 

@@ -50,11 +50,11 @@
  * can only be further relaxed in the hierarchy.
  *
  */
-class MemoryAccessPattern {
+class MemoryPattern {
 public:
   /**
    */
-  enum Pattern {
+  enum AddressPattern {
     UNKNOWN,
     CONSTANT,
     LINEAR,
@@ -62,18 +62,18 @@ public:
     RANDOM,
   };
 
-  MemoryAccessPattern(const llvm::Instruction *_MemInst)
+  MemoryPattern(const llvm::Instruction *_MemInst)
       : MemInst(_MemInst), ComputedPatternPtr(nullptr) {}
-  ~MemoryAccessPattern() {
+  ~MemoryPattern() {
     if (this->ComputedPatternPtr != nullptr) {
       delete this->ComputedPatternPtr;
       this->ComputedPatternPtr = nullptr;
     }
   }
-  MemoryAccessPattern(const MemoryAccessPattern &Other) = delete;
-  MemoryAccessPattern(MemoryAccessPattern &&Other) = delete;
-  MemoryAccessPattern &operator=(const MemoryAccessPattern &Other) = delete;
-  MemoryAccessPattern &operator=(MemoryAccessPattern &&Other) = delete;
+  MemoryPattern(const MemoryPattern &Other) = delete;
+  MemoryPattern(MemoryPattern &&Other) = delete;
+  MemoryPattern &operator=(const MemoryPattern &Other) = delete;
+  MemoryPattern &operator=(MemoryPattern &&Other) = delete;
 
   /**
    * Add one dynamic access address for a specific instruction.
@@ -110,7 +110,7 @@ public:
     // Independent access pattern is so far not supported.
   };
 
-  static std::string formatPattern(Pattern Pat);
+  static std::string formatAddressPattern(AddressPattern AddrPattern);
   static std::string formatAccessPattern(AccessPattern AccPattern);
 
 private:
@@ -129,7 +129,7 @@ private:
 
     AddressPatternFSM() : State(UNKNOWN), Updates(0), PrevAddress(0) {}
 
-    virtual Pattern getPattern() const = 0;
+    virtual AddressPattern getAddressPattern() const = 0;
     virtual void update(uint64_t Addr) = 0;
     virtual void updateMissing() = 0;
 
@@ -166,7 +166,9 @@ private:
     }
     void update(uint64_t Addr) override;
     void updateMissing() override;
-    Pattern getPattern() const override { return Pattern::UNKNOWN; }
+    AddressPattern getAddressPattern() const override {
+      return AddressPattern::UNKNOWN;
+    }
   };
 
   class ConstAddressPatternFSM : public AddressPatternFSM {
@@ -174,7 +176,9 @@ private:
     ConstAddressPatternFSM() : AddressPatternFSM() {}
     void update(uint64_t Addr) override;
     void updateMissing() override;
-    Pattern getPattern() const override { return Pattern::CONSTANT; }
+    AddressPattern getAddressPattern() const override {
+      return AddressPattern::CONSTANT;
+    }
   };
 
   class LinearAddressPatternFSM : public AddressPatternFSM {
@@ -182,7 +186,9 @@ private:
     LinearAddressPatternFSM() : AddressPatternFSM(), Base(0), Stride(0), I(0) {}
     void update(uint64_t Addr) override;
     void updateMissing() override;
-    Pattern getPattern() const override { return Pattern::LINEAR; }
+    AddressPattern getAddressPattern() const override {
+      return AddressPattern::LINEAR;
+    }
 
   private:
     uint64_t Base;
@@ -202,7 +208,9 @@ private:
     }
     void update(uint64_t Addr) override;
     void updateMissing() override;
-    Pattern getPattern() const override { return Pattern::QUARDRIC; }
+    AddressPattern getAddressPattern() const override {
+      return AddressPattern::QUARDRIC;
+    }
 
   private:
     uint64_t Base;
@@ -232,7 +240,9 @@ private:
     }
     void update(uint64_t Addr) override;
     void updateMissing() override;
-    Pattern getPattern() const override { return Pattern::RANDOM; }
+    AddressPattern getAddressPattern() const override {
+      return AddressPattern::RANDOM;
+    }
   };
 
   class AccessPatternFSM {
@@ -252,7 +262,7 @@ private:
 
     StateT getState() const { return this->State; }
 
-    const AddressPatternFSM &getAddressPattern() const;
+    const AddressPatternFSM &getAddressPatternFSM() const;
 
     AccessPattern getAccessPattern() const { return this->AccPattern; }
 
@@ -291,7 +301,7 @@ private:
    * Implement the address pattern hierarchy.
    * Returns true if B is more relaxed than A. (B >= A)
    */
-  static bool isAddressPatternRelaxed(Pattern A, Pattern B);
+  static bool isAddressPatternRelaxed(AddressPattern A, AddressPattern B);
 
   /**
    * Implement the access pattern hierarchy.
@@ -301,16 +311,16 @@ private:
 
 public:
   struct ComputedPattern {
-    Pattern CurrentPattern;
+    AddressPattern AddrPattern;
     AccessPattern AccPattern;
     uint64_t Accesses;
     uint64_t Updates;
     uint64_t Iters;
     uint64_t StreamCount;
     ComputedPattern(const AccessPatternFSM &NewFSM)
-        : CurrentPattern(NewFSM.getAddressPattern().getPattern()),
+        : AddrPattern(NewFSM.getAddressPatternFSM().getAddressPattern()),
           AccPattern(NewFSM.getAccessPattern()), Accesses(NewFSM.Accesses),
-          Updates(NewFSM.getAddressPattern().Updates), Iters(NewFSM.Iters),
+          Updates(NewFSM.getAddressPatternFSM().Updates), Iters(NewFSM.Iters),
           StreamCount(1) {}
 
     ComputedPattern() {}

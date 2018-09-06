@@ -51,8 +51,7 @@ void InlineContextStream::searchAddressComputeInstructions() {
                      llvm::dyn_cast<llvm::Argument>(OperandValue)) {
         // This is an argument. Try to search upwards in the context.
         InlineContextPtr NewContext = CurrentInst.Context;
-        auto ArgInst =
-            InlineContextStream::resolveArgument(NewContext, OperandArg);
+        auto ArgInst = InlineContextStream::resolveArgument(NewContext, OperandArg);
         if (ArgInst != nullptr) {
           // We successfully resolve the argument.
           Queue.emplace_back(NewContext, ArgInst);
@@ -62,9 +61,8 @@ void InlineContextStream::searchAddressComputeInstructions() {
   }
 }
 
-llvm::Instruction *
-InlineContextStream::resolveArgument(InlineContextPtr &Context,
-                                     llvm::Argument *Arg) {
+llvm::Instruction *InlineContextStream::resolveArgument(InlineContextPtr &Context,
+                                           llvm::Argument *Arg) {
   while (!Context->empty()) {
     auto ArgNo = Arg->getArgNo();
     auto CallSiteInst = Context->Context.back();
