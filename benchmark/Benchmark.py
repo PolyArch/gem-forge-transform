@@ -218,8 +218,9 @@ class Benchmark(object):
             self.get_replay_bc(),
         ]
         build_cmd += self.links
-        print('# Building replay binary...')
-        Util.call_helper(build_cmd)
+        if tdg_detail == 'integrated':
+            print('# Building replay binary...')
+            Util.call_helper(build_cmd)
 
     """
     Get trace statistics.

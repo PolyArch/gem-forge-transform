@@ -17,25 +17,13 @@ class Access:
         self.accesses = float(fields[5])
         self.updates = float(fields[6])
         self.streams = float(fields[7])
-        self.base_load = int(fields[8])
-        self.stream_class = fields[9]
-        self.footprint = int(fields[10])
-        self.addr_insts = int(fields[11])
-        self.chosen = fields[12]
-
-    def merge(self, other):
-        assert(self.inst == other.inst)
-        assert(self.loop == other.loop)
-        assert(self.base_load == other.base_load)
-        assert(self.addr_insts == other.addr_insts)
-        # assert(self.chosen == other.chosen)
-        if self.chosen != other.chosen:
-            self.chosen = 'DIFF'
-        self.iters += other.iters
-        self.accesses += other.accesses
-        self.updates += other.updates
-        self.streams += other.streams
-        self.footprint += other.footprint
+        self.level = int(fields[8])
+        self.base_load = int(fields[9])
+        self.stream_class = fields[10]
+        self.footprint = int(fields[11])
+        self.addr_insts = int(fields[12])
+        self.alias_insts = int(fields[13])
+        self.chosen = fields[14]
 
     @staticmethod
     def get_fields():
@@ -49,9 +37,11 @@ class Access:
             'Updates',
             'Stream',
             'BaseLoads',
+            'LoopLevel',
             'Class',
             'Footprint',
             'AddrInsts',
+            'AliasInsts',
             'Chosen',
         ]
 
@@ -65,10 +55,12 @@ class Access:
             self.accesses,
             self.updates,
             self.streams,
+            self.level,
             self.base_load,
             self.stream_class,
             self.footprint,
             self.addr_insts,
+            self.alias_insts,
             self.chosen,
         ]
 
@@ -107,15 +99,16 @@ class Access:
         elif self.iters < other.iters:
             return False
 
-        return self.streams < other.streams
+        return self.level > other.level
 
 
 class StreamStatistics:
     def __init__(self, files):
+        self.next = None
         if isinstance(files, list):
             self.parse(files[0])
             if len(files) > 1:
-                self.merge(StreamStatistics(files[1:]))
+                self.next = StreamStatistics(files[1:])
         else:
             self.parse(files)
 
@@ -132,11 +125,11 @@ class StreamStatistics:
             if access.inst not in self.inst_to_loop_level:
                 self.inst_to_loop_level[access.inst] = list()
             self.inst_to_loop_level[access.inst].append(access)
-        # Sort by the stream count, which is lower for higher loop level.
+        # Sort by the stream level.
         for inst in self.inst_to_loop_level:
             self.inst_to_loop_level[inst].sort(
-                key=lambda a: a.streams,
-                reverse=True,
+                key=lambda a: a.level,
+                reverse=False,
             )
 
     def parse(self, file):
@@ -161,51 +154,9 @@ class StreamStatistics:
 
     def parse_access(self, line):
         access = Access(line)
-        uid = access.inst + access.loop
+        uid = access.inst + '|' + access.loop
         assert(uid not in self.accesses)
         self.accesses[uid] = access
-
-    def merge(self, other):
-        for stat in self.stats:
-            assert(stat in other.stats)
-            self.stats[stat] += other.stats[stat]
-        for inst in other.accesses:
-            if inst in self.accesses:
-                self.accesses[inst].merge(other.accesses[inst])
-            else:
-                self.accesses[inst] = other.accesses[inst]
-
-    def calculate_indirect(self):
-        indirect = dict()
-        for access in self.accesses.values():
-            # If this stream is chosen, pick it.
-            if access.chosen == 'YES':
-                indirect[access.inst] = access
-                continue
-            # If not chosen, pick the lowerest level of loop.
-            if access.inst in indirect:
-                current_indirect = indirect[access.inst]
-                if current_indirect.chosen == 'YES':
-                    continue
-                elif access.streams > current_indirect.streams:
-                    indirect[access.inst] = access
-            else:
-                indirect[access.inst] = access
-
-        indirect_accesses = 0
-        indirect_baseloads = 0
-        indirect_addr_insts = 0
-        for access in indirect.values():
-            if access.base_load < 1:
-                # This is not an indirect stream
-                continue
-            indirect_accesses += access.accesses
-            indirect_baseloads += access.base_load * access.accesses
-            indirect_addr_insts += access.addr_insts * access.accesses
-        if indirect_accesses != 0:
-            indirect_baseloads /= indirect_accesses
-            indirect_addr_insts /= indirect_accesses
-        return (indirect_accesses, indirect_baseloads, indirect_addr_insts)
 
     def calculate_footprint(self):
         visited = set()
@@ -231,8 +182,10 @@ class StreamStatistics:
     def calculate_out_of_loop(self):
         total = 0
         for access in self.accesses.values():
-            if access.loop == 'UNKNOWN':
+            if access.stream_class == 'NOT_STREAM':
                 total += access.accesses
+        if self.next is not None:
+            total += self.next.calculate_out_of_loop()
         return total
 
     def calculate_out_of_region(self):
@@ -241,6 +194,12 @@ class StreamStatistics:
             if access.loop != 'UNKNOWN' and access.stream_class == 'NOT_STREAM':
                 total += access.accesses
         return total
+
+    def calculate_total_mem_accesses(self):
+        if self.next is not None:
+            return (self.stats['DynMemInstCount'] + self.next.calculate_total_mem_accesses())
+        else:
+            return self.stats['DynMemInstCount']
 
     def calculate_stream_breakdown(self, level):
         filtered = list()
@@ -251,6 +210,7 @@ class StreamStatistics:
                 continue
             filtered.append(streams[level])
         result = {
+            'INDIRECT_CONTINUOUS': 0,
             'INCONTINUOUS': 0,
             'RECURSIVE': 0,
             'AFFINE': 0,
@@ -263,6 +223,10 @@ class StreamStatistics:
         }
         for access in filtered:
             result[access.stream_class] += access.accesses
+        if self.next is not None:
+            next_result = self.next.calculate_stream_breakdown(level)
+            for field in result:
+                result[field] += next_result[field]
         return result
 
     def print_stream_breakdown(self):
@@ -270,6 +234,7 @@ class StreamStatistics:
             'OutOfLoop',
             'Recursive',
             'Incontinuous',
+            'IndirectContinuous',
             'L0_AFFINE',
             'L0_RAMDOM',
             'L0_AFFINE_BASE',
@@ -277,29 +242,22 @@ class StreamStatistics:
             'L0_POINTER_CHASE',
             'L0_CHAIN_BASE',
             'L0_MULTI_BASE',
-            # 'L1_Affine',
-            # 'L1_Other',
-            # 'L1_PC',
-            # 'L1_Single',
-            # 'L1_Multi',
-            # 'L2_Affine',
-            # 'L2_Other',
-            # 'L2_PC',
-            # 'L2_Single',
-            # 'L2_Multi',
         ])
         table.float_format = '.4'
-        total_mem_insts = self.stats['DynMemInstCount']
+        total_mem_insts = self.calculate_total_mem_accesses()
         out_of_loop = self.calculate_out_of_loop() / total_mem_insts
         row = [out_of_loop]
         for level in xrange(1):
             result = (
                 self.calculate_stream_breakdown(level)
             )
+            print(sum(result.values()))
+            print(total_mem_insts)
             if level == 0:
                 row += [
                     result['RECURSIVE'] / total_mem_insts,
                     result['INCONTINUOUS'] / total_mem_insts,
+                    result['INDIRECT_CONTINUOUS'] / total_mem_insts,
                 ]
             row += [
                 result['AFFINE'] / total_mem_insts,
@@ -313,30 +271,127 @@ class StreamStatistics:
         table.add_row(row)
         print(table)
 
+    def _collect_stream_length(self):
+        result = list()
+        for inst in self.inst_to_loop_level:
+            streams = self.inst_to_loop_level[inst]
+            chosen_stream = None
+            for stream in streams:
+                if stream.stream_class == 'AFFINE':
+                    chosen_stream = stream
+            if chosen_stream is not None:
+                result.append(chosen_stream)
+        if self.next is not None:
+            result += self.next._collect_stream_length()
+        return result
+
     def print_stream_length(self):
+        result = self._collect_stream_length()
         table = prettytable.PrettyTable([
             '<10',
+            '<50',
             '<100',
             '<1000',
             'inf'
         ])
-        summed_accesses = [0, 0, 0, 0]
+        table.float_format = '.4'
+        summed_accesses = [0, 0, 0, 0, 0]
+        for stream in result:
+            accesses = stream.accesses
+            streams = stream.streams
+            if accesses == 0 or streams == 0:
+                continue
+            avg_len = float(accesses) / float(streams)
+            if avg_len < 10.0:
+                summed_accesses[0] += accesses
+            elif avg_len < 50.0:
+                summed_accesses[1] += accesses
+            elif avg_len < 100.0:
+                summed_accesses[2] += accesses
+            elif avg_len < 1000.0:
+                summed_accesses[3] += accesses
+            else:
+                summed_accesses[4] += accesses
+        print summed_accesses
+        total_accesses = sum(summed_accesses)
+        table.add_row([x / total_accesses for x in summed_accesses])
+        print(table)
+
+    def _collect_stream_addr(self):
+        result = list()
         for inst in self.inst_to_loop_level:
             streams = self.inst_to_loop_level[inst]
-            access = streams[-1]
-            if access.accesses == 0 or access.streams == 0:
-                continue
-            avg_len = access.accesses / float(access.streams)
-            if avg_len < 10.0:
-                summed_accesses[0] += access.accesses
-            elif avg_len < 100.0:
-                summed_accesses[1] += access.accesses
-            elif avg_len < 1000.0:
-                summed_accesses[2] += access.accesses
+            chosen_stream = None
+            for stream in streams:
+                if stream.stream_class == 'AFFINE_BASE':
+                    chosen_stream = stream
+                    break
+            if chosen_stream is not None:
+                result.append(chosen_stream)
+        if self.next is not None:
+            result += self.next._collect_stream_addr()
+        return result
+
+    def print_stream_addr(self):
+        max_length = 16
+        title = [str(i) for i in xrange(1, max_length)]
+        title.append('other')
+        table = prettytable.PrettyTable(title)
+        table.float_format = '.4'
+        summed_accesses = [0] * max_length
+        result = self._collect_stream_addr()
+        for stream in result:
+            accesses = stream.accesses
+            addr_insts = stream.addr_insts
+            if addr_insts <= max_length:
+                summed_accesses[addr_insts - 1] += accesses
             else:
-                summed_accesses[3] += access.accesses
-        total_mem_insts = self.stats['DynMemInstCount']
-        table.add_row([x / total_mem_insts for x in summed_accesses])
+                summed_accesses[max_length - 1] += accesses
+        print summed_accesses
+        total_accesses = sum(summed_accesses)
+        for i in xrange(1, max_length):
+            summed_accesses[i] += summed_accesses[i - 1]
+        if total_accesses != 0:
+            table.add_row([x / total_accesses for x in summed_accesses])
+        else:
+            table.add_row(summed_accesses)
+        print(table)
+
+    def _collect_stream_alias(self):
+        result = list()
+        ignore_stream_classes = {
+            'RECURSIVE',
+            'INCONTINUOUS',
+            'INDIRECT_CONTINUOUS'
+        }
+        for inst in self.inst_to_loop_level:
+            streams = self.inst_to_loop_level[inst]
+            if streams[0].stream_class in ignore_stream_classes:
+                continue
+            result.append(streams[0])
+        if self.next is not None:
+            result += self.next._collect_stream_alias()
+        return result
+
+    def print_stream_alias(self):
+        result = self._collect_stream_alias()
+        table = prettytable.PrettyTable([
+            'Aliased',
+            'NotAliased'
+        ])
+        table.float_format = '.4'
+        summed_accesses = [0, 0]
+        for stream in result:
+            accesses = stream.accesses
+            alias_insts = stream.alias_insts
+            if alias_insts > 0:
+                summed_accesses[0] += accesses
+            else:
+                summed_accesses[1] += accesses
+        print summed_accesses
+        total_accesses = self.calculate_total_mem_accesses()
+        print sum(summed_accesses) / total_accesses
+        table.add_row([x / total_accesses for x in summed_accesses])
         print(table)
 
     def print_stats(self):
@@ -398,6 +453,6 @@ class StreamStatistics:
         vals = list(self.accesses.values())
         Access.print_table(vals)
 
-    def dump_csv(self, fn):
-        vals = list(self.accesses.values())
-        Access.dump_csv(vals, fn)
+    # def dump_csv(self, fn):
+    #     vals = list(self.accesses.values())
+    #     Access.dump_csv(vals, fn)

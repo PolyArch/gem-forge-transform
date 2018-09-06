@@ -46,7 +46,8 @@ class SPEC2017Benchmark(Benchmark):
             'specinvoke',
             '-n'
         ]))
-        print('{name} has arguments {args}'.format(name=self.get_name(), args=args))
+        print('{name} has arguments {args}'.format(
+            name=self.get_name(), args=args))
         os.chdir(self.cwd)
 
         # Initialize the benchmark.
@@ -351,8 +352,8 @@ class SPEC2017Benchmarks:
         #     'trace_func': 'compile_file',
         #     'lang': 'C',
         # },
-        # # Does not work with ellcc as it uses posix io function.
         # 'perlbench_s': {
+        #     # Does not work with ellcc as it uses posix io function.
         #     'name': '600.perlbench_s',
         #     'links': [],
         #     'start_inst': 1e8,
@@ -367,12 +368,13 @@ class SPEC2017Benchmarks:
         # 'deepsjeng_s': {
         #     'name': '631.deepsjeng_s',
         #     'links': [],
-        #     'start_inst': 0,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 0,
-        #     'end_inst': 0,
-        #     'n_traces': 1,
-        #     'trace_func': 'think(gamestate_t*, state_t*)',
+        #     'start_inst': 10e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 110e8,
+        #     'n_traces': 10,
+        #     # 'trace_func': 'think(gamestate_t*, state_t*)',
+        #     'trace_func': '',
         #     'lang': 'CPP',
         # },
         # 'leela_s': {
@@ -413,14 +415,15 @@ class SPEC2017Benchmarks:
         # # Throws exception.
         # # Does not work with ellcc as RE.
         # # Need to fix a comparison between integer and pointer error.
+        # Only been able to trace the first one.
         # 'parest_r': {
         #     'name': '510.parest_r',
         #     'links': [],
-        #     'start_inst': 1e8,
+        #     'start_inst': 10e8,
         #     'max_inst': 1e7,
         #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
+        #     'end_inst': 110e8,
+        #     'n_traces': 1,
         #     'trace_func': '',
         #     'lang': 'CPP',
         # },
