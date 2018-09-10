@@ -131,7 +131,7 @@ public:
     if (this == &Other) {
       return true;
     }
-    return this->Context == Other.Context && this->Loop == Loop;
+    return this->Context == Other.Context && this->Loop == Other.Loop;
   }
 
   bool operator!=(const ContextLoop &Other) const {

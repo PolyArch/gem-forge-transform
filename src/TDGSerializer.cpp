@@ -76,9 +76,9 @@ void TDGSerializer::write() {
         break;
       }
       std::string OutString;
-      // DEBUG(google::protobuf::TextFormat::PrintToString(
-      //     this->TDG.instructions(DUMPED), &OutString));
-      // DEBUG(llvm::errs() << OutString << '\n');
+      DEBUG(google::protobuf::TextFormat::PrintToString(
+          this->TDG.instructions(DUMPED), &OutString));
+      DEBUG(llvm::errs() << OutString << '\n');
     }
   }
   // Create the coded stream every time due to its size limit.
