@@ -3,17 +3,70 @@
 #include "Replay.h"
 #include "Utils.h"
 
+#include <sstream>
+
 #define DEBUG_TYPE "StreamPass"
 
 namespace {
+
+class InductionVarStream {
+public:
+  InductionVarStream(const llvm::PHINode *_PHIInst, const llvm::Loop *_Loop)
+      : PHIInst(_PHIInst), Loop(_Loop) {
+    this->searchComputeInsts();
+  }
+
+  InductionVarStream(const InductionVarStream &Other) = delete;
+  InductionVarStream(InductionVarStream &&Other) = delete;
+  InductionVarStream &operator=(const InductionVarStream &Other) = delete;
+  InductionVarStream &operator=(InductionVarStream &&Other) = delete;
+
+  const llvm::PHINode *getPHIInst() const { return this->PHIInst; }
+  const llvm::Loop *getLoop() const { return this->Loop; }
+  const std::unordered_set<const llvm::Instruction *> getComputeInsts() const {
+    return this->ComputeInsts;
+  }
+
+  static bool isStepInst(const llvm::Instruction *Inst) {
+    auto Opcode = Inst->getOpcode();
+    switch (Opcode) {
+    case llvm::Instruction::Add: {
+      return true;
+    }
+    default: { return false; }
+    }
+  }
+
+  std::string format() const {
+    std::stringstream ss;
+    ss << "InductionVarStream " << LoopUtils::formatLLVMInst(this->PHIInst)
+       << '\n';
+
+    ss << "ComputeInsts: ------\n";
+    for (const auto &ComputeInst : this->ComputeInsts) {
+      ss << LoopUtils::formatLLVMInst(ComputeInst) << '\n';
+    }
+    ss << "ComputeInsts: end---\n";
+
+    return ss.str();
+  }
+
+private:
+  const llvm::PHINode *PHIInst;
+  const llvm::Loop *Loop;
+  std::unordered_set<const llvm::Instruction *> ComputeInsts;
+
+  void searchComputeInsts();
+};
 
 class Stream {
 public:
   Stream(const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
          size_t _LoopLevel)
-      : Inst(_Inst), Loop(_Loop), LoopLevel(_LoopLevel), TotalIters(0),
-        TotalAccesses(0), TotalStreams(0), Iters(1), LastAccessIters(0),
-        StartId(DynamicInstruction::InvalidId), Pattern(_Inst) {
+      : Inst(_Inst), Loop(_Loop), LoopLevel(_LoopLevel), Qualified(false),
+        TotalIters(0), TotalAccesses(0), TotalStreams(0), Iters(1),
+        LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
+        Pattern(_Inst) {
     assert(Utils::isMemAccessInst(this->Inst) &&
            "Should be load/store instruction to build a stream.");
     this->searchAddressComputeInstructions();
@@ -34,7 +87,7 @@ public:
       this->addMissingAccess();
     }
     this->Iters++;
-    this->TotalIters;
+    this->TotalIters++;
   }
 
   void endStream() {
@@ -49,11 +102,24 @@ public:
     this->AliasInsts.insert(AliasInst);
   }
 
+  void addDependentStream(Stream *DependentStream) {
+    this->DependentStreams.insert(DependentStream);
+  }
+  void addBaseStream(Stream *BaseStream) {
+    this->BaseStreams.insert(BaseStream);
+  }
+  void addBaseInductionVarStream(InductionVarStream *BaseInductionVarStream) {
+    this->BaseInductionVarStreams.insert(BaseInductionVarStream);
+  }
+
+  void markQualified() { this->Qualified = true; }
+
   void finalizePattern() { this->Pattern.finalizePattern(); }
 
   const llvm::Loop *getLoop() const { return this->Loop; }
   const llvm::Instruction *getInst() const { return this->Inst; }
   size_t getLoopLevel() const { return this->LoopLevel; }
+  bool getQualified() const { return this->Qualified; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
   size_t getTotalStreams() const { return this->TotalStreams; }
@@ -63,8 +129,21 @@ public:
   bool isIndirect() const { return !this->BaseLoads.empty(); }
   size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
   size_t getNumAddrInsts() const { return this->AddrInsts.size(); }
+  const std::unordered_set<llvm::Instruction *> &getAddrInsts() const {
+    return this->AddrInsts;
+  }
   const std::unordered_set<llvm::LoadInst *> &getBaseLoads() const {
     return this->BaseLoads;
+  }
+  const std::unordered_set<Stream *> &getDependentStreams() const {
+    return this->DependentStreams;
+  }
+  const std::unordered_set<Stream *> &getBaseStreams() const {
+    return this->BaseStreams;
+  }
+  const std::unordered_set<InductionVarStream *> &
+  getBaseInductionVarStreams() const {
+    return this->BaseInductionVarStreams;
   }
   const std::unordered_set<llvm::Instruction *> &getAliasInsts() const {
     return this->AliasInsts;
@@ -86,6 +165,11 @@ private:
   std::unordered_set<llvm::LoadInst *> BaseLoads;
   std::unordered_set<llvm::Instruction *> AddrInsts;
   std::unordered_set<llvm::Instruction *> AliasInsts;
+
+  std::unordered_set<Stream *> DependentStreams;
+  std::unordered_set<Stream *> BaseStreams;
+  std::unordered_set<InductionVarStream *> BaseInductionVarStreams;
+  bool Qualified;
 
   /**
    * Stores the total iterations for this stream
@@ -117,6 +201,38 @@ private:
   void searchAddressComputeInstructions();
 };
 
+struct StreamTransformPlan {
+public:
+  enum PlanT {
+    NOTHING,
+    DELETE,
+    STEP,
+    STORE,
+  } Plan;
+
+  std::unordered_set<const llvm::Instruction *> UsedStreams;
+
+  static std::string formatPlanT(const PlanT Plan) {
+    switch (Plan) {
+    case NOTHING:
+      return "NOTHING";
+    case DELETE:
+      return "DELETE";
+    case STEP:
+      return "STEP";
+    case STORE:
+      return "STORE";
+    }
+    llvm_unreachable("Illegal StreamTransformPlan::PlanT to be formatted.");
+  }
+
+  StreamTransformPlan() : Plan(NOTHING) {}
+
+  void addUsedStream(const llvm::Instruction *UsedStream) {
+    this->UsedStreams.insert(UsedStream);
+  }
+};
+
 class StreamPass : public ReplayTrace {
 public:
   static char ID;
@@ -134,6 +250,10 @@ protected:
                          std::unordered_map<llvm::Instruction *, Stream *>>;
   using LoopStackT = std::list<llvm::Loop *>;
 
+  /*************************************************************
+   * Stream Analysis.
+   *************************************************************/
+
   void analyzeStream();
   bool isLoopContinuous(const llvm::Loop *Loop);
   void addAccess(const LoopStackT &LoopStack, ActiveStreamMapT &ActiveStreams,
@@ -150,13 +270,33 @@ protected:
   void initializeStreamIfNecessary(const LoopStackT &LoopStack,
                                    llvm::Instruction *Inst);
 
+  /*************************************************************
+   * Stream Choice.
+   *************************************************************/
   void chooseStream();
+  void buildDependenceGraph();
+  void markQualifiedStream();
+  Stream *getStreamByInstLoop(llvm::Instruction *Inst, const llvm::Loop *Loop);
+
+  /*************************************************************
+   * Stream transform.
+   *************************************************************/
+  void splitIVStreamFromDirectStream();
+  void makeStreamTransformPlan();
+  void makeIVStreamTransformPlan(InductionVarStream *IVStream);
+  void transformStream();
 
   std::unordered_map<llvm::Instruction *, std::list<Stream>> InstStreamMap;
 
-  std::unordered_map<llvm::Loop *,
-                     std::unordered_map<llvm::Instruction *, Stream *>>
+  std::unordered_map<const llvm::Loop *,
+                     std::unordered_map<const llvm::Instruction *, Stream *>>
       ChosenLoopInstStreamMap;
+
+  std::unordered_map<const llvm::PHINode *, InductionVarStream>
+      PHINodeInductionVarStreamMap;
+
+  std::unordered_map<const llvm::Instruction *, StreamTransformPlan>
+      InstPlanMap;
 
   std::unordered_map<const llvm::Loop *,
                      std::unordered_set<llvm::Instruction *>>
@@ -247,6 +387,7 @@ void StreamPass::dumpStats(std::ostream &O) {
    * Footprint
    * AddrInsts
    * AliasInsts
+   * Qualified
    * Chosen
    */
 
@@ -269,14 +410,23 @@ void StreamPass::dumpStats(std::ostream &O) {
       size_t Footprint = 0;
       size_t AddrInsts = Stream.getNumAddrInsts();
 
+      std::string Qualified = "NO";
+      if (Stream.getQualified()) {
+        Qualified = "YES";
+      }
+
       std::string Chosen = "NO";
-      // auto Iter =
-      // this->MemInstToChosenStreamMap.find(MemInstStreamEntry.first); if (Iter
-      // != this->MemInstToChosenStreamMap.end()) {
-      //   if (Iter->second == &Stream) {
-      //     Chosen = "YES";
-      //   }
-      // }
+      {
+        auto ChosenLoopInstStreamMapIter =
+            this->ChosenLoopInstStreamMap.find(Stream.getLoop());
+        if (ChosenLoopInstStreamMapIter !=
+            this->ChosenLoopInstStreamMap.end()) {
+          if (ChosenLoopInstStreamMapIter->second.count(Stream.getInst()) !=
+              0) {
+            Chosen = "YES";
+          }
+        }
+      }
 
       size_t AliasInsts = Stream.getAliasInsts().size();
 
@@ -300,6 +450,7 @@ void StreamPass::dumpStats(std::ostream &O) {
       O << ' ' << Footprint;
       O << ' ' << AddrInsts;
       O << ' ' << AliasInsts;
+      O << ' ' << Qualified;
       O << ' ' << Chosen;
       O << '\n';
     }
@@ -339,6 +490,7 @@ void StreamPass::dumpStats(std::ostream &O) {
     O << ' ' << 0;                               // Footprint
     O << ' ' << -1;                              // AddrInsts
     O << ' ' << -1;                              // AliasInsts
+    O << ' ' << "NO";                            // Qualified
     O << ' ' << "NO" << '\n';                    // Chosen
   }
 
@@ -354,6 +506,19 @@ void StreamPass::transform() {
       Stream.finalizePattern();
     }
   }
+  this->chooseStream();
+  this->splitIVStreamFromDirectStream();
+
+  for (auto &PHINodeIVStreamEntry : this->PHINodeInductionVarStreamMap) {
+    this->makeIVStreamTransformPlan(&(PHINodeIVStreamEntry.second));
+  }
+
+  this->makeStreamTransformPlan();
+
+  delete this->Trace;
+  this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+
+  this->transformStream();
 }
 
 void StreamPass::initializeStreamIfNecessary(const LoopStackT &LoopStack,
@@ -699,31 +864,488 @@ void Stream::searchAddressComputeInstructions() {
   }
 }
 
-void StreamPass::chooseStream() {
-  /**
-   * First choose direct streams that
-   * 1. Is affine.
-   * 2. Has no alias.
-   * 3. At highest loop level.
-   */
-  for (const auto &InstStreamEntry : this->InstStreamMap) {
-    const auto &Streams = InstStreamEntry.second;
-    for (const auto &S : Streams) {
-      if (S.isAliased()) {
-        // No need to look higher.
-        break;
-      }
-      if (S.isIndirect()) {
-        // Indirect streams are handled later.
-        break;
-      }
-      const auto &MemPattern = S.getPattern();
-      if (!MemPattern.computed()) {
-        // Ignore those uncomputed streams.
-        break;
+void InductionVarStream::searchComputeInsts() {
+
+  std::list<llvm::Instruction *> Queue;
+
+  for (unsigned IncomingIdx = 0,
+                NumIncomingValues = this->PHIInst->getNumIncomingValues();
+       IncomingIdx != NumIncomingValues; ++IncomingIdx) {
+    auto BB = this->PHIInst->getIncomingBlock(IncomingIdx);
+    if (!this->Loop->contains(BB)) {
+      continue;
+    }
+    auto IncomingValue = this->PHIInst->getIncomingValue(IncomingIdx);
+    if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+      Queue.emplace_back(IncomingInst);
+    }
+  }
+
+  while (!Queue.empty()) {
+    auto CurrentInst = Queue.front();
+    Queue.pop_front();
+    if (this->ComputeInsts.count(CurrentInst) != 0) {
+      // We have already processed this one.
+      continue;
+    }
+    if (!this->Loop->contains(CurrentInst)) {
+      // This instruction is out of our analysis level. ignore it.
+      continue;
+    }
+    if (Utils::isCallOrInvokeInst(CurrentInst)) {
+      // So far I do not know how to process the call/invoke instruction.
+      continue;
+    }
+
+    this->ComputeInsts.insert(CurrentInst);
+
+    // We do not allow base load in induction variable streams.
+    assert(!llvm::isa<llvm::LoadInst>(CurrentInst) &&
+           "Base load in InductionVarStream is not allowed.");
+
+    // BFS on the operands.
+    for (unsigned OperandIdx = 0, NumOperands = CurrentInst->getNumOperands();
+         OperandIdx != NumOperands; ++OperandIdx) {
+      auto OperandValue = CurrentInst->getOperand(OperandIdx);
+      if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
+        Queue.emplace_back(OperandInst);
       }
     }
   }
+}
+
+Stream *StreamPass::getStreamByInstLoop(llvm::Instruction *Inst,
+                                        const llvm::Loop *Loop) {
+  auto Iter = this->InstStreamMap.find(Inst);
+  if (Iter == this->InstStreamMap.end()) {
+    return nullptr;
+  }
+  auto &Streams = Iter->second;
+  for (auto &S : Streams) {
+    if (S.getLoop() == Loop) {
+      return &S;
+    }
+  }
+  llvm_unreachable("Failed to find the stream at specified loop level.");
+}
+
+void StreamPass::buildDependenceGraph() {
+  for (auto &InstStreamEntry : this->InstStreamMap) {
+    auto &Streams = InstStreamEntry.second;
+    for (auto &S : Streams) {
+      if (!S.isIndirect()) {
+        continue;
+      }
+      auto Loop = S.getLoop();
+      for (const auto &BaseLoad : S.getBaseLoads()) {
+        auto BaseStream = this->getStreamByInstLoop(BaseLoad, Loop);
+        if (BaseStream != nullptr) {
+          BaseStream->addDependentStream(&S);
+          S.addBaseStream(BaseStream);
+        }
+      }
+    }
+  }
+}
+
+void StreamPass::markQualifiedStream() {
+  /**
+   * Use direct affine stream as the start point to propagate qualified flag
+   * in the dependence graph.
+   */
+  std::list<Stream *> Queue;
+  for (auto &InstStreamEntry : this->InstStreamMap) {
+    auto &Streams = InstStreamEntry.second;
+    for (auto &S : Streams) {
+      if (S.isIndirect() || S.isAliased()) {
+        continue;
+      }
+      // Direct stream without alias.
+      const auto &MemPattern = S.getPattern();
+      if (!MemPattern.computed()) {
+        continue;
+      }
+      auto AddrPattern = MemPattern.getPattern().AddrPattern;
+      if (AddrPattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+        // This is affine. Push into the queue as start point.
+        Queue.emplace_back(&S);
+      }
+    }
+  }
+
+  /**
+   * BFS on the qualified streams.
+   */
+  while (!Queue.empty()) {
+    auto S = Queue.front();
+    Queue.pop_front();
+    if (S->getQualified()) {
+      // We have already processed this stream.
+      continue;
+    }
+    S->markQualified();
+    // Check all the dependent streams
+    for (const auto &DependentStream : S->getDependentStreams()) {
+      if (S->isAliased()) {
+        continue;
+      }
+      bool Qualified = true;
+      for (const auto &BaseStream : DependentStream->getBaseStreams()) {
+        if (!BaseStream->getQualified()) {
+          Qualified = false;
+          break;
+        }
+      }
+      if (Qualified) {
+        Queue.emplace_back(DependentStream);
+      }
+    }
+  }
+}
+
+void StreamPass::chooseStream() {
+  this->buildDependenceGraph();
+  this->markQualifiedStream();
+
+  for (auto &InstStreamEntry : this->InstStreamMap) {
+    auto &Streams = InstStreamEntry.second;
+    // Try to pick the highest level of qualified stream.
+    Stream *ChosenStream = nullptr;
+    for (auto &S : Streams) {
+      if (S.getQualified()) {
+        ChosenStream = &S;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      auto Loop = ChosenStream->getLoop();
+      auto Inst = ChosenStream->getInst();
+      auto ChosenLoopInstStreamMapIter =
+          this->ChosenLoopInstStreamMap.find(Loop);
+      if (ChosenLoopInstStreamMapIter == this->ChosenLoopInstStreamMap.end()) {
+        ChosenLoopInstStreamMapIter =
+            this->ChosenLoopInstStreamMap
+                .emplace(std::piecewise_construct, std::forward_as_tuple(Loop),
+                         std::forward_as_tuple())
+                .first;
+      }
+      assert(ChosenLoopInstStreamMapIter->second.count(Inst) == 0 &&
+             "This stream is already chosen.");
+      ChosenLoopInstStreamMapIter->second.emplace(Inst, ChosenStream);
+    }
+  }
+}
+
+void StreamPass::splitIVStreamFromDirectStream() {
+  for (auto &LoopInstStreamEntry : this->ChosenLoopInstStreamMap) {
+    const auto &Loop = LoopInstStreamEntry.first;
+    for (auto &InstStreamEntry : LoopInstStreamEntry.second) {
+      const auto &Inst = InstStreamEntry.first;
+      Stream *S = InstStreamEntry.second;
+      if (S->isIndirect()) {
+        continue;
+      }
+      /**
+       * Check if we need to split the induction var stream out
+       * by looking at how the address instructions are used outside the
+       * stream.
+       */
+      const auto &AddrInsts = S->getAddrInsts();
+      bool OutsideUser = false;
+      for (auto &AddrInst : AddrInsts) {
+        if (OutsideUser) {
+          break;
+        }
+        for (auto U : AddrInst->users()) {
+          if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+            // An instruction uses AddrInsts.
+            if (I == Inst) {
+              // Used by the stream itself, ignore this case.
+              continue;
+            }
+            if (AddrInsts.count(I) != 0) {
+              OutsideUser = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!OutsideUser) {
+        // Rare case: no outside user, we do not have to split this stream.
+        continue;
+      }
+      // We split out the induction var stream of all the phi nodes.
+      for (auto &AddrInst : AddrInsts) {
+        if (AddrInst->getParent() != Loop->getHeader()) {
+          continue;
+        }
+        if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(AddrInst)) {
+          DEBUG(llvm::errs()
+                << "Split induction variable stream "
+                << LoopUtils::formatLLVMInst(PHINode) << " from direct stream "
+                << LoopUtils::formatLLVMInst(Inst) << '\n');
+          auto Iter = this->PHINodeInductionVarStreamMap.find(PHINode);
+          if (Iter == this->PHINodeInductionVarStreamMap.end()) {
+            Iter = this->PHINodeInductionVarStreamMap
+                       .emplace(std::piecewise_construct,
+                                std::forward_as_tuple(PHINode),
+                                std::forward_as_tuple(PHINode, Loop))
+                       .first;
+            DEBUG(llvm::errs() << Iter->second.format() << '\n');
+          }
+          S->addBaseInductionVarStream(&(Iter->second));
+        }
+      }
+    }
+  }
+}
+
+void StreamPass::makeIVStreamTransformPlan(InductionVarStream *IVStream) {
+  DEBUG(llvm::errs() << "Make IVStream tranform plan at level "
+                     << LoopUtils::getLoopId(IVStream->getLoop())
+                     << " for IVStream "
+                     << LoopUtils::formatLLVMInst(IVStream->getPHIInst())
+                     << '\n');
+  for (const auto &ComputeInst : IVStream->getComputeInsts()) {
+    auto PlanIter = this->InstPlanMap.find(ComputeInst);
+    if (PlanIter == this->InstPlanMap.end()) {
+      PlanIter = this->InstPlanMap
+                     .emplace(std::piecewise_construct,
+                              std::forward_as_tuple(ComputeInst),
+                              std::forward_as_tuple())
+                     .first;
+    }
+    if (InductionVarStream::isStepInst(ComputeInst)) {
+      PlanIter->second.Plan = StreamTransformPlan::PlanT::STEP;
+    } else {
+      switch (PlanIter->second.Plan) {
+      case StreamTransformPlan::PlanT::NOTHING:
+      case StreamTransformPlan::PlanT::DELETE: {
+        PlanIter->second.Plan = StreamTransformPlan::PlanT::DELETE;
+        break;
+      }
+      }
+    }
+    DEBUG(
+        llvm::errs() << "Select transform plan for compute inst "
+                     << LoopUtils::formatLLVMInst(ComputeInst) << " to "
+                     << StreamTransformPlan::formatPlanT(PlanIter->second.Plan)
+                     << '\n');
+
+    // Add uses for all the users.
+    for (auto U : ComputeInst->users()) {
+      if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+        auto UserPlanIter = this->InstPlanMap.find(I);
+        if (UserPlanIter == this->InstPlanMap.end()) {
+          UserPlanIter =
+              this->InstPlanMap
+                  .emplace(std::piecewise_construct, std::forward_as_tuple(I),
+                           std::forward_as_tuple())
+                  .first;
+        }
+        UserPlanIter->second.addUsedStream(IVStream->getPHIInst());
+        DEBUG(llvm::errs() << "Add used stream for user "
+                           << LoopUtils::formatLLVMInst(I) << " with IV stream "
+                           << LoopUtils::formatLLVMInst(IVStream->getPHIInst())
+                           << '\n');
+      }
+    }
+  }
+}
+
+void StreamPass::makeStreamTransformPlan() {
+  for (auto &LoopInstStreamEntry : this->ChosenLoopInstStreamMap) {
+    for (auto &InstStreamEntry : LoopInstStreamEntry.second) {
+      Stream *S = InstStreamEntry.second;
+
+      DEBUG(llvm::errs() << "make stream transform plan at level "
+                         << LoopUtils::getLoopId(S->getLoop()) << " for stream "
+                         << LoopUtils::formatLLVMInst(S->getInst()) << '\n');
+
+      for (const auto &AddrInst : S->getAddrInsts()) {
+        // Simply mark them as delete.
+        auto PlanIter = this->InstPlanMap.find(AddrInst);
+        if (PlanIter == this->InstPlanMap.end()) {
+          PlanIter = this->InstPlanMap
+                         .emplace(std::piecewise_construct,
+                                  std::forward_as_tuple(AddrInst),
+                                  std::forward_as_tuple())
+                         .first;
+        }
+        switch (PlanIter->second.Plan) {
+        case StreamTransformPlan::PlanT::NOTHING:
+        case StreamTransformPlan::PlanT::DELETE: {
+          PlanIter->second.Plan = StreamTransformPlan::PlanT::DELETE;
+          break;
+        }
+        }
+        DEBUG(llvm::errs() << "Select transform plan for addr inst "
+                           << LoopUtils::formatLLVMInst(AddrInst) << " to "
+                           << StreamTransformPlan::formatPlanT(
+                                  PlanIter->second.Plan)
+                           << '\n');
+      }
+
+      // Add uses for all the users.
+      auto &Inst = InstStreamEntry.first;
+      for (auto U : Inst->users()) {
+        if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+          auto UserPlanIter = this->InstPlanMap.find(I);
+          if (UserPlanIter == this->InstPlanMap.end()) {
+            UserPlanIter =
+                this->InstPlanMap
+                    .emplace(std::piecewise_construct, std::forward_as_tuple(I),
+                             std::forward_as_tuple())
+                    .first;
+          }
+          UserPlanIter->second.addUsedStream(Inst);
+          DEBUG(llvm::errs()
+                << "Add used stream for user " << LoopUtils::formatLLVMInst(I)
+                << " with stream " << LoopUtils::formatLLVMInst(Inst) << '\n');
+        }
+      }
+
+      // Mark myself as DELETE (load) or STORE (store).
+      auto InstPlanIter =
+          this->InstPlanMap
+              .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
+                       std::forward_as_tuple())
+              .first;
+      if (llvm::isa<llvm::StoreInst>(Inst)) {
+        assert(InstPlanIter->second.Plan ==
+                   StreamTransformPlan::PlanT::NOTHING &&
+               "Already have a plan for the store.");
+        InstPlanIter->second.Plan = StreamTransformPlan::PlanT::STORE;
+      } else {
+        // This is a load.
+        InstPlanIter->second.Plan = StreamTransformPlan::PlanT::DELETE;
+      }
+      DEBUG(llvm::errs() << "Select transform plan for inst "
+                         << LoopUtils::formatLLVMInst(Inst) << " to "
+                         << StreamTransformPlan::formatPlanT(
+                                InstPlanIter->second.Plan)
+                         << '\n');
+    }
+  }
+}
+
+class StreamStepInst : public DynamicInstruction {
+public:
+  StreamStepInst() = default;
+  std::string getOpName() const override { return "stream-step"; }
+};
+
+class StreamStoreInst : public DynamicInstruction {
+public:
+  StreamStoreInst(DynamicId _Id) : DynamicInstruction() {
+    /**
+     * Inherit the provided dynamic id.
+     */
+    this->Id = _Id;
+  }
+  std::string getOpName() const override { return "stream-store"; }
+};
+
+class StreamConfigInst : public DynamicInstruction {};
+
+void StreamPass::transformStream() {
+  DEBUG(llvm::errs() << "Stream: Start transform.\n");
+
+  // A map from stream to the previous instruction (config/step).
+  // Used to resovle dependence to the FIFO.
+  std::unordered_map<llvm::Instruction *, DynamicInstruction::DynamicId>
+      StreamPrevInstMap;
+
+  while (true) {
+    auto NewInstIter = this->Trace->loadOneDynamicInst();
+
+    DynamicInstruction *NewDynamicInst = nullptr;
+    llvm::Instruction *NewStaticInst = nullptr;
+    llvm::Loop *NewLoop = nullptr;
+    bool IsAtHeadOfCandidate = false;
+
+    while (this->Trace->DynamicInstructionList.size() > 10) {
+      this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                  this->Trace);
+      this->Trace->commitOneDynamicInst();
+    }
+
+    if (NewInstIter != this->Trace->DynamicInstructionList.end()) {
+      // This is a new instruction.
+      NewDynamicInst = *NewInstIter;
+      NewStaticInst = NewDynamicInst->getStaticInstruction();
+      assert(NewStaticInst != nullptr && "Invalid static llvm instruction.");
+
+      auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
+      NewLoop = LI->getLoopFor(NewStaticInst->getParent());
+
+      if (NewLoop != nullptr) {
+        IsAtHeadOfCandidate =
+            LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst) &&
+            this->isLoopContinuous(NewLoop);
+      }
+    } else {
+      // This is the end.
+      while (!this->Trace->DynamicInstructionList.empty()) {
+        this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
+                                    this->Trace);
+        this->Trace->commitOneDynamicInst();
+      }
+      break;
+    }
+
+    auto PlanIter = this->InstPlanMap.find(NewStaticInst);
+    if (PlanIter == this->InstPlanMap.end()) {
+      continue;
+    }
+
+    const auto &TransformPlan = PlanIter->second;
+    if (TransformPlan.Plan == StreamTransformPlan::PlanT::DELETE) {
+      /**
+       * This is important to make the future instruction not dependent on this
+       * deleted instruction.
+       */
+      this->Trace->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
+          NewStaticInst, std::list<DynamicId>());
+
+      auto NewDynamicId = NewDynamicInst->getId();
+      this->Trace->commitDynamicInst(NewDynamicId);
+      this->Trace->DynamicInstructionList.erase(NewInstIter);
+      /**
+       * No more handling for the deleted instruction.
+       */
+      continue;
+    } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
+
+      this->Trace->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
+          NewStaticInst, std::list<DynamicId>());
+
+      auto NewDynamicId = NewDynamicInst->getId();
+      this->Trace->commitDynamicInst(NewDynamicId);
+
+      auto StepInst = new StreamStepInst();
+      *NewInstIter = StepInst;
+      this->Trace->AliveDynamicInstsMap.emplace(StepInst->getId(), NewInstIter);
+
+    } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
+
+      assert(llvm::isa<llvm::StoreInst>(NewStaticInst) &&
+             "STORE plan for non store instruction.");
+
+      this->Trace->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
+          NewStaticInst, std::list<DynamicId>());
+
+      /**
+       * REPLACE the original store instruction with our special stream store.
+       */
+      auto NewDynamicId = NewDynamicInst->getId();
+      delete NewDynamicInst;
+
+      auto StoreInst = new StreamStoreInst(NewDynamicId);
+      *NewInstIter = StoreInst;
+    }
+  }
+
+  DEBUG(llvm::errs() << "Stream: Transform done.\n");
 }
 
 } // namespace
