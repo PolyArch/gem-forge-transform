@@ -13,6 +13,7 @@
 #include "llvm/Transforms/Scalar.h"
 
 #include "LocateAccelerableFunctions.h"
+#include "trace/InstructionUIDMap.h"
 #include "trace/Tracer.h"
 
 #include <map>
@@ -23,6 +24,11 @@ static llvm::cl::opt<std::string> TraceFunctionNames(
     "trace-function",
     llvm::cl::desc("Trace function names. For C functions, just the name. For "
                    "C++ Functions, the signature is required. Dot separated."));
+
+static llvm::cl::opt<std::string>
+    InstUIDFileName("trace-inst-uid-file",
+                    llvm::cl::desc("File name to dump the instruction uid map "
+                                   "to compress the trace size."));
 
 namespace {
 // The separator has to be something else than ',()*&:[a-z][A-Z][0-9]_', which
@@ -193,10 +199,21 @@ public:
     return true;
   }
 
+  bool doFinalization(llvm::Module &Module) override {
+    // Remember to serialize the InstructionUIDMap.
+    if (InstUIDFileName.getNumOccurrences() > 0) {
+      this->InstUIDMap.serializeTo(InstUIDFileName.getValue());
+    } else {
+      this->InstUIDMap.serializeTo("tracer.inst.uid.txt");
+    }
+  }
+
 private:
   llvm::Module *Module;
   llvm::Function *CurrentFunction;
   std::map<unsigned int, llvm::Value *> VectorStoreBuffer;
+
+  InstructionUIDMap InstUIDMap;
 
   /* Print functions. */
   llvm::Value *PrintInstFunc;
@@ -233,11 +250,13 @@ private:
     auto Int8PtrTy = llvm::Type::getInt8PtrTy(Context);
     auto Int8Ty = llvm::Type::getInt8Ty(Context);
     auto Int32Ty = llvm::Type::getInt32Ty(Context);
+    auto Int64Ty = llvm::Type::getInt64Ty(Context);
 
     std::vector<llvm::Type *> PrintInstArgs{
         Int8PtrTy, // char* FunctionName
         Int8PtrTy, // char* BBName,
         Int32Ty,   // unsigned Id,
+        Int64Ty,   // uint64_t UID,
         Int8PtrTy, // char* OpCodeName,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
@@ -528,10 +547,17 @@ private:
         llvm::IntegerType::getInt32Ty(this->Module->getContext()), InstId,
         false);
 
+    // Allocate the UID for this instruction.
+    auto InstUID = this->InstUIDMap.getOrAllocateUID(Inst, InstId);
+    auto InstUIDValue = llvm::ConstantInt::get(
+        llvm::IntegerType::getInt64Ty(this->Module->getContext()), InstUID,
+        false);
+
     std::vector<llvm::Value *> PrintInstArgs;
     PrintInstArgs.push_back(FunctionNameValue);
     PrintInstArgs.push_back(BBNameValue);
     PrintInstArgs.push_back(InstIdValue);
+    PrintInstArgs.push_back(InstUIDValue);
     PrintInstArgs.push_back(OpCodeNameValue);
     return std::move(PrintInstArgs);
   }

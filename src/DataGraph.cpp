@@ -14,6 +14,10 @@ static llvm::cl::opt<std::string> TraceFileName("trace-file",
 static llvm::cl::opt<std::string>
     TraceFileFormat("trace-format", llvm::cl::desc("Trace file format."));
 
+static llvm::cl::opt<std::string> InstUIDFileName(
+    "datagraph-inst-uid-file",
+    llvm::cl::desc("Inst UID Map file for datagraph building."));
+
 #define DEBUG_TYPE "DataGraph"
 
 void AddrToMemAccessMap::update(Address Addr, DynamicId Id) {
@@ -168,7 +172,12 @@ DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
     this->Parser = new TraceParserGZip(TraceFileName);
   } else if (TraceFileFormat.getValue() == "protobuf") {
     DEBUG(llvm::errs() << "Creating parser.\n");
-    this->Parser = new TraceParserProtobuf(TraceFileName);
+    if (InstUIDFileName.getNumOccurrences() > 0) {
+      this->Parser =
+          new TraceParserProtobuf(TraceFileName, InstUIDFileName.getValue());
+    } else {
+      this->Parser = new TraceParserProtobuf(TraceFileName);
+    }
     DEBUG(llvm::errs() << "Creating parser. Done\n");
   } else {
     llvm_unreachable("Unknown trace file format.");
@@ -502,7 +511,8 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
             llvm::errs() << '\n');
     }
   } else {
-    // There is no previous basic block. This can not happen in INTEGRATED mode.
+    // There is no previous basic block. This can not happen in INTEGRATED
+    // mode.
     assert(this->DetailLevel < INTEGRATED &&
            "Missing previous basic block in INTEGRATED mode.");
   }
@@ -745,8 +755,8 @@ DataGraph::getLLVMInstruction(const std::string &FunctionName,
     }
   }
 
-  // If we are in integrated mode, sanity check to make sure that we are in the
-  // correct frame.
+  // If we are in integrated mode, sanity check to make sure that we are in
+  // the correct frame.
   if (this->DetailLevel == INTEGRATED) {
     assert(!this->DynamicFrameStack.empty() &&
            "Empty frame stack for incoming instruction.");
@@ -846,8 +856,8 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
         DynamicInst->DynamicOperands[OperandIndex]->MemOffset =
             DynamicValue->MemOffset;
       } else {
-        // We cannot find the result in the run time env. The only possible case
-        // is that it is an untraced call inst.
+        // We cannot find the result in the run time env. The only possible
+        // case is that it is an untraced call inst.
         assert(Utils::isCallOrInvokeInst(Operand) &&
                "Missing dynamic value for non-call instruction.");
       }
@@ -955,8 +965,8 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
 
   else if (auto StoreStaticInstruction =
                llvm::dyn_cast<llvm::StoreInst>(StaticInstruction)) {
-    // Although store does not have result, it is good to assert that we have a
-    // base here.
+    // Although store does not have result, it is good to assert that we have
+    // a base here.
     assert(DynamicInst->DynamicOperands[1]->MemBase != "" &&
            "Failed to get memory base/offset for store inst.");
   }
@@ -977,18 +987,18 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
     // Special case for the call instruction.
     // If the static call instruction has result, but missing from the dynamic
     // trace, it means that the callee is also traced and we should use the
-    // result from callee's ret instruction. In that case, we have do defer the
-    // processing until the callee returned.
+    // result from callee's ret instruction. In that case, we have do defer
+    // the processing until the callee returned.
     if (CallStaticInstruction->getName() != "") {
       if (DynamicInst->DynamicResult == nullptr) {
         // We don't have the result, hopefully this means that the callee is
-        // traced. I do not like this early return here, but let's just keep it
-        // like this so that we do not try to add to the run time env.
+        // traced. I do not like this early return here, but let's just keep
+        // it like this so that we do not try to add to the run time env.
         return;
       } else {
         // We do have the result.
-        // A special hack for now: if the callee is malloc, simply create a new
-        // base to itself.
+        // A special hack for now: if the callee is malloc, simply create a
+        // new base to itself.
         auto Function = CallStaticInstruction->getCalledFunction();
         if (Function != nullptr && Function->getName() == "malloc") {
           DynamicInst->DynamicResult->MemBase =

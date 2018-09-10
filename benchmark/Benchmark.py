@@ -55,6 +55,9 @@ class Benchmark(object):
     def get_trace_bc(self):
         return '{name}.traced.bc'.format(name=self.get_name())
 
+    def get_inst_uid(self):
+        return '{name}.inst.uid.txt'.format(name=self.get_name())
+
     def get_trace_bin(self):
         return '{name}.traced.exe'.format(name=self.get_name())
 
@@ -138,6 +141,8 @@ class Benchmark(object):
             self.raw_bc,
             '-o',
             self.get_trace_bc(),
+            '-trace-inst-uid-file',
+            self.get_inst_uid(),
         ]
         if self.trace_func is not None and len(self.trace_func) > 0:
             trace_cmd.append('-trace-function=' + self.trace_func)
@@ -192,6 +197,8 @@ class Benchmark(object):
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-{pass_name}'.format(pass_name=pass_name),
             '-trace-file={trace_file}'.format(trace_file=trace_file),
+            '-datagraph-inst-uid-file={inst_uid}'.format(
+                inst_uid=self.get_inst_uid()),
             '-tdg-profile-file={profile_file}'.format(
                 profile_file=profile_file),
             '-trace-format={format}'.format(format=self.trace_format),

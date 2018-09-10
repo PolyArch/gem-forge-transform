@@ -7,8 +7,14 @@
 
 #define DEBUG_TYPE "ParserProtobuf"
 
-TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName)
+TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName,
+                                         const std::string &InstUIDMapFileName)
     : TraceFile(TraceFileName, std::ios::in | std::ios::binary), Count(0) {
+
+  if (InstUIDMapFileName != "") {
+    this->InstUIDMap.parseFrom(InstUIDMapFileName);
+  }
+
   assert(this->TraceFile.is_open() && "Failed openning trace file.");
   this->IStream =
       new google::protobuf::io::IstreamInputStream(&this->TraceFile);
@@ -41,9 +47,18 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
          "The next trace entry is not instruction.");
   TracedInst Parsed;
 
-  Parsed.Func = this->TraceEntry.inst().func();
-  Parsed.BB = this->TraceEntry.inst().bb();
-  Parsed.Id = this->TraceEntry.inst().id();
+  if (this->TraceEntry.inst().uid() != 0) {
+    // Translate the UID back.
+    auto InstDescriptor =
+        this->InstUIDMap.getDescriptor(this->TraceEntry.inst().uid());
+    Parsed.Func = InstDescriptor.FuncName;
+    Parsed.BB = InstDescriptor.BBName;
+    Parsed.Id = InstDescriptor.PosInBB;
+  } else {
+    Parsed.Func = this->TraceEntry.inst().func();
+    Parsed.BB = this->TraceEntry.inst().bb();
+    Parsed.Id = this->TraceEntry.inst().id();
+  }
   Parsed.Result = this->TraceEntry.inst().result();
   Parsed.Op = this->TraceEntry.inst().op();
 
