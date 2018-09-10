@@ -23,7 +23,8 @@ class Access:
         self.footprint = int(fields[11])
         self.addr_insts = int(fields[12])
         self.alias_insts = int(fields[13])
-        self.chosen = fields[14]
+        self.qualified = fields[14]
+        self.chosen = fields[15]
 
     @staticmethod
     def get_fields():
@@ -42,6 +43,7 @@ class Access:
             'Footprint',
             'AddrInsts',
             'AliasInsts',
+            'Qualified',
             'Chosen',
         ]
 
@@ -61,6 +63,7 @@ class Access:
             self.footprint,
             self.addr_insts,
             self.alias_insts,
+            self.qualified,
             self.chosen,
         ]
 
@@ -357,6 +360,31 @@ class StreamStatistics:
             table.add_row(summed_accesses)
         print(table)
 
+    def _collect_stream_qualified(self, level):
+        result = 0
+        for inst in self.inst_to_loop_level:
+            streams = self.inst_to_loop_level[inst]
+            if len(streams) <= level:
+                continue
+            stream = streams[level]
+            if stream.qualified == 'YES':
+                result += stream.accesses
+        if self.next is not None:
+            result += self.next._collect_stream_qualified(level)
+        return result
+
+    def print_stream_qualified(self):
+        title = list()
+        for i in xrange(3):
+            title.append('L{i}'.format(i=i))
+        row = [self._collect_stream_qualified(level) for level in xrange(3)]
+        table = prettytable.PrettyTable(title)
+        table.float_format = '.4'
+        total_accesses = self.calculate_total_mem_accesses()
+        table.add_row([x / float(total_accesses) for x in row])
+        print('total_access is ' + str(total_accesses))
+        print(table)
+
     def _collect_stream_alias(self):
         result = list()
         ignore_stream_classes = {
@@ -394,60 +422,76 @@ class StreamStatistics:
         table.add_row([x / total_accesses for x in summed_accesses])
         print(table)
 
-    def print_stats(self):
+    def _collect_chosen_level(self):
+        max_level = 0
+        result = [0] * max_level
+        for inst in self.inst_to_loop_level:
+            streams = self.inst_to_loop_level[inst]
+            for i in xrange(min(max_level, len(streams))):
+                stream = streams[i]
+                if stream.chosen == 'YES':
+                    result[i] += stream.accesses
+                    break
+        if self.next is not None:
+            next_result = self.next._collect_chosen_level()
+            for i in xrange(max_level):
+                result += next_result[i]
+        return result
+
+    def print_chosen_level(self):
+        result = self._collect_chosen_level()
+        title = list()
+        for i in xrange(len(result)):
+            title.append('L{i}'.format(i=i))
+        total_accesses = self.calculate_total_mem_accesses()
+        table = prettytable.PrettyTable(title)
+        table.add_row([float(x) / total_accesses for x in result])
+
+    def _collect_chosen_stream(self):
+        result = list()
+        for inst in self.inst_to_loop_level:
+            streams = self.inst_to_loop_level[inst]
+            for i in xrange(len(streams)):
+                stream = streams[i]
+                if stream.chosen == 'YES':
+                    result.append(stream)
+                    break
+        if self.next is not None:
+            result += self.next._collect_chosen_stream()
+        return result
+
+    def print_chosen_len(self):
+        streams = self._collect_chosen_stream()
         table = prettytable.PrettyTable([
-            'ConstStream',
-            'LinearStream',
-            'QuardricStream',
-            'Indirect',
-            'AvgIndirectBase',
-            'AvgIndirectAddr',
-            'ChosenIndirect',
-            'ChosenStream',
-            'RemovedAddrInsts',
-            'Footprint',
-            'Reuse',
+            '<10',
+            '<50',
+            '<100',
+            '<1000',
+            'inf'
         ])
         table.float_format = '.4'
-        total_mem_insts = self.stats['DynMemInstCount']
-        const_stream = (self.stats['ConstantCount'] /
-                        total_mem_insts)
-
-        linear_stream = (self.stats['LinearCount'] /
-                         total_mem_insts)
-
-        quardric_stream = (self.stats['QuardricCount'] /
-                           total_mem_insts)
-
-        chosen_indirect_stream = (self.stats['IndirectCount'] /
-                                  total_mem_insts)
-
-        add_rec_stream = ((self.stats['AddRecLoadCount'] + self.stats['AddRecStoreCount']) /
-                          total_mem_insts)
-
-        removed_addr_insts = (self.stats['RemovedAddrInstCount'] /
-                              self.stats['TracedDynInstCount'])
-
-        out_of_region = self.calculate_out_of_region() / total_mem_insts
-
-        indirect_accesses, indirect_baseloads, indirect_addr_insts = self.calculate_indirect()
-
-        footprint, reuse = self.calculate_footprint()
-
-        table.add_row([
-            const_stream,
-            linear_stream,
-            quardric_stream,
-            indirect_accesses / total_mem_insts,
-            indirect_baseloads,
-            indirect_addr_insts,
-            chosen_indirect_stream,
-            const_stream + linear_stream + quardric_stream + chosen_indirect_stream,
-            removed_addr_insts,
-            footprint,
-            reuse,
-        ])
+        summed_accesses = [0, 0, 0, 0, 0]
+        for stream in streams:
+            accesses = stream.accesses
+            streams = stream.streams
+            if accesses == 0 or streams == 0:
+                continue
+            avg_len = float(accesses) / float(streams)
+            if avg_len < 10.0:
+                summed_accesses[0] += accesses
+            elif avg_len < 50.0:
+                summed_accesses[1] += accesses
+            elif avg_len < 100.0:
+                summed_accesses[2] += accesses
+            elif avg_len < 1000.0:
+                summed_accesses[3] += accesses
+            else:
+                summed_accesses[4] += accesses
+        print summed_accesses
+        total_accesses = self.calculate_total_mem_accesses() 
+        table.add_row([x / total_accesses for x in summed_accesses])
         print(table)
+        
 
     def print_access(self):
         vals = list(self.accesses.values())

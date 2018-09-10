@@ -10,7 +10,8 @@ import os
 class TestHelloWorldBenchmark(Benchmark):
     def __init__(self):
         super(TestHelloWorldBenchmark, self).__init__(
-            name='hello.a', raw_bc='all.bc', links=[])
+            name='hello.a', raw_bc='all.bc', links=[],
+            trace_func='tri_add')
 
         self.work_path = os.path.join(
             C.LLVM_TDG_DIR,
@@ -36,7 +37,7 @@ class TestHelloWorldBenchmark(Benchmark):
         os.chdir(self.work_path)
 
         Util.call_helper([
-            'clang',
+            C.CC,
             '-emit-llvm',
             '-S',
             '-O1',
@@ -49,7 +50,7 @@ class TestHelloWorldBenchmark(Benchmark):
         ])
 
         Util.call_helper([
-            'llvm-link',
+            C.LLVM_LINK,
             'a.ll',
             'dump.ll',
             '-o',
@@ -57,7 +58,7 @@ class TestHelloWorldBenchmark(Benchmark):
         ])
 
         Util.call_helper([
-            'opt',
+            C.OPT,
             '-instnamer',
             'all.bc',
             '-o',
@@ -65,7 +66,7 @@ class TestHelloWorldBenchmark(Benchmark):
         ])
 
         Util.call_helper([
-            'llvm-dis',
+            C.LLVM_DIS,
             'all.bc',
         ])
         os.chdir(self.cwd)
@@ -105,6 +106,7 @@ class TestHelloWorldBenchmark(Benchmark):
             result,
         ])
         os.chdir(self.cwd)
+
 
 class TestHelloWorldBenchmarks:
     def __init__(self):
