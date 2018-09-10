@@ -156,6 +156,7 @@ build_datagraph_debugs = {
         # 'DataGraph',
         'LoopUtils',
         # 'MemoryAccessPattern',
+        'TDGSerializer',
     ],
     'replay': [],
     'adfa': [],
@@ -215,9 +216,16 @@ def main(options):
     job_scheduler.run()
 
     for benchmark in benchmarks:
-        tdgs = benchmark.get_tdgs('stream')
-        tdg_stats = [tdg + '.stats.txt' for tdg in tdgs]
-        # stream_stats = StreamStatistics.StreamStatistics(tdg_stats[0])
+        tdgs = benchmark.get_tdgs(options.transform_passes[0])
+
+        tdg_stats = list()
+        for i in xrange(len(tdgs)):
+            if options.trace_id:
+                if i not in options.trace_id:
+                    # Ignore those traces if not specified
+                    continue
+            tdg_stats.append(tdgs[i] + '.stats.txt')
+
         stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
         print('-------------------------- ' + benchmark.get_name())
         # stream_stats.print_stats()
@@ -225,7 +233,10 @@ def main(options):
         # stream_stats.print_access()
         # stream_stats.print_stream_length()
         # stream_stats.print_stream_addr()
-        stream_stats.print_stream_alias()
+        # stream_stats.print_stream_alias()
+        stream_stats.print_stream_qualified()
+        stream_stats.print_chosen_level()
+        stream_stats.print_chosen_len()
         # stream_stats.dump_csv(os.path.join(
         #     C.LLVM_TDG_RESULT_DIR,
         #     benchmark.get_name() + '.stream.stats.csv'

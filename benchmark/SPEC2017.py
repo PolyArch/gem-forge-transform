@@ -36,6 +36,9 @@ class SPEC2017Benchmark(Benchmark):
         self.trace_stdlib = False
         self.cwd = os.getcwd()
 
+        self.build_system = 'gclang'
+        self.build_system = 'clang'
+
         # Check if build dir and run dir exists.
         if not (os.path.isdir(self.get_build_path()) and os.path.isdir(self.get_run_path())):
             self.build_raw_bc()
@@ -63,6 +66,16 @@ class SPEC2017Benchmark(Benchmark):
     def get_name(self):
         return 'spec.' + self.work_load
 
+    def get_build_label(self):
+        return 'LLVM_TDG_{build_system}'.format(
+            build_system=self.build_system.upper()
+        )
+
+    def get_config_file(self):
+        return '{build_system}-llvm-linux-x86_64.cfg'.format(
+            build_system=self.build_system
+        )
+
     def get_build_path(self):
         return os.path.join(
             self.spec,
@@ -70,14 +83,19 @@ class SPEC2017Benchmark(Benchmark):
             'CPU',
             self.work_load,
             'build',
-            'build_base_LLVM_TDG-m64.0000'
+            'build_base_{label}-m64.0000'.format(
+                label=self.get_build_label())
         )
 
     def get_run_path(self):
         if self.work_load.endswith('_s'):
-            run_dirname = 'run_base_refspeed_LLVM_TDG-m64.0000'
+            run_dirname = 'run_base_refspeed_{label}-m64.0000'.format(
+                label=self.get_build_label()
+            )
         else:
-            run_dirname = 'run_base_refrate_LLVM_TDG-m64.0000'
+            run_dirname = 'run_base_refrate_{label}-m64.0000'.format(
+                label=self.get_build_label()
+            )
         return os.path.join(
             self.spec,
             'benchspec',
@@ -111,7 +129,9 @@ class SPEC2017Benchmark(Benchmark):
         fake_cmd = [
             'runcpu',
             '--fake',
-            '--config=ecc-llvm-linux-x86_64',
+            '--config={config}'.format(
+                config=self.get_config_file()
+            ),
             '--tune=base',
             self.work_load
         ]
@@ -132,19 +152,33 @@ class SPEC2017Benchmark(Benchmark):
 
         # If we are going to trace the stdlib.
         raw_bc = self.get_raw_bc()
-        # Extract the bitcode from the binary.
         binary = self.target
         # Special rule for gcc_s, whose binary is sgcc
         if self.target == 'gcc_s':
             binary = 'sgcc'
-        extract_cmd = [
-            'get-bc',
-            '-o',
-            raw_bc,
-            binary
-        ]
-        print('# Extracting bitcode from binary...')
-        Util.call_helper(extract_cmd)
+        if self.build_system == 'gclang':
+            # Extract the bitcode from the binary.
+            extract_cmd = [
+                'get-bc',
+                '-o',
+                raw_bc,
+                binary
+            ]
+            print('# Extracting bitcode from binary...')
+            Util.call_helper(extract_cmd)
+        elif self.build_system == 'clang':
+            # With LTO and save-temps plugin options we should have
+            # {binary}.0.5.precodegen.bc
+            mv_cmd = [
+                'mv',
+                '{binary}.0.5.precodegen.bc'.format(binary=binary),
+                raw_bc
+            ]
+            print('# Renaming precodegen bitcode...')
+            Util.call_helper(mv_cmd)
+        else:
+            # Unknown build system.
+            assert(False)
         if self.trace_stdlib:
             # Link with the llvm bitcode of standard library.
             link_cmd = [
@@ -271,7 +305,7 @@ class SPEC2017Benchmarks:
         #     'links': ['-lm'],
         #     # First 100m insts every 1b insts, skipping the first 3.3b
         #     'start_inst': 33e8,
-        #     'max_inst': 1e8,
+        #     'max_inst': 2e7,
         #     'skip_inst': 9e8,
         #     'end_inst': 34e8,
         #     'n_traces': 1,
@@ -377,17 +411,17 @@ class SPEC2017Benchmarks:
         #     'trace_func': '',
         #     'lang': 'CPP',
         # },
-        # 'leela_s': {
-        #     'name': '641.leela_s',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'leela_s': {
+            'name': '641.leela_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
         # 'namd_r': {
         #     'name': '508.namd_r',
         #     'links': [],
@@ -415,7 +449,7 @@ class SPEC2017Benchmarks:
         # # Throws exception.
         # # Does not work with ellcc as RE.
         # # Need to fix a comparison between integer and pointer error.
-        # Only been able to trace the first one.
+        # # Only been able to trace the first one.
         # 'parest_r': {
         #     'name': '510.parest_r',
         #     'links': [],
@@ -445,17 +479,17 @@ class SPEC2017Benchmarks:
         # # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
         # # Does not throw.
         # # Haven't tested with ellcc.
-        'blender_r': {
-            'name': '526.blender_r',
-            'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 110e8,
-            'n_traces': 10,
-            'trace_func': '',
-            'lang': 'CPP',
-        },
+        # 'blender_r': {
+        #     'name': '526.blender_r',
+        #     'links': [],
+        #     'start_inst': 10e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 110e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        #     'lang': 'CPP',
+        # },
 
 
         # # Not working so far due to setjmp/longjmp.
