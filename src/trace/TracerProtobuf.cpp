@@ -50,7 +50,7 @@ void printFuncEnterImpl(const char *FunctionName) {
 }
 
 void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
-                   char *OpCodeName) {
+                   uint64_t UID, char *OpCodeName) {
   if (protobufTraceEntry.has_func_enter()) {
     // The previous one is func enter.
     // Clear it and allocate a new func enter.
@@ -64,9 +64,13 @@ void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
   // std::cout << "Trace inst " << FunctionName << "::" << BBName
   //           << "::" << OpCodeName << std::endl;
 
-  protobufTraceEntry.mutable_inst()->set_func(FunctionName);
-  protobufTraceEntry.mutable_inst()->set_bb(BBName);
-  protobufTraceEntry.mutable_inst()->set_id(Id);
+  if (UID != 0) {
+    protobufTraceEntry.mutable_inst()->set_uid(UID);
+  } else {
+    protobufTraceEntry.mutable_inst()->set_func(FunctionName);
+    protobufTraceEntry.mutable_inst()->set_bb(BBName);
+    protobufTraceEntry.mutable_inst()->set_id(Id);
+  }
   protobufTraceEntry.mutable_inst()->set_op(OpCodeName);
   protobufTraceEntry.mutable_inst()->clear_params();
   protobufTraceEntry.mutable_inst()->clear_result();

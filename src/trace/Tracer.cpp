@@ -293,7 +293,7 @@ void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
 }
 
 void printInst(const char *FunctionName, const char *BBName, unsigned Id,
-               char *OpCodeName) {
+               uint64_t UID, char *OpCodeName) {
   if (insideMyself) {
     return;
   } else {
@@ -361,7 +361,7 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     }
   }
   if (shouldLog()) {
-    printInstImpl(FunctionName, BBName, Id, OpCodeName);
+    printInstImpl(FunctionName, BBName, Id, UID, OpCodeName);
   }
   insideMyself = false;
   return;

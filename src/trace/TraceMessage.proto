@@ -9,6 +9,7 @@ message DynamicLLVMInstruction {
   repeated string params = 4;
   string result = 5;
   string op = 6;
+  uint64 uid = 7;
 }
 
 // Logs information on entering a function.

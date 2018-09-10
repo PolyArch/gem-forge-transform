@@ -20,7 +20,7 @@ const char *getNewTraceFileName();
 void printFuncEnter(const char *FunctionName, unsigned IsTraced);
 
 void printInst(const char *FunctionName, const char *BBName, unsigned Id,
-               char *OpCodeName);
+               uint64_t UID, char *OpCodeName);
 
 // Predefined tag:
 // 'p' for parameter
@@ -39,7 +39,7 @@ void printFuncEnterEnd();
 void printFuncEnterImpl(const char *FunctionName);
 
 void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
-                   char *OpCodeName);
+                   uint64_t UID, char *OpCodeName);
 
 // Predefined tag:
 // 'p' for parameter
