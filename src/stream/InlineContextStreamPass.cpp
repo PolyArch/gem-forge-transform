@@ -448,8 +448,7 @@ void InlineContextStreamPass::dumpStats(std::ostream &O) {
         AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
         AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
         Updates = Pattern.Updates;
-        Footprint =
-            Stream.getPattern().getFootprint().getNumCacheLinesAccessed();
+        Footprint = Stream.getFootprint().getNumCacheLinesAccessed();
       }
       O << ' ' << AddrPattern;
       O << ' ' << AccPattern;

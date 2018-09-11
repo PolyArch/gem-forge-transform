@@ -1,6 +1,7 @@
-#ifndef LLVM_TDG_STREAM_H
-#define LLVM_TDG_STREAM_H
+#ifndef LLVM_TDG_INLINE_CONTEXT_STREAM_H
+#define LLVM_TDG_INLINE_CONTEXT_STREAM_H
 
+#include "MemoryFootprint.h"
 #include "MemoryPattern.h"
 #include "stream/InlineContext.h"
 
@@ -10,7 +11,7 @@ public:
                       size_t _LoopLevel)
       : CInst(_CInst), CLoop(_CLoop), LoopLevel(_LoopLevel), TotalIters(0),
         TotalAccesses(0), TotalStreams(0), Iters(1), LastAccessIters(0),
-        Pattern(_CInst.Inst) {
+        Pattern() {
     auto Opcode = this->CInst.Inst->getOpcode();
     assert((Opcode == llvm::Instruction::Load ||
             Opcode == llvm::Instruction::Store) &&
@@ -19,6 +20,7 @@ public:
   }
 
   void addAccess(uint64_t Addr) {
+    this->Footprint.access(Addr);
     this->LastAccessIters = this->Iters;
     this->Pattern.addAccess(Addr);
     this->TotalAccesses++;
@@ -42,6 +44,7 @@ public:
   const ContextLoop &getContextLoop() const { return this->CLoop; }
   const ContextInst &getContextInst() const { return this->CInst; }
   size_t getLoopLevel() const { return this->LoopLevel; }
+  const MemoryFootprint &getFootprint() const { return this->Footprint; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
   size_t getTotalStreams() const { return this->TotalStreams; }
@@ -58,6 +61,7 @@ private:
   const ContextInst CInst;
   ContextLoop CLoop;
   const size_t LoopLevel;
+  MemoryFootprint Footprint;
   std::unordered_set<ContextInst> BaseLoads;
   std::unordered_set<ContextInst> AddrInsts;
 

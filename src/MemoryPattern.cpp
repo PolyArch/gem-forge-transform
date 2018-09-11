@@ -372,12 +372,6 @@ void MemoryPattern::addAccess(uint64_t Addr) {
 
   this->initialize();
 
-  this->Footprint.access(Addr);
-
-  if (this->MemInst->getName() == "tmp14") {
-    DEBUG(llvm::errs() << "tmp14 accessed " << Addr << '\n');
-  }
-
   for (auto FSM : this->ComputingFSMs) {
     FSM->addAccess(Addr);
   }
@@ -395,18 +389,6 @@ void MemoryPattern::endStream() {
   for (auto FSM : this->ComputingFSMs) {
     if (FSM->getState() == AccessPatternFSM::StateT::SUCCESS) {
 
-      if (this->MemInst->getName() == "tmp14") {
-        DEBUG(
-            llvm::errs() << "tmp14 has access pattern "
-                         << formatAccessPattern(FSM->getAccessPattern())
-                         << " with address pattern "
-                         << formatAddressPattern(
-                                FSM->getAddressPatternFSM().getAddressPattern())
-                         << " with accesses " << FSM->Accesses
-                         << " with updates "
-                         << FSM->getAddressPatternFSM().Updates << '\n');
-      }
-
       if (NewFSM == nullptr) {
         NewFSM = FSM;
         NewAddrPattern = FSM->getAddressPatternFSM().getAddressPattern();
@@ -421,16 +403,6 @@ void MemoryPattern::endStream() {
         }
       }
     }
-  }
-
-  if (this->MemInst->getName() == "tmp14") {
-    DEBUG(
-        llvm::errs() << "tmp14 picked access pattern "
-                     << formatAccessPattern(NewFSM->getAccessPattern())
-                     << " with address pattern "
-                     << formatAddressPattern(
-                            NewFSM->getAddressPatternFSM().getAddressPattern())
-                     << '\n');
   }
 
   if (this->ComputedPatternPtr == nullptr) {

@@ -1,12 +1,9 @@
 #ifndef LLVM_TDG_MEMORY_ACCESS_PATTERN_H
 #define LLVM_TDG_MEMORY_ACCESS_PATTERN_H
 
-#include "MemoryFootprint.h"
-
-#include "llvm/IR/Instruction.h"
-
 #include <list>
 #include <unordered_map>
+#include <vector>
 
 /**
  * This class try to compute the dynamic memory stream within a loop.
@@ -62,8 +59,7 @@ public:
     RANDOM,
   };
 
-  MemoryPattern(const llvm::Instruction *_MemInst)
-      : MemInst(_MemInst), ComputedPatternPtr(nullptr) {}
+  MemoryPattern() : ComputedPatternPtr(nullptr) {}
   ~MemoryPattern() {
     if (this->ComputedPatternPtr != nullptr) {
       delete this->ComputedPatternPtr;
@@ -97,8 +93,6 @@ public:
    * that is lower than a threshold, we think this is random pattern?
    */
   void finalizePattern();
-
-  const MemoryFootprint &getFootprint() const { return this->Footprint; }
 
   bool computed() const;
 
@@ -287,10 +281,6 @@ private:
       }
     }
   };
-
-  const llvm::Instruction *MemInst;
-
-  MemoryFootprint Footprint;
 
   /**
    * Representing an ongoing computation.
