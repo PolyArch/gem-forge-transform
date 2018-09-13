@@ -127,8 +127,11 @@ private:
     virtual void update(uint64_t Addr) = 0;
     virtual void updateMissing() = 0;
 
-    // Some helper functions
-    static std::pair<uint64_t, int64_t>
+    /**
+     * Helper function to compute the linear stride.
+     * The result is valid iff. the 3rd field is true.
+     */
+    static std::pair<bool, std::pair<uint64_t, int64_t>>
     computeLinearBaseStride(const std::pair<uint64_t, uint64_t> &Record0,
                             const std::pair<uint64_t, uint64_t> &Record1) {
       auto Idx0 = Record0.first;
@@ -138,17 +141,18 @@ private:
       auto AddrDiff = Addr1 - Addr0;
       auto IdxDiff = Idx1 - Idx0;
       if (AddrDiff == 0 || IdxDiff == 0) {
-        return std::make_pair(static_cast<uint64_t>(0),
-                              static_cast<int64_t>(0));
+        return std::make_pair(false, std::make_pair(static_cast<uint64_t>(0),
+                                                    static_cast<int64_t>(0)));
       }
       if (AddrDiff % IdxDiff != 0) {
-        return std::make_pair(static_cast<uint64_t>(0),
-                              static_cast<int64_t>(0));
+        return std::make_pair(false, std::make_pair(static_cast<uint64_t>(0),
+                                                    static_cast<int64_t>(0)));
       }
 
       int64_t Stride = AddrDiff / IdxDiff;
-      return std::make_pair(static_cast<uint64_t>(Addr0 - Idx0 * Stride),
-                            Stride);
+      return std::make_pair(
+          true, std::make_pair(static_cast<uint64_t>(Addr0 - Idx0 * Stride),
+                               static_cast<int64_t>(Stride)));
     }
   };
 

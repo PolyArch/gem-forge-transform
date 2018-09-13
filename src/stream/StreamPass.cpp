@@ -178,8 +178,10 @@ protected:
                       llvm::Instruction *Instruction);
   void activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
                         llvm::PHINode *PHINode);
-  void initializeStreamIfNecessary(const LoopStackT &LoopStack,
-                                   llvm::Instruction *Inst);
+  void initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
+                                      llvm::Instruction *Inst);
+  void initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
+                                     llvm::PHINode *Inst);
 
   /*************************************************************
    * Stream Choice.
@@ -195,7 +197,6 @@ protected:
   /*************************************************************
    * Stream transform.
    *************************************************************/
-  void splitIVStreamFromDirectStream();
   void makeStreamTransformPlan();
   void makeIVStreamTransformPlan(InductionVarStream *IVStream);
   void transformStream();
@@ -203,7 +204,7 @@ protected:
   std::unordered_map<llvm::Instruction *, std::list<MemStream>>
       InstMemStreamMap;
 
-  std::unordered_map<const llvm::PHINode *, InductionVarStream>
+  std::unordered_map<const llvm::PHINode *, std::list<InductionVarStream>>
       PHINodeIVStreamMap;
 
   std::unordered_map<const llvm::Loop *,
@@ -216,7 +217,7 @@ protected:
   std::unordered_set<const llvm::Loop *> InitializedLoops;
   std::unordered_map<const llvm::Loop *,
                      std::unordered_set<llvm::Instruction *>>
-      MemorizedMemoryAccess;
+      MemorizedStreamInst;
   std::unordered_map<const llvm::Loop *, bool> MemorizedLoopContinuous;
 
   std::unordered_map<llvm::Instruction *, uint64_t> MemAccessInstCount;
@@ -230,7 +231,7 @@ protected:
 
 bool StreamPass::initialize(llvm::Module &Module) {
   bool Ret = ReplayTrace::initialize(Module);
-  this->MemorizedMemoryAccess.clear();
+  this->MemorizedStreamInst.clear();
   return Ret;
 }
 
@@ -431,37 +432,38 @@ void StreamPass::dumpStats(std::ostream &O) {
 
   O << "--------------- Loop -----------------\n";
   O << "--------------- IV Stream ------------\n";
-  for (auto &PHINodeIVStreamEntry : this->PHINodeIVStreamMap) {
-    auto &PHINode = PHINodeIVStreamEntry.first;
-    auto &IVStream = PHINodeIVStreamEntry.second;
-    O << LoopUtils::getLoopId(IVStream.getLoop());
-    O << ' ' << LoopUtils::formatLLVMInst(IVStream.getPHIInst());
+  for (auto &PHINodeIVStreamListEntry : this->PHINodeIVStreamMap) {
+    auto &PHINode = PHINodeIVStreamListEntry.first;
+    for (auto &IVStream : PHINodeIVStreamListEntry.second) {
+      O << LoopUtils::getLoopId(IVStream.getLoop());
+      O << ' ' << LoopUtils::formatLLVMInst(IVStream.getPHIInst());
 
-    std::string AddrPattern = "NOT_COMPUTED";
-    std::string AccPattern = "NOT_COMPUTED";
-    size_t Iters = IVStream.getTotalIters();
-    size_t Accesses = IVStream.getTotalAccesses();
-    size_t Updates = 0;
-    size_t StreamCount = IVStream.getTotalStreams();
+      std::string AddrPattern = "NOT_COMPUTED";
+      std::string AccPattern = "NOT_COMPUTED";
+      size_t Iters = IVStream.getTotalIters();
+      size_t Accesses = IVStream.getTotalAccesses();
+      size_t Updates = 0;
+      size_t StreamCount = IVStream.getTotalStreams();
 
-    size_t ComputeInsts = IVStream.getComputeInsts().size();
+      size_t ComputeInsts = IVStream.getComputeInsts().size();
 
-    std::string StreamClass = "whatever";
-    if (IVStream.getPattern().computed()) {
-      const auto &Pattern = IVStream.getPattern().getPattern();
-      AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
-      AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
-      Updates = Pattern.Updates;
+      std::string StreamClass = "whatever";
+      if (IVStream.getPattern().computed()) {
+        const auto &Pattern = IVStream.getPattern().getPattern();
+        AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
+        AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
+        Updates = Pattern.Updates;
+      }
+      O << ' ' << AddrPattern;
+      O << ' ' << AccPattern;
+      O << ' ' << Iters;
+      O << ' ' << Accesses;
+      O << ' ' << Updates;
+      O << ' ' << StreamCount;
+      O << ' ' << StreamClass;
+      O << ' ' << ComputeInsts;
+      O << '\n';
     }
-    O << ' ' << AddrPattern;
-    O << ' ' << AccPattern;
-    O << ' ' << Iters;
-    O << ' ' << Accesses;
-    O << ' ' << Updates;
-    O << ' ' << StreamCount;
-    O << ' ' << StreamClass;
-    O << ' ' << ComputeInsts;
-    O << '\n';
   }
 }
 
@@ -472,8 +474,7 @@ void StreamPass::transform() {
       Stream.finalizePattern();
     }
   }
-  // this->chooseStream();
-  // this->splitIVStreamFromDirectStream();
+  this->chooseStream();
 
   // for (auto &PHINodeIVStreamEntry : this->PHINodeIVStreamMap) {
   //   this->makeIVStreamTransformPlan(&(PHINodeIVStreamEntry.second));
@@ -487,8 +488,8 @@ void StreamPass::transform() {
   // this->transformStream();
 }
 
-void StreamPass::initializeStreamIfNecessary(const LoopStackT &LoopStack,
-                                             llvm::Instruction *Inst) {
+void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
+                                                llvm::Instruction *Inst) {
   {
     // Initialize the global count.
     auto Iter = this->MemAccessInstCount.find(Inst);
@@ -526,6 +527,45 @@ void StreamPass::initializeStreamIfNecessary(const LoopStackT &LoopStack,
     ++LoopIter;
   }
 }
+void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
+                                               llvm::PHINode *Inst) {
+
+  auto Iter = this->PHINodeIVStreamMap.find(Inst);
+  if (Iter == this->PHINodeIVStreamMap.end()) {
+    Iter = this->PHINodeIVStreamMap
+               .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
+                        std::forward_as_tuple())
+               .first;
+  }
+
+  auto &Streams = Iter->second;
+  auto LoopIter = LoopStack.rbegin();
+  for (const auto &Stream : Streams) {
+    if (LoopIter == LoopStack.rend()) {
+      break;
+    }
+    assert(Stream.getLoop() == (*LoopIter) && "Mismatch initialized stream.");
+    ++LoopIter;
+  }
+
+  // Initialize the remaining loops.
+  auto IsInductionVar = [this](llvm::PHINode *PHINode) -> bool {
+    // return this->PHINodeIVStreamMap.count(PHINode) != 0;
+    return false;
+  };
+  while (LoopIter != LoopStack.rend()) {
+    auto LoopLevel = Streams.size();
+    auto Loop = *LoopIter;
+    auto Level = Streams.size();
+    auto ComputeInsts = InductionVarStream::searchComputeInsts(Inst, Loop);
+    if (InductionVarStream::isInductionVarStream(Inst, ComputeInsts)) {
+      Streams.emplace_back(Inst, Loop, Level, std::move(ComputeInsts));
+      DEBUG(llvm::errs() << "Initialize IVStream "
+                         << Streams.back().formatName() << '\n');
+      ++LoopIter;
+    }
+  }
+}
 
 void StreamPass::activateStream(ActiveStreamMapT &ActiveStreams,
                                 llvm::Instruction *Inst) {
@@ -559,24 +599,25 @@ void StreamPass::activateStream(ActiveStreamMapT &ActiveStreams,
 void StreamPass::activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
                                   llvm::PHINode *PHINode) {
   auto PHINodeIVStreamMapIter = this->PHINodeIVStreamMap.find(PHINode);
-  if (PHINodeIVStreamMapIter == this->PHINodeIVStreamMap.end()) {
-    return;
-  }
+  assert(PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end() &&
+         "Failed to look up IV streams to activate.");
 
-  auto *IVStream = &PHINodeIVStreamMapIter->second;
-  const auto &Loop = IVStream->getLoop();
-  auto ActiveIVStreamsIter = ActiveIVStreams.find(Loop);
-  if (ActiveIVStreamsIter == ActiveIVStreams.end()) {
-    ActiveIVStreamsIter =
-        ActiveIVStreams
-            .emplace(std::piecewise_construct, std::forward_as_tuple(Loop),
-                     std::forward_as_tuple())
-            .first;
-  }
-  auto &ActivePHINodeIVStreamMap = ActiveIVStreamsIter->second;
-  if (ActivePHINodeIVStreamMap.count(PHINode) == 0) {
-    // Activate the stream.
-    ActivePHINodeIVStreamMap.emplace(PHINode, IVStream);
+  for (auto &S : PHINodeIVStreamMapIter->second) {
+    auto *IVStream = &S;
+    const auto &Loop = IVStream->getLoop();
+    auto ActiveIVStreamsIter = ActiveIVStreams.find(Loop);
+    if (ActiveIVStreamsIter == ActiveIVStreams.end()) {
+      ActiveIVStreamsIter =
+          ActiveIVStreams
+              .emplace(std::piecewise_construct, std::forward_as_tuple(Loop),
+                       std::forward_as_tuple())
+              .first;
+    }
+    auto &ActivePHINodeIVStreamMap = ActiveIVStreamsIter->second;
+    if (ActivePHINodeIVStreamMap.count(PHINode) == 0) {
+      // Activate the stream.
+      ActivePHINodeIVStreamMap.emplace(PHINode, IVStream);
+    }
   }
 }
 
@@ -589,7 +630,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
 
   if (this->InitializedLoops.count(Loop) == 0) {
     // Find the memory access belongs to this level.
-    std::unordered_set<llvm::Instruction *> MemAccessInsts;
+    std::unordered_set<llvm::Instruction *> StreamInsts;
     const auto &SubLoops = Loop->getSubLoops();
     for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
          BBIter != BBEnd; ++BBIter) {
@@ -611,15 +652,10 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
           continue;
         }
 
-        MemAccessInsts.insert(StaticInst);
+        StreamInsts.insert(StaticInst);
       }
     }
 
-    this->MemorizedMemoryAccess.emplace(
-        std::piecewise_construct, std::forward_as_tuple(Loop),
-        std::forward_as_tuple(std::move(MemAccessInsts)));
-
-    // Build all the induction var streams.
     auto HeaderBB = Loop->getHeader();
     auto PHINodes = HeaderBB->phis();
     for (auto PHINodeIter = PHINodes.begin(), PHINodeEnd = PHINodes.end();
@@ -627,41 +663,31 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
       auto PHINode = &*PHINodeIter;
       auto ComputeInsts = InductionVarStream::searchComputeInsts(PHINode, Loop);
       if (InductionVarStream::isInductionVarStream(PHINode, ComputeInsts)) {
-        this->PHINodeIVStreamMap.emplace(
-            std::piecewise_construct, std::forward_as_tuple(PHINode),
-            std::forward_as_tuple(PHINode, Loop, std::move(ComputeInsts)));
-        DEBUG(llvm::errs() << "Initialized induction variable stream as "
-                           << this->PHINodeIVStreamMap.at(PHINode).format()
-                           << '\n');
+        StreamInsts.insert(PHINode);
       }
     }
+    this->MemorizedStreamInst.emplace(
+        std::piecewise_construct, std::forward_as_tuple(Loop),
+        std::forward_as_tuple(std::move(StreamInsts)));
 
     this->InitializedLoops.insert(Loop);
   }
 
   /**
-   * Activate the induction variable streams.
-   */
-  {
-    auto HeaderBB = Loop->getHeader();
-    auto PHINodes = HeaderBB->phis();
-    for (auto PHINodeIter = PHINodes.begin(), PHINodeEnd = PHINodes.end();
-         PHINodeIter != PHINodeEnd; ++PHINodeIter) {
-      auto PHINode = &*PHINodeIter;
-      this->activateIVStream(ActiveIVStreams, PHINode);
-    }
-  }
-
-  /**
    * Initialize and activate the normal streams.
    */
-  auto Iter = this->MemorizedMemoryAccess.find(Loop);
-  assert(Iter != this->MemorizedMemoryAccess.end() &&
+  auto Iter = this->MemorizedStreamInst.find(Loop);
+  assert(Iter != this->MemorizedStreamInst.end() &&
          "An initialized loop should have memorized memory accesses.");
 
   for (auto StaticInst : Iter->second) {
-    this->initializeStreamIfNecessary(LoopStack, StaticInst);
-    this->activateStream(ActiveStreams, StaticInst);
+    if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(StaticInst)) {
+      this->initializeIVStreamIfNecessary(LoopStack, PHINode);
+      this->activateIVStream(ActiveIVStreams, PHINode);
+    } else {
+      this->initializeMemStreamIfNecessary(LoopStack, StaticInst);
+      this->activateStream(ActiveStreams, StaticInst);
+    }
   }
 }
 
@@ -670,7 +696,7 @@ void StreamPass::addAccess(const LoopStackT &LoopStack,
                            DynamicInstruction *DynamicInst) {
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Invalid llvm static instruction.");
-  this->initializeStreamIfNecessary(LoopStack, StaticInst);
+  this->initializeMemStreamIfNecessary(LoopStack, StaticInst);
   this->MemAccessInstCount.at(StaticInst)++;
   this->activateStream(ActiveStreams, StaticInst);
   auto Iter = this->InstMemStreamMap.find(StaticInst);
@@ -742,9 +768,17 @@ void StreamPass::endIter(const LoopStackT &LoopStack,
     if (ActiveStreamsIter != ActiveStreams.end()) {
       for (auto &InstStreamEntry : ActiveStreamsIter->second) {
         auto &Stream = InstStreamEntry.second;
-        assert(Stream->getLoop() == EndedLoop &&
-               "Mismatch on loop for streams in ActiveStreams.");
-        Stream->endIter();
+        if (Stream->getLoopLevel() != 0) {
+          continue;
+        }
+        auto Inst = Stream->getInst();
+        for (auto &S :
+             this->InstMemStreamMap.at(const_cast<llvm::Instruction *>(Inst))) {
+          S.endIter();
+          if (S.getLoop() == LoopStack.front()) {
+            break;
+          }
+        }
       }
     }
   }
@@ -753,9 +787,18 @@ void StreamPass::endIter(const LoopStackT &LoopStack,
     if (ActiveIVStreamsIter != ActiveIVStreams.end()) {
       for (auto &PHINodeIVStreamEntry : ActiveIVStreamsIter->second) {
         auto &IVStream = PHINodeIVStreamEntry.second;
-        assert(IVStream->getLoop() == EndedLoop &&
-               "Mismatch on loop for streams in ActiveStreams.");
-        IVStream->endIter();
+        if (IVStream->getLevel() != 0) {
+          continue;
+        }
+        auto Inst = IVStream->getPHIInst();
+        for (auto &S : this->PHINodeIVStreamMap.at(Inst)) {
+          DEBUG(llvm::errs()
+                << "end iter for IVStream " << S.formatName() << '\n');
+          S.endIter();
+          if (S.getLoop() == LoopStack.front()) {
+            break;
+          }
+        }
       }
     }
   }
@@ -878,22 +921,20 @@ void StreamPass::analyzeStream() {
      * Handle the value for induction variable streams.
      */
     if (!LoopStack.empty()) {
-      auto TopLoop = LoopStack.back();
-      auto ActiveIVStreamsIter = ActiveIVStreams.find(TopLoop);
-      if (ActiveIVStreamsIter != ActiveIVStreams.end()) {
-        auto &ActivePHINodeIVStreamMap = ActiveIVStreamsIter->second;
-        for (unsigned OperandIdx = 0,
-                      NumOperands = NewStaticInst->getNumOperands();
-             OperandIdx != NumOperands; ++OperandIdx) {
-          auto OperandValue = NewStaticInst->getOperand(OperandIdx);
-          if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
-            auto ActivePHINodeIVStreamMapIter =
-                ActivePHINodeIVStreamMap.find(PHINode);
-            if (ActivePHINodeIVStreamMapIter !=
-                ActivePHINodeIVStreamMap.end()) {
-              uint64_t Value = std::stoul(
-                  NewDynamicInst->DynamicOperands[OperandIdx]->Value);
-              ActivePHINodeIVStreamMapIter->second->addAccess(Value);
+      for (unsigned OperandIdx = 0,
+                    NumOperands = NewStaticInst->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        auto OperandValue = NewStaticInst->getOperand(OperandIdx);
+        if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
+          auto PHINodeIVStreamMapIter = this->PHINodeIVStreamMap.find(PHINode);
+          if (PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end()) {
+            uint64_t Value =
+                std::stoul(NewDynamicInst->DynamicOperands[OperandIdx]->Value);
+            for (auto &IVStream : PHINodeIVStreamMapIter->second) {
+              DEBUG(llvm::errs()
+                    << "Add access for IVStream " << IVStream.formatName()
+                    << " value " << Value << '\n');
+              IVStream.addAccess(Value);
             }
           }
         }
@@ -989,10 +1030,14 @@ void StreamPass::buildStreamDependenceGraph() {
         auto PHINodeIVStreamMapIter =
             this->PHINodeIVStreamMap.find(BasePHINode);
         if (PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end()) {
-          DEBUG(llvm::errs()
-                << "Add IV dependence " << S.formatName() << " -> "
-                << PHINodeIVStreamMapIter->second.formatName() << "\n");
-          S.addBaseStream(&PHINodeIVStreamMapIter->second);
+          for (auto &IVStream : PHINodeIVStreamMapIter->second) {
+            if (IVStream.getLoop() != Loop) {
+              continue;
+            }
+            DEBUG(llvm::errs() << "Add IV dependence " << S.formatName()
+                               << " -> " << IVStream.formatName() << "\n");
+            S.addBaseStream(&IVStream);
+          }
         }
       }
 
@@ -1016,17 +1061,18 @@ void StreamPass::markQualifiedStream() {
   /**
    * First check all the IV streams.
    */
-  for (auto &PHINodeIVStreamEntry : this->PHINodeIVStreamMap) {
-    auto &IVStream = PHINodeIVStreamEntry.second;
-    const auto &Pattern = IVStream.getPattern();
-    if (!Pattern.computed()) {
-      // Only consider the computed pattern.
-      continue;
-    }
-    auto AddrPattern = Pattern.getPattern().AddrPattern;
-    if (AddrPattern <= MemoryPattern::AddressPattern::QUARDRIC) {
-      // This is affine induction variable.
-      Queue.emplace_back(&IVStream);
+  for (auto &PHINodeIVStreamListEntry : this->PHINodeIVStreamMap) {
+    for (auto &IVStream : PHINodeIVStreamListEntry.second) {
+      const auto &Pattern = IVStream.getPattern();
+      if (!Pattern.computed()) {
+        // Only consider the computed pattern.
+        continue;
+      }
+      auto AddrPattern = Pattern.getPattern().AddrPattern;
+      if (AddrPattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+        // This is affine induction variable.
+        Queue.emplace_back(&IVStream);
+      }
     }
   }
   /**
@@ -1110,11 +1156,17 @@ void StreamPass::chooseStream() {
   this->markQualifiedStream();
 
   // First pick all the IVStreams.
-  for (auto &PHINodeIVStreamEntry : this->PHINodeIVStreamMap) {
-    auto &IVStream = PHINodeIVStreamEntry.second;
-    if (IVStream.isQualified()) {
-      this->addChosenStream(IVStream.getLoop(), IVStream.getPHIInst(),
-                            &IVStream);
+  for (auto &PHINodeIVStreamListEntry : this->PHINodeIVStreamMap) {
+    auto &IVStreams = PHINodeIVStreamListEntry.second;
+    InductionVarStream *ChosenStream = nullptr;
+    for (auto &S : IVStreams) {
+      if (S.isQualified()) {
+        ChosenStream = &S;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      this->addChosenStream(ChosenStream->getLoop(), ChosenStream->getPHIInst(),
+                            ChosenStream);
     }
   }
 
@@ -1200,7 +1252,8 @@ void StreamPass::makeStreamTransformPlan() {
   //     DEBUG(llvm::errs() << "make stream transform plan at level "
   //                        << LoopUtils::getLoopId(S->getLoop()) << " for
   //                        stream "
-  //                        << LoopUtils::formatLLVMInst(S->getInst()) << '\n');
+  //                        << LoopUtils::formatLLVMInst(S->getInst()) <<
+  //                        '\n');
 
   //     for (const auto &AddrInst : S->getAddrInsts()) {
   //       // Simply mark them as delete.
@@ -1251,7 +1304,8 @@ void StreamPass::makeStreamTransformPlan() {
   //     // Mark myself as DELETE (load) or STORE (store).
   //     auto InstPlanIter =
   //         this->InstPlanMap
-  //             .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
+  //             .emplace(std::piecewise_construct,
+  //             std::forward_as_tuple(Inst),
   //                      std::forward_as_tuple())
   //             .first;
   //     if (llvm::isa<llvm::StoreInst>(Inst)) {
