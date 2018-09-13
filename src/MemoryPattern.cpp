@@ -46,13 +46,13 @@ void MemoryPattern::LinearAddressPatternFSM::update(uint64_t Addr) {
   if (this->State == UNKNOWN) {
     this->ConfirmedAddrs.emplace_back(this->Updates - 1, Addr);
     if (this->ConfirmedAddrs.size() == 2) {
-      auto BaseStridePair = AddressPatternFSM::computeLinearBaseStride(
+      auto BaseStrideResult = AddressPatternFSM::computeLinearBaseStride(
           this->ConfirmedAddrs.front(), this->ConfirmedAddrs.back());
-      this->Base = BaseStridePair.first;
-      this->Stride = BaseStridePair.second;
-      if (this->Base == 0 || this->Stride == 0) {
+      if (BaseStrideResult.first == false) {
         this->State = FAILURE;
       } else {
+        this->Base = BaseStrideResult.second.first;
+        this->Stride = BaseStrideResult.second.second;
         this->I = this->Updates - 1;
         this->State = SUCCESS;
         // DEBUG(llvm::errs() << "Stride " << this->Stride << " Base "
@@ -111,15 +111,19 @@ void MemoryPattern::QuardricAddressPatternFSM::update(uint64_t Addr) {
         // the next row.
         auto SecondPairIter = this->ConfirmedAddrs.begin();
         SecondPairIter++;
-        auto BaseStridePair = AddressPatternFSM::computeLinearBaseStride(
+        auto BaseStrideResult = AddressPatternFSM::computeLinearBaseStride(
             this->ConfirmedAddrs.front(), *SecondPairIter);
-        if (BaseStridePair.first == 0 || BaseStridePair.second == 0) {
+        if (!BaseStrideResult.first) {
           DEBUG(llvm::errs() << "Failed to compute the base stride for "
                                 "quardric address pattern.\n");
+          DEBUG(llvm::errs() << this->ConfirmedAddrs.front().first << " "
+                             << this->ConfirmedAddrs.front().second << '\n');
+          DEBUG(llvm::errs() << SecondPairIter->first << " "
+                             << SecondPairIter->second << '\n');
           this->State = FAILURE;
         } else {
-          this->Base = BaseStridePair.first;
-          this->StrideI = BaseStridePair.second;
+          this->Base = BaseStrideResult.second.first;
+          this->StrideI = BaseStrideResult.second.second;
           this->I = 0;
           this->NI = this->Updates - 1;
           this->StrideJ = Addr - this->Base;

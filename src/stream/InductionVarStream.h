@@ -46,6 +46,7 @@ public:
   void endIter() {
     if (this->LastAccessIters != this->Iters) {
       this->Pattern.addMissingAccess();
+      this->LastAccessIters = this->Iters;
     }
     this->Iters++;
     this->TotalIters++;
@@ -83,9 +84,9 @@ protected:
 class InductionVarStream : public Stream {
 public:
   InductionVarStream(
-      const llvm::PHINode *_PHIInst, const llvm::Loop *_Loop,
+      const llvm::PHINode *_PHIInst, const llvm::Loop *_Loop, size_t _Level,
       std::unordered_set<const llvm::Instruction *> &&_ComputeInsts)
-      : Stream(TypeT::IV), PHIInst(_PHIInst), Loop(_Loop),
+      : Stream(TypeT::IV), PHIInst(_PHIInst), Loop(_Loop), Level(_Level),
         ComputeInsts(std::move(_ComputeInsts)) {}
 
   InductionVarStream(const InductionVarStream &Other) = delete;
@@ -95,12 +96,14 @@ public:
 
   const llvm::PHINode *getPHIInst() const { return this->PHIInst; }
   const llvm::Loop *getLoop() const { return this->Loop; }
+  size_t getLevel() const { return this->Level; }
   const std::unordered_set<const llvm::Instruction *> &getComputeInsts() const {
     return this->ComputeInsts;
   }
 
   void addAccess(uint64_t Value) {
     if (this->LastAccessIters != this->Iters) {
+      llvm::errs() << this->formatName() << " added value " << Value << '\n';
       this->Pattern.addAccess(Value);
       this->LastAccessIters = this->Iters;
       this->TotalAccesses++;
@@ -161,6 +164,7 @@ public:
 private:
   const llvm::PHINode *PHIInst;
   const llvm::Loop *Loop;
+  const size_t Level;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
 };
 #endif
