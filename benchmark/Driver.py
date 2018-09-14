@@ -155,7 +155,8 @@ build_datagraph_debugs = {
         'StreamPass',
         # 'DataGraph',
         'LoopUtils',
-        # 'MemoryAccessPattern',
+        # 'MemoryPattern',
+        'InductionVarStream'
         'TDGSerializer',
     ],
     'replay': [],

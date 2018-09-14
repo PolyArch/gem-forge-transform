@@ -1,105 +1,16 @@
-#ifndef LLVM_TDG_INDUCTION_VAR_STREAM_H
-#define LLVM_TDG_INDUCTION_VAR_STREAM_H
+#ifndef LLVM_TDG_STREAM_INDUCTION_VAR_STREAM_H
+#define LLVM_TDG_STREAM_INDUCTION_VAR_STREAM_H
 
-#include "LoopUtils.h"
-#include "MemoryPattern.h"
-#include "Utils.h"
-
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Instruction.h"
+#include "stream/Stream.h"
 
 #include <sstream>
-#include <string>
-#include <unordered_set>
-
-class Stream {
-public:
-  enum TypeT {
-    IV,
-    MEM,
-  };
-  const TypeT Type;
-  Stream(TypeT _Type)
-      : Type(_Type), Qualified(false), TotalIters(0), TotalAccesses(0),
-        TotalStreams(0), Iters(1), LastAccessIters(0), Pattern() {}
-
-  bool hasNoBaseStream() const { return this->BaseStreams.empty(); }
-  const std::unordered_set<Stream *> &getBaseStreams() const {
-    return this->BaseStreams;
-  }
-  const std::unordered_set<Stream *> &getDependentStreams() const {
-    return this->DependentStreams;
-  }
-  void markQualified() { this->Qualified = true; }
-  bool isQualified() const { return this->Qualified; }
-  size_t getTotalIters() const { return this->TotalIters; }
-  size_t getTotalAccesses() const { return this->TotalAccesses; }
-  size_t getTotalStreams() const { return this->TotalStreams; }
-  const MemoryPattern &getPattern() const { return this->Pattern; }
-
-  void addBaseStream(Stream *Other) {
-    // assert(Other != this && "Self dependent streams is not allowed.");
-    this->BaseStreams.insert(Other);
-    Other->DependentStreams.insert(this);
-  }
-
-  void endIter() {
-    if (this->LastAccessIters != this->Iters) {
-      this->Pattern.addMissingAccess();
-      this->LastAccessIters = this->Iters;
-    }
-    this->Iters++;
-    this->TotalIters++;
-  }
-
-  virtual bool isAliased() const { return false; }
-  virtual std::string formatName() const = 0;
-  virtual const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const = 0;
-
-  static bool isStepInst(const llvm::Instruction *Inst) {
-    auto Opcode = Inst->getOpcode();
-    switch (Opcode) {
-    case llvm::Instruction::Add: {
-      return true;
-    }
-    default: { return false; }
-    }
-  }
-
-protected:
-  std::unordered_set<Stream *> BaseStreams;
-  std::unordered_set<Stream *> DependentStreams;
-  bool Qualified;
-  /**
-   * Stores the total iterations for this stream
-   */
-  size_t TotalIters;
-  size_t TotalAccesses;
-  size_t TotalStreams;
-  /**
-   * Maintain the current iteration. Will be reset by endStream() and update by
-   * endIter().
-   * It should start at 1.
-   */
-  size_t Iters;
-  /**
-   * Maintain the iteration when the last addAccess() is called.
-   * When endIter(), we check that LastAccessIters == Iters to detect missint
-   * access in the last iteration.
-   * It should be reset to 0 (should be less than reset value of Iters).
-   */
-  size_t LastAccessIters;
-  MemoryPattern Pattern;
-};
-
 class InductionVarStream : public Stream {
 public:
   InductionVarStream(
-      const llvm::PHINode *_PHIInst, const llvm::Loop *_Loop, size_t _Level,
+      const std::string &_Folder, const llvm::PHINode *_PHIInst,
+      const llvm::Loop *_Loop, size_t _Level,
       std::unordered_set<const llvm::Instruction *> &&_ComputeInsts)
-      : Stream(TypeT::IV), PHIInst(_PHIInst), Loop(_Loop), Level(_Level),
+      : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _Level), PHIInst(_PHIInst),
         ComputeInsts(std::move(_ComputeInsts)) {}
 
   InductionVarStream(const InductionVarStream &Other) = delete;
@@ -108,8 +19,6 @@ public:
   InductionVarStream &operator=(InductionVarStream &&Other) = delete;
 
   const llvm::PHINode *getPHIInst() const { return this->PHIInst; }
-  const llvm::Loop *getLoop() const { return this->Loop; }
-  size_t getLevel() const { return this->Level; }
   const std::unordered_set<const llvm::Instruction *> &
   getComputeInsts() const override {
     return this->ComputeInsts;
@@ -145,10 +54,6 @@ public:
       const llvm::PHINode *PHINode,
       const std::unordered_set<const llvm::Instruction *> &ComputeInsts);
 
-  std::string formatName() const override {
-    return "(IV " + LoopUtils::getLoopId(this->Loop) + " " +
-           LoopUtils::formatLLVMInst(this->PHIInst) + ")";
-  }
 
   std::string format() const {
     std::stringstream ss;
@@ -166,8 +71,6 @@ public:
 
 private:
   const llvm::PHINode *PHIInst;
-  const llvm::Loop *Loop;
-  const size_t Level;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
 };
 #endif

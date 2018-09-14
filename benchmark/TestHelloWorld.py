@@ -11,7 +11,11 @@ class TestHelloWorldBenchmark(Benchmark):
     def __init__(self):
         super(TestHelloWorldBenchmark, self).__init__(
             name='hello.a', raw_bc='all.bc', links=[],
-            trace_func='tri_add')
+            # trace_func='sparse_vec_multi',
+            trace_func='sum2d',
+            # trace_func='ivstream_test',
+            # trace_func='tri_add',
+        )
 
         self.work_path = os.path.join(
             C.LLVM_TDG_DIR,

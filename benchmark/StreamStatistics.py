@@ -218,6 +218,9 @@ class StreamStatistics:
             'RECURSIVE': 0,
             'AFFINE': 0,
             'RANDOM': 0,
+            'AFFINE_IV': 0,
+            'RANDOM_IV': 0,
+            'MULTI_IV': 0,
             'AFFINE_BASE': 0,
             'RANDOM_BASE': 0,
             'POINTER_CHASE': 0,
@@ -240,6 +243,9 @@ class StreamStatistics:
             'IndirectContinuous',
             'L0_AFFINE',
             'L0_RAMDOM',
+            'L0_AFFINE_IV',
+            'L0_RANDOM_IV',
+            'L0_MULTI_IV',
             'L0_AFFINE_BASE',
             'L0_RANDOM_BASE',
             'L0_POINTER_CHASE',
@@ -265,6 +271,9 @@ class StreamStatistics:
             row += [
                 result['AFFINE'] / total_mem_insts,
                 result['RANDOM'] / total_mem_insts,
+                result['AFFINE_IV'] / total_mem_insts,
+                result['RANDOM_IV'] / total_mem_insts,
+                result['MULTI_IV'] / total_mem_insts,
                 result['AFFINE_BASE'] / total_mem_insts,
                 result['RANDOM_BASE'] / total_mem_insts,
                 result['POINTER_CHASE'] / total_mem_insts,
@@ -488,10 +497,9 @@ class StreamStatistics:
             else:
                 summed_accesses[4] += accesses
         print summed_accesses
-        total_accesses = self.calculate_total_mem_accesses() 
+        total_accesses = self.calculate_total_mem_accesses()
         table.add_row([x / total_accesses for x in summed_accesses])
         print(table)
-        
 
     def print_access(self):
         vals = list(self.accesses.values())

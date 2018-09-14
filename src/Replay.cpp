@@ -26,6 +26,10 @@ static llvm::cl::opt<std::string>
     OutputDataGraphFileName("output-datagraph",
                             llvm::cl::desc("Output datagraph file name."));
 
+static llvm::cl::opt<std::string> OutputExtraFolderPath(
+    "output-extra-folder-path",
+    llvm::cl::desc("Output extra information folder path, excluding the /"));
+
 #define DEBUG_TYPE "ReplayPass"
 namespace {
 
@@ -95,11 +99,14 @@ public:
 };
 
 ReplayTrace::ReplayTrace(char _ID)
-    : llvm::ModulePass(_ID), Trace(nullptr),
-      OutTraceName("llvm_trace_gem5.txt"), Serializer(nullptr),
+    : llvm::ModulePass(_ID), Trace(nullptr), OutTraceName("llvm.tdg"),
+      OutputExtraFolderPath("llvm.tdg.extra"), Serializer(nullptr),
       CacheWarmerPtr(nullptr) {
   if (OutputDataGraphFileName.getNumOccurrences() == 1) {
     this->OutTraceName = OutputDataGraphFileName.getValue();
+  }
+  if (::OutputExtraFolderPath.getNumOccurrences() == 1) {
+    this->OutputExtraFolderPath = ::OutputExtraFolderPath.getValue();
   }
 }
 

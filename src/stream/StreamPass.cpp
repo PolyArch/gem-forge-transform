@@ -1,110 +1,14 @@
 
-#include "MemoryFootprint.h"
-#include "MemoryPattern.h"
 #include "Replay.h"
 #include "Utils.h"
 #include "stream/InductionVarStream.h"
+#include "stream/MemStream.h"
 
 #include <sstream>
 
 #define DEBUG_TYPE "StreamPass"
 
 namespace {
-
-class MemStream : public Stream {
-public:
-  MemStream(const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
-            size_t _LoopLevel,
-            std::function<bool(llvm::PHINode *)> IsInductionVar)
-      : Stream(TypeT::MEM), Inst(_Inst), Loop(_Loop), LoopLevel(_LoopLevel),
-        StartId(DynamicInstruction::InvalidId) {
-    assert(Utils::isMemAccessInst(this->Inst) &&
-           "Should be load/store instruction to build a stream.");
-    this->searchAddressComputeInstructions(IsInductionVar);
-  }
-
-  void addAccess(uint64_t Addr, DynamicInstruction::DynamicId DynamicId) {
-    if (this->StartId == DynamicInstruction::InvalidId) {
-      this->StartId = DynamicId;
-    }
-    this->Footprint.access(Addr);
-    this->LastAccessIters = this->Iters;
-    this->Pattern.addAccess(Addr);
-    this->TotalAccesses++;
-  }
-
-  void addMissingAccess() { this->Pattern.addMissingAccess(); }
-
-  void endStream() {
-    this->Pattern.endStream();
-    this->Iters = 1;
-    this->LastAccessIters = 0;
-    this->TotalStreams++;
-    this->StartId = DynamicInstruction::InvalidId;
-  }
-
-  void addAliasInst(llvm::Instruction *AliasInst) {
-    this->AliasInsts.insert(AliasInst);
-  }
-
-  void finalizePattern() { this->Pattern.finalizePattern(); }
-
-  const llvm::Loop *getLoop() const { return this->Loop; }
-  const llvm::Instruction *getInst() const { return this->Inst; }
-  size_t getLoopLevel() const { return this->LoopLevel; }
-  const MemoryFootprint &getFootprint() const { return this->Footprint; }
-  bool getQualified() const { return this->Qualified; }
-  DynamicInstruction::DynamicId getStartId() const { return this->StartId; }
-
-  bool isIndirect() const { return !this->BaseLoads.empty(); }
-  size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
-  size_t getNumAddrInsts() const { return this->AddrInsts.size(); }
-  const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const override {
-    return this->AddrInsts;
-  }
-  const std::unordered_set<llvm::LoadInst *> &getBaseLoads() const {
-    return this->BaseLoads;
-  }
-  const std::unordered_set<llvm::PHINode *> &getBaseInductionVars() const {
-    return this->BaseInductionVars;
-  }
-  const std::unordered_set<llvm::Instruction *> &getAliasInsts() const {
-    return this->AliasInsts;
-  }
-  bool isAliased() const override {
-    // Check if we have alias with *other* instructions.
-    for (const auto &AliasInst : this->AliasInsts) {
-      if (AliasInst != this->Inst) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  std::string formatName() const override {
-    return "(MEM " + LoopUtils::getLoopId(this->Loop) + " " +
-           LoopUtils::formatLLVMInst(this->Inst) + ")";
-  }
-
-private:
-  const llvm::Instruction *Inst;
-  const llvm::Loop *Loop;
-  const size_t LoopLevel;
-  MemoryFootprint Footprint;
-  std::unordered_set<llvm::LoadInst *> BaseLoads;
-  std::unordered_set<llvm::PHINode *> BaseInductionVars;
-  std::unordered_set<const llvm::Instruction *> AddrInsts;
-  std::unordered_set<llvm::Instruction *> AliasInsts;
-
-  /**
-   * Stores the dynamic id of the first access in the current stream.
-   */
-  DynamicInstruction::DynamicId StartId;
-
-  void searchAddressComputeInstructions(
-      std::function<bool(llvm::PHINode *)> IsInductionVar);
-};
 
 struct StreamTransformPlan {
 public:
@@ -547,7 +451,8 @@ void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
   };
   while (LoopIter != LoopStack.rend()) {
     auto LoopLevel = Streams.size();
-    Streams.emplace_back(Inst, *LoopIter, LoopLevel, IsInductionVar);
+    Streams.emplace_back(this->OutputExtraFolderPath, Inst, *LoopIter,
+                         LoopLevel, IsInductionVar);
     ++LoopIter;
   }
 }
@@ -583,7 +488,8 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
     auto Level = Streams.size();
     auto ComputeInsts = InductionVarStream::searchComputeInsts(Inst, Loop);
     if (InductionVarStream::isInductionVarStream(Inst, ComputeInsts)) {
-      Streams.emplace_back(Inst, Loop, Level, std::move(ComputeInsts));
+      Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop, Level,
+                           std::move(ComputeInsts));
       DEBUG(llvm::errs() << "Initialize IVStream "
                          << Streams.back().formatName() << '\n');
       ++LoopIter;
@@ -823,7 +729,7 @@ void StreamPass::endIter(const LoopStackT &LoopStack,
     if (ActiveIVStreamsIter != ActiveIVStreams.end()) {
       for (auto &PHINodeIVStreamEntry : ActiveIVStreamsIter->second) {
         auto &IVStream = PHINodeIVStreamEntry.second;
-        if (IVStream->getLevel() != 0) {
+        if (IVStream->getLoopLevel() != 0) {
           continue;
         }
         auto Inst = IVStream->getPHIInst();
@@ -969,66 +875,6 @@ void StreamPass::analyzeStream() {
             }
           }
         }
-      }
-    }
-  }
-}
-
-void MemStream::searchAddressComputeInstructions(
-    std::function<bool(llvm::PHINode *)> IsInductionVar) {
-
-  std::list<llvm::Instruction *> Queue;
-
-  llvm::Value *AddrValue = nullptr;
-  if (llvm::isa<llvm::LoadInst>(this->Inst)) {
-    AddrValue = this->Inst->getOperand(0);
-  } else {
-    AddrValue = this->Inst->getOperand(1);
-  }
-
-  if (auto AddrInst = llvm::dyn_cast<llvm::Instruction>(AddrValue)) {
-    Queue.emplace_back(AddrInst);
-  }
-
-  while (!Queue.empty()) {
-    auto CurrentInst = Queue.front();
-    Queue.pop_front();
-    if (this->AddrInsts.count(CurrentInst) != 0) {
-      // We have already processed this one.
-      continue;
-    }
-    if (!this->Loop->contains(CurrentInst)) {
-      // This instruction is out of our analysis level. ignore it.
-      continue;
-    }
-    if (Utils::isCallOrInvokeInst(CurrentInst)) {
-      // So far I do not know how to process the call/invoke instruction.
-      continue;
-    }
-
-    this->AddrInsts.insert(CurrentInst);
-    if (auto BaseLoad = llvm::dyn_cast<llvm::LoadInst>(CurrentInst)) {
-      // This is also a base load.
-      this->BaseLoads.insert(BaseLoad);
-      // Do not go further for load.
-      continue;
-    }
-
-    if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(CurrentInst)) {
-      if (IsInductionVar(PHINode)) {
-        this->BaseInductionVars.insert(PHINode);
-        // Do not go further for induction variables.
-        continue;
-      }
-    }
-
-    // BFS on the operands.
-    for (unsigned OperandIdx = 0, NumOperands = CurrentInst->getNumOperands();
-         OperandIdx != NumOperands; ++OperandIdx) {
-      auto OperandValue = CurrentInst->getOperand(OperandIdx);
-      if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
-        // This is an instruction within the same context.
-        Queue.emplace_back(OperandInst);
       }
     }
   }
