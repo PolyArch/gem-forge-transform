@@ -42,81 +42,6 @@ public:
   std::string getOpName() const override { return "stream-store"; }
 };
 
-// /**
-//  * Stream class wraps over MemoryAccessPattern and contains the stream
-//  pattern
-//  * analyzed in a specific loop level.
-//  */
-// class Stream {
-// public:
-//   Stream(llvm::Loop *_Loop, llvm::Instruction *_MemInst)
-//       : Loop(_Loop), MemInst(_MemInst), AddrValue(nullptr), Pattern(_MemInst)
-//       {
-//     assert(this->Loop->contains(this->MemInst) &&
-//            "The loop should contain the memory access instruction.");
-
-//     if (llvm::isa<llvm::LoadInst>(this->MemInst)) {
-//       this->AddrValue = this->MemInst->getOperand(0);
-//     } else {
-//       this->AddrValue = this->MemInst->getOperand(1);
-//     }
-
-//     // Intialize the address computing instructions.
-//     this->calculateAddressComputeInsts();
-//   }
-
-//   void addAccess(uint64_t Addr) { this->Pattern.addAccess(Addr); }
-//   void addMissingAccess() { this->Pattern.addMissingAccess(); }
-//   void endStream() { this->Pattern.endStream(); }
-//   void finalizePattern() { this->Pattern.finalizePattern(); }
-
-//   llvm::Loop *getLoop() const { return this->Loop; }
-//   llvm::Instruction *getMemInst() const { return this->MemInst; }
-//   llvm::Value *getAddrValue() const { return this->AddrValue; }
-//   const MemoryAccessPattern &getPattern() const { return this->Pattern; }
-//   const std::set<llvm::Instruction *> &getAddressComputeInsts() const {
-//     return this->AddressComputeInsts;
-//   }
-
-//   // API related to indirect streams.
-//   bool isIndirect() const { return !this->BaseLoads.empty(); }
-//   bool isPointerChase() const {
-//     if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(this->MemInst)) {
-//       return this->BaseLoads.count(LoadInst) != 0;
-//     } else {
-//       return false;
-//     }
-//   }
-//   size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
-//   const std::set<llvm::LoadInst *> &getBaseLoads() const {
-//     return this->BaseLoads;
-//   }
-//   size_t getNumAddressComputeInstructions() const {
-//     return this->AddressComputeInsts.size();
-//   }
-
-// private:
-//   llvm::Loop *Loop;
-//   llvm::Instruction *MemInst;
-//   llvm::Value *AddrValue;
-//   MemoryAccessPattern Pattern;
-//   std::set<llvm::Instruction *> AddressComputeInsts;
-//   std::set<llvm::LoadInst *> BaseLoads;
-
-//   /**
-//    * Calculate the address compute instructions.
-//    * This is done via BFS starting from the address value.
-//    * Terminate at instructions:
-//    * 1. Outside the current loop.
-//    * 2. Phi node at the header of the loop (so that we only analyze the
-//    current
-//    * iteration).
-//    * 3. Call/Invoke instruction.
-//    * 4. Load instruction.
-//    */
-//   void calculateAddressComputeInsts();
-// };
-
 class InlineContextStreamPass : public ReplayTrace {
 public:
   static char ID;
@@ -356,8 +281,8 @@ InlineContextStreamPass::classifyStream(const InlineContextStream &S) const {
             return "CHAIN_BASE";
           }
           if (BaseStream.getPattern().computed()) {
-            auto Pattern = BaseStream.getPattern().getPattern().AddrPattern;
-            if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+            auto Pattern = BaseStream.getPattern().getPattern().ValPattern;
+            if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
               return "AFFINE_BASE";
             }
           }
@@ -367,8 +292,8 @@ InlineContextStreamPass::classifyStream(const InlineContextStream &S) const {
     return "RANDOM_BASE";
   } else {
     if (S.getPattern().computed()) {
-      auto Pattern = S.getPattern().getPattern().AddrPattern;
-      if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+      auto Pattern = S.getPattern().getPattern().ValPattern;
+      if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
         return "AFFINE";
       } else {
         return "RANDOM";
@@ -445,8 +370,8 @@ void InlineContextStreamPass::dumpStats(std::ostream &O) {
 
       if (Stream.getPattern().computed()) {
         const auto &Pattern = Stream.getPattern().getPattern();
-        AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
-        AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
+        AddrPattern = StreamPattern::formatValuePattern(Pattern.ValPattern);
+        AccPattern = StreamPattern::formatAccessPattern(Pattern.AccPattern);
         Updates = Pattern.Updates;
         Footprint = Stream.getFootprint().getNumCacheLinesAccessed();
       }

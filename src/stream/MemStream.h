@@ -9,8 +9,7 @@ public:
   MemStream(const std::string &_Folder, const llvm::Instruction *_Inst,
             const llvm::Loop *_Loop, size_t _LoopLevel,
             std::function<bool(llvm::PHINode *)> IsInductionVar)
-      : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _LoopLevel),
-        StartId(DynamicInstruction::InvalidId) {
+      : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _LoopLevel) {
     assert(Utils::isMemAccessInst(this->Inst) &&
            "Should be load/store instruction to build a stream.");
     this->searchAddressComputeInstructions(IsInductionVar);
@@ -27,14 +26,6 @@ public:
   }
 
   void addMissingAccess() { this->Pattern.addMissingAccess(); }
-
-  void endStream() {
-    this->Pattern.endStream();
-    this->Iters = 1;
-    this->LastAccessIters = 0;
-    this->TotalStreams++;
-    this->StartId = DynamicInstruction::InvalidId;
-  }
 
   void addAliasInst(llvm::Instruction *AliasInst) {
     this->AliasInsts.insert(AliasInst);
@@ -78,11 +69,6 @@ private:
   std::unordered_set<llvm::PHINode *> BaseInductionVars;
   std::unordered_set<const llvm::Instruction *> AddrInsts;
   std::unordered_set<llvm::Instruction *> AliasInsts;
-
-  /**
-   * Stores the dynamic id of the first access in the current stream.
-   */
-  DynamicInstruction::DynamicId StartId;
 
   void searchAddressComputeInstructions(
       std::function<bool(llvm::PHINode *)> IsInductionVar);

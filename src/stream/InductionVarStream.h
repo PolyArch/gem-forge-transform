@@ -32,13 +32,6 @@ public:
     }
   }
 
-  void endStream() {
-    this->Pattern.endStream();
-    this->Iters = 1;
-    this->LastAccessIters = 0;
-    this->TotalStreams++;
-  }
-
   /**
    * Do a BFS on the PHINode and extract all the compute instructions.
    */
