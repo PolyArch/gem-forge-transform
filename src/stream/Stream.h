@@ -2,8 +2,8 @@
 #define LLVM_TDG_STREAM_STREAM_H
 
 #include "LoopUtils.h"
-#include "MemoryPattern.h"
 #include "Utils.h"
+#include "stream/StreamPattern.h"
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/BasicBlock.h"
@@ -40,7 +40,7 @@ public:
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
   size_t getTotalStreams() const { return this->TotalStreams; }
-  const MemoryPattern &getPattern() const { return this->Pattern; }
+  const StreamPattern &getPattern() const { return this->Pattern; }
 
   void addBaseStream(Stream *Other) {
     // assert(Other != this && "Self dependent streams is not allowed.");
@@ -56,6 +56,8 @@ public:
     this->Iters++;
     this->TotalIters++;
   }
+
+  void endStream();
 
   virtual bool isAliased() const { return false; }
   std::string formatType() const {
@@ -121,7 +123,15 @@ protected:
    * It should be reset to 0 (should be less than reset value of Iters).
    */
   size_t LastAccessIters;
-  MemoryPattern Pattern;
+
+  /**
+   * Stores the dynamic id of the first access in the current stream.
+   * Bad design: Only used by MemStream. IVStream will not dynamic id as it is
+   * based on phi inst which will be removed from the data graph.
+   */
+  DynamicInstruction::DynamicId StartId;
+
+  StreamPattern Pattern;
 };
 
 #endif

@@ -47,11 +47,11 @@
  * can only be further relaxed in the hierarchy.
  *
  */
-class MemoryPattern {
+class StreamPattern {
 public:
   /**
    */
-  enum AddressPattern {
+  enum ValuePattern {
     UNKNOWN,
     CONSTANT,
     LINEAR,
@@ -59,22 +59,46 @@ public:
     RANDOM,
   };
 
-  MemoryPattern() : ComputedPatternPtr(nullptr) {}
-  ~MemoryPattern() {
-    if (this->ComputedPatternPtr != nullptr) {
-      delete this->ComputedPatternPtr;
-      this->ComputedPatternPtr = nullptr;
+  enum AccessPattern {
+    UNCONDITIONAL,
+    CONDITIONAL_ACCESS_ONLY,
+    CONDITIONAL_UPDATE_ONLY,
+    SAME_CONDITION,
+    // Independent access pattern is so far not supported.
+  };
+
+  /**
+   * Represents a computed pattern for the previous instance of stream.
+   */
+  struct ComputedPattern {
+    ValuePattern ValPattern;
+    AccessPattern AccPattern;
+    uint64_t Accesses;
+    uint64_t Updates;
+    uint64_t Iters;
+    uint64_t Base;
+    int64_t StrideI;
+    uint64_t NI;
+    int64_t StrideJ;
+    ComputedPattern() : Base(0), StrideI(0), NI(0), StrideJ(0) {}
+  };
+
+  StreamPattern() : AggregatedPatternPtr(nullptr) {}
+  ~StreamPattern() {
+    if (this->AggregatedPatternPtr != nullptr) {
+      delete this->AggregatedPatternPtr;
+      this->AggregatedPatternPtr = nullptr;
     }
   }
-  MemoryPattern(const MemoryPattern &Other) = delete;
-  MemoryPattern(MemoryPattern &&Other) = delete;
-  MemoryPattern &operator=(const MemoryPattern &Other) = delete;
-  MemoryPattern &operator=(MemoryPattern &&Other) = delete;
+  StreamPattern(const StreamPattern &Other) = delete;
+  StreamPattern(StreamPattern &&Other) = delete;
+  StreamPattern &operator=(const StreamPattern &Other) = delete;
+  StreamPattern &operator=(StreamPattern &&Other) = delete;
 
   /**
    * Add one dynamic access address for a specific instruction.
    */
-  void addAccess(uint64_t Addr);
+  void addAccess(uint64_t Val);
 
   /**
    * There is one missing access in this iteration.
@@ -85,7 +109,7 @@ public:
   /**
    * Wraps up an ongoing stream.
    */
-  void endStream();
+  const ComputedPattern endStream();
 
   /**
    * Finalize the pattern computed.
@@ -96,19 +120,11 @@ public:
 
   bool computed() const;
 
-  enum AccessPattern {
-    UNCONDITIONAL,
-    CONDITIONAL_ACCESS_ONLY,
-    CONDITIONAL_UPDATE_ONLY,
-    SAME_CONDITION,
-    // Independent access pattern is so far not supported.
-  };
-
-  static std::string formatAddressPattern(AddressPattern AddrPattern);
+  static std::string formatValuePattern(ValuePattern ValPattern);
   static std::string formatAccessPattern(AccessPattern AccPattern);
 
 private:
-  class AddressPatternFSM {
+  class ValuePatternFSM {
   public:
     enum StateT {
       UNKNOWN,
@@ -119,13 +135,17 @@ private:
     StateT State;
 
     uint64_t Updates;
-    uint64_t PrevAddress;
+    uint64_t PrevValue;
 
-    AddressPatternFSM() : State(UNKNOWN), Updates(0), PrevAddress(0) {}
+    ValuePatternFSM() : State(UNKNOWN), Updates(0), PrevValue(0) {}
 
-    virtual AddressPattern getAddressPattern() const = 0;
-    virtual void update(uint64_t Addr) = 0;
+    virtual ValuePattern getValuePattern() const = 0;
+    virtual void update(uint64_t Val) = 0;
     virtual void updateMissing() = 0;
+    virtual void fillInComputedPattern(ComputedPattern &OutPattern) const {
+      // Default implementation will simply fill in the ValuePattern;
+      OutPattern.ValPattern = this->getValuePattern();
+    }
 
     /**
      * Helper function to compute the linear stride.
@@ -135,80 +155,83 @@ private:
     computeLinearBaseStride(const std::pair<uint64_t, uint64_t> &Record0,
                             const std::pair<uint64_t, uint64_t> &Record1) {
       auto Idx0 = Record0.first;
-      auto Addr0 = Record0.second;
+      auto Val0 = Record0.second;
       auto Idx1 = Record1.first;
-      auto Addr1 = Record1.second;
-      auto AddrDiff = Addr1 - Addr0;
+      auto Val1 = Record1.second;
+      auto ValDiff = Val1 - Val0;
       auto IdxDiff = Idx1 - Idx0;
-      if (AddrDiff == 0 || IdxDiff == 0) {
+      if (ValDiff == 0 || IdxDiff == 0) {
         return std::make_pair(false, std::make_pair(static_cast<uint64_t>(0),
                                                     static_cast<int64_t>(0)));
       }
-      if (AddrDiff % IdxDiff != 0) {
+      if (ValDiff % IdxDiff != 0) {
         return std::make_pair(false, std::make_pair(static_cast<uint64_t>(0),
                                                     static_cast<int64_t>(0)));
       }
 
-      int64_t Stride = AddrDiff / IdxDiff;
+      int64_t Stride = ValDiff / IdxDiff;
       return std::make_pair(
-          true, std::make_pair(static_cast<uint64_t>(Addr0 - Idx0 * Stride),
+          true, std::make_pair(static_cast<uint64_t>(Val0 - Idx0 * Stride),
                                static_cast<int64_t>(Stride)));
     }
   };
 
-  class UnknownAddressPatternFSM : public AddressPatternFSM {
+  class UnknownValuePatternFSM : public ValuePatternFSM {
   public:
-    UnknownAddressPatternFSM() : AddressPatternFSM() {
+    UnknownValuePatternFSM() : ValuePatternFSM() {
       // Unknown starts as success.
       this->State = SUCCESS;
     }
-    void update(uint64_t Addr) override;
+    void update(uint64_t Val) override;
     void updateMissing() override;
-    AddressPattern getAddressPattern() const override {
-      return AddressPattern::UNKNOWN;
+    ValuePattern getValuePattern() const override {
+      return ValuePattern::UNKNOWN;
     }
   };
 
-  class ConstAddressPatternFSM : public AddressPatternFSM {
+  class ConstValuePatternFSM : public ValuePatternFSM {
   public:
-    ConstAddressPatternFSM() : AddressPatternFSM() {}
-    void update(uint64_t Addr) override;
+    ConstValuePatternFSM() : ValuePatternFSM() {}
+    void update(uint64_t Val) override;
     void updateMissing() override;
-    AddressPattern getAddressPattern() const override {
-      return AddressPattern::CONSTANT;
+    ValuePattern getValuePattern() const override {
+      return ValuePattern::CONSTANT;
     }
+    void fillInComputedPattern(ComputedPattern &OutPattern) const override;
   };
 
-  class LinearAddressPatternFSM : public AddressPatternFSM {
+  class LinearValuePatternFSM : public ValuePatternFSM {
   public:
-    LinearAddressPatternFSM() : AddressPatternFSM(), Base(0), Stride(0), I(0) {}
-    void update(uint64_t Addr) override;
+    LinearValuePatternFSM() : ValuePatternFSM(), Base(0), Stride(0), I(0) {}
+    void update(uint64_t Val) override;
     void updateMissing() override;
-    AddressPattern getAddressPattern() const override {
-      return AddressPattern::LINEAR;
+    ValuePattern getValuePattern() const override {
+      return ValuePattern::LINEAR;
     }
+    void fillInComputedPattern(ComputedPattern &OutPattern) const override;
 
   private:
     uint64_t Base;
     int64_t Stride;
     uint64_t I;
-    std::list<std::pair<uint64_t, uint64_t>> ConfirmedAddrs;
-    uint64_t computeNextAddr() const;
+    std::list<std::pair<uint64_t, uint64_t>> ConfirmedVals;
+    uint64_t computeNextVal() const;
   };
 
-  class QuardricAddressPatternFSM : public AddressPatternFSM {
+  class QuardricValuePatternFSM : public ValuePatternFSM {
   public:
-    QuardricAddressPatternFSM()
-        : AddressPatternFSM(), Base(0), StrideI(0), I(0), NI(0), StrideJ(0),
+    QuardricValuePatternFSM()
+        : ValuePatternFSM(), Base(0), StrideI(0), I(0), NI(0), StrideJ(0),
           J(0) {
       // For now always failed quardric pattern.
       // this->State == FAILURE;
     }
-    void update(uint64_t Addr) override;
+    void update(uint64_t Val) override;
     void updateMissing() override;
-    AddressPattern getAddressPattern() const override {
-      return AddressPattern::QUARDRIC;
+    ValuePattern getValuePattern() const override {
+      return ValuePattern::QUARDRIC;
     }
+    void fillInComputedPattern(ComputedPattern &OutPattern) const override;
 
   private:
     uint64_t Base;
@@ -217,29 +240,29 @@ private:
     uint64_t NI;
     int64_t StrideJ;
     uint64_t J;
-    std::list<std::pair<uint64_t, uint64_t>> ConfirmedAddrs;
+    std::list<std::pair<uint64_t, uint64_t>> ConfirmedVals;
 
     // Helper function to check if the 3 confirmed address is actually aligned
     // on the same line.
     bool isAligned() const;
 
     // Compute the next address.
-    uint64_t computeNextAddr() const;
+    uint64_t computeNextVal() const;
 
     // Step the I, J to the next iteration.
     void step();
   };
 
-  class RandomAddressPatternFSM : public AddressPatternFSM {
+  class RandomValuePatternFSM : public ValuePatternFSM {
   public:
-    RandomAddressPatternFSM() : AddressPatternFSM() {
+    RandomValuePatternFSM() : ValuePatternFSM() {
       // Always success for random pattern.
       this->State = SUCCESS;
     }
-    void update(uint64_t Addr) override;
+    void update(uint64_t Val) override;
     void updateMissing() override;
-    AddressPattern getAddressPattern() const override {
-      return AddressPattern::RANDOM;
+    ValuePattern getValuePattern() const override {
+      return ValuePattern::RANDOM;
     }
   };
 
@@ -255,12 +278,12 @@ private:
     uint64_t Accesses;
     uint64_t Iters;
 
-    void addAccess(uint64_t Addr);
+    void addAccess(uint64_t Val);
     void addMissingAccess();
 
     StateT getState() const { return this->State; }
 
-    const AddressPatternFSM &getAddressPatternFSM() const;
+    const ValuePatternFSM &getValuePatternFSM() const;
 
     AccessPattern getAccessPattern() const { return this->AccPattern; }
 
@@ -272,16 +295,16 @@ private:
 
     const AccessPattern AccPattern;
 
-    std::list<AddressPatternFSM *> AddressPatterns;
+    std::list<ValuePatternFSM *> ValuePatterns;
 
-    void feedUpdateMissingToAddrPatterns() {
-      for (auto &AddrPattern : this->AddressPatterns) {
-        AddrPattern->updateMissing();
+    void feedUpdateMissingToValPatterns() {
+      for (auto &ValPattern : this->ValuePatterns) {
+        ValPattern->updateMissing();
       }
     }
-    void feedUpdateToAddrPatterns(uint64_t Addr) {
-      for (auto &AddrPattern : this->AddressPatterns) {
-        AddrPattern->update(Addr);
+    void feedUpdateToValPatterns(uint64_t Val) {
+      for (auto &ValPattern : this->ValuePatterns) {
+        ValPattern->update(Val);
       }
     }
   };
@@ -295,7 +318,7 @@ private:
    * Implement the address pattern hierarchy.
    * Returns true if B is more relaxed than A. (B >= A)
    */
-  static bool isAddressPatternRelaxed(AddressPattern A, AddressPattern B);
+  static bool isValuePatternRelaxed(ValuePattern A, ValuePattern B);
 
   /**
    * Implement the access pattern hierarchy.
@@ -304,28 +327,28 @@ private:
   static bool isAccessPatternRelaxed(AccessPattern A, AccessPattern B);
 
 public:
-  struct ComputedPattern {
-    AddressPattern AddrPattern;
+  struct AggregatedPattern {
+    ValuePattern ValPattern;
     AccessPattern AccPattern;
     uint64_t Accesses;
     uint64_t Updates;
     uint64_t Iters;
     uint64_t StreamCount;
-    ComputedPattern(const AccessPatternFSM &NewFSM)
-        : AddrPattern(NewFSM.getAddressPatternFSM().getAddressPattern()),
+    AggregatedPattern(const AccessPatternFSM &NewFSM)
+        : ValPattern(NewFSM.getValuePatternFSM().getValuePattern()),
           AccPattern(NewFSM.getAccessPattern()), Accesses(NewFSM.Accesses),
-          Updates(NewFSM.getAddressPatternFSM().Updates), Iters(NewFSM.Iters),
+          Updates(NewFSM.getValuePatternFSM().Updates), Iters(NewFSM.Iters),
           StreamCount(1) {}
 
-    ComputedPattern() {}
+    AggregatedPattern() {}
 
     void merge(const AccessPatternFSM &NewFSM);
   };
 
-  const ComputedPattern &getPattern() const;
+  const AggregatedPattern &getPattern() const;
 
 private:
-  ComputedPattern *ComputedPatternPtr;
+  AggregatedPattern *AggregatedPatternPtr;
 
   void initialize();
 };

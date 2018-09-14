@@ -188,8 +188,8 @@ std::string StreamPass::classifyStream(const MemStream &S) const {
             return "CHAIN_BASE";
           }
           if (BaseStream.getPattern().computed()) {
-            auto Pattern = BaseStream.getPattern().getPattern().AddrPattern;
-            if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+            auto Pattern = BaseStream.getPattern().getPattern().ValPattern;
+            if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
               return "AFFINE_BASE";
             }
           }
@@ -210,8 +210,8 @@ std::string StreamPass::classifyStream(const MemStream &S) const {
             continue;
           }
           if (BaseIVStream.getPattern().computed()) {
-            auto Pattern = BaseIVStream.getPattern().getPattern().AddrPattern;
-            if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+            auto Pattern = BaseIVStream.getPattern().getPattern().ValPattern;
+            if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
               return "AFFINE_IV";
             }
           }
@@ -220,8 +220,8 @@ std::string StreamPass::classifyStream(const MemStream &S) const {
       return "RANDOM_IV";
     } else {
       if (S.getPattern().computed()) {
-        auto Pattern = S.getPattern().getPattern().AddrPattern;
-        if (Pattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+        auto Pattern = S.getPattern().getPattern().ValPattern;
+        if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
           return "AFFINE";
         } else {
           return "RANDOM";
@@ -298,8 +298,8 @@ void StreamPass::dumpStats(std::ostream &O) {
 
       if (Stream.getPattern().computed()) {
         const auto &Pattern = Stream.getPattern().getPattern();
-        AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
-        AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
+        AddrPattern = StreamPattern::formatValuePattern(Pattern.ValPattern);
+        AccPattern = StreamPattern::formatAccessPattern(Pattern.AccPattern);
         Updates = Pattern.Updates;
       }
       O << ' ' << AddrPattern;
@@ -380,8 +380,8 @@ void StreamPass::dumpStats(std::ostream &O) {
       std::string StreamClass = "whatever";
       if (IVStream.getPattern().computed()) {
         const auto &Pattern = IVStream.getPattern().getPattern();
-        AddrPattern = MemoryPattern::formatAddressPattern(Pattern.AddrPattern);
-        AccPattern = MemoryPattern::formatAccessPattern(Pattern.AccPattern);
+        AddrPattern = StreamPattern::formatValuePattern(Pattern.ValPattern);
+        AccPattern = StreamPattern::formatAccessPattern(Pattern.AccPattern);
         Updates = Pattern.Updates;
       }
       O << ' ' << AddrPattern;
@@ -945,8 +945,8 @@ void StreamPass::markQualifiedStream() {
         // Only consider the computed pattern.
         continue;
       }
-      auto AddrPattern = Pattern.getPattern().AddrPattern;
-      if (AddrPattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+      auto AddrPattern = Pattern.getPattern().ValPattern;
+      if (AddrPattern <= StreamPattern::ValuePattern::QUARDRIC) {
         // This is affine induction variable.
         Queue.emplace_back(&IVStream);
       }
@@ -971,8 +971,8 @@ void StreamPass::markQualifiedStream() {
       if (!MemPattern.computed()) {
         continue;
       }
-      auto AddrPattern = MemPattern.getPattern().AddrPattern;
-      if (AddrPattern <= MemoryPattern::AddressPattern::QUARDRIC) {
+      auto AddrPattern = MemPattern.getPattern().ValPattern;
+      if (AddrPattern <= StreamPattern::ValuePattern::QUARDRIC) {
         // This is affine. Push into the queue as start point.
         Queue.emplace_back(&S);
       }
