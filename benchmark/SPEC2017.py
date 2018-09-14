@@ -320,7 +320,8 @@ class SPEC2017Benchmarks:
         #     'skip_inst': 9e8,
         #     'end_inst': 200e8,
         #     'n_traces': 22,
-        #     'trace_func': 'MagickCommandGenesis',
+        #     # 'trace_func': 'MagickCommandGenesis',
+        #     'trace_func': '',
         #     'lang': 'C',
         # },
         # 'nab_s': {
@@ -345,7 +346,7 @@ class SPEC2017Benchmarks:
         #     'max_inst': 1e8,
         #     'skip_inst': 20e8,
         #     'end_inst': 28e8,
-        #     'n_traces': 2,
+        #     'n_traces': 1,
         #     'trace_func': 'x264_encoder_encode',
         #     'lang': 'C',
         # },
@@ -375,17 +376,18 @@ class SPEC2017Benchmarks:
         #     'trace_func': 'uncompressStream',
         #     'lang': 'C',
         # },
-        # 'gcc_s': {
-        #     'name': '602.gcc_s',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 50e8,
-        #     'end_inst': 1000e8,
-        #     'n_traces': 20,
-        #     'trace_func': 'compile_file',
-        #     'lang': 'C',
-        # },
+        'gcc_s': {
+            'name': '602.gcc_s',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 50e8,
+            'end_inst': 1000e8,
+            'n_traces': 10,
+            # 'trace_func': 'compile_file',
+            'trace_func': '',
+            'lang': 'C',
+        },
         # 'perlbench_s': {
         #     # Does not work with ellcc as it uses posix io function.
         #     'name': '600.perlbench_s',
@@ -411,17 +413,17 @@ class SPEC2017Benchmarks:
         #     'trace_func': '',
         #     'lang': 'CPP',
         # },
-        'leela_s': {
-            'name': '641.leela_s',
-            'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 10,
-            'trace_func': '',
-            'lang': 'CPP',
-        },
+        # 'leela_s': {
+        #     'name': '641.leela_s',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        #     'lang': 'CPP',
+        # },
         # 'namd_r': {
         #     'name': '508.namd_r',
         #     'links': [],
@@ -446,10 +448,10 @@ class SPEC2017Benchmarks:
         #     'trace_func': '',
         #     'lang': 'CPP',
         # },
-        # # Throws exception.
-        # # Does not work with ellcc as RE.
-        # # Need to fix a comparison between integer and pointer error.
-        # # Only been able to trace the first one.
+        # Throws exception.
+        # Does not work with ellcc as RE.
+        # Need to fix a comparison between integer and pointer error.
+        # Only been able to trace the first one.
         # 'parest_r': {
         #     'name': '510.parest_r',
         #     'links': [],
@@ -460,7 +462,7 @@ class SPEC2017Benchmarks:
         #     'n_traces': 1,
         #     'trace_func': '',
         #     'lang': 'CPP',
-        # },
+        # }, 
 
         # # Does not work with ellcc as it uses linux header.
         # # Does not throw.
@@ -476,9 +478,9 @@ class SPEC2017Benchmarks:
         #     'lang': 'CPP',
         # },
 
-        # # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
-        # # Does not throw.
-        # # Haven't tested with ellcc.
+        # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
+        # Does not throw.
+        # Haven't tested with ellcc.
         # 'blender_r': {
         #     'name': '526.blender_r',
         #     'links': [],

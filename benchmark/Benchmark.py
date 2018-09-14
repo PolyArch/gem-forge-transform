@@ -208,7 +208,14 @@ class Benchmark(object):
             self.get_replay_bc(),
         ]
         if output_tdg is not None:
+            output_extra_folder = os.path.join(
+                os.getcwd(), output_tdg + '.extra')
+            if not os.path.exists(output_extra_folder):
+                os.mkdir(output_extra_folder)
             opt_cmd.append('-output-datagraph=' + output_tdg)
+            opt_cmd.append('-output-extra-folder-path=' + output_extra_folder)
+        else:
+            assert(False)
         if debugs:
             opt_cmd.append(
                 '-debug-only={debugs}'.format(debugs=','.join(debugs)))

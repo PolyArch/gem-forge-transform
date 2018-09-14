@@ -51,7 +51,9 @@ add_library(LLVMTDGPass MODULE
     stream/InlineContextStreamPass.cpp
     stream/InlineContext.cpp
     stream/InlineContextStream.cpp
+    stream/Stream.cpp
     stream/InductionVarStream.cpp
+    stream/MemStream.cpp
     stream/StreamPass.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp

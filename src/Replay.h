@@ -44,6 +44,7 @@ protected:
   DataGraph::DataGraphDetailLv DGDetailLevel;
 
   std::string OutTraceName;
+  std::string OutputExtraFolderPath;
 
   TDGSerializer *Serializer;
   CacheWarmer *CacheWarmerPtr;
