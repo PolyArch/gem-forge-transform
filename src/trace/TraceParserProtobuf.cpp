@@ -68,7 +68,7 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
 
   // Read the next one.
   this->readNextEntry();
-  return std::move(Parsed);
+  return Parsed;
 }
 
 TraceParser::TracedFuncEnter TraceParserProtobuf::parseFunctionEnter() {
@@ -84,7 +84,7 @@ TraceParser::TracedFuncEnter TraceParserProtobuf::parseFunctionEnter() {
 
   // Read the next one.
   this->readNextEntry();
-  return std::move(Parsed);
+  return Parsed;
 }
 
 void TraceParserProtobuf::readNextEntry() {

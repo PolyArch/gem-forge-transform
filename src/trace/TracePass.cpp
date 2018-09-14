@@ -559,7 +559,7 @@ private:
     PrintInstArgs.push_back(InstIdValue);
     PrintInstArgs.push_back(InstUIDValue);
     PrintInstArgs.push_back(OpCodeNameValue);
-    return std::move(PrintInstArgs);
+    return PrintInstArgs;
   }
 
   // Get arguments from printValue to print phi node parameter.
@@ -596,7 +596,7 @@ private:
     std::vector<llvm::Value *> Args{TagValue, NameValue, TypeIdValue,
                                     NumAdditionalArgsValue,
                                     IncomingValueNameValue};
-    return std::move(Args);
+    return Args;
   }
 
   // get arguments from printValue
@@ -683,7 +683,7 @@ private:
       Args.push_back(AdditionalArgValue);
     }
 
-    return std::move(Args);
+    return Args;
   }
 };
 

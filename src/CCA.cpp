@@ -227,7 +227,7 @@ class CCA : public ReplayTrace {
       auto Inst = &*InstIter;
       Numbering.emplace(Inst, Number++);
     }
-    return std::move(Numbering);
+    return Numbering;
   }
 
   bool checkConstraints(
@@ -369,7 +369,7 @@ class CCA : public ReplayTrace {
       }
     }
 
-    return std::move(SubGraphs);
+    return SubGraphs;
   }
 
   size_t getNumOccurrence(llvm::BasicBlock* BB) const {

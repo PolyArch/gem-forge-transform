@@ -24,6 +24,7 @@ public:
       : Type(_Type), Qualified(false), TotalIters(0), TotalAccesses(0),
         TotalStreams(0), Iters(1), LastAccessIters(0), Pattern() {}
 
+  bool hasNoBaseStream() const { return this->BaseStreams.empty(); }
   const std::unordered_set<Stream *> &getBaseStreams() const {
     return this->BaseStreams;
   }
@@ -38,7 +39,7 @@ public:
   const MemoryPattern &getPattern() const { return this->Pattern; }
 
   void addBaseStream(Stream *Other) {
-    assert(Other != this && "Self dependent streams is not allowed.");
+    // assert(Other != this && "Self dependent streams is not allowed.");
     this->BaseStreams.insert(Other);
     Other->DependentStreams.insert(this);
   }
@@ -54,6 +55,18 @@ public:
 
   virtual bool isAliased() const { return false; }
   virtual std::string formatName() const = 0;
+  virtual const std::unordered_set<const llvm::Instruction *> &
+  getComputeInsts() const = 0;
+
+  static bool isStepInst(const llvm::Instruction *Inst) {
+    auto Opcode = Inst->getOpcode();
+    switch (Opcode) {
+    case llvm::Instruction::Add: {
+      return true;
+    }
+    default: { return false; }
+    }
+  }
 
 protected:
   std::unordered_set<Stream *> BaseStreams;
@@ -97,13 +110,13 @@ public:
   const llvm::PHINode *getPHIInst() const { return this->PHIInst; }
   const llvm::Loop *getLoop() const { return this->Loop; }
   size_t getLevel() const { return this->Level; }
-  const std::unordered_set<const llvm::Instruction *> &getComputeInsts() const {
+  const std::unordered_set<const llvm::Instruction *> &
+  getComputeInsts() const override {
     return this->ComputeInsts;
   }
 
   void addAccess(uint64_t Value) {
     if (this->LastAccessIters != this->Iters) {
-      llvm::errs() << this->formatName() << " added value " << Value << '\n';
       this->Pattern.addAccess(Value);
       this->LastAccessIters = this->Iters;
       this->TotalAccesses++;
@@ -131,16 +144,6 @@ public:
   static bool isInductionVarStream(
       const llvm::PHINode *PHINode,
       const std::unordered_set<const llvm::Instruction *> &ComputeInsts);
-
-  static bool isStepInst(const llvm::Instruction *Inst) {
-    auto Opcode = Inst->getOpcode();
-    switch (Opcode) {
-    case llvm::Instruction::Add: {
-      return true;
-    }
-    default: { return false; }
-    }
-  }
 
   std::string formatName() const override {
     return "(IV " + LoopUtils::getLoopId(this->Loop) + " " +

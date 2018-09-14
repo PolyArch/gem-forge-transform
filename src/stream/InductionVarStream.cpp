@@ -2,6 +2,8 @@
 
 #include <list>
 
+#define DEBUG_TYPE "InductionVarStream"
+
 bool InductionVarStream::isInductionVarStream(
     const llvm::PHINode *PHINode,
     const std::unordered_set<const llvm::Instruction *> &ComputeInsts) {
@@ -66,9 +68,13 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
       auto OperandValue = CurrentInst->getOperand(OperandIdx);
       if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
         Queue.emplace_back(OperandInst);
+        DEBUG(llvm::errs() << "Enqueue inst "
+                           << LoopUtils::formatLLVMInst(OperandInst) << '\n');
       }
     }
-  }
 
-  return std::move(ComputeInsts);
+    return ComputeInsts;
+  }
 }
+
+#undef DEBUG_TYPE

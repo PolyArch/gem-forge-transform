@@ -83,7 +83,7 @@ TraceParser::TracedInst TraceParserGZip::parseLLVMInstruction() {
     }
   }
 
-  return std::move(Parsed);
+  return Parsed;
 }
 
 TraceParser::TracedFuncEnter TraceParserGZip::parseFunctionEnter() {
@@ -124,7 +124,7 @@ TraceParser::TracedFuncEnter TraceParserGZip::parseFunctionEnter() {
     }
   }
 
-  return std::move(Parsed);
+  return Parsed;
 }
 
 void TraceParserGZip::readLine() {
@@ -156,5 +156,5 @@ std::vector<std::string> TraceParserGZip::splitByChar(const std::string& source,
   if (prev < idx) {
     ret.push_back(source.substr(prev, idx - prev));
   }
-  return std::move(ret);
+  return ret;
 }
