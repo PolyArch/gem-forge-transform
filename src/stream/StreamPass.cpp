@@ -4,6 +4,7 @@
 #include "stream/InductionVarStream.h"
 #include "stream/MemStream.h"
 
+#include <iomanip>
 #include <sstream>
 
 #define DEBUG_TYPE "StreamPass"
@@ -54,6 +55,16 @@ public:
     this->Plan = STORE;
   }
 
+  std::string format() const {
+    std::stringstream ss;
+    ss << std::setw(10) << std::left
+       << StreamTransformPlan::formatPlanT(this->Plan);
+    for (auto UsedStream : this->UsedStreams) {
+      ss << UsedStream->formatName() << ' ';
+    }
+    return ss.str();
+  }
+
 private:
   std::unordered_set<Stream *> UsedStreams;
   Stream *ParamStream;
@@ -62,7 +73,9 @@ private:
 class StreamPass : public ReplayTrace {
 public:
   static char ID;
-  StreamPass() : ReplayTrace(ID), DynInstCount(0), DynMemInstCount(0) {}
+  StreamPass()
+      : ReplayTrace(ID), DynInstCount(0), DynMemInstCount(0), StepInstCount(0),
+        ConfigInstCount(0), DeletedInstCount(0) {}
 
 protected:
   bool initialize(llvm::Module &Module) override;
@@ -113,19 +126,38 @@ protected:
   void markQualifiedStream();
   void addChosenStream(const llvm::Loop *Loop, const llvm::Instruction *Inst,
                        Stream *S);
+  void buildChosenStreamDependenceGraph();
+  void buildAllChosenStreamDependenceGraph();
   MemStream *getMemStreamByInstLoop(llvm::Instruction *Inst,
                                     const llvm::Loop *Loop);
 
   /*************************************************************
    * Stream transform.
    *************************************************************/
-  using StreamUserMapT =
-      std::unordered_map<Stream *,
-                         std::unordered_set<DynamicInstruction::DynamicId>>;
+  /**
+   * Maps from a stream to its last config/step instruction.
+   */
+  using ActiveStreamInstMapT =
+      std::unordered_map<const llvm::Instruction *,
+                         DynamicInstruction::DynamicId>;
   void makeStreamTransformPlan();
-  void addUserToStream(DynamicInstruction::DynamicId, Stream *S,
-                       StreamUserMapT &StreamUsers);
+  StreamTransformPlan &getOrCreatePlan(const llvm::Instruction *Inst);
+  StreamTransformPlan *getPlanNullable(const llvm::Instruction *Inst);
+  void DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop);
+  void DEBUG_SORTED_STREAMS_FOR_LOOP(const llvm::Loop *Loop);
+  void sortChosenStream(Stream *S, std::list<Stream *> &Stack,
+                        std::unordered_set<Stream *> &SortedStreams);
+  void
+  pushLoopStackAndConfigureStreams(LoopStackT &LoopStack, llvm::Loop *NewLoop,
+                                   DataGraph::DynamicInstIter NewInstIter,
+                                   ActiveStreamInstMapT &ActiveStreamInstMap);
+  void
+  popLoopStackAndUnconfigureStreams(LoopStackT &LoopStack,
+                                    ActiveStreamInstMapT &ActiveStreamInstMap);
   void transformStream();
+
+  std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
+      InstStreamMap;
 
   std::unordered_map<llvm::Instruction *, std::list<MemStream>>
       InstMemStreamMap;
@@ -136,6 +168,10 @@ protected:
   std::unordered_map<const llvm::Loop *,
                      std::unordered_map<const llvm::Instruction *, Stream *>>
       ChosenLoopInstStream;
+  // Sorted the streams in dependence order.
+  // This is the order we will configure the stream.
+  std::unordered_map<const llvm::Loop *, std::list<Stream *>>
+      ChosenLoopSortedStreams;
 
   std::unordered_map<const llvm::Instruction *, StreamTransformPlan>
       InstPlanMap;
@@ -156,6 +192,9 @@ protected:
    */
   uint64_t DynInstCount;
   uint64_t DynMemInstCount;
+  uint64_t StepInstCount;
+  uint64_t ConfigInstCount;
+  uint64_t DeletedInstCount;
 };
 
 bool StreamPass::initialize(llvm::Module &Module) {
@@ -239,6 +278,9 @@ void StreamPass::dumpStats(std::ostream &O) {
 #define print(value) (O << #value << ": " << this->value << '\n')
   print(DynInstCount);
   print(DynMemInstCount);
+  print(StepInstCount);
+  print(DeletedInstCount);
+  print(ConfigInstCount);
 #undef print
   /**
    * Loop
@@ -405,13 +447,28 @@ void StreamPass::transform() {
     }
   }
   this->chooseStream();
+  this->buildChosenStreamDependenceGraph();
+  this->buildAllChosenStreamDependenceGraph();
 
   this->makeStreamTransformPlan();
 
-  // delete this->Trace;
-  // this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+  for (auto &LoopInstStreamEntry : this->ChosenLoopInstStream) {
+    std::unordered_set<Stream *> SortedStreams;
+    for (auto &InstStreamEntry : LoopInstStreamEntry.second) {
+      auto S = InstStreamEntry.second;
+      if (SortedStreams.count(S) != 0) {
+        continue;
+      }
+      std::list<Stream *> Stack;
+      this->sortChosenStream(S, Stack, SortedStreams);
+    }
+    DEBUG(this->DEBUG_SORTED_STREAMS_FOR_LOOP(LoopInstStreamEntry.first));
+  }
 
-  // this->transformStream();
+  delete this->Trace;
+  this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+
+  this->transformStream();
 }
 
 void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
@@ -432,6 +489,9 @@ void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
                .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
                         std::forward_as_tuple())
                .first;
+    this->InstStreamMap.emplace(std::piecewise_construct,
+                                std::forward_as_tuple(Inst),
+                                std::forward_as_tuple());
   }
 
   auto &Streams = Iter->second;
@@ -453,6 +513,7 @@ void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
     auto LoopLevel = Streams.size();
     Streams.emplace_back(this->OutputExtraFolderPath, Inst, *LoopIter,
                          LoopLevel, IsInductionVar);
+    this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
     ++LoopIter;
   }
 }
@@ -465,6 +526,9 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
                .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
                         std::forward_as_tuple())
                .first;
+    this->InstStreamMap.emplace(std::piecewise_construct,
+                                std::forward_as_tuple(Inst),
+                                std::forward_as_tuple());
   }
 
   auto &Streams = Iter->second;
@@ -490,6 +554,7 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
     if (InductionVarStream::isInductionVarStream(Inst, ComputeInsts)) {
       Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop, Level,
                            std::move(ComputeInsts));
+      this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
       DEBUG(llvm::errs() << "Initialize IVStream "
                          << Streams.back().formatName() << '\n');
       ++LoopIter;
@@ -946,7 +1011,8 @@ void StreamPass::markQualifiedStream() {
         continue;
       }
       auto AddrPattern = Pattern.getPattern().ValPattern;
-      if (AddrPattern <= StreamPattern::ValuePattern::QUARDRIC) {
+      if (AddrPattern > StreamPattern::ValuePattern::UNKNOWN &&
+          AddrPattern <= StreamPattern::ValuePattern::QUARDRIC) {
         // This is affine induction variable.
         Queue.emplace_back(&IVStream);
       }
@@ -1024,6 +1090,7 @@ void StreamPass::addChosenStream(const llvm::Loop *Loop,
          "This stream is already chosen.");
   DEBUG(llvm::errs() << "Add chosen stream " << S->formatName() << '\n');
   ChosenLoopInstStreamIter->second.emplace(Inst, S);
+  S->markChosen();
 }
 
 void StreamPass::chooseStream() {
@@ -1061,91 +1128,354 @@ void StreamPass::chooseStream() {
     }
   }
 }
-
-void StreamPass::makeStreamTransformPlan() {
+void StreamPass::buildChosenStreamDependenceGraph() {
   for (auto &LoopInstStreamEntry : this->ChosenLoopInstStream) {
+    auto Loop = LoopInstStreamEntry.first;
     for (auto &InstStreamEntry : LoopInstStreamEntry.second) {
-      Stream *S = InstStreamEntry.second;
-
-      DEBUG(llvm::errs() << "make transform plan for stream " << S->formatName()
-                         << '\n');
-
-      for (const auto &ComputeInst : S->getComputeInsts()) {
-        // For now simply mark them as delete.
-        auto PlanIter = this->InstPlanMap.find(ComputeInst);
-        if (PlanIter == this->InstPlanMap.end()) {
-          PlanIter = this->InstPlanMap
-                         .emplace(std::piecewise_construct,
-                                  std::forward_as_tuple(ComputeInst),
-                                  std::forward_as_tuple())
-                         .first;
+      auto SelfInst = InstStreamEntry.first;
+      auto S = InstStreamEntry.second;
+      assert(S->isChosen() &&
+             "Streams in ChosenLoopInstStream should be chosen.");
+      for (const auto &BaseStream : S->getBaseStreams()) {
+        auto BaseInst = BaseStream->getInst();
+        if (BaseInst == SelfInst) {
+          // Not including myself.
+          continue;
         }
-        switch (PlanIter->second.Plan) {
-        case StreamTransformPlan::PlanT::NOTHING:
-        case StreamTransformPlan::PlanT::DELETE: {
-          PlanIter->second.planToDelete();
-          break;
-        }
-        }
-        if (Stream::isStepInst(ComputeInst) && S->hasNoBaseStream()) {
-          /**
-           * Mark a step instruction for streams that has no base stream.
-           */
-          PlanIter->second.planToStep(S);
-        }
-        DEBUG(llvm::errs() << "Select transform plan for addr inst "
-                           << LoopUtils::formatLLVMInst(ComputeInst) << " to "
-                           << StreamTransformPlan::formatPlanT(
-                                  PlanIter->second.Plan)
-                           << '\n');
-      }
-
-      // Add uses for all the users to use myself.
-      auto &Inst = InstStreamEntry.first;
-      for (auto U : Inst->users()) {
-        if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
-          auto UserPlanIter = this->InstPlanMap.find(I);
-          if (UserPlanIter == this->InstPlanMap.end()) {
-            UserPlanIter =
-                this->InstPlanMap
-                    .emplace(std::piecewise_construct, std::forward_as_tuple(I),
-                             std::forward_as_tuple())
-                    .first;
+        assert(this->InstStreamMap.count(BaseInst) != 0 &&
+               "Missing base stream in InstStreamMap.");
+        bool FoundChosenBase = false;
+        for (auto &BS : this->InstStreamMap.at(BaseInst)) {
+          if (BS->isChosen()) {
+            assert(BS->getLoop()->contains(S->getLoop()) &&
+                   "Chosen base stream should have a higher loop level than "
+                   "the original stream.");
+            FoundChosenBase = true;
+            S->addChosenBaseStream(BS);
+            break;
           }
-          UserPlanIter->second.addUsedStream(S);
-          DEBUG(llvm::errs()
-                << "Add used stream for user " << LoopUtils::formatLLVMInst(I)
-                << " with stream " << S->formatName() << '\n');
         }
+        assert(FoundChosenBase && "Failed to find a chosen base stream.");
       }
-
-      // Mark myself as DELETE (load) or STORE (store).
-      auto InstPlanIter =
-          this->InstPlanMap
-              .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
-                       std::forward_as_tuple())
-              .first;
-      if (llvm::isa<llvm::StoreInst>(Inst)) {
-        assert(InstPlanIter->second.Plan ==
-                   StreamTransformPlan::PlanT::NOTHING &&
-               "Already have a plan for the store.");
-        InstPlanIter->second.planToStore(S);
-      } else {
-        // This is a load.
-        InstPlanIter->second.planToDelete();
-      }
-      DEBUG(llvm::errs() << "Select transform plan for inst "
-                         << LoopUtils::formatLLVMInst(Inst) << " to "
-                         << StreamTransformPlan::formatPlanT(
-                                InstPlanIter->second.Plan)
-                         << '\n');
     }
   }
 }
 
+void StreamPass::buildAllChosenStreamDependenceGraph() {
+  std::unordered_set<Stream *> HandledStreams;
+  std::list<std::pair<Stream *, bool>> DFSStack;
+  std::unordered_set<Stream *> InStackStreams;
+  for (auto &LoopInstStreamEntry : this->ChosenLoopInstStream) {
+    for (auto &InstStreamEntry : LoopInstStreamEntry.second) {
+      auto S = InstStreamEntry.second;
+      if (HandledStreams.count(S) != 0) {
+        continue;
+      }
+      DFSStack.clear();
+      DFSStack.emplace_back(S, false);
+      InStackStreams.clear();
+      InStackStreams.insert(S);
+      while (!DFSStack.empty()) {
+        auto &Entry = DFSStack.back();
+        if (Entry.second == false) {
+          // First time.
+          Entry.second = true;
+          for (auto &ChosenBaseStream : Entry.first->getChosenBaseStreams()) {
+            // if (InStackStreams.count(ChosenBaseStream) != 0) {
+            // }
+            assert(InStackStreams.count(ChosenBaseStream) == 0 &&
+                   "Recursion found in chosen streams.");
+            if (HandledStreams.count(ChosenBaseStream) == 0) {
+              DFSStack.emplace_back(ChosenBaseStream, 0);
+              InStackStreams.insert(ChosenBaseStream);
+            }
+          }
+        } else {
+          // Second time.
+          for (auto &ChosenBaseStream : Entry.first->getChosenBaseStreams()) {
+            Entry.first->addAllChosenBaseStream(ChosenBaseStream);
+            for (auto &SS : ChosenBaseStream->getAllChosenBaseStreams()) {
+              Entry.first->addAllChosenBaseStream(SS);
+            }
+          }
+          InStackStreams.erase(Entry.first);
+          HandledStreams.insert(Entry.first);
+          DFSStack.pop_back();
+        }
+      }
+    }
+  }
+}
+
+StreamTransformPlan &
+StreamPass::getOrCreatePlan(const llvm::Instruction *Inst) {
+  auto UserPlanIter = this->InstPlanMap.find(Inst);
+  if (UserPlanIter == this->InstPlanMap.end()) {
+    UserPlanIter =
+        this->InstPlanMap
+            .emplace(std::piecewise_construct, std::forward_as_tuple(Inst),
+                     std::forward_as_tuple())
+            .first;
+  }
+  return UserPlanIter->second;
+}
+
+StreamTransformPlan *
+StreamPass::getPlanNullable(const llvm::Instruction *Inst) {
+  auto UserPlanIter = this->InstPlanMap.find(Inst);
+  if (UserPlanIter == this->InstPlanMap.end()) {
+    return nullptr;
+  }
+  return &UserPlanIter->second;
+}
+
+void StreamPass::DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop) {
+  std::stringstream ss;
+  ss << "DEBUG PLAN FOR LOOP " << LoopUtils::getLoopId(Loop)
+     << "----------------\n";
+  for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    ss << BB->getName().str() << "---------------------------\n";
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      std::string PlanStr = "NOTHING";
+      if (auto PlanPtr = this->getPlanNullable(Inst)) {
+        PlanStr = PlanPtr->format();
+      }
+      ss << std::setw(40) << std::left << LoopUtils::formatLLVMInst(Inst)
+         << PlanStr << '\n';
+    }
+  }
+  llvm::errs() << ss.str() << '\n';
+}
+
+void StreamPass::DEBUG_SORTED_STREAMS_FOR_LOOP(const llvm::Loop *Loop) {
+  auto Iter = this->ChosenLoopSortedStreams.find(Loop);
+  DEBUG(llvm::errs() << "Dump sorted streams for loop "
+                     << LoopUtils::getLoopId(Loop) << "-----------\n");
+  if (Iter != this->ChosenLoopSortedStreams.end()) {
+    for (auto S : Iter->second) {
+      DEBUG(llvm::errs() << S->formatName() << '\n');
+    }
+  }
+  DEBUG(llvm::errs() << "----------------------------\n");
+}
+
+void StreamPass::makeStreamTransformPlan() {
+
+  /**
+   * Slice the program and assign transformation plan for static instructions.
+   * 1. Find the outer most loop O, for every stream S in (O union subloops(O)),
+   *  a. Mark the stream as
+   *    load -> delete, store -> stream-store, phi -> delete.
+   *  b. Find the user of the stream and add user information.
+   *  c. Find all the compute instructions and mark them as delete candidates.
+   *  d. Mark address/phi instruction as deleted.
+   *  e. Mark S as processed.
+   * 2. Use the deleted instruction as the seed, and mark the delete candidates
+   * as deleted iff. all users of the candidate are already marked as deleted.
+   */
+  std::unordered_set<const llvm::Loop *> ProcessedLoops;
+  std::list<const llvm::Loop *> LoopBFSQueue;
+  std::unordered_set<const llvm::Instruction *> DeleteCandidates;
+  std::unordered_set<const llvm::Instruction *> DeletedInsts;
+  std::list<const llvm::Instruction *> NewlyDeletedQueue;
+
+  for (auto &LoopInstStreamEntry : this->ChosenLoopInstStream) {
+
+    const llvm::Loop *OutMostLoop = LoopInstStreamEntry.first;
+    if (ProcessedLoops.count(OutMostLoop) != 0) {
+      continue;
+    }
+
+    while (OutMostLoop->getParentLoop() != nullptr) {
+      OutMostLoop = OutMostLoop->getParentLoop();
+    }
+
+    // Process the OutMostLoop and all subloops.
+    LoopBFSQueue.clear();
+    DeleteCandidates.clear();
+    DeletedInsts.clear();
+    NewlyDeletedQueue.clear();
+    LoopBFSQueue.emplace_back(OutMostLoop);
+    while (!LoopBFSQueue.empty()) {
+      auto Loop = LoopBFSQueue.front();
+      LoopBFSQueue.pop_front();
+      ProcessedLoops.insert(Loop);
+
+      auto ChosenLoopInstStreamIter = this->ChosenLoopInstStream.find(Loop);
+      if (ChosenLoopInstStreamIter == this->ChosenLoopInstStream.end()) {
+        // No stream is specialized at this loop.
+        continue;
+      }
+
+      for (auto &InstStreamEntry : ChosenLoopInstStreamIter->second) {
+        Stream *S = InstStreamEntry.second;
+        DEBUG(llvm::errs() << "make transform plan for stream "
+                           << S->formatName() << '\n');
+
+        // Add all the compute instructions as delete candidates.
+        for (const auto &ComputeInst : S->getComputeInsts()) {
+          DeleteCandidates.insert(ComputeInst);
+          DEBUG(llvm::errs() << "Compute instruction "
+                             << LoopUtils::formatLLVMInst(ComputeInst) << '\n');
+          if (Stream::isStepInst(ComputeInst) && S->hasNoBaseStream()) {
+            /**
+             * Mark a step instruction for streams that has no base stream.
+             */
+            this->getOrCreatePlan(ComputeInst).planToStep(S);
+            DEBUG(llvm::errs()
+                  << "Select transform plan for inst "
+                  << LoopUtils::formatLLVMInst(ComputeInst) << " to "
+                  << StreamTransformPlan::formatPlanT(
+                         StreamTransformPlan::PlanT::STEP)
+                  << '\n');
+            /**
+             * A hack here to make the user of step instruction also user of the
+             * stream. PURE EVIL!!
+             */
+            for (auto U : ComputeInst->users()) {
+              if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+                this->getOrCreatePlan(I).addUsedStream(S);
+              }
+            }
+          }
+        }
+
+        // Add uses for all the users to use myself.
+        auto &SelfInst = InstStreamEntry.first;
+        for (auto U : SelfInst->users()) {
+          if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+            this->getOrCreatePlan(I).addUsedStream(S);
+            DEBUG(llvm::errs()
+                  << "Add used stream for user " << LoopUtils::formatLLVMInst(I)
+                  << " with stream " << S->formatName() << '\n');
+          }
+        }
+
+        // Mark myself as DELETE (load) or STORE (store).
+        auto &SelfPlan = this->getOrCreatePlan(SelfInst);
+        if (llvm::isa<llvm::StoreInst>(SelfInst)) {
+          assert(SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING &&
+                 "Already have a plan for the store.");
+          SelfPlan.planToStore(S);
+        } else {
+          // This is a load.
+          SelfPlan.planToDelete();
+        }
+        // Self inst is always marked as deleted for later as a seed to find
+        // deletable instructions. Even though a store instructions is not
+        // really deleted.
+        NewlyDeletedQueue.emplace_back(SelfInst);
+        DEBUG(llvm::errs() << "Select transform plan for inst "
+                           << LoopUtils::formatLLVMInst(SelfInst) << " to "
+                           << StreamTransformPlan::formatPlanT(SelfPlan.Plan)
+                           << '\n');
+      }
+    }
+
+    // Second step: find deletable instruction from the candidates.
+    while (!NewlyDeletedQueue.empty()) {
+      auto NewlyDeletedInst = NewlyDeletedQueue.front();
+      NewlyDeletedQueue.pop_front();
+      if (DeletedInsts.count(NewlyDeletedInst) != 0) {
+        // This has already been processed.
+        continue;
+      }
+      // Actually mark this one as delete if we have no other plan for it.
+      auto &Plan = this->getOrCreatePlan(NewlyDeletedInst);
+      switch (Plan.Plan) {
+      case StreamTransformPlan::PlanT::NOTHING:
+      case StreamTransformPlan::PlanT::DELETE: {
+        Plan.planToDelete();
+        break;
+      }
+      }
+      DEBUG(
+          llvm::errs() << "Select transform plan for addr inst "
+                       << LoopUtils::formatLLVMInst(NewlyDeletedInst) << " to "
+                       << StreamTransformPlan::formatPlanT(Plan.Plan) << '\n');
+      DeletedInsts.insert(NewlyDeletedInst);
+      // Check all the operand.
+      for (unsigned OperandIdx = 0,
+                    NumOperands = NewlyDeletedInst->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        auto Operand = NewlyDeletedInst->getOperand(OperandIdx);
+        if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(Operand)) {
+          if (DeleteCandidates.count(OperandInst) == 0) {
+            continue;
+          }
+          if (DeletedInsts.count(OperandInst) != 0) {
+            // This inst is already deleted.
+            continue;
+          }
+          // This is a candidate, check whether all of its users are deleted.
+          bool AllUsersDeleted = true;
+          for (auto U : OperandInst->users()) {
+            if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+              if (DeletedInsts.count(I) == 0) {
+                AllUsersDeleted = false;
+                break;
+              }
+            }
+          }
+          if (AllUsersDeleted) {
+            // We can safely mark this one as newly deleted now.
+            NewlyDeletedQueue.emplace_back(OperandInst);
+          }
+        }
+      }
+    }
+    DEBUG(this->DEBUG_PLAN_FOR_LOOP(OutMostLoop));
+  }
+}
+
+void StreamPass::sortChosenStream(Stream *S, std::list<Stream *> &Stack,
+                                  std::unordered_set<Stream *> &SortedStreams) {
+  for (auto PrevStream : Stack) {
+    if (PrevStream == S) {
+      DEBUG(llvm::errs() << "Recursive dependence found in stream. ");
+      for (auto PrevStream : Stack) {
+        DEBUG(llvm::errs() << PrevStream->formatName() << " -> ");
+      }
+      DEBUG(S->formatName());
+      assert(false && "Recursion found in chosen stream dependence graph.");
+    }
+  }
+  Stack.emplace_back(S);
+  auto &InstStreamMap = this->ChosenLoopInstStream.at(S->getLoop());
+  for (auto BaseStream : S->getBaseStreams()) {
+    if (BaseStream == S) {
+      // Dependent on myself is fine.
+      continue;
+    }
+    if (InstStreamMap.count(BaseStream->getInst()) == 0) {
+      // The base stream is not chosen at this level.
+      continue;
+    }
+    if (SortedStreams.count(BaseStream) != 0) {
+      continue;
+    }
+    this->sortChosenStream(BaseStream, Stack, SortedStreams);
+  }
+  auto Iter = this->ChosenLoopSortedStreams.find(S->getLoop());
+  if (Iter == this->ChosenLoopSortedStreams.end()) {
+    Iter = this->ChosenLoopSortedStreams
+               .emplace(std::piecewise_construct,
+                        std::forward_as_tuple(S->getLoop()),
+                        std::forward_as_tuple())
+               .first;
+  }
+  Iter->second.emplace_back(S);
+  SortedStreams.insert(S);
+  Stack.pop_back();
+}
+
 class StreamStepInst : public DynamicInstruction {
 public:
-  StreamStepInst() = default;
+  StreamStepInst(DynamicId _Id) : DynamicInstruction() { this->Id = _Id; }
   std::string getOpName() const override { return "stream-step"; }
 };
 
@@ -1160,12 +1490,95 @@ public:
   std::string getOpName() const override { return "stream-store"; }
 };
 
-class StreamConfigInst : public DynamicInstruction {};
+class StreamConfigInst : public DynamicInstruction {
+public:
+  std::string getOpName() const override { return "stream-config"; }
+};
+
+void StreamPass::pushLoopStackAndConfigureStreams(
+    LoopStackT &LoopStack, llvm::Loop *NewLoop,
+    DataGraph::DynamicInstIter NewInstIter,
+    ActiveStreamInstMapT &ActiveStreamInstMap) {
+  LoopStack.emplace_back(NewLoop);
+  auto Iter = this->ChosenLoopSortedStreams.find(NewLoop);
+  if (Iter == this->ChosenLoopSortedStreams.end()) {
+    return;
+  }
+  if (Iter->second.empty()) {
+    return;
+  }
+
+  auto NewDynamicInst = *NewInstIter;
+
+  std::unordered_set<DynamicInstruction::DynamicId> InitDepIds;
+  for (const auto &RegDep : this->Trace->RegDeps.at(NewDynamicInst->getId())) {
+    InitDepIds.insert(RegDep.second);
+  }
+
+  for (auto &S : Iter->second) {
+    auto Inst = S->getInst();
+    auto ConfigInst = new StreamConfigInst();
+    auto ConfigInstId = ConfigInst->getId();
+
+    this->Trace->insertDynamicInst(NewInstIter, ConfigInst);
+
+    /**
+     * Insert the register dependence.
+     */
+    auto &RegDeps = this->Trace->RegDeps.at(ConfigInstId);
+    for (auto &BaseStream : S->getBaseStreams()) {
+      auto BaseStreamInst = BaseStream->getInst();
+      auto ActiveStreamInstMapIter = ActiveStreamInstMap.find(BaseStreamInst);
+      if (ActiveStreamInstMapIter != ActiveStreamInstMap.end()) {
+        RegDeps.emplace_back(nullptr, ActiveStreamInstMapIter->second);
+      }
+    }
+    /**
+     * Also insert the init deps.
+     */
+    for (auto DepId : InitDepIds) {
+      RegDeps.emplace_back(nullptr, DepId);
+    }
+
+    /**
+     * Add myself into the active map. Implicitly create the entry if not
+     * exists.
+     */
+    ActiveStreamInstMap[Inst] = ConfigInstId;
+
+    this->ConfigInstCount++;
+  }
+}
+
+void StreamPass::popLoopStackAndUnconfigureStreams(
+    LoopStackT &LoopStack, ActiveStreamInstMapT &ActiveStreamInstMap) {
+  assert(!LoopStack.empty() &&
+         "Loop stack is empty when calling popLoopStackAndUnconfigureStreams.");
+  auto EndedLoop = LoopStack.back();
+  LoopStack.pop_back();
+
+  auto Iter = this->ChosenLoopSortedStreams.find(EndedLoop);
+  if (Iter == this->ChosenLoopSortedStreams.end()) {
+    return;
+  }
+  if (Iter->second.empty()) {
+    return;
+  }
+
+  for (auto &S : Iter->second) {
+    auto Inst = S->getInst();
+    auto ActiveStreamInstMapIter = ActiveStreamInstMap.find(Inst);
+    assert(ActiveStreamInstMapIter != ActiveStreamInstMap.end() &&
+           "The stream is not configured.");
+    ActiveStreamInstMap.erase(ActiveStreamInstMapIter);
+  }
+}
 
 void StreamPass::transformStream() {
   DEBUG(llvm::errs() << "Stream: Start transform.\n");
 
   LoopStackT LoopStack;
+  ActiveStreamInstMapT ActiveStreamInstMap;
 
   while (true) {
     auto NewInstIter = this->Trace->loadOneDynamicInst();
@@ -1176,8 +1589,18 @@ void StreamPass::transformStream() {
     bool IsAtHeadOfCandidate = false;
 
     while (this->Trace->DynamicInstructionList.size() > 10) {
-      this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
-                                  this->Trace);
+      auto DynamicInst = this->Trace->DynamicInstructionList.front();
+      DEBUG(llvm::errs() << DynamicInst->getId() << ' '
+                         << DynamicInst->getOpName() << ' ');
+      if (auto StaticInst = DynamicInst->getStaticInstruction()) {
+        DEBUG(llvm::errs() << LoopUtils::formatLLVMInst(StaticInst));
+      }
+      DEBUG(llvm::errs() << " reg-deps ");
+      for (const auto &RegDep : this->Trace->RegDeps.at(DynamicInst->getId())) {
+        DEBUG(llvm::errs() << RegDep.second << ' ');
+      }
+      DEBUG(llvm::errs() << '\n');
+      this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();
     }
 
@@ -1214,12 +1637,14 @@ void StreamPass::transformStream() {
         break;
       }
       // No special handling when popping loop stack.
-      LoopStack.pop_back();
+      this->popLoopStackAndUnconfigureStreams(LoopStack, ActiveStreamInstMap);
     }
 
     if (NewLoop != nullptr && IsAtHeadOfCandidate) {
       if (LoopStack.empty() || LoopStack.back() != NewLoop) {
         // A new loop. We should configure all the streams here.
+        this->pushLoopStackAndConfigureStreams(LoopStack, NewLoop, NewInstIter,
+                                               ActiveStreamInstMap);
       } else {
         // This means that we are at a new iteration.
       }
@@ -1245,6 +1670,7 @@ void StreamPass::transformStream() {
       /**
        * No more handling for the deleted instruction.
        */
+      this->DeletedInstCount++;
       continue;
     } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
 
@@ -1252,11 +1678,25 @@ void StreamPass::transformStream() {
           NewStaticInst, std::list<DynamicId>());
 
       auto NewDynamicId = NewDynamicInst->getId();
-      this->Trace->commitDynamicInst(NewDynamicId);
 
-      auto StepInst = new StreamStepInst();
+      auto StepInst = new StreamStepInst(NewDynamicId);
       *NewInstIter = StepInst;
-      this->Trace->AliveDynamicInstsMap.emplace(StepInst->getId(), NewInstIter);
+
+      /**
+       * Handle the dependence for the step instruction.
+       */
+      auto StreamInst = TransformPlan.getParamStream()->getInst();
+      auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+      if (StreamInstIter == ActiveStreamInstMap.end()) {
+        ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
+      } else {
+        this->Trace->RegDeps.at(NewDynamicInst->getId())
+            .emplace_back(nullptr, StreamInstIter->second);
+        StreamInstIter->second = NewDynamicId;
+      }
+
+      this->StepInstCount++;
+      continue;
 
     } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
 
@@ -1279,7 +1719,19 @@ void StreamPass::transformStream() {
     /**
      * Handle the use information.
      */
+    auto &RegDeps = this->Trace->RegDeps.at(NewDynamicInst->getId());
     for (auto &UsedStream : TransformPlan.getUsedStreams()) {
+      auto UsedStreamInst = UsedStream->getInst();
+      auto UsedStreamInstIter = ActiveStreamInstMap.find(UsedStreamInst);
+      if (UsedStreamInstIter != ActiveStreamInstMap.end()) {
+        RegDeps.emplace_back(nullptr, UsedStreamInstIter->second);
+      }
+      for (auto &ChosenBaseStream : UsedStream->getAllChosenBaseStreams()) {
+        auto Iter = ActiveStreamInstMap.find(ChosenBaseStream->getInst());
+        if (Iter != ActiveStreamInstMap.end()) {
+          RegDeps.emplace_back(nullptr, Iter->second);
+        }
+      }
     }
   }
 
