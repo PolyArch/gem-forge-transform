@@ -263,6 +263,27 @@ void DataGraph::commitOneDynamicInst() {
   this->DynamicInstructionList.pop_front();
 }
 
+DataGraph::DynamicInstIter
+DataGraph::insertDynamicInst(DynamicInstIter InsertBefore,
+                             DynamicInstruction *DynamicInst) {
+  auto NewInstIter =
+      this->DynamicInstructionList.emplace(InsertBefore, DynamicInst);
+
+  this->RegDeps.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(DynamicInst->getId()),
+                        std::forward_as_tuple());
+  this->MemDeps.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(DynamicInst->getId()),
+                        std::forward_as_tuple());
+  this->CtrDeps.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(DynamicInst->getId()),
+                        std::forward_as_tuple());
+
+  this->AliveDynamicInstsMap.emplace(DynamicInst->getId(), NewInstIter);
+
+  return NewInstIter;
+}
+
 bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
 
   DEBUG(llvm::errs() << "Parsed dynamic instruction.\n");

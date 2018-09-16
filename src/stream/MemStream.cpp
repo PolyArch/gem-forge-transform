@@ -32,7 +32,6 @@ void MemStream::searchAddressComputeInstructions(
       continue;
     }
 
-    this->AddrInsts.insert(CurrentInst);
     if (auto BaseLoad = llvm::dyn_cast<llvm::LoadInst>(CurrentInst)) {
       // This is also a base load.
       this->BaseLoads.insert(BaseLoad);
@@ -48,6 +47,7 @@ void MemStream::searchAddressComputeInstructions(
       }
     }
 
+    this->AddrInsts.insert(CurrentInst);
     // BFS on the operands.
     for (unsigned OperandIdx = 0, NumOperands = CurrentInst->getNumOperands();
          OperandIdx != NumOperands; ++OperandIdx) {

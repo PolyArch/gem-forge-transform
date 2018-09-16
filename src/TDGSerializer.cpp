@@ -31,6 +31,8 @@ TDGSerializer::~TDGSerializer() {
     this->write();
   }
 
+  llvm::errs() << "Serialized " << this->SerializedInsts << '\n';
+
   delete this->OutZeroCopyStream;
   this->OutZeroCopyStream = nullptr;
   this->OutFileStream.close();

@@ -222,6 +222,10 @@ public:
   // Commit one inst and remove it from the alive set.
   void commitOneDynamicInst();
   void commitDynamicInst(DynamicId Id);
+  // Insert one instruction into the list and initialize the dependence and
+  // alive map.
+  DynamicInstIter insertDynamicInst(DynamicInstIter InsertBefore,
+                                    DynamicInstruction *DynamicInst);
 
   void updateAddrToLastMemoryAccessMap(uint64_t Addr, size_t ByteSize,
                                        DynamicId Id, bool IsLoad);

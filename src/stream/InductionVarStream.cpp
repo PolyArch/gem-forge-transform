@@ -29,6 +29,10 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
 
   std::list<llvm::Instruction *> Queue;
 
+  DEBUG(llvm::errs() << "Search compute instructions for "
+                     << LoopUtils::formatLLVMInst(PHINode) << " at loop "
+                     << LoopUtils::getLoopId(Loop) << '\n');
+
   for (unsigned IncomingIdx = 0,
                 NumIncomingValues = PHINode->getNumIncomingValues();
        IncomingIdx != NumIncomingValues; ++IncomingIdx) {
@@ -39,6 +43,8 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
     auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
     if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
       Queue.emplace_back(IncomingInst);
+      DEBUG(llvm::errs() << "Enqueue inst "
+                         << LoopUtils::formatLLVMInst(IncomingInst) << '\n');
     }
   }
 
@@ -47,19 +53,26 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
   while (!Queue.empty()) {
     auto CurrentInst = Queue.front();
     Queue.pop_front();
+    DEBUG(llvm::errs() << "Processing "
+                       << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     if (ComputeInsts.count(CurrentInst) != 0) {
       // We have already processed this one.
+      DEBUG(llvm::errs() << "Already processed\n");
       continue;
     }
     if (!Loop->contains(CurrentInst)) {
       // This instruction is out of our analysis level. ignore it.
+      DEBUG(llvm::errs() << "Not in loop\n");
       continue;
     }
     if (Utils::isCallOrInvokeInst(CurrentInst)) {
       // So far I do not know how to process the call/invoke instruction.
+      DEBUG(llvm::errs() << "Is call or invoke\n");
       continue;
     }
 
+    DEBUG(llvm::errs() << "Found compute inst "
+                       << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     ComputeInsts.insert(CurrentInst);
 
     // BFS on the operands.
@@ -72,9 +85,8 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
                            << LoopUtils::formatLLVMInst(OperandInst) << '\n');
       }
     }
-
-    return ComputeInsts;
   }
+  return ComputeInsts;
 }
 
 #undef DEBUG_TYPE

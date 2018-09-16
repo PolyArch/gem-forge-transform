@@ -29,11 +29,19 @@ public:
   const std::unordered_set<Stream *> &getBaseStreams() const {
     return this->BaseStreams;
   }
+  const std::unordered_set<Stream *> &getChosenBaseStreams() const {
+    return this->ChosenBaseStreams;
+  }
+  const std::unordered_set<Stream *> &getAllChosenBaseStreams() const {
+    return this->AllChosenBaseStreams;
+  }
   const std::unordered_set<Stream *> &getDependentStreams() const {
     return this->DependentStreams;
   }
   void markQualified() { this->Qualified = true; }
   bool isQualified() const { return this->Qualified; }
+  void markChosen() { this->Chosen = true; }
+  bool isChosen() const { return this->Chosen; }
   const llvm::Loop *getLoop() const { return this->Loop; }
   const llvm::Instruction *getInst() const { return this->Inst; }
   size_t getLoopLevel() const { return this->LoopLevel; }
@@ -46,6 +54,27 @@ public:
     // assert(Other != this && "Self dependent streams is not allowed.");
     this->BaseStreams.insert(Other);
     Other->DependentStreams.insert(this);
+  }
+
+  void addChosenBaseStream(Stream *Other) {
+    assert(Other != this && "Self dependent chosen streams is not allowed.");
+    assert(
+        this->isChosen() &&
+        "This should be chosen to build the chosen stream dependence graph.");
+    assert(
+        Other->isChosen() &&
+        "Other should be chosen to build the chosen stream dependence graph.");
+    this->ChosenBaseStreams.insert(Other);
+  }
+  void addAllChosenBaseStream(Stream *Other) {
+    assert(Other != this && "Self dependent chosen streams is not allowed.");
+    assert(
+        this->isChosen() &&
+        "This should be chosen to build the chosen stream dependence graph.");
+    assert(
+        Other->isChosen() &&
+        "Other should be chosen to build the chosen stream dependence graph.");
+    this->AllChosenBaseStreams.insert(Other);
   }
 
   void endIter() {
@@ -102,8 +131,11 @@ protected:
   const size_t LoopLevel;
 
   std::unordered_set<Stream *> BaseStreams;
+  std::unordered_set<Stream *> ChosenBaseStreams;
+  std::unordered_set<Stream *> AllChosenBaseStreams;
   std::unordered_set<Stream *> DependentStreams;
   bool Qualified;
+  bool Chosen;
   /**
    * Stores the total iterations for this stream
    */
