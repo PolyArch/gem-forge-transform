@@ -2,21 +2,11 @@
 
 # First dive into trace, as it will give us PROTOBUF variables.
 add_subdirectory(trace)
+add_subdirectory(stream)
 
 # generate tdg protobuf messages.
 protobuf_generate_cpp(TDG_PROTOBUF_SRCS TDG_PROTOBUF_HDRS
     TDGInstruction.proto
-)
-
-message(STATUS "TESTING TRACE_PROTOBUF_SRCS")
-message(STATUS ${TRACE_PROTOBUF_SRCS})
-
-SET_SOURCE_FILES_PROPERTIES(
-    ${TRACE_PROTOBUF_SRCS} 
-    ${TRACE_PROTOBUF_HDRS} 
-    ${TDG_PROTOBUF_SRCS} 
-    ${TDG_PROTOBUF_HDRS} 
-    PROPERTIES GENERATED TRUE
 )
 
 # The llvm pass shared library.
@@ -27,8 +17,7 @@ add_library(LLVMTDGPass MODULE
     trace/TraceParserProtobuf.cpp
     trace/ProfileParser.cpp
     trace/InstructionUIDMap.cpp
-    ${TRACE_PROTOBUF_SRCS}
-    ${PROFILE_PROTOBUF_SRCS}
+    $<TARGET_OBJECTS:ProtobufTraceMessage>
     ${TDG_PROTOBUF_SRCS}
     DynamicInstruction.cpp
     DataGraph.cpp
@@ -47,6 +36,7 @@ add_library(LLVMTDGPass MODULE
     # Abstract data flow accelerator
     adfa/AbstractDataFlowAcceleratorPass.cpp
     # Stream
+    $<TARGET_OBJECTS:ProtobufStreamMessage>
     stream/StreamPattern.cpp
     stream/InlineContextStreamPass.cpp
     stream/InlineContext.cpp
@@ -61,7 +51,8 @@ add_library(LLVMTDGPass MODULE
 
 # Make sure LLVMTDGPass is dependent on protobuf tracer library,
 # as we need the generated protobuf src file.
-add_dependencies(LLVMTDGPass TracerProtobuf)
+# add_dependencies(LLVMTDGPass TracerProtobuf)
+# add_dependencies(LLVMTDGPass ProtobufStreamMessage)
 
 # Make sure we can find the protobuf headers.
 target_include_directories(LLVMTDGPass 

@@ -65,6 +65,8 @@ public:
   // operands
   std::vector<DynamicValue *> DynamicOperands;
 
+  void addUsedStreamId(uint64_t UsedStreamId);
+
   void format(llvm::raw_ostream &Out, DataGraph *DG) const;
 
   void serializeToProtobuf(LLVM::TDG::TDGInstruction *ProtobufEntry,
@@ -77,6 +79,11 @@ protected:
   static DynamicId allocateId();
 
   DynamicId Id;
+
+  /**
+   * Used by stream isa.
+   */
+  std::unordered_set<uint64_t> *UsedStreamIds;
 
   void formatDeps(llvm::raw_ostream &Out, DataGraph *DG) const;
   void formatOpCode(llvm::raw_ostream &Out) const;

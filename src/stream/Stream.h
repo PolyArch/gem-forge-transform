@@ -23,7 +23,6 @@ public:
   Stream(TypeT _Type, const std::string &_Folder,
          const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
          size_t _LoopLevel);
-  ~Stream();
 
   bool hasNoBaseStream() const { return this->BaseStreams.empty(); }
   const std::unordered_set<Stream *> &getBaseStreams() const {
@@ -44,6 +43,9 @@ public:
   bool isChosen() const { return this->Chosen; }
   const llvm::Loop *getLoop() const { return this->Loop; }
   const llvm::Instruction *getInst() const { return this->Inst; }
+  uint64_t getStreamId() const { return reinterpret_cast<uint64_t>(this); }
+  const std::string &getPatternPath() const { return this->PatternFullPath; }
+  const std::string &getInfoPath() const { return this->InfoFullPath; }
   size_t getLoopLevel() const { return this->LoopLevel; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
@@ -88,6 +90,8 @@ public:
 
   void endStream();
 
+  void finalize();
+
   virtual bool isAliased() const { return false; }
   std::string formatType() const {
     switch (this->Type) {
@@ -120,8 +124,9 @@ protected:
    * Stores the information of the stream.
    */
   std::string Folder;
-  std::string FullPath;
-  std::ofstream StoreFStream;
+  std::string PatternFullPath;
+  std::string InfoFullPath;
+  std::ofstream PatternStoreFStream;
 
   /**
    * Stores the instruction and loop.

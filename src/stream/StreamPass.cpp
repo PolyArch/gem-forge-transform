@@ -154,6 +154,7 @@ protected:
   void
   popLoopStackAndUnconfigureStreams(LoopStackT &LoopStack,
                                     ActiveStreamInstMapT &ActiveStreamInstMap);
+  void DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst);
   void transformStream();
 
   std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
@@ -441,14 +442,18 @@ void StreamPass::dumpStats(std::ostream &O) {
 
 void StreamPass::transform() {
   this->analyzeStream();
-  for (auto &InstStreamEntry : this->InstMemStreamMap) {
-    for (auto &Stream : InstStreamEntry.second) {
-      Stream.finalizePattern();
-    }
-  }
   this->chooseStream();
   this->buildChosenStreamDependenceGraph();
   this->buildAllChosenStreamDependenceGraph();
+  /**
+   * This has to be finalized after we build the chosen stream dependence
+   * graphs, which will be dumped into the info file of the stream.
+   */
+  for (auto &InstStreamEntry : this->InstStreamMap) {
+    for (auto &S : InstStreamEntry.second) {
+      S->finalize();
+    }
+  }
 
   this->makeStreamTransformPlan();
 
@@ -557,9 +562,10 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
       this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
       DEBUG(llvm::errs() << "Initialize IVStream "
                          << Streams.back().formatName() << '\n');
-      ++LoopIter;
     }
+    ++LoopIter;
   }
+  DEBUG(llvm::errs() << "Initialize IVStream returned\n");
 }
 
 void StreamPass::activateStream(ActiveStreamMapT &ActiveStreams,
@@ -614,6 +620,8 @@ void StreamPass::activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
       // DEBUG(llvm::errs() << "Activate iv stream " << IVStream->formatName()
       //                    << "\n");
       ActivePHINodeIVStreamMap.emplace(PHINode, IVStream);
+      DEBUG(llvm::errs() << "Activate IVStream " << IVStream->formatName()
+                         << '\n');
     }
   }
 }
@@ -1305,6 +1313,10 @@ void StreamPass::makeStreamTransformPlan() {
       LoopBFSQueue.pop_front();
       ProcessedLoops.insert(Loop);
 
+      for (auto &SubLoop : Loop->getSubLoops()) {
+        LoopBFSQueue.emplace_back(SubLoop);
+      }
+
       auto ChosenLoopInstStreamIter = this->ChosenLoopInstStream.find(Loop);
       if (ChosenLoopInstStreamIter == this->ChosenLoopInstStream.end()) {
         // No stream is specialized at this loop.
@@ -1475,24 +1487,67 @@ void StreamPass::sortChosenStream(Stream *S, std::list<Stream *> &Stack,
 
 class StreamStepInst : public DynamicInstruction {
 public:
-  StreamStepInst(DynamicId _Id) : DynamicInstruction() { this->Id = _Id; }
+  StreamStepInst(DynamicId _Id, Stream *_S) : DynamicInstruction(), S(_S) {
+    this->Id = _Id;
+  }
   std::string getOpName() const override { return "stream-step"; }
+
+protected:
+  void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                                DataGraph *DG) const override {
+    auto StreamStepExtra = ProtobufEntry->mutable_stream_store();
+    assert(ProtobufEntry->has_stream_store() &&
+           "The protobuf entry should have stream step extra struct.");
+    StreamStepExtra->set_stream_id(this->S->getStreamId());
+  }
+
+private:
+  Stream *S;
 };
 
 class StreamStoreInst : public DynamicInstruction {
 public:
-  StreamStoreInst(DynamicId _Id) : DynamicInstruction() {
+  StreamStoreInst(DynamicId _Id, Stream *_S) : DynamicInstruction(), S(_S) {
     /**
      * Inherit the provided dynamic id.
      */
     this->Id = _Id;
   }
   std::string getOpName() const override { return "stream-store"; }
+
+protected:
+  void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                                DataGraph *DG) const override {
+    auto StreamStoreExtra = ProtobufEntry->mutable_stream_store();
+    assert(ProtobufEntry->has_stream_store() &&
+           "The protobuf entry should have stream store extra struct.");
+    StreamStoreExtra->set_stream_id(this->S->getStreamId());
+  }
+
+private:
+  Stream *S;
 };
 
 class StreamConfigInst : public DynamicInstruction {
 public:
+  StreamConfigInst(Stream *_S) : DynamicInstruction(), S(_S) {}
   std::string getOpName() const override { return "stream-config"; }
+
+protected:
+  void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                                DataGraph *DG) const override {
+
+    auto ConfigExtra = ProtobufEntry->mutable_stream_config();
+    assert(ProtobufEntry->has_stream_config() &&
+           "The protobuf entry should have stream config extra struct.");
+    ConfigExtra->set_stream_name(this->S->formatName());
+    ConfigExtra->set_stream_id(this->S->getStreamId());
+    ConfigExtra->set_pattern_path(this->S->getPatternPath());
+    ConfigExtra->set_info_path(this->S->getInfoPath());
+  }
+
+private:
+  Stream *S;
 };
 
 void StreamPass::pushLoopStackAndConfigureStreams(
@@ -1517,7 +1572,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
 
   for (auto &S : Iter->second) {
     auto Inst = S->getInst();
-    auto ConfigInst = new StreamConfigInst();
+    auto ConfigInst = new StreamConfigInst(S);
     auto ConfigInstId = ConfigInst->getId();
 
     this->Trace->insertDynamicInst(NewInstIter, ConfigInst);
@@ -1574,6 +1629,19 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
   }
 }
 
+void StreamPass::DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst) {
+  DEBUG(llvm::errs() << DynamicInst->getId() << ' ' << DynamicInst->getOpName()
+                     << ' ');
+  if (auto StaticInst = DynamicInst->getStaticInstruction()) {
+    DEBUG(llvm::errs() << LoopUtils::formatLLVMInst(StaticInst));
+  }
+  DEBUG(llvm::errs() << " reg-deps ");
+  for (const auto &RegDep : this->Trace->RegDeps.at(DynamicInst->getId())) {
+    DEBUG(llvm::errs() << RegDep.second << ' ');
+  }
+  DEBUG(llvm::errs() << '\n');
+}
+
 void StreamPass::transformStream() {
   DEBUG(llvm::errs() << "Stream: Start transform.\n");
 
@@ -1590,16 +1658,7 @@ void StreamPass::transformStream() {
 
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
-      DEBUG(llvm::errs() << DynamicInst->getId() << ' '
-                         << DynamicInst->getOpName() << ' ');
-      if (auto StaticInst = DynamicInst->getStaticInstruction()) {
-        DEBUG(llvm::errs() << LoopUtils::formatLLVMInst(StaticInst));
-      }
-      DEBUG(llvm::errs() << " reg-deps ");
-      for (const auto &RegDep : this->Trace->RegDeps.at(DynamicInst->getId())) {
-        DEBUG(llvm::errs() << RegDep.second << ' ');
-      }
-      DEBUG(llvm::errs() << '\n');
+      // DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
       this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();
     }
@@ -1679,7 +1738,8 @@ void StreamPass::transformStream() {
 
       auto NewDynamicId = NewDynamicInst->getId();
 
-      auto StepInst = new StreamStepInst(NewDynamicId);
+      auto StepInst =
+          new StreamStepInst(NewDynamicId, TransformPlan.getParamStream());
       *NewInstIter = StepInst;
 
       /**
@@ -1712,7 +1772,8 @@ void StreamPass::transformStream() {
       auto NewDynamicId = NewDynamicInst->getId();
       delete NewDynamicInst;
 
-      auto StoreInst = new StreamStoreInst(NewDynamicId);
+      auto StoreInst =
+          new StreamStoreInst(NewDynamicId, TransformPlan.getParamStream());
       *NewInstIter = StoreInst;
     }
 
@@ -1721,6 +1782,8 @@ void StreamPass::transformStream() {
      */
     auto &RegDeps = this->Trace->RegDeps.at(NewDynamicInst->getId());
     for (auto &UsedStream : TransformPlan.getUsedStreams()) {
+      // Add the used stream id to the dynamic instruction.
+      NewDynamicInst->addUsedStreamId(UsedStream->getStreamId());
       auto UsedStreamInst = UsedStream->getInst();
       auto UsedStreamInstIter = ActiveStreamInstMap.find(UsedStreamInst);
       if (UsedStreamInstIter != ActiveStreamInstMap.end()) {

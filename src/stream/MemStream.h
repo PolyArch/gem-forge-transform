@@ -31,8 +31,6 @@ public:
     this->AliasInsts.insert(AliasInst);
   }
 
-  void finalizePattern() { this->Pattern.finalizePattern(); }
-
   const MemoryFootprint &getFootprint() const { return this->Footprint; }
   bool getQualified() const { return this->Qualified; }
   DynamicInstruction::DynamicId getStartId() const { return this->StartId; }

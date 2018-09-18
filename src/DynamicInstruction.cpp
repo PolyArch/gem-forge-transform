@@ -113,7 +113,7 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
 }
 
 DynamicInstruction::DynamicInstruction()
-    : Id(allocateId()), DynamicResult(nullptr) {}
+    : DynamicResult(nullptr), Id(allocateId()), UsedStreamIds(nullptr) {}
 
 DynamicInstruction::~DynamicInstruction() {
   if (this->DynamicResult != nullptr) {
@@ -126,6 +126,10 @@ DynamicInstruction::~DynamicInstruction() {
       OperandsIter = nullptr;
     }
   }
+  if (this->UsedStreamIds != nullptr) {
+    delete this->UsedStreamIds;
+    this->UsedStreamIds = nullptr;
+  }
 }
 
 DynamicInstruction::DynamicId DynamicInstruction::InvalidId = 0;
@@ -134,6 +138,13 @@ DynamicInstruction::DynamicId DynamicInstruction::allocateId() {
   // Only consider single thread. 0 is reserved.
   static DynamicId CurrentId = 0;
   return ++CurrentId;
+}
+
+void DynamicInstruction::addUsedStreamId(uint64_t UsedStreamId) {
+  if (this->UsedStreamIds == nullptr) {
+    this->UsedStreamIds = new std::unordered_set<uint64_t>();
+  }
+  this->UsedStreamIds->insert(UsedStreamId);
 }
 
 void DynamicInstruction::format(llvm::raw_ostream &Out, DataGraph *DG) const {
@@ -202,6 +213,14 @@ void DynamicInstruction::serializeToProtobuf(
     if (DepIter != DG->CtrDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
         ProtobufEntry->add_deps(DepInstId);
+      }
+    }
+  }
+
+  {
+    if (this->UsedStreamIds != nullptr) {
+      for (const auto &UsedStreamId : (*this->UsedStreamIds)) {
+        ProtobufEntry->add_used_stream_ids(UsedStreamId);
       }
     }
   }

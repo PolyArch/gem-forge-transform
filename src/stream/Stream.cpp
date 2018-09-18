@@ -1,4 +1,5 @@
 #include "stream/Stream.h"
+#include "stream/StreamMessage.pb.h"
 
 Stream::Stream(TypeT _Type, const std::string &_Folder,
                const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
@@ -7,12 +8,13 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
       LoopLevel(_LoopLevel), Qualified(false), Chosen(false), TotalIters(0),
       TotalAccesses(0), TotalStreams(0), Iters(1), LastAccessIters(0),
       StartId(DynamicInstruction::InvalidId), Pattern() {
-  this->FullPath = this->Folder + "/" + this->formatName() + ".txt";
-  this->StoreFStream.open(this->FullPath);
-  assert(this->StoreFStream.is_open() && "Failed to open output stream file.");
+  this->PatternFullPath =
+      this->Folder + "/" + this->formatName() + ".pattern.txt";
+  this->InfoFullPath = this->Folder + "/" + this->formatName() + ".info.txt";
+  this->PatternStoreFStream.open(this->PatternFullPath);
+  assert(this->PatternStoreFStream.is_open() &&
+         "Failed to open output stream file.");
 }
-
-Stream::~Stream() { this->StoreFStream.close(); }
 
 void Stream::endStream() {
   const auto ComputedPattern = this->Pattern.endStream();
@@ -22,16 +24,17 @@ void Stream::endStream() {
   this->StartId = DynamicInstruction::InvalidId;
 
   // Serialize just with text.
-  this->StoreFStream << "ValPat "
-                     << StreamPattern::formatValuePattern(
-                            ComputedPattern.ValPattern)
-                     << std::endl;
-  this->StoreFStream << "AccPat "
-                     << StreamPattern::formatAccessPattern(
-                            ComputedPattern.AccPattern)
-                     << std::endl;
+  this->PatternStoreFStream
+      << "ValPat "
+      << StreamPattern::formatValuePattern(ComputedPattern.ValPattern)
+      << std::endl;
+  this->PatternStoreFStream
+      << "AccPat "
+      << StreamPattern::formatAccessPattern(ComputedPattern.AccPattern)
+      << std::endl;
 #define SerializeFieldText(field)                                              \
-  this->StoreFStream << #field << ' ' << ComputedPattern.field << std::endl
+  this->PatternStoreFStream << #field << ' ' << ComputedPattern.field          \
+                            << std::endl
   SerializeFieldText(Iters);
   SerializeFieldText(Accesses);
   SerializeFieldText(Updates);
@@ -40,4 +43,26 @@ void Stream::endStream() {
   SerializeFieldText(NI);
   SerializeFieldText(StrideJ);
 #undef SerializeFieldText
+}
+
+void Stream::finalize() {
+  this->Pattern.finalizePattern();
+  this->PatternStoreFStream.close();
+  std::ofstream InfoFStream(this->InfoFullPath);
+  assert(InfoFStream.is_open() && "Failed to open the output info file.");
+
+  InfoFStream << this->formatName() << '\n';
+  InfoFStream << this->getStreamId() << '\n';
+  // The next line is the chosen base streams.
+  for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
+    InfoFStream << ChosenBaseStream->getStreamId() << ' ';
+  }
+  InfoFStream << '\n';
+  // The next line is all chosen base streams.
+  for (const auto &AllChosenBaseStream : this->AllChosenBaseStreams) {
+    InfoFStream << AllChosenBaseStream->getStreamId() << ' ';
+  }
+  InfoFStream << '\n';
+
+  InfoFStream.close();
 }

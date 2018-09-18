@@ -18,12 +18,16 @@ message TDGInstruction {
   uint64 id = 2;
   uint64 bb = 3;
   repeated uint64 deps = 4;
+  repeated uint64 used_stream_ids = 5;
   oneof extra {
     StoreExtra store = 8;
     LoadExtra load = 9;
     AllocExtra alloc = 10;
     BranchExtra branch = 11;
     ADFAConfigExtra adfa_config = 20;
+    StreamConfigExtra stream_config = 21;
+    StreamStepExtra stream_step = 22;
+    StreamStoreExtra stream_store = 23;
   }
 
   message StoreExtra {
@@ -56,6 +60,21 @@ message TDGInstruction {
   // ADFA instructions.
   message ADFAConfigExtra {
     string data_flow = 1;
+  }
+
+  message StreamConfigExtra {
+    string stream_name = 1;
+    uint64 stream_id = 2;
+    string info_path = 3;
+    string pattern_path = 4;
+  }
+
+  message StreamStepExtra {
+    uint64 stream_id = 1;
+  }
+
+  message StreamStoreExtra {
+    uint64 stream_id = 1;
   }
 }
 
