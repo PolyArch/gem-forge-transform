@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package LLVM.TDG;
+
+message StreamInfo {
+    string name = 1;
+    uint64 id = 2;
+    repeated uint64 chosen_base_ids = 3;
+}
+
+message StreamPattern {
+    string ValPattern = 1;
+    string AccPattern = 2;
+    uint64 Iters = 3;
+    uint64 Accesses = 4;
+    uint64 Updates = 5;
+    uint64 Base = 6;
+    int64 StrideI = 7;
+    uint64 NI = 8;
+    int64 StrideJ = 9;
+}
