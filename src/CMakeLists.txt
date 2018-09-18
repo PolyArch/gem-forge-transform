@@ -29,6 +29,7 @@ add_library(LLVMTDGPass MODULE
     LocateAccelerableFunctions.cpp
     Replay.cpp
     TraceStatisticPass.cpp
+    Gem5ProtobufSerializer.cpp
     TDGSerializer.cpp
     CacheWarmer.cpp
     # SIMD

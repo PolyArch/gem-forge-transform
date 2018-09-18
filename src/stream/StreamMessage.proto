@@ -9,13 +9,13 @@ message StreamInfo {
 }
 
 message StreamPattern {
-    string ValPattern = 1;
-    string AccPattern = 2;
-    uint64 Iters = 3;
-    uint64 Accesses = 4;
-    uint64 Updates = 5;
-    uint64 Base = 6;
-    int64 StrideI = 7;
-    uint64 NI = 8;
-    int64 StrideJ = 9;
+    string val_pattern = 1;
+    string acc_pattern = 2;
+    uint64 iters = 3;
+    uint64 accesses = 4;
+    uint64 updates = 5;
+    uint64 base = 6;
+    int64 stride_i = 7;
+    uint64 ni = 8;
+    int64 stride_j = 9;
 }

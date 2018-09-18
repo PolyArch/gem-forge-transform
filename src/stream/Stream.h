@@ -1,6 +1,9 @@
 #ifndef LLVM_TDG_STREAM_STREAM_H
 #define LLVM_TDG_STREAM_STREAM_H
 
+#include "stream/StreamMessage.pb.h"
+
+#include "Gem5ProtobufSerializer.h"
 #include "LoopUtils.h"
 #include "Utils.h"
 #include "stream/StreamPattern.h"
@@ -126,7 +129,11 @@ protected:
   std::string Folder;
   std::string PatternFullPath;
   std::string InfoFullPath;
-  std::ofstream PatternStoreFStream;
+  std::string PatternTextFullPath;
+  std::string InfoTextFullPath;
+  LLVM::TDG::StreamPattern ProtobufPattern;
+  Gem5ProtobufSerializer *PatternSerializer;
+  std::ofstream PatternTextFStream;
 
   /**
    * Stores the instruction and loop.
