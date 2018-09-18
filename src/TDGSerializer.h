@@ -5,11 +5,7 @@
 
 #include "DataGraph.h"
 #include "DynamicInstruction.h"
-
-#include <google/protobuf/io/zero_copy_stream.h>
-
-#include <fstream>
-#include <string>
+#include "Gem5ProtobufSerializer.h"
 
 /**
  * This class helps incremental serializes the tdg instructions
@@ -29,24 +25,13 @@ public:
   void serialize(DynamicInstruction *DynamicInst, DataGraph *DG);
 
 private:
-  // Underlying file output stream.
-  std::ofstream OutFileStream;
+  Gem5ProtobufSerializer Gem5Serializer;
 
   // Flag static information serialized.
   bool SerializedStaticInfomation;
 
-  google::protobuf::io::ZeroCopyOutputStream *OutZeroCopyStream;
-
   uint64_t SerializedInsts;
   LLVM::TDG::TDG TDG;
-
-  /**
-   * Copied from gem5/src/proto/protoio.hh.
-   * Write this magic number first so that it can be readed by
-   * gem5's protoio.
-   */
-  /// Use the ASCII characters gem5 as our magic number
-  static const uint32_t Gem5MagicNumber = 0x356d6567;
 
   /**
    * Actually writing to the file.
