@@ -1495,8 +1495,8 @@ public:
 protected:
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
                                 DataGraph *DG) const override {
-    auto StreamStepExtra = ProtobufEntry->mutable_stream_store();
-    assert(ProtobufEntry->has_stream_store() &&
+    auto StreamStepExtra = ProtobufEntry->mutable_stream_step();
+    assert(ProtobufEntry->has_stream_step() &&
            "The protobuf entry should have stream step extra struct.");
     StreamStepExtra->set_stream_id(this->S->getStreamId());
   }
