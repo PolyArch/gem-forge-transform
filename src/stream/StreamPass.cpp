@@ -53,6 +53,8 @@ public:
   void planToStore(Stream *S) {
     this->ParamStream = S;
     this->Plan = STORE;
+    // Store is also considered as use.
+    this->addUsedStream(S);
   }
 
   std::string format() const {
@@ -451,7 +453,7 @@ void StreamPass::transform() {
    */
   for (auto &InstStreamEntry : this->InstStreamMap) {
     for (auto &S : InstStreamEntry.second) {
-      S->finalize();
+      S->finalize(this->Trace->DataLayout);
     }
   }
 
@@ -1658,7 +1660,9 @@ void StreamPass::transformStream() {
 
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
-      // DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
+      if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700) {
+        DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
+      }
       this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();
     }
@@ -1737,10 +1741,12 @@ void StreamPass::transformStream() {
           NewStaticInst, std::list<DynamicId>());
 
       auto NewDynamicId = NewDynamicInst->getId();
+      delete NewDynamicInst;
 
       auto StepInst =
           new StreamStepInst(NewDynamicId, TransformPlan.getParamStream());
       *NewInstIter = StepInst;
+      NewDynamicInst = StepInst;
 
       /**
        * Handle the dependence for the step instruction.
@@ -1750,7 +1756,7 @@ void StreamPass::transformStream() {
       if (StreamInstIter == ActiveStreamInstMap.end()) {
         ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
       } else {
-        this->Trace->RegDeps.at(NewDynamicInst->getId())
+        this->Trace->RegDeps.at(NewDynamicId)
             .emplace_back(nullptr, StreamInstIter->second);
         StreamInstIter->second = NewDynamicId;
       }
@@ -1775,6 +1781,7 @@ void StreamPass::transformStream() {
       auto StoreInst =
           new StreamStoreInst(NewDynamicId, TransformPlan.getParamStream());
       *NewInstIter = StoreInst;
+      NewDynamicInst = StoreInst;
     }
 
     /**

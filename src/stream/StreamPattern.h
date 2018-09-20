@@ -80,7 +80,10 @@ public:
     int64_t StrideI;
     uint64_t NI;
     int64_t StrideJ;
-    ComputedPattern() : Base(0), StrideI(0), NI(0), StrideJ(0) {}
+    const std::vector<std::pair<bool, uint64_t>> History;
+    ComputedPattern(std::vector<std::pair<bool, uint64_t>> _History)
+        : Base(0), StrideI(0), NI(0), StrideJ(0), History(std::move(_History)) {
+    }
   };
 
   StreamPattern() : AggregatedPatternPtr(nullptr) {}
@@ -313,6 +316,8 @@ private:
    * Representing an ongoing computation.
    */
   std::vector<AccessPatternFSM *> ComputingFSMs;
+
+  std::vector<std::pair<bool, uint64_t>> History;
 
   /**
    * Implement the address pattern hierarchy.
