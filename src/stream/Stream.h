@@ -93,7 +93,7 @@ public:
 
   void endStream();
 
-  void finalize();
+  void finalize(llvm::DataLayout *DataLayout);
 
   virtual bool isAliased() const { return false; }
   std::string formatType() const {
@@ -176,6 +176,8 @@ protected:
   DynamicInstruction::DynamicId StartId;
 
   StreamPattern Pattern;
+
+  int getElementSize(llvm::DataLayout *DataLayout) const;
 };
 
 #endif

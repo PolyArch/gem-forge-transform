@@ -380,6 +380,7 @@ bool StreamPattern::isAccessPatternRelaxed(AccessPattern A, AccessPattern B) {
 void StreamPattern::addMissingAccess() {
 
   this->initialize();
+  this->History.emplace_back(false, 0);
 
   // Add the first missing access.
   for (auto FSM : this->ComputingFSMs) {
@@ -390,6 +391,7 @@ void StreamPattern::addMissingAccess() {
 void StreamPattern::addAccess(uint64_t Val) {
 
   this->initialize();
+  this->History.emplace_back(true, Val);
 
   for (auto FSM : this->ComputingFSMs) {
     FSM->addAccess(Val);
@@ -397,7 +399,8 @@ void StreamPattern::addAccess(uint64_t Val) {
 }
 
 const StreamPattern::ComputedPattern StreamPattern::endStream() {
-  ComputedPattern ReturnPattern;
+  ComputedPattern ReturnPattern(this->History);
+  this->History.clear();
   if (this->ComputingFSMs.empty()) {
     // Somehow we failed to analyze the stream.
     return ReturnPattern;
