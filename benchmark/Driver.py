@@ -47,6 +47,7 @@ class Driver:
         'replay': 'replay',
         'adfa': 'abs-data-flow-acc-pass',
         'stream': 'stream-pass',
+        'stream-prefetch': 'stream-prefetch-pass',
         'inline-stream': 'inline-stream-pass',
         'simd': 'simd-pass',
     }
@@ -156,8 +157,18 @@ build_datagraph_debugs = {
         # 'DataGraph',
         'LoopUtils',
         # 'StreamPattern',
-        'InductionVarStream'
-        'TDGSerializer',
+        # 'InductionVarStream',
+        # 'TDGSerializer',
+    ],
+    'stream-prefetch': [
+        'ReplayPass',
+        'StreamPass',
+        'StreamPrefetchPass',
+        # 'DataGraph',
+        'LoopUtils',
+        # 'StreamPattern',
+        # 'InductionVarStream',
+        # 'TDGSerializer',
     ],
     'replay': [],
     'adfa': [],
@@ -166,7 +177,14 @@ build_datagraph_debugs = {
 
 
 simulate_datagraph_debugs = {
-    'stream': [],
+    'stream': [
+        # 'StreamEngine',
+        # 'LLVMTraceCPU',
+    ],
+    'stream-prefetch': [
+        # 'StreamEngine',
+        # 'LLVMTraceCPU',
+    ],
     'inline-stream': [],
     'replay': [],
     'adfa': [],
@@ -217,34 +235,54 @@ def main(options):
     job_scheduler.run()
 
     for benchmark in benchmarks:
-        tdgs = benchmark.get_tdgs(options.transform_passes[0])
 
-        tdg_stats = list()
-        for i in xrange(len(tdgs)):
+        stream_passes = ['stream', 'stream-prefetch']
+        stream_pass_specified = None
+        stream_tdgs = list()
+        for p in stream_passes:
+            if p in options.transform_passes:
+                stream_pass_specified = p
+                stream_tdgs = benchmark.get_tdgs(p)
+                break
+
+        stream_tdg_stats = list()
+        for i in xrange(len(stream_tdgs)):
             if options.trace_id:
                 if i not in options.trace_id:
                     # Ignore those traces if not specified
                     continue
-            tdg_stats.append(tdgs[i] + '.stats.txt')
+            stream_tdg_stats.append(stream_tdgs[i] + '.stats.txt')
 
-        stream_stats = StreamStatistics.StreamStatistics(tdg_stats)
-        print('-------------------------- ' + benchmark.get_name())
-        # stream_stats.print_stats()
-        stream_stats.print_stream_breakdown()
-        # stream_stats.print_access()
-        # stream_stats.print_stream_length()
-        # stream_stats.print_stream_addr()
-        # stream_stats.print_stream_alias()
-        stream_stats.print_stream_qualified()
-        stream_stats.print_chosen_level()
-        stream_stats.print_chosen_len()
-        # stream_stats.dump_csv(os.path.join(
-        #     C.LLVM_TDG_RESULT_DIR,
-        #     benchmark.get_name() + '.stream.stats.csv'
-        # ))
+        if stream_pass_specified is not None:
+            stream_stats = StreamStatistics.StreamStatistics(stream_tdg_stats)
+            print('-------------------------- ' + benchmark.get_name())
+            # stream_stats.print_stats()
+            stream_stats.print_stream_breakdown()
+            # stream_stats.print_access()
+            # stream_stats.print_stream_length()
+            # stream_stats.print_stream_addr()
+            # stream_stats.print_stream_alias()
+            stream_stats.print_stream_qualified()
+            stream_stats.print_chosen_level()
+            stream_stats.print_chosen_len()
+            # stream_stats.dump_csv(os.path.join(
+            #     C.LLVM_TDG_RESULT_DIR,
+            #     benchmark.get_name() + '.stream.stats.csv'
+            # ))
 
-    # Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-    # Util.ADFAAnalyzer.analyze_adfa(benchmarks)
+        if stream_pass_specified is not None:
+            replay_results = list()
+            stream_results = list()
+            for i in xrange(len(stream_tdgs)):
+                if options.trace_id:
+                    if i not in options.trace_id:
+                        continue
+                replay_results.append(benchmark.get_results('replay')[i])
+                stream_results.append(
+                    benchmark.get_results(stream_pass_specified)[i])
+            Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
+            Util.ADFAAnalyzer.analyze_adfa(
+                benchmark.get_name(), replay_results, stream_results)
 
 
 if __name__ == '__main__':
