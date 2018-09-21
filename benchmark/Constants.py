@@ -59,7 +59,7 @@ GEM5_M5OPS_X86 = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
 Gem5 parameters.
 """
 CPU_TYPE = 'DerivO3CPU'
-ISSUE_WIDTH = 2
+ISSUE_WIDTH = 8
 STORE_QUEUE_SIZE = 32
 GEM5_L1D_SIZE = '32kB'
 GEM5_L1I_SIZE = '32kB'

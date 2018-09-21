@@ -11,8 +11,8 @@ class TestHelloWorldBenchmark(Benchmark):
     def __init__(self):
         super(TestHelloWorldBenchmark, self).__init__(
             name='hello.a', raw_bc='all.bc', links=[],
-            # trace_func='sparse_vec_multi',
-            trace_func='sum2d',
+            trace_func='sparse_vec_multi',
+            # trace_func='sum2d',
             # trace_func='ivstream_test',
             # trace_func='tri_add',
         )
@@ -94,21 +94,6 @@ class TestHelloWorldBenchmark(Benchmark):
             debugs=debugs,
         )
 
-        os.chdir(self.cwd)
-
-    def simulate(self, tdg, result, debugs):
-        os.chdir(self.work_path)
-        gem5_outdir = self.gem5_replay(
-            standalone=1,
-            output_tdg=tdg,
-            debugs=debugs,
-        )
-        Util.call_helper([
-            'cp',
-            # os.path.join(gem5_outdir, 'stats.txt'),
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            result,
-        ])
         os.chdir(self.cwd)
 
 

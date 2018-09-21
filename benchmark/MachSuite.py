@@ -46,7 +46,8 @@ class MachSuiteBenchmark(Benchmark):
             raw_bc=self.get_raw_bc(),
             links=['-lm'],
             args=None,
-            trace_func='run_benchmark')
+            trace_func='run_benchmark',
+            standalone=0)
 
     def get_name(self):
         return 'mach.{b}.{sub}'.format(
@@ -195,20 +196,20 @@ class MachSuiteBenchmark(Benchmark):
 
         os.chdir(self.cwd)
 
-    def simulate(self, tdg, result, debugs):
-        os.chdir(self.work_path)
-        gem5_outdir = self.gem5_replay(
-            standalone=0,
-            output_tdg=tdg,
-            debugs=debugs,
-        )
-        Util.call_helper([
-            'cp',
-            # os.path.join(gem5_outdir, 'stats.txt'),
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            result,
-        ])
-        os.chdir(self.cwd)
+    # def simulate(self, tdg, result, debugs):
+    #     os.chdir(self.work_path)
+    #     gem5_outdir = self.gem5_replay(
+    #         standalone=0,
+    #         output_tdg=tdg,
+    #         debugs=debugs,
+    #     )
+    #     Util.call_helper([
+    #         'cp',
+    #         # os.path.join(gem5_outdir, 'stats.txt'),
+    #         os.path.join(gem5_outdir, 'region.stats.txt'),
+    #         result,
+    #     ])
+    #     os.chdir(self.cwd)
 
     def statistics(self):
         os.chdir(self.work_path)
