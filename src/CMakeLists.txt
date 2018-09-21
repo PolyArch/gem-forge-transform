@@ -46,6 +46,7 @@ add_library(LLVMTDGPass MODULE
     stream/InductionVarStream.cpp
     stream/MemStream.cpp
     stream/StreamPass.cpp
+    stream/StreamPrefetchPass.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
 )
