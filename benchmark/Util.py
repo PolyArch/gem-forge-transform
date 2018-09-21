@@ -629,8 +629,8 @@ class RegionAggStats:
         title = [
             'REGION',
             'INSTS',
-            'RATIO',
             'ISSUE',
+            'RATIO',
             'BPKI',
             'BMPKI',
             'CMPKI',
@@ -821,36 +821,34 @@ class ADFAAnalyzer:
         return adfa_cycles / cpu_cycles
 
     @staticmethod
-    def analyze_adfa(benchmarks):
+    def analyze_adfa(name, replay_results, stream_results):
         regions = dict()
-        for b in benchmarks:
-            name = b.get_name()
-            baseline = Gem5RegionStats(name, b.get_results('replay'))
-            # adfa = Gem5RegionStats(name, b.get_result('adfa'))
-            # simd = Gem5RegionStats(name, b.get_result('simd'))
-            stream = Gem5RegionStats(name, b.get_results('stream'))
+        baseline = Gem5RegionStats(name, replay_results)
+        # adfa = Gem5RegionStats(name, b.get_result('adfa'))
+        # simd = Gem5RegionStats(name, b.get_result('simd'))
+        stream = Gem5RegionStats(name, stream_results)
 
-            regions[name] = list()
+        regions[name] = list()
 
-            print(name)
+        print(name)
 
-            for region in baseline.regions:
-                print('  ' + region)
+        for region in baseline.regions:
+            print('  ' + region)
 
-                region_name = name + '::' + region
+            region_name = name + '::' + region
 
-                region_agg_stats = RegionAggStats(
-                    ADFAAnalyzer.SYS_CPU_PREFIX, region, region_name)
-                region_agg_stats.compute_baseline(baseline)
-                # region_agg_stats.compute_adfa(adfa)
-                # region_agg_stats.compute_simd(simd)
-                region_agg_stats.compute_stream(stream)
+            region_agg_stats = RegionAggStats(
+                ADFAAnalyzer.SYS_CPU_PREFIX, region, region_name)
+            region_agg_stats.compute_baseline(baseline)
+            # region_agg_stats.compute_adfa(adfa)
+            # region_agg_stats.compute_simd(simd)
+            region_agg_stats.compute_stream(stream)
 
-                regions[name].append(region_agg_stats)
+            regions[name].append(region_agg_stats)
 
-            # Sort all the regions by their number of dynamic insts.
-            regions[name] = sorted(
-                regions[name], key=lambda x: x.base_insts, reverse=True)
+        # Sort all the regions by their number of dynamic insts.
+        regions[name] = sorted(
+            regions[name], key=lambda x: x.base_insts, reverse=True)
 
         baseline.print_regions()
         title_printed = False

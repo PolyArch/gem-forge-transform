@@ -5,16 +5,43 @@ import Constants as C
 import Util
 
 
+class Gem5ReplayConfig(object):
+    def __init__(self, prefetch):
+        self.prefetch = prefetch
+
+    def get_gem5_dir(self, tdg):
+        dirname, basename = os.path.split(tdg)
+        gem5_dir = os.path.join(dirname, self.get_config(basename))
+        return gem5_dir
+
+    def get_result(self, tdg):
+        dirname, basename = os.path.split(tdg)
+        return os.path.join(
+            C.LLVM_TDG_RESULT_DIR,
+            '{config}.txt'.format(
+                config=self.get_config(basename),
+            ))
+
+    def get_config(self, tdg_basename):
+        return '{tdg}.{cpu_type}.{prefetch}'.format(
+            cpu_type=C.CPU_TYPE,
+            prefetch=('prefetch' if self.prefetch else 'noprefetch'),
+            tdg=tdg_basename)
+
+
 class Benchmark(object):
 
     def __init__(self, name, raw_bc, links, args=None, trace_func=None,
-                 trace_lib='Protobuf', lang='C'):
+                 trace_lib='Protobuf', lang='C', standalone=1):
         self.name = name
         self.raw_bc = raw_bc
         self.links = links
         self.args = args
         self.trace_func = trace_func
         self.lang = lang
+        self.standalone = standalone
+        # self.gem5_config = Gem5ReplayConfig(False)
+        self.gem5_config = Gem5ReplayConfig(True)
 
         self.pass_so = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
@@ -102,16 +129,9 @@ class Benchmark(object):
         name = self.get_name()
         Util.call_helper(
             ['mkdir', '-p', C.LLVM_TDG_RESULT_DIR])
-        for i in xrange(self.get_n_traces()):
-            if name.endswith('gcc_s') and i == 7:
-                # So far there is a but causing tdg #7 not transformable.
-                continue
-            results.append(
-                os.path.join(
-                    C.LLVM_TDG_RESULT_DIR,
-                    '{name}.{transform_pass}.{i}.txt'.format(
-                        name=name, transform_pass=transform_pass, i=i
-                    )))
+        tdgs = self.get_tdgs(transform_pass)
+        for tdg in tdgs:
+            results.append(self.gem5_config.get_result(tdg))
         return results
 
     """
@@ -272,20 +292,17 @@ class Benchmark(object):
     The gem5 output directory (abs path).
     """
 
-    def gem5_replay(self, standalone=0, output_tdg=None, debugs=[]):
-        LLVM_TRACE_FN = 'llvm_trace_gem5.txt'
-        if output_tdg is not None:
-            LLVM_TRACE_FN = output_tdg
-        GEM5_OUT_DIR = '{cpu_type}.replay.{tdg}'.format(
-            cpu_type=C.CPU_TYPE, tdg=output_tdg)
+    def gem5_replay(self, tdg, debugs=[]):
+        GEM5_OUT_DIR = self.gem5_config.get_gem5_dir(tdg)
         Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
+        print GEM5_OUT_DIR
         gem5_args = [
             C.GEM5_X86,
             '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
             C.GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=self.get_replay_bin()),
-            '--llvm-standalone={standlone}'.format(standlone=standalone),
-            '--llvm-trace-file={trace_file}'.format(trace_file=LLVM_TRACE_FN),
+            '--llvm-standalone={standlone}'.format(standlone=self.standalone),
+            '--llvm-trace-file={trace_file}'.format(trace_file=tdg),
             '--llvm-issue-width={ISSUE_WIDTH}'.format(
                 ISSUE_WIDTH=C.ISSUE_WIDTH),
             '--llvm-store-queue-size={STORE_QUEUE_SIZE}'.format(
@@ -298,6 +315,10 @@ class Benchmark(object):
             '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
             '--l2_size={l2_size}'.format(l2_size=C.GEM5_L2_SIZE),
         ]
+        if self.gem5_config.prefetch:
+            gem5_args.append(
+                '--llvm-prefetch=1'
+            )
         if debugs:
             gem5_args.insert(
                 1, '--debug-flags={flags}'.format(flags=','.join(debugs)))
@@ -306,4 +327,19 @@ class Benchmark(object):
                 '--options={binary_args}'.format(binary_args=' '.join(self.args)))
         print('# Replaying the datagraph...')
         Util.call_helper(gem5_args)
-        return os.path.join(os.getcwd(), GEM5_OUT_DIR)
+        return GEM5_OUT_DIR
+
+    """
+    Simulate the datagraph with gem5.
+    """
+
+    def simulate(self, tdg, result, debugs):
+        gem5_outdir = self.gem5_replay(
+            tdg=tdg,
+            debugs=debugs,
+        )
+        Util.call_helper([
+            'cp',
+            os.path.join(gem5_outdir, 'region.stats.txt'),
+            result,
+        ])

@@ -55,11 +55,11 @@ def compile(source, vectorize, output_bc, defines=[], includes=[], link_stdlib=F
 class SPUBenchmark(Benchmark):
 
     TESTS = [
-        'ac',
-        'fc-layer',
-        'ksvm',
-        'scnn',
-        'gbdt',
+        # 'ac',
+        # 'fc-layer',
+        # 'ksvm',
+        # 'scnn',
+        # 'gbdt',
     ]
 
     LANG = {
@@ -107,10 +107,10 @@ class SPUBenchmark(Benchmark):
             SPUBenchmark.TRACE_FUNCS[self.test_name])
         self.trace_stdlib = SPUBenchmark.TRACE_STDLIB[self.test_name]
         super(SPUBenchmark, self).__init__(
-            name=self.get_name(), 
-            raw_bc=self.get_raw_bc(), 
-            links=['-lm'], 
-            args=None, 
+            name=self.get_name(),
+            raw_bc=self.get_raw_bc(),
+            links=['-lm'],
+            args=None,
             trace_func=self.trace_functions,
             lang=SPUBenchmark.LANG[self.test_name],
         )
@@ -179,21 +179,6 @@ class SPUBenchmark(Benchmark):
             debugs=debugs,
         )
 
-        os.chdir(self.cwd)
-
-    def simulate(self, tdg, result, debugs):
-        os.chdir(self.work_path)
-        gem5_outdir = self.gem5_replay(
-            standalone=1,
-            output_tdg=tdg,
-            debugs=debugs,
-        )
-        Util.call_helper([
-            'cp',
-            # os.path.join(gem5_outdir, 'stats.txt'),
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            result,
-        ])
         os.chdir(self.cwd)
 
     def debug(self, msg):

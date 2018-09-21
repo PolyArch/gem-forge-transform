@@ -282,36 +282,22 @@ class SPEC2017Benchmark(Benchmark):
         )
         os.chdir(self.cwd)
 
-    def simulate(self, output_tdg, result, debugs):
-        os.chdir(self.get_run_path())
-        gem5_outdir = self.gem5_replay(
-            standalone=1,
-            output_tdg=output_tdg,
-            debugs=debugs,
-        )
-        Util.call_helper([
-            'cp',
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            result,
-        ])
-        os.chdir(self.cwd)
-
 
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        # 'lbm_s': {
-        #     'name': '619.lbm_s',
-        #     'links': ['-lm'],
-        #     # First 100m insts every 1b insts, skipping the first 3.3b
-        #     'start_inst': 33e8,
-        #     'max_inst': 2e7,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 34e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'LBM_performStreamCollideTRT',
-        #     'lang': 'C',
-        # },
+        'lbm_s': {
+            'name': '619.lbm_s',
+            'links': ['-lm'],
+            # First 100m insts every 1b insts, skipping the first 3.3b
+            'start_inst': 33e8,
+            'max_inst': 2e7,
+            'skip_inst': 9e8,
+            'end_inst': 34e8,
+            'n_traces': 1,
+            'trace_func': 'LBM_performStreamCollideTRT',
+            'lang': 'C',
+        },
         # 'imagick_s': {
         #     'name': '638.imagick_s',
         #     'links': ['-lm'],
@@ -376,18 +362,18 @@ class SPEC2017Benchmarks:
         #     'trace_func': 'uncompressStream',
         #     'lang': 'C',
         # },
-        'gcc_s': {
-            'name': '602.gcc_s',
-            'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 50e8,
-            'end_inst': 1000e8,
-            'n_traces': 10,
-            # 'trace_func': 'compile_file',
-            'trace_func': '',
-            'lang': 'C',
-        },
+        # 'gcc_s': {
+        #     'name': '602.gcc_s',
+        #     'links': [],
+        #     'start_inst': 10e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 50e8,
+        #     'end_inst': 1000e8,
+        #     'n_traces': 10,
+        #     # 'trace_func': 'compile_file',
+        #     'trace_func': '',
+        #     'lang': 'C',
+        # },
         # 'perlbench_s': {
         #     # Does not work with ellcc as it uses posix io function.
         #     'name': '600.perlbench_s',
@@ -462,7 +448,7 @@ class SPEC2017Benchmarks:
         #     'n_traces': 1,
         #     'trace_func': '',
         #     'lang': 'CPP',
-        # }, 
+        # },
 
         # # Does not work with ellcc as it uses linux header.
         # # Does not throw.
