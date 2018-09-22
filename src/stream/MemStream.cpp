@@ -1,7 +1,7 @@
 #include "stream/MemStream.h"
 
 void MemStream::searchAddressComputeInstructions(
-    std::function<bool(llvm::PHINode *)> IsInductionVar) {
+    std::function<bool(const llvm::PHINode *)> IsInductionVar) {
 
   std::list<llvm::Instruction *> Queue;
 
@@ -58,4 +58,12 @@ void MemStream::searchAddressComputeInstructions(
       }
     }
   }
+}
+
+void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
+  this->AddrDG.format(OStream);
+}
+
+void MemStream::generateComputeFunction(llvm::Module *Module) const {
+  this->AddrDG.generateComputeFunction(this->AddressFunctionName, Module);
 }

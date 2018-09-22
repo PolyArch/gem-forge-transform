@@ -11,6 +11,17 @@ public:
     return llvm::isa<llvm::StoreInst>(Inst) || llvm::isa<llvm::LoadInst>(Inst);
   }
 
+  static const llvm::Value *getMemAddrValue(const llvm::Instruction *Inst) {
+    assert(
+        Utils::isMemAccessInst(Inst) &&
+        "This is not a memory access instruction to get memory address value.");
+    if (llvm::isa<llvm::StoreInst>(Inst)) {
+      return Inst->getOperand(1);
+    } else {
+      return Inst->getOperand(0);
+    }
+  }
+
   static uint64_t getMemAddr(const DynamicInstruction *DynamicInst) {
     auto StaticInst = DynamicInst->getStaticInstruction();
     assert(Utils::isMemAccessInst(StaticInst) &&

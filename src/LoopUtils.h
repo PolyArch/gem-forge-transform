@@ -55,6 +55,7 @@ public:
    * Print an static instruction.
    */
   static std::string formatLLVMInst(const llvm::Instruction *Inst);
+  static std::string formatLLVMValue(const llvm::Value *Value);
 
   static const std::unordered_set<std::string> SupportedMathFunctions;
 };

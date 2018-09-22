@@ -2,11 +2,11 @@
 
 Stream::Stream(TypeT _Type, const std::string &_Folder,
                const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
-               size_t _LoopLevel)
+               const llvm::Loop *_InnerMostLoop, size_t _LoopLevel)
     : Type(_Type), Folder(_Folder), Inst(_Inst), Loop(_Loop),
-      LoopLevel(_LoopLevel), Qualified(false), Chosen(false), TotalIters(0),
-      TotalAccesses(0), TotalStreams(0), Iters(1), LastAccessIters(0),
-      StartId(DynamicInstruction::InvalidId), Pattern() {
+      InnerMostLoop(_InnerMostLoop), LoopLevel(_LoopLevel), Qualified(false),
+      Chosen(false), TotalIters(0), TotalAccesses(0), TotalStreams(0), Iters(1),
+      LastAccessIters(0), StartId(DynamicInstruction::InvalidId), Pattern() {
   this->PatternFullPath = this->Folder + "/" + this->formatName() + ".pattern";
   this->PatternTextFullPath = this->PatternFullPath + ".txt";
   this->InfoFullPath = this->Folder + "/" + this->formatName() + ".info";
@@ -98,6 +98,10 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
                     << AllChosenBaseStream->formatName() << '\n';
   }
   InfoTextFStream << "------------------------------\n";
+  /**
+   * Formatting any additional text information for the subclass.
+   */
+  this->formatAdditionalInfoText(InfoTextFStream);
   InfoTextFStream.close();
 
   // Also serialize with protobuf.

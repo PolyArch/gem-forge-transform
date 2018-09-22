@@ -1,5 +1,7 @@
 #include "stream/StreamPass.h"
 
+#include "llvm/Support/FileSystem.h"
+
 #include <iomanip>
 #include <sstream>
 
@@ -271,6 +273,7 @@ void StreamPass::transform() {
       S->finalize(this->Trace->DataLayout);
     }
   }
+  this->buildAddressDataGraphForChosenStreams();
 
   this->makeStreamTransformPlan();
 
@@ -327,14 +330,18 @@ void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
   }
 
   // Initialize the remaining loops.
-  auto IsInductionVar = [this](llvm::PHINode *PHINode) -> bool {
+  auto IsInductionVar = [this](const llvm::PHINode *PHINode) -> bool {
     return this->PHINodeIVStreamMap.count(PHINode) != 0;
     // return false;
   };
   while (LoopIter != LoopStack.rend()) {
     auto LoopLevel = Streams.size();
+    const llvm::Loop *InnerMostLoop = *LoopIter;
+    if (LoopLevel > 0) {
+      InnerMostLoop = Streams.front().getInnerMostLoop();
+    }
     Streams.emplace_back(this->OutputExtraFolderPath, Inst, *LoopIter,
-                         LoopLevel, IsInductionVar);
+                         InnerMostLoop, LoopLevel, IsInductionVar);
     this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
     ++LoopIter;
   }
@@ -372,10 +379,14 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
     auto LoopLevel = Streams.size();
     auto Loop = *LoopIter;
     auto Level = Streams.size();
+    const llvm::Loop *InnerMostLoop = *LoopIter;
+    if (LoopLevel > 0) {
+      InnerMostLoop = Streams.front().getInnerMostLoop();
+    }
     auto ComputeInsts = InductionVarStream::searchComputeInsts(Inst, Loop);
     if (InductionVarStream::isInductionVarStream(Inst, ComputeInsts)) {
-      Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop, Level,
-                           std::move(ComputeInsts));
+      Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop,
+                           InnerMostLoop, Level, std::move(ComputeInsts));
       this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
       DEBUG(llvm::errs() << "Initialize IVStream "
                          << Streams.back().formatName() << '\n');
@@ -1032,6 +1043,29 @@ void StreamPass::buildAllChosenStreamDependenceGraph() {
   }
 }
 
+std::string StreamPass::getAddressModuleName() const {
+  return this->OutTraceName + ".address.bc";
+}
+
+void StreamPass::buildAddressDataGraphForChosenStreams() const {
+  auto &Context = this->Module->getContext();
+  llvm::Module AddressModule(this->getAddressModuleName(), Context);
+
+  for (const auto &InstMemStreamEntry : this->InstMemStreamMap) {
+    for (const auto &S : InstMemStreamEntry.second) {
+      if (S.isChosen()) {
+        S.generateComputeFunction(&AddressModule);
+      }
+    }
+  }
+
+  std::error_code EC;
+  llvm::raw_fd_ostream ModuleFStream(this->AddressModulePath, EC,
+                                     llvm::sys::fs::OpenFlags::F_None);
+  AddressModule.print(ModuleFStream, nullptr);
+  ModuleFStream.close();
+}
+
 StreamTransformPlan &
 StreamPass::getOrCreatePlan(const llvm::Instruction *Inst) {
   auto UserPlanIter = this->InstPlanMap.find(Inst);
@@ -1074,6 +1108,15 @@ void StreamPass::DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop) {
     }
   }
   llvm::errs() << ss.str() << '\n';
+
+  // Also dump to file.
+  std::string PlanPath = this->OutputExtraFolderPath + "/" +
+                         LoopUtils::getLoopId(Loop) + ".plan.txt";
+  std::ofstream PlanFStream(PlanPath);
+  assert(PlanFStream.is_open() &&
+         "Failed to open dump loop transform plan file.");
+  PlanFStream << ss.str() << '\n';
+  PlanFStream.close();
 }
 
 void StreamPass::DEBUG_SORTED_STREAMS_FOR_LOOP(const llvm::Loop *Loop) {
@@ -1418,9 +1461,12 @@ void StreamPass::transformStream() {
 
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
-      if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700) {
-        DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
-      }
+      // Debug a certain range of transformed instructions.
+      // if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700)
+      // {
+      //   DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
+      // }
+
       this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();
     }
@@ -1472,95 +1518,111 @@ void StreamPass::transformStream() {
     }
 
     auto PlanIter = this->InstPlanMap.find(NewStaticInst);
-    if (PlanIter == this->InstPlanMap.end()) {
-      continue;
-    }
+    if (PlanIter != this->InstPlanMap.end()) {
+      const auto &TransformPlan = PlanIter->second;
+      bool NeedToHandleUseInformation = true;
+      if (TransformPlan.Plan == StreamTransformPlan::PlanT::DELETE) {
+        /**
+         * This is important to make the future instruction not dependent on
+         * this deleted instruction.
+         */
+        this->Trace->DynamicFrameStack.front()
+            .updateRegisterDependenceLookUpMap(NewStaticInst,
+                                               std::list<DynamicId>());
 
-    const auto &TransformPlan = PlanIter->second;
-    if (TransformPlan.Plan == StreamTransformPlan::PlanT::DELETE) {
-      /**
-       * This is important to make the future instruction not dependent on
-       * this deleted instruction.
-       */
-      this->Trace->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
-          NewStaticInst, std::list<DynamicId>());
+        auto NewDynamicId = NewDynamicInst->getId();
+        this->Trace->commitDynamicInst(NewDynamicId);
+        this->Trace->DynamicInstructionList.erase(NewInstIter);
+        NewDynamicInst = nullptr;
+        /**
+         * No more handling use information for the deleted instruction.
+         */
+        this->DeletedInstCount++;
+        NeedToHandleUseInformation = false;
+      } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
 
-      auto NewDynamicId = NewDynamicInst->getId();
-      this->Trace->commitDynamicInst(NewDynamicId);
-      this->Trace->DynamicInstructionList.erase(NewInstIter);
-      /**
-       * No more handling for the deleted instruction.
-       */
-      this->DeletedInstCount++;
-      continue;
-    } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
+        this->Trace->DynamicFrameStack.front()
+            .updateRegisterDependenceLookUpMap(NewStaticInst,
+                                               std::list<DynamicId>());
 
-      this->Trace->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
-          NewStaticInst, std::list<DynamicId>());
+        auto NewDynamicId = NewDynamicInst->getId();
+        delete NewDynamicInst;
 
-      auto NewDynamicId = NewDynamicInst->getId();
-      delete NewDynamicInst;
+        auto StepInst =
+            new StreamStepInst(TransformPlan.getParamStream(), NewDynamicId);
+        *NewInstIter = StepInst;
+        NewDynamicInst = StepInst;
 
-      auto StepInst =
-          new StreamStepInst(TransformPlan.getParamStream(), NewDynamicId);
-      *NewInstIter = StepInst;
-      NewDynamicInst = StepInst;
+        /**
+         * Handle the dependence for the step instruction.
+         */
+        auto StreamInst = TransformPlan.getParamStream()->getInst();
+        auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+        if (StreamInstIter == ActiveStreamInstMap.end()) {
+          ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
+        } else {
+          this->Trace->RegDeps.at(NewDynamicId)
+              .emplace_back(nullptr, StreamInstIter->second);
+          StreamInstIter->second = NewDynamicId;
+        }
 
-      /**
-       * Handle the dependence for the step instruction.
-       */
-      auto StreamInst = TransformPlan.getParamStream()->getInst();
-      auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
-      if (StreamInstIter == ActiveStreamInstMap.end()) {
-        ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
-      } else {
-        this->Trace->RegDeps.at(NewDynamicId)
-            .emplace_back(nullptr, StreamInstIter->second);
-        StreamInstIter->second = NewDynamicId;
+        this->StepInstCount++;
+        NeedToHandleUseInformation = false;
+
+      } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
+
+        assert(llvm::isa<llvm::StoreInst>(NewStaticInst) &&
+               "STORE plan for non store instruction.");
+
+        this->Trace->DynamicFrameStack.front()
+            .updateRegisterDependenceLookUpMap(NewStaticInst,
+                                               std::list<DynamicId>());
+
+        /**
+         * REPLACE the original store instruction with our special stream store.
+         */
+        auto NewDynamicId = NewDynamicInst->getId();
+        delete NewDynamicInst;
+
+        auto StoreInst =
+            new StreamStoreInst(TransformPlan.getParamStream(), NewDynamicId);
+        *NewInstIter = StoreInst;
+        NewDynamicInst = StoreInst;
       }
 
-      this->StepInstCount++;
-      continue;
-
-    } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
-
-      assert(llvm::isa<llvm::StoreInst>(NewStaticInst) &&
-             "STORE plan for non store instruction.");
-
-      this->Trace->DynamicFrameStack.front().updateRegisterDependenceLookUpMap(
-          NewStaticInst, std::list<DynamicId>());
-
-      /**
-       * REPLACE the original store instruction with our special stream store.
-       */
-      auto NewDynamicId = NewDynamicInst->getId();
-      delete NewDynamicInst;
-
-      auto StoreInst =
-          new StreamStoreInst(TransformPlan.getParamStream(), NewDynamicId);
-      *NewInstIter = StoreInst;
-      NewDynamicInst = StoreInst;
-    }
-
-    /**
-     * Handle the use information.
-     */
-    auto &RegDeps = this->Trace->RegDeps.at(NewDynamicInst->getId());
-    for (auto &UsedStream : TransformPlan.getUsedStreams()) {
-      // Add the used stream id to the dynamic instruction.
-      NewDynamicInst->addUsedStreamId(UsedStream->getStreamId());
-      auto UsedStreamInst = UsedStream->getInst();
-      auto UsedStreamInstIter = ActiveStreamInstMap.find(UsedStreamInst);
-      if (UsedStreamInstIter != ActiveStreamInstMap.end()) {
-        RegDeps.emplace_back(nullptr, UsedStreamInstIter->second);
-      }
-      for (auto &ChosenBaseStream : UsedStream->getAllChosenBaseStreams()) {
-        auto Iter = ActiveStreamInstMap.find(ChosenBaseStream->getInst());
-        if (Iter != ActiveStreamInstMap.end()) {
-          RegDeps.emplace_back(nullptr, Iter->second);
+      if (NeedToHandleUseInformation) {
+        /**
+         * Handle the use information.
+         */
+        auto &RegDeps = this->Trace->RegDeps.at(NewDynamicInst->getId());
+        for (auto &UsedStream : TransformPlan.getUsedStreams()) {
+          // Add the used stream id to the dynamic instruction.
+          NewDynamicInst->addUsedStreamId(UsedStream->getStreamId());
+          auto UsedStreamInst = UsedStream->getInst();
+          auto UsedStreamInstIter = ActiveStreamInstMap.find(UsedStreamInst);
+          if (UsedStreamInstIter != ActiveStreamInstMap.end()) {
+            RegDeps.emplace_back(nullptr, UsedStreamInstIter->second);
+          }
+          for (auto &ChosenBaseStream : UsedStream->getAllChosenBaseStreams()) {
+            auto Iter = ActiveStreamInstMap.find(ChosenBaseStream->getInst());
+            if (Iter != ActiveStreamInstMap.end()) {
+              RegDeps.emplace_back(nullptr, Iter->second);
+            }
+          }
         }
       }
     }
+// Debug a certain tranformed loop.
+#define DEBUG_LOOP_TRANSFORMED "train::bb13"
+    for (auto &Loop : LoopStack) {
+      if (LoopUtils::getLoopId(Loop) == DEBUG_LOOP_TRANSFORMED) {
+        if (NewDynamicInst != nullptr) {
+          DEBUG(this->DEBUG_TRANSFORMED_STREAM(NewDynamicInst));
+        }
+        break;
+      }
+    }
+#undef DEBUG_LOOP_TRANSFORMED
   }
 
   DEBUG(llvm::errs() << "Stream: Transform done.\n");

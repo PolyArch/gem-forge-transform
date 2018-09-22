@@ -138,7 +138,9 @@ public:
   static char ID;
   StreamPass(char _ID = ID)
       : ReplayTrace(_ID), DynInstCount(0), DynMemInstCount(0), StepInstCount(0),
-        ConfigInstCount(0), DeletedInstCount(0) {}
+        ConfigInstCount(0), DeletedInstCount(0) {
+    this->AddressModulePath = this->OutputExtraFolderPath + "/stream.addr.ll";
+  }
 
 protected:
   bool initialize(llvm::Module &Module) override;
@@ -191,6 +193,8 @@ protected:
                        Stream *S);
   void buildChosenStreamDependenceGraph();
   void buildAllChosenStreamDependenceGraph();
+  void buildAddressDataGraphForChosenStreams() const;
+  std::string getAddressModuleName() const;
   MemStream *getMemStreamByInstLoop(llvm::Instruction *Inst,
                                     const llvm::Loop *Loop);
 
@@ -219,6 +223,8 @@ protected:
                                     ActiveStreamInstMapT &ActiveStreamInstMap);
   void DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst);
   virtual void transformStream();
+
+  std::string AddressModulePath;
 
   std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
       InstStreamMap;
