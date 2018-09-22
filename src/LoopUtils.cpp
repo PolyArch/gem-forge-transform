@@ -106,6 +106,14 @@ std::string LoopUtils::formatLLVMInst(const llvm::Instruction *Inst) {
   }
 }
 
+std::string LoopUtils::formatLLVMValue(const llvm::Value *Value) {
+  if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+    return LoopUtils::formatLLVMInst(Inst);
+  } else {
+    return Value->getName();
+  }
+}
+
 void LoopIterCounter::configure(llvm::Loop *_Loop) {
   this->Loop = _Loop;
   this->Iter = -1;

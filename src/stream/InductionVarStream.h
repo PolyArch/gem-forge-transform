@@ -8,10 +8,10 @@ class InductionVarStream : public Stream {
 public:
   InductionVarStream(
       const std::string &_Folder, const llvm::PHINode *_PHIInst,
-      const llvm::Loop *_Loop, size_t _Level,
+      const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop, size_t _Level,
       std::unordered_set<const llvm::Instruction *> &&_ComputeInsts)
-      : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _Level), PHIInst(_PHIInst),
-        ComputeInsts(std::move(_ComputeInsts)) {}
+      : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _InnerMostLoop, _Level),
+        PHIInst(_PHIInst), ComputeInsts(std::move(_ComputeInsts)) {}
 
   InductionVarStream(const InductionVarStream &Other) = delete;
   InductionVarStream(InductionVarStream &&Other) = delete;
@@ -46,7 +46,6 @@ public:
   static bool isInductionVarStream(
       const llvm::PHINode *PHINode,
       const std::unordered_set<const llvm::Instruction *> &ComputeInsts);
-
 
   std::string format() const {
     std::stringstream ss;

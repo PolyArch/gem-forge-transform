@@ -3,15 +3,23 @@
 
 #include "MemoryFootprint.h"
 #include "stream/Stream.h"
+#include "stream/ae/AddressDataGraph.h"
 
 class MemStream : public Stream {
 public:
   MemStream(const std::string &_Folder, const llvm::Instruction *_Inst,
-            const llvm::Loop *_Loop, size_t _LoopLevel,
-            std::function<bool(llvm::PHINode *)> IsInductionVar)
-      : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _LoopLevel) {
+            const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
+            size_t _LoopLevel,
+            std::function<bool(const llvm::PHINode *)> IsInductionVar)
+      : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _InnerMostLoop, _LoopLevel),
+        AddrDG(_InnerMostLoop, Utils::getMemAddrValue(_Inst), IsInductionVar) {
     assert(Utils::isMemAccessInst(this->Inst) &&
            "Should be load/store instruction to build a stream.");
+    this->AddressFunctionName =
+        (this->Inst->getFunction()->getName() + "_" +
+         this->Inst->getParent()->getName() + "_" + this->Inst->getName() +
+         "_" + this->Inst->getOpcodeName())
+            .str();
     this->searchAddressComputeInstructions(IsInductionVar);
   }
 
@@ -61,6 +69,14 @@ public:
     return false;
   }
 
+  std::string getAddressFunctionName() const {
+    return this->AddressFunctionName;
+  }
+  void generateComputeFunction(llvm::Module *Module) const;
+
+protected:
+  void formatAdditionalInfoText(std::ostream &OStream) const override;
+
 private:
   MemoryFootprint Footprint;
   std::unordered_set<llvm::LoadInst *> BaseLoads;
@@ -68,7 +84,11 @@ private:
   std::unordered_set<const llvm::Instruction *> AddrInsts;
   std::unordered_set<llvm::Instruction *> AliasInsts;
 
+  std::string AddressFunctionName;
+
+  AddressDataGraph AddrDG;
+
   void searchAddressComputeInstructions(
-      std::function<bool(llvm::PHINode *)> IsInductionVar);
+      std::function<bool(const llvm::PHINode *)> IsInductionVar);
 };
 #endif

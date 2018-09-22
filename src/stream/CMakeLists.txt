@@ -10,3 +10,5 @@ add_library(ProtobufStreamMessage OBJECT
 set_target_properties(ProtobufStreamMessage PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fPIC -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
+
+add_subdirectory(ae)

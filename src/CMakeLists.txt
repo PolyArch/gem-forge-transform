@@ -47,6 +47,7 @@ add_library(LLVMTDGPass MODULE
     stream/MemStream.cpp
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp
+    stream/ae/AddressDataGraph.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
 )

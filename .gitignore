@@ -18,6 +18,7 @@ build/*
 *.s
 *.pyc
 *.o
+*.cache
 *.data
 *.exe
 *.txt

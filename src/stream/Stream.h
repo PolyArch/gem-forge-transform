@@ -25,7 +25,7 @@ public:
   const TypeT Type;
   Stream(TypeT _Type, const std::string &_Folder,
          const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
-         size_t _LoopLevel);
+         const llvm::Loop *_InnerMostLoop, size_t _LoopLevel);
 
   bool hasNoBaseStream() const { return this->BaseStreams.empty(); }
   const std::unordered_set<Stream *> &getBaseStreams() const {
@@ -45,6 +45,7 @@ public:
   void markChosen() { this->Chosen = true; }
   bool isChosen() const { return this->Chosen; }
   const llvm::Loop *getLoop() const { return this->Loop; }
+  const llvm::Loop *getInnerMostLoop() const { return this->InnerMostLoop; }
   const llvm::Instruction *getInst() const { return this->Inst; }
   uint64_t getStreamId() const { return reinterpret_cast<uint64_t>(this); }
   const std::string &getPatternPath() const { return this->PatternFullPath; }
@@ -140,6 +141,7 @@ protected:
    */
   const llvm::Instruction *Inst;
   const llvm::Loop *Loop;
+  const llvm::Loop *InnerMostLoop;
   const size_t LoopLevel;
 
   std::unordered_set<Stream *> BaseStreams;
@@ -178,6 +180,11 @@ protected:
   StreamPattern Pattern;
 
   int getElementSize(llvm::DataLayout *DataLayout) const;
+
+  /**
+   * Used for subclass to add additionl dumping information.
+   */
+  virtual void formatAdditionalInfoText(std::ostream &OStream) const {}
 };
 
 #endif
