@@ -149,7 +149,7 @@ public:
 
     // A tiny run time environment, basically for memory base/offset
     // computation.
-    std::unordered_map<llvm::Value *, DynamicValue> RunTimeEnv;
+    std::unordered_map<const llvm::Value *, DynamicValue> RunTimeEnv;
 
     // Stores the dynamic value of CallInst or InvokeInst.
     // Could be consumed by parseFuncEnter.
@@ -157,12 +157,12 @@ public:
     llvm::Instruction *PrevCallInst;
     explicit DynamicFrame(
         llvm::Function *_Function,
-        std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments);
+        std::unordered_map<const llvm::Value *, DynamicValue> &&_Arguments);
     ~DynamicFrame();
 
-    const DynamicValue &getValue(llvm::Value *Value) const;
-    const DynamicValue *getValueNullable(llvm::Value *Value) const;
-    void insertValue(llvm::Value *Value, DynamicValue DValue);
+    const DynamicValue &getValue(const llvm::Value *Value) const;
+    const DynamicValue *getValueNullable(const llvm::Value *Value) const;
+    void insertValue(const llvm::Value *Value, DynamicValue DValue);
 
     DynamicFrame(const DynamicFrame &other) = delete;
     DynamicFrame(DynamicFrame &&other) = delete;

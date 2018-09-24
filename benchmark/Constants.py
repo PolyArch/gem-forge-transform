@@ -12,6 +12,8 @@ Normal llvm install path.
 """
 LLVM_PATH = '/home/zhengrong/Documents/llvm-6.0/install'
 LLVM_BIN_PATH = os.path.join(LLVM_PATH, 'bin')
+LLVM_DEBUG_PATH = '/home/zhengrong/Documents/llvm-6.0/install-debug'
+LLVM_DEBUG_BIN_PATH = os.path.join(LLVM_DEBUG_PATH, 'bin')
 
 
 """
@@ -69,7 +71,7 @@ GEM5_L2_SIZE = '256kB'
 USE_ELLCC = False
 
 if not USE_ELLCC:
-    OPT = os.path.join(LLVM_BIN_PATH, 'opt')
+    OPT = os.path.join(LLVM_DEBUG_BIN_PATH, 'opt')
     CC = os.path.join(LLVM_BIN_PATH, 'clang')
     CXX = os.path.join(LLVM_BIN_PATH, 'clang++')
     LLVM_LINK = os.path.join(LLVM_BIN_PATH, 'llvm-link')

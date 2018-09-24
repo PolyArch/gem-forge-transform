@@ -72,7 +72,10 @@ public:
   std::string getAddressFunctionName() const {
     return this->AddressFunctionName;
   }
-  void generateComputeFunction(llvm::Module *Module) const;
+
+  const AddressDataGraph &getAddressDataGraph() const { return this->AddrDG; }
+
+  void generateComputeFunction(std::unique_ptr<llvm::Module> &Module) const;
 
 protected:
   void formatAdditionalInfoText(std::ostream &OStream) const override;

@@ -5,6 +5,9 @@
 #include "Utils.h"
 #include "stream/InductionVarStream.h"
 #include "stream/MemStream.h"
+#include "stream/ae/FunctionalStreamEngine.h"
+
+#include "ExecutionEngine/Interpreter/Interpreter.h"
 
 struct StreamTransformPlan {
 public:
@@ -193,7 +196,7 @@ protected:
                        Stream *S);
   void buildChosenStreamDependenceGraph();
   void buildAllChosenStreamDependenceGraph();
-  void buildAddressDataGraphForChosenStreams() const;
+  void buildAddressInterpreterForChosenStreams();
   std::string getAddressModuleName() const;
   MemStream *getMemStreamByInstLoop(llvm::Instruction *Inst,
                                     const llvm::Loop *Loop);
@@ -245,6 +248,9 @@ protected:
 
   std::unordered_map<const llvm::Instruction *, StreamTransformPlan>
       InstPlanMap;
+
+  std::unique_ptr<llvm::Interpreter> AddrInterpreter;
+  std::unique_ptr<FunctionalStreamEngine> FuncSE;
 
   /************************************************************
    * Memorization.

@@ -40,8 +40,8 @@ class Benchmark(object):
         self.trace_func = trace_func
         self.lang = lang
         self.standalone = standalone
-        # self.gem5_config = Gem5ReplayConfig(False)
-        self.gem5_config = Gem5ReplayConfig(True)
+        self.gem5_config = Gem5ReplayConfig(False)
+        # self.gem5_config = Gem5ReplayConfig(True)
 
         self.pass_so = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')

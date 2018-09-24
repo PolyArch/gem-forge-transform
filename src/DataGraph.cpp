@@ -84,7 +84,7 @@ void MemoryDependenceComputer::getMemoryDependence(
 
 DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function *_Function,
-    std::unordered_map<llvm::Value *, DynamicValue> &&_Arguments)
+    std::unordered_map<const llvm::Value *, DynamicValue> &&_Arguments)
     : Function(_Function), RunTimeEnv(std::move(_Arguments)),
       PrevBasicBlock(nullptr), PrevCallInst(nullptr) {
   // Initalize the register dependence look up table to empty list.
@@ -104,7 +104,7 @@ DataGraph::DynamicFrame::~DynamicFrame() {
 }
 
 const DynamicValue &
-DataGraph::DynamicFrame::getValue(llvm::Value *Value) const {
+DataGraph::DynamicFrame::getValue(const llvm::Value *Value) const {
   const auto Iter = this->RunTimeEnv.find(Value);
   assert(Iter != this->RunTimeEnv.end() &&
          "Failed to find value in the frame.");
@@ -112,7 +112,7 @@ DataGraph::DynamicFrame::getValue(llvm::Value *Value) const {
 }
 
 const DynamicValue *
-DataGraph::DynamicFrame::getValueNullable(llvm::Value *Value) const {
+DataGraph::DynamicFrame::getValueNullable(const llvm::Value *Value) const {
   const auto Iter = this->RunTimeEnv.find(Value);
   if (Iter == this->RunTimeEnv.end()) {
     return nullptr;
@@ -121,7 +121,7 @@ DataGraph::DynamicFrame::getValueNullable(llvm::Value *Value) const {
   }
 }
 
-void DataGraph::DynamicFrame::insertValue(llvm::Value *Value,
+void DataGraph::DynamicFrame::insertValue(const llvm::Value *Value,
                                           DynamicValue DValue) {
   DEBUG(llvm::errs() << "OFFSET " << DValue.MemOffset << '\n');
   // !! Emplace does not replace it! Erase it first!
@@ -661,7 +661,7 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed) {
   assert(StaticFunction && "Failed to look up traced function in module.");
 
   // Handle the frame stack.
-  std::unordered_map<llvm::Value *, DynamicValue> DynamicArguments;
+  std::unordered_map<const llvm::Value *, DynamicValue> DynamicArguments;
 
   // In simple mode, we don't care the actuall value parameter.
   if (this->DetailLevel > SIMPLE) {
@@ -786,7 +786,7 @@ DataGraph::getLLVMInstruction(const std::string &FunctionName,
   } else {
     if (this->DynamicFrameStack.empty()) {
       // We should create an empty frame there.
-      std::unordered_map<llvm::Value *, DynamicValue> DynamicArguments;
+      std::unordered_map<const llvm::Value *, DynamicValue> DynamicArguments;
       this->DynamicFrameStack.emplace_front(Func, std::move(DynamicArguments));
     }
     if (this->DynamicFrameStack.front().Function != Func) {

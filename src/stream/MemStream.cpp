@@ -64,6 +64,7 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
   this->AddrDG.format(OStream);
 }
 
-void MemStream::generateComputeFunction(llvm::Module *Module) const {
+void MemStream::generateComputeFunction(
+    std::unique_ptr<llvm::Module> &Module) const {
   this->AddrDG.generateComputeFunction(this->AddressFunctionName, Module);
 }
