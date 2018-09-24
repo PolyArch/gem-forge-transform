@@ -5,6 +5,9 @@
 
 #include "stream/MemStream.h"
 #include "stream/Stream.h"
+#include "stream/StreamMessage.pb.h"
+
+#include "Gem5ProtobufSerializer.h"
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
 
@@ -24,6 +27,17 @@ public:
   void configure(DataGraph *DG);
   void step(DataGraph *DG);
 
+  /**
+   * When a load comes in, we update the value only if there is dependent stream
+   * and the type is supported.
+   */
+  void updateLoadedValue(DataGraph *DG, const DynamicValue &DynamicVal);
+
+  /**
+   * Dump the history into the file when the stream ends.
+   */
+  void endStream();
+
 private:
   Stream *S;
   FunctionalStreamEngine *SE;
@@ -33,11 +47,25 @@ private:
 
   FunctionalStreamPattern Pattern;
 
+  LLVM::TDG::StreamHistory ProtobufHistoryEntry;
+  Gem5ProtobufSerializer HistorySerializer;
+  std::ofstream HistoryTextFStream;
+
+  /**
+   * For IVStream these two fields should always be the same.
+   */
+  uint64_t CurrentIdx; // 0 is reseved for the first empty state.
+  static constexpr uint64_t InvalidIdx = 0;
+  uint64_t CurrentAddress;
   uint64_t CurrentValue;
+  bool IsAddressValid;
+  bool IsValueValid;
 
   std::list<uint64_t> FIFO;
 
-  uint64_t computeAddress(DataGraph *DG) const;
+  void DEBUG_DUMP(llvm::raw_ostream &OS) const;
+
+  std::pair<bool, uint64_t> computeAddress(DataGraph *DG) const;
   void setGenericValueFromDynamicValue(llvm::Type *Type,
                                        llvm::GenericValue &GenericVal,
                                        const DynamicValue &DynamicVal) const;
@@ -46,6 +74,13 @@ private:
                                  const uint64_t &Val) const;
   uint64_t extractAddressFromGenericValue(llvm::Type *Type,
                                           llvm::GenericValue &GenericVal) const;
+
+  void update(DataGraph *DG);
+
+  /**
+   * This will update myself and recursive update all the dependent streams.
+   */
+  void updateRecursively(DataGraph *DG);
 };
 
 #endif

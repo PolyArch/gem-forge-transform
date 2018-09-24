@@ -128,7 +128,6 @@ protected:
            "The protobuf entry should have stream config extra struct.");
     ConfigExtra->set_stream_name(this->S->formatName());
     ConfigExtra->set_stream_id(this->S->getStreamId());
-    ConfigExtra->set_pattern_path(this->S->getPatternPath());
     ConfigExtra->set_info_path(this->S->getInfoPath());
   }
 
@@ -237,6 +236,8 @@ protected:
 
   std::unordered_map<const llvm::PHINode *, std::list<InductionVarStream>>
       PHINodeIVStreamMap;
+
+  std::unordered_map<const llvm::Instruction *, Stream *> ChosenInstStreamMap;
 
   std::unordered_map<const llvm::Loop *,
                      std::unordered_map<const llvm::Instruction *, Stream *>>

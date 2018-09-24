@@ -50,6 +50,10 @@ public:
   uint64_t getStreamId() const { return reinterpret_cast<uint64_t>(this); }
   const std::string &getPatternPath() const { return this->PatternFullPath; }
   const std::string &getInfoPath() const { return this->InfoFullPath; }
+  const std::string &getHistoryPath() const { return this->HistoryFullPath; }
+  const std::string &getHistoryTextPath() const {
+    return this->HistoryTextFullPath;
+  }
   size_t getLoopLevel() const { return this->LoopLevel; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
@@ -130,8 +134,10 @@ protected:
   std::string Folder;
   std::string PatternFullPath;
   std::string InfoFullPath;
+  std::string HistoryFullPath;
   std::string PatternTextFullPath;
   std::string InfoTextFullPath;
+  std::string HistoryTextFullPath;
   LLVM::TDG::StreamPattern ProtobufPattern;
   Gem5ProtobufSerializer *PatternSerializer;
   std::ofstream PatternTextFStream;

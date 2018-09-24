@@ -11,6 +11,8 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
   this->PatternTextFullPath = this->PatternFullPath + ".txt";
   this->InfoFullPath = this->Folder + "/" + this->formatName() + ".info";
   this->InfoTextFullPath = this->InfoFullPath + ".txt";
+  this->HistoryFullPath = this->Folder + "/" + this->formatName() + ".history";
+  this->HistoryTextFullPath = this->HistoryFullPath + ".txt";
   this->PatternSerializer = new Gem5ProtobufSerializer(this->PatternFullPath);
   this->PatternTextFStream.open(this->PatternTextFullPath);
   assert(this->PatternTextFStream.is_open() &&
@@ -83,6 +85,8 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   InfoTextFStream << this->getStreamId() << '\n';              // stream id
   InfoTextFStream << this->Inst->getOpcodeName() << '\n';      // stream type
   InfoTextFStream << this->getElementSize(DataLayout) << '\n'; // element size
+  InfoTextFStream << this->PatternFullPath << '\n';            // pattern path
+  InfoTextFStream << this->HistoryFullPath << '\n';            // history path
 
   // The next line is the chosen base streams.
   InfoTextFStream << "Chosen base streams. ---------\n";
@@ -111,6 +115,8 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   ProtobufInfo.set_id(this->getStreamId());
   ProtobufInfo.set_type(this->Inst->getOpcodeName());
   ProtobufInfo.set_element_size(this->getElementSize(DataLayout));
+  ProtobufInfo.set_pattern_path(this->PatternFullPath);
+  ProtobufInfo.set_history_path(this->HistoryFullPath);
   for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
     ProtobufInfo.add_chosen_base_ids(ChosenBaseStream->getStreamId());
   }

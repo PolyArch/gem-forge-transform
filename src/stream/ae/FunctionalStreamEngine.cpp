@@ -18,6 +18,21 @@ void FunctionalStreamEngine::step(Stream *S, DataGraph *DG) {
   }
 }
 
+void FunctionalStreamEngine::updateLoadedValue(Stream *S, DataGraph *DG,
+                                               const DynamicValue &DynamicVal) {
+  auto FS = this->getNullableFunctionalStream(S);
+  if (FS != nullptr) {
+    FS->updateLoadedValue(DG, DynamicVal);
+  }
+}
+
+void FunctionalStreamEngine::endStream(Stream *S) {
+  auto FS = this->getNullableFunctionalStream(S);
+  if (FS != nullptr) {
+    FS->endStream();
+  }
+}
+
 FunctionalStream *
 FunctionalStreamEngine::getOrInitializeFunctionalStream(Stream *S) {
   auto Iter = this->StreamMap.find(S);

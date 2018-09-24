@@ -66,7 +66,6 @@ message TDGInstruction {
     string stream_name = 1;
     uint64 stream_id = 2;
     string info_path = 3;
-    string pattern_path = 4;
   }
 
   message StreamStepExtra {
