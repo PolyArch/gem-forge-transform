@@ -4,7 +4,7 @@ set(ELLCC_PATH /home/zhengrong/Documents/ellcc CACHE PATH "Where to find ellcc."
 set(ELLCC_LLVM_PATH /home/zhengrong/Documents/ellcc/build/build-ecc/llvm/x86_64-linux CACHE PATH "Where to find llvm when use ellcc.")
 option(USE_ELLCC "Use ellcc to trace stdlib" OFF)
 
-set(LLVM_PATH /home/zhengrong/Documents/llvm-6.0/install)
+set(LLVM_PATH /home/zhengrong/Documents/llvm-6.0/install-debug)
 
 if (USE_ELLCC)
     set(CMAKE_CXX_COMPILER $(ELLCC_PATH)/bin/ecc++)

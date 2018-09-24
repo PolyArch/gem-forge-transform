@@ -154,6 +154,7 @@ build_datagraph_debugs = {
     'stream': [
         'ReplayPass',
         'StreamPass',
+        'FunctionalStream',
         # 'DataGraph',
         'LoopUtils',
         # 'StreamPattern',
@@ -178,11 +179,11 @@ build_datagraph_debugs = {
 
 simulate_datagraph_debugs = {
     'stream': [
-        # 'StreamEngine',
+        'StreamEngine',
         # 'LLVMTraceCPU',
     ],
     'stream-prefetch': [
-        # 'StreamEngine',
+        'StreamEngine',
         # 'LLVMTraceCPU',
     ],
     'inline-stream': [],

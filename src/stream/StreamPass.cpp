@@ -273,7 +273,7 @@ void StreamPass::transform() {
       S->finalize(this->Trace->DataLayout);
     }
   }
-  this->buildAddressDataGraphForChosenStreams();
+  this->buildAddressInterpreterForChosenStreams();
 
   this->makeStreamTransformPlan();
 
@@ -1047,23 +1047,30 @@ std::string StreamPass::getAddressModuleName() const {
   return this->OutTraceName + ".address.bc";
 }
 
-void StreamPass::buildAddressDataGraphForChosenStreams() const {
+void StreamPass::buildAddressInterpreterForChosenStreams() {
   auto &Context = this->Module->getContext();
-  llvm::Module AddressModule(this->getAddressModuleName(), Context);
+  auto AddressModule =
+      std::make_unique<llvm::Module>(this->getAddressModuleName(), Context);
 
   for (const auto &InstMemStreamEntry : this->InstMemStreamMap) {
     for (const auto &S : InstMemStreamEntry.second) {
       if (S.isChosen()) {
-        S.generateComputeFunction(&AddressModule);
+        S.generateComputeFunction(AddressModule);
       }
     }
   }
 
+  // For debug perpose.
   std::error_code EC;
   llvm::raw_fd_ostream ModuleFStream(this->AddressModulePath, EC,
                                      llvm::sys::fs::OpenFlags::F_None);
-  AddressModule.print(ModuleFStream, nullptr);
+  AddressModule->print(ModuleFStream, nullptr);
   ModuleFStream.close();
+
+  this->AddrInterpreter =
+      std::make_unique<llvm::Interpreter>(std::move(AddressModule));
+  this->FuncSE =
+      std::make_unique<FunctionalStreamEngine>(this->AddrInterpreter);
 }
 
 StreamTransformPlan &
@@ -1366,6 +1373,10 @@ void StreamPass::pushLoopStackAndConfigureStreams(
   }
 
   for (auto &S : Iter->second) {
+
+    // Inform the stream engine.
+    this->FuncSE->configure(S, this->Trace);
+
     auto Inst = S->getInst();
     auto ConfigInst = new StreamConfigInst(S);
     auto ConfigInstId = ConfigInst->getId();
@@ -1540,6 +1551,9 @@ void StreamPass::transformStream() {
         this->DeletedInstCount++;
         NeedToHandleUseInformation = false;
       } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
+
+        // Inform the functional stream engine.
+        this->FuncSE->step(TransformPlan.getParamStream(), this->Trace);
 
         this->Trace->DynamicFrameStack.front()
             .updateRegisterDependenceLookUpMap(NewStaticInst,

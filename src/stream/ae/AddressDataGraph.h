@@ -1,6 +1,8 @@
 #ifndef LLVM_TDG_ADDRESS_DATAGRAPH_H
 #define LLVM_TDG_ADDRESS_DATAGRAPH_H
 
+#include "DataGraph.h"
+
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
@@ -20,12 +22,19 @@ public:
 
   bool hasCircle() const { return this->HasCircle; }
 
+  const std::list<const llvm::Value *> &getInputs() const {
+    return this->Inputs;
+  }
+
+  const llvm::Value *getAddrValue() const { return this->AddrValue; }
+
   /**
    * Generate a function takes the input and returns the value.
    * Returns the inserted function.
    */
-  llvm::Function *generateComputeFunction(const std::string &FuncName,
-                                          llvm::Module *Module) const;
+  llvm::Function *
+  generateComputeFunction(const std::string &FuncName,
+                          std::unique_ptr<llvm::Module> &Module) const;
 
 private:
   const llvm::Loop *Loop;

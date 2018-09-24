@@ -177,9 +177,8 @@ void AddressDataGraph::dfsOnComputeInsts(const llvm::Instruction *Inst,
   Task(Inst);
 }
 
-llvm::Function *
-AddressDataGraph::generateComputeFunction(const std::string &FuncName,
-                                          llvm::Module *Module) const {
+llvm::Function *AddressDataGraph::generateComputeFunction(
+    const std::string &FuncName, std::unique_ptr<llvm::Module> &Module) const {
   assert(!this->HasCircle &&
          "Can not create address function for cyclic address datagaph.");
   {
@@ -187,10 +186,10 @@ AddressDataGraph::generateComputeFunction(const std::string &FuncName,
     assert(TempFunc == nullptr && "Function is already inside the module.");
   }
 
-  auto FuncType = this->createFunctionType(Module);
+  auto FuncType = this->createFunctionType(Module.get());
   auto Function = llvm::Function::Create(
       FuncType, llvm::GlobalValue::LinkageTypes::ExternalLinkage, FuncName,
-      Module);
+      Module.get());
   assert(Function != nullptr && "Failed to insert the function.");
 
   // Create the first and only basic block.

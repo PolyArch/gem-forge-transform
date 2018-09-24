@@ -1,4 +1,6 @@
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(LLVM_SRC_LIB_DIR "/home/zhengrong/Documents/llvm-6.0/llvm/lib")
 
 # First dive into trace, as it will give us PROTOBUF variables.
 add_subdirectory(trace)
@@ -48,6 +50,9 @@ add_library(LLVMTDGPass MODULE
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp
     stream/ae/AddressDataGraph.cpp
+    stream/ae/FunctionalStreamPattern.cpp
+    stream/ae/FunctionalStream.cpp
+    stream/ae/FunctionalStreamEngine.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
 )
@@ -70,6 +75,10 @@ set_target_properties(LLVMTDGPass PROPERTIES
 )
 
 # Link to LLVM components.
-llvm_map_components_to_libnames(LLVM_LIBS demangle)
+llvm_map_components_to_libnames(LLVM_LIBS demangle interpreter)
+llvm_expand_dependencies(LLVM_DEP_LIBS ${LLVM_LIBS})
 
-target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY} ${LLVM_LIBS})
+# Inorder to use the actual header of interpreter, which is not part of the installed llvm headers.
+target_include_directories(LLVMTDGPass PUBLIC ${LLVM_SRC_LIB_DIR})
+
+target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY} ${LLVM_DEP_LIBS})

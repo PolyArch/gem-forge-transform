@@ -18,13 +18,18 @@ private:
   std::ofstream OutFileStream;
   google::protobuf::io::ZeroCopyOutputStream *OutZeroCopyStream;
 
-  /**
-   * Copied from gem5/src/proto/protoio.hh.
-   * Write this magic number first so that it can be readed by
-   * gem5's protoio.
-   */
-  /// Use the ASCII characters gem5 as our magic number
-  static const uint32_t Gem5MagicNumber = 0x356d6567;
+};
+
+class Gem5ProtobufReader {
+public:
+  Gem5ProtobufReader(const std::string &FileName);
+  ~Gem5ProtobufReader();
+
+  bool read(google::protobuf::Message &Message);
+
+private:
+  std::ifstream InFileStream;
+  google::protobuf::io::ZeroCopyInputStream *InZeroCopyStream;
 };
 
 #endif
