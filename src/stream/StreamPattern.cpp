@@ -61,8 +61,8 @@ void StreamPattern::LinearValuePatternFSM::update(uint64_t Val) {
         this->Stride = BaseStrideResult.second.second;
         this->I = this->Updates - 1;
         this->State = SUCCESS;
-        // DEBUG(llvm::errs() << "Stride " << this->Stride << " Base "
-        //                    << this->Base << " I " << this->I << '\n');
+        DEBUG(llvm::errs() << "Stride " << this->Stride << " Base "
+                           << this->Base << " I " << this->I << '\n');
       }
     }
   } else if (this->State == SUCCESS) {
@@ -296,7 +296,8 @@ void StreamPattern::AccessPatternFSM::addAccess(uint64_t Val) {
   }
   case StreamPattern::AccessPattern::CONDITIONAL_UPDATE_ONLY: {
     for (auto &ValPattern : this->ValuePatterns) {
-      if (Val != ValPattern->PrevValue) {
+      // Be careful to also include the first access.
+      if (this->Iters == 1 || Val != ValPattern->PrevValue) {
         ValPattern->update(Val);
       }
     }

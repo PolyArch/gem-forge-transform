@@ -431,6 +431,13 @@ void StreamPass::activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
   assert(PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end() &&
          "Failed to look up IV streams to activate.");
 
+  auto DynamicVal =
+      this->Trace->DynamicFrameStack.front().getValueNullable(PHINode);
+  uint64_t Value;
+  if (DynamicVal != nullptr) {
+    Value = std::stoul(DynamicVal->Value);
+  }
+
   for (auto &S : PHINodeIVStreamMapIter->second) {
     auto *IVStream = &S;
     const auto &Loop = IVStream->getLoop();
@@ -451,6 +458,9 @@ void StreamPass::activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
       DEBUG(llvm::errs() << "Activate IVStream " << IVStream->formatName()
                          << '\n');
     }
+    // if (DynamicVal != nullptr) {
+    //   IVStream->addAccess(Value);
+    // }
   }
 }
 
@@ -635,6 +645,8 @@ void StreamPass::endIter(const LoopStackT &LoopStack,
         }
         auto Inst = IVStream->getPHIInst();
         for (auto &S : this->PHINodeIVStreamMap.at(Inst)) {
+          // DEBUG(llvm::errs()
+          //       << "End iteration for IVStream " << S.formatName() << '\n');
           S.endIter();
           if (S.getLoop() == LoopStack.front()) {
             break;
@@ -772,6 +784,8 @@ void StreamPass::analyzeStream() {
             uint64_t Value =
                 std::stoul(NewDynamicInst->DynamicOperands[OperandIdx]->Value);
             for (auto &IVStream : PHINodeIVStreamMapIter->second) {
+              // DEBUG(llvm::errs() << "Add iv access " << IVStream.formatName()
+              //                    << " with value " << Value << '\n');
               IVStream.addAccess(Value);
             }
           }
@@ -1114,7 +1128,7 @@ void StreamPass::DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop) {
          << PlanStr << '\n';
     }
   }
-  llvm::errs() << ss.str() << '\n';
+  // llvm::errs() << ss.str() << '\n';
 
   // Also dump to file.
   std::string PlanPath = this->OutputExtraFolderPath + "/" +
