@@ -938,6 +938,9 @@ void StreamPass::addChosenStream(const llvm::Loop *Loop,
   }
   assert(ChosenLoopInstStreamIter->second.count(Inst) == 0 &&
          "This stream is already chosen.");
+  assert(this->ChosenInstStreamMap.count(Inst) == 0 &&
+         "The chosen stream is already inserted into ChosenInstStreamMap.");
+  this->ChosenInstStreamMap.emplace(Inst, S);
   DEBUG(llvm::errs() << "Add chosen stream " << S->formatName() << '\n');
   ChosenLoopInstStreamIter->second.emplace(Inst, S);
   S->markChosen();
@@ -1454,6 +1457,7 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
     assert(ActiveStreamInstMapIter != ActiveStreamInstMap.end() &&
            "The stream is not configured.");
     // ActiveStreamInstMap.erase(ActiveStreamInstMapIter);
+    this->FuncSE->endStream(S);
   }
 }
 
@@ -1539,6 +1543,16 @@ void StreamPass::transformStream() {
                                                ActiveStreamInstMap);
       } else {
         // This means that we are at a new iteration.
+      }
+    }
+
+    // Update the loaded value for functional stream engine.
+    if (llvm::isa<llvm::LoadInst>(NewStaticInst)) {
+      auto ChosenInstStreamIter = this->ChosenInstStreamMap.find(NewStaticInst);
+      if (ChosenInstStreamIter != this->ChosenInstStreamMap.end()) {
+        auto S = ChosenInstStreamIter->second;
+        this->FuncSE->updateLoadedValue(S, this->Trace,
+                                        *(NewDynamicInst->DynamicResult));
       }
     }
 

@@ -7,7 +7,9 @@ message StreamInfo {
     uint64 id = 2;
     string type = 3;
     int32 element_size = 4;
-    repeated uint64 chosen_base_ids = 5;
+    string pattern_path = 5;
+    string history_path = 6;
+    repeated uint64 chosen_base_ids = 7;
 }
 
 message StreamPattern {
@@ -26,4 +28,13 @@ message StreamPattern {
         bool valid = 1;
         uint64 value = 2;
     }
+}
+
+message StreamHistory {
+    message HistoryEntry {
+        bool valid = 1;
+        uint64 addr = 2;
+    }
+    uint64 id = 1;
+    repeated HistoryEntry history = 2;
 }

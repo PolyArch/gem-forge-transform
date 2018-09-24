@@ -11,6 +11,9 @@ public:
 
   void configure(Stream *S, DataGraph *DG);
   void step(Stream *S, DataGraph *DG);
+  void updateLoadedValue(Stream *S, DataGraph *DG,
+                         const DynamicValue &DynamicVal);
+  void endStream(Stream *S);
 
   FunctionalStream *getNullableFunctionalStream(Stream *S);
   std::unique_ptr<llvm::Interpreter> &getInterpreter() {
