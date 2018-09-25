@@ -20,6 +20,38 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
          "Failed to open output stream file.");
 }
 
+void Stream::addBaseStream(Stream *Other) {
+  // assert(Other != this && "Self dependent streams is not allowed.");
+  this->BaseStreams.insert(Other);
+  if (Other != nullptr) {
+    Other->DependentStreams.insert(this);
+  } else {
+    this->HasMissingBaseStream = true;
+  }
+}
+
+void Stream::addChosenBaseStream(Stream *Other) {
+  assert(Other != this && "Self dependent chosen streams is not allowed.");
+  assert(this->isChosen() &&
+         "This should be chosen to build the chosen stream dependence graph.");
+  assert(Other->isChosen() &&
+         "Other should be chosen to build the chosen stream dependence graph.");
+  this->ChosenBaseStreams.insert(Other);
+  // Set the base stream as step stream if we share the same inner most level.
+  if (Other->InnerMostLoop == this->InnerMostLoop) {
+    this->ChosenBaseStepStreams.insert(Other);
+  }
+}
+
+void Stream::addAllChosenBaseStream(Stream *Other) {
+  assert(Other != this && "Self dependent chosen streams is not allowed.");
+  assert(this->isChosen() &&
+         "This should be chosen to build the chosen stream dependence graph.");
+  assert(Other->isChosen() &&
+         "Other should be chosen to build the chosen stream dependence graph.");
+  this->AllChosenBaseStreams.insert(Other);
+}
+
 void Stream::endStream() {
   const auto ComputedPattern = this->Pattern.endStream();
   this->Iters = 1;
@@ -96,6 +128,13 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
                     << ChosenBaseStream->formatName() << '\n';
   }
   InfoTextFStream << "------------------------------\n";
+  // The next line is the chosen step streams.
+  InfoTextFStream << "Chosen base step streams. ---------\n";
+  for (const auto &ChosenBaseStepStream : this->ChosenBaseStepStreams) {
+    InfoTextFStream << ChosenBaseStepStream->getStreamId() << ' '
+                    << ChosenBaseStepStream->formatName() << '\n';
+  }
+  InfoTextFStream << "------------------------------\n";
   // The next line is all chosen base streams.
   InfoTextFStream << "Root chosen base streams. ----\n";
   for (const auto &AllChosenBaseStream : this->AllChosenBaseStreams) {
@@ -120,6 +159,9 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   ProtobufInfo.set_history_path(this->HistoryFullPath);
   for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
     ProtobufInfo.add_chosen_base_ids(ChosenBaseStream->getStreamId());
+  }
+  for (const auto &ChosenBaseStepStream : this->ChosenBaseStepStreams) {
+    ProtobufInfo.add_chosen_base_step_ids(ChosenBaseStepStream->getStreamId());
   }
   InfoSerializer.serialize(ProtobufInfo);
 }

@@ -34,12 +34,20 @@ public:
   const std::unordered_set<Stream *> &getChosenBaseStreams() const {
     return this->ChosenBaseStreams;
   }
+  const std::unordered_set<Stream *> &getChosenBaseStepStreams() const {
+    return this->ChosenBaseStepStreams;
+  }
   const std::unordered_set<Stream *> &getAllChosenBaseStreams() const {
     return this->AllChosenBaseStreams;
   }
   const std::unordered_set<Stream *> &getDependentStreams() const {
     return this->DependentStreams;
   }
+  /**
+   * Interface to decide even if the stream can be considered as a candidate
+   * (before mark it qualified or not).
+   */
+  virtual bool isCandidate() const { return true; }
   void markQualified() {
     assert(!this->HasMissingBaseStream &&
            "Marking a stream with missing base stream qualified.");
@@ -73,36 +81,9 @@ public:
    * This base stream is never qualified. This is to solve the case when the
    * needing base stream is not instantiated at a specific level.
    */
-  void addBaseStream(Stream *Other) {
-    // assert(Other != this && "Self dependent streams is not allowed.");
-    this->BaseStreams.insert(Other);
-    if (Other != nullptr) {
-      Other->DependentStreams.insert(this);
-    } else {
-      this->HasMissingBaseStream = true;
-    }
-  }
-
-  void addChosenBaseStream(Stream *Other) {
-    assert(Other != this && "Self dependent chosen streams is not allowed.");
-    assert(
-        this->isChosen() &&
-        "This should be chosen to build the chosen stream dependence graph.");
-    assert(
-        Other->isChosen() &&
-        "Other should be chosen to build the chosen stream dependence graph.");
-    this->ChosenBaseStreams.insert(Other);
-  }
-  void addAllChosenBaseStream(Stream *Other) {
-    assert(Other != this && "Self dependent chosen streams is not allowed.");
-    assert(
-        this->isChosen() &&
-        "This should be chosen to build the chosen stream dependence graph.");
-    assert(
-        Other->isChosen() &&
-        "Other should be chosen to build the chosen stream dependence graph.");
-    this->AllChosenBaseStreams.insert(Other);
-  }
+  void addBaseStream(Stream *Other);
+  void addChosenBaseStream(Stream *Other);
+  void addAllChosenBaseStream(Stream *Other);
 
   void endIter() {
     if (this->LastAccessIters != this->Iters) {
@@ -168,9 +149,10 @@ protected:
   const size_t LoopLevel;
 
   std::unordered_set<Stream *> BaseStreams;
-  std::unordered_set<Stream *> ChosenBaseStreams;
-  std::unordered_set<Stream *> AllChosenBaseStreams;
   std::unordered_set<Stream *> DependentStreams;
+  std::unordered_set<Stream *> ChosenBaseStreams;
+  std::unordered_set<Stream *> ChosenBaseStepStreams;
+  std::unordered_set<Stream *> AllChosenBaseStreams;
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;

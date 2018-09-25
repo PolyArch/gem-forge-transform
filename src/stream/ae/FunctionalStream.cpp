@@ -25,11 +25,23 @@ FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
    */
   for (const auto &BS : this->S->getChosenBaseStreams()) {
     auto FuncBS = this->SE->getNullableFunctionalStream(BS);
-    assert(FuncBS != nullptr && "Failed to find the base stream.");
+    assert(FuncBS != nullptr && "Failed to find the functional base stream.");
     this->BaseStreams.emplace(FuncBS->S->getInst(), FuncBS);
     FuncBS->DependentStreams.insert(this);
     llvm::errs() << "Add base functional stream " << FuncBS->S->formatName()
                  << '\n';
+  }
+
+  /**
+   * Find the dependent step streams.
+   */
+  for (const auto &BaseStepStream : this->S->getChosenBaseStepStreams()) {
+    auto FuncBaseStepStream =
+        this->SE->getNullableFunctionalStream(BaseStepStream);
+    assert(FuncBaseStepStream != nullptr &&
+           "Failed to find the functional base step stream.");
+    // Register myself as the dependent step instruction.
+    FuncBaseStepStream->DependentStepStreams.insert(this);
   }
 }
 void FunctionalStream::DEBUG_DUMP(llvm::raw_ostream &OS) const {
@@ -67,10 +79,11 @@ void FunctionalStream::step(DataGraph *DG) {
                     "step stack depth is too high.");
   }
 
-  for (auto &DependentStream : this->DependentStreams) {
+  // Send the step signal to dependent step streams.
+  for (auto &DependentStepStream : this->DependentStepStreams) {
     DEBUG(llvm::errs() << "Trigger step of dependent FunctionalStream of "
-                       << DependentStream->S->formatName() << '\n');
-    DependentStream->step(DG);
+                       << DependentStepStream->S->formatName() << '\n');
+    DependentStepStream->step(DG);
   }
 
   StackDepth--;

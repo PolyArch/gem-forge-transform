@@ -926,7 +926,11 @@ void StreamPass::markQualifiedStream() {
     S->markQualified();
     // Check all the dependent streams
     for (const auto &DependentStream : S->getDependentStreams()) {
-      if (S->isAliased()) {
+      if (DependentStream->isAliased()) {
+        continue;
+      }
+      if (!DependentStream->isCandidate()) {
+        // The dependent stream is not even a candidate.
         continue;
       }
       bool Qualified = true;

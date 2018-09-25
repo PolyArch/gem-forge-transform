@@ -44,6 +44,7 @@ private:
 
   std::unordered_map<const llvm::Value *, FunctionalStream *> BaseStreams;
   std::unordered_set<FunctionalStream *> DependentStreams;
+  std::unordered_set<FunctionalStream *> DependentStepStreams;
 
   FunctionalStreamPattern Pattern;
 
