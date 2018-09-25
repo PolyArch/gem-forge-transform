@@ -28,7 +28,12 @@ void AddressDataGraph::constructDataGraph(
     Queue.pop_front();
     auto Inst = llvm::dyn_cast<llvm::Instruction>(Value);
     if (Inst == nullptr) {
-      // This is not an instruction, should be an input value.
+      // This is not an instruction, should be an input value unless it's an
+      // constant data.
+      if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Value)) {
+        this->ConstantDatas.insert(ConstantData);
+        continue;
+      }
       UnsortedInputs.insert(Value);
       continue;
     }
@@ -207,6 +212,15 @@ llvm::Function *AddressDataGraph::generateComputeFunction(
              "Mismatch between address daragraph input and function argument.");
       ValueMap.emplace(Input, ArgIter);
       ++ArgIter;
+    }
+  }
+  {
+    // Remember to translate the constant value to themselves.
+    for (const auto &ConstantData : this->ConstantDatas) {
+      // This is hacky...
+      ValueMap.emplace(ConstantData,
+                       const_cast<llvm::Value *>(
+                           static_cast<const llvm::Value *>(ConstantData)));
     }
   }
 

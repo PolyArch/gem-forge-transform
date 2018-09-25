@@ -341,10 +341,13 @@ void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
     }
     Streams.emplace_back(this->OutputExtraFolderPath, Inst, *LoopIter,
                          InnerMostLoop, LoopLevel, IsInductionVar);
+    DEBUG(llvm::errs() << "Initialized MemStream "
+                       << Streams.back().formatName() << '\n');
     this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
     ++LoopIter;
   }
 }
+
 void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
                                                llvm::PHINode *Inst) {
 
@@ -818,6 +821,7 @@ void StreamPass::buildStreamDependenceGraph() {
        * First handle the base IV stream.
        */
       for (const auto &BasePHINode : S.getBaseInductionVars()) {
+        bool FoundBaseStream = false;
         auto PHINodeIVStreamMapIter =
             this->PHINodeIVStreamMap.find(BasePHINode);
         if (PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end()) {
@@ -828,7 +832,15 @@ void StreamPass::buildStreamDependenceGraph() {
             DEBUG(llvm::errs() << "Add IV dependence " << S.formatName()
                                << " -> " << IVStream.formatName() << "\n");
             S.addBaseStream(&IVStream);
+            FoundBaseStream = true;
           }
+        }
+        if (!FoundBaseStream) {
+          DEBUG(llvm::errs()
+                << "Add missing IV dependence " << S.formatName() << " -> "
+                << Utils::formatLLVMInst(BasePHINode) << " at loop "
+                << LoopUtils::getLoopId(Loop) << '\n');
+          S.addBaseStream(nullptr);
         }
       }
 
@@ -841,6 +853,12 @@ void StreamPass::buildStreamDependenceGraph() {
           DEBUG(llvm::errs() << "Add MEM dependence " << S.formatName()
                              << " -> " << BaseStream->formatName() << "\n");
           S.addBaseStream(BaseStream);
+        } else {
+          DEBUG(llvm::errs()
+                << "Add missing MEM dependence " << S.formatName() << " -> "
+                << Utils::formatLLVMInst(BaseLoad) << " at loop "
+                << LoopUtils::getLoopId(Loop) << '\n');
+          S.addBaseStream(nullptr);
         }
       }
     }
@@ -913,7 +931,9 @@ void StreamPass::markQualifiedStream() {
       }
       bool Qualified = true;
       for (const auto &BaseStream : DependentStream->getBaseStreams()) {
-        if (!BaseStream->isQualified()) {
+        // Be careful here that we use nullptr to represent a missing base
+        // stream.
+        if (BaseStream == nullptr || !BaseStream->isQualified()) {
           Qualified = false;
           break;
         }

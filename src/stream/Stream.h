@@ -40,9 +40,17 @@ public:
   const std::unordered_set<Stream *> &getDependentStreams() const {
     return this->DependentStreams;
   }
-  void markQualified() { this->Qualified = true; }
+  void markQualified() {
+    assert(!this->HasMissingBaseStream &&
+           "Marking a stream with missing base stream qualified.");
+    this->Qualified = true;
+  }
   bool isQualified() const { return this->Qualified; }
-  void markChosen() { this->Chosen = true; }
+  void markChosen() {
+    assert(!this->HasMissingBaseStream &&
+           "Marking a stream with missing base stream chosen.");
+    this->Chosen = true;
+  }
   bool isChosen() const { return this->Chosen; }
   const llvm::Loop *getLoop() const { return this->Loop; }
   const llvm::Loop *getInnerMostLoop() const { return this->InnerMostLoop; }
@@ -60,10 +68,19 @@ public:
   size_t getTotalStreams() const { return this->TotalStreams; }
   const StreamPattern &getPattern() const { return this->Pattern; }
 
+  /**
+   * A hacky idea is to use nullptr to represent an missing stream.
+   * This base stream is never qualified. This is to solve the case when the
+   * needing base stream is not instantiated at a specific level.
+   */
   void addBaseStream(Stream *Other) {
     // assert(Other != this && "Self dependent streams is not allowed.");
     this->BaseStreams.insert(Other);
-    Other->DependentStreams.insert(this);
+    if (Other != nullptr) {
+      Other->DependentStreams.insert(this);
+    } else {
+      this->HasMissingBaseStream = true;
+    }
   }
 
   void addChosenBaseStream(Stream *Other) {
@@ -154,6 +171,7 @@ protected:
   std::unordered_set<Stream *> ChosenBaseStreams;
   std::unordered_set<Stream *> AllChosenBaseStreams;
   std::unordered_set<Stream *> DependentStreams;
+  bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;
   /**

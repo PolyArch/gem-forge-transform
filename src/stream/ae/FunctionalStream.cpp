@@ -28,11 +28,12 @@ FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
     assert(FuncBS != nullptr && "Failed to find the base stream.");
     this->BaseStreams.emplace(FuncBS->S->getInst(), FuncBS);
     FuncBS->DependentStreams.insert(this);
+    llvm::errs() << "Add base functional stream " << FuncBS->S->formatName()
+                 << '\n';
   }
 }
 void FunctionalStream::DEBUG_DUMP(llvm::raw_ostream &OS) const {
-  OS << this->S->formatName() << " idx "
-     << llvm::format_hex(this->CurrentIdx, 18) << " addr "
+  OS << this->S->formatName() << " idx " << this->CurrentIdx << " addr "
      << llvm::format_hex(this->CurrentAddress, 18) << " value "
      << llvm::format_hex(this->CurrentValue, 18) << " valid "
      << this->IsValueValid;
@@ -248,7 +249,8 @@ FunctionalStream::computeAddress(DataGraph *DG) const {
        */
 
       if (DynamicVal == nullptr) {
-        llvm::errs() << "Missing dynamic value for "
+        this->DEBUG_DUMP(llvm::errs());
+        llvm::errs() << " Missing dynamic value for "
                      << LoopUtils::formatLLVMValue(Input) << '\n';
         return std::make_pair(false, 0);
       }
