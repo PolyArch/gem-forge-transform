@@ -90,20 +90,25 @@ std::string LoopUtils::formatLLVMInst(const llvm::Instruction *Inst) {
             Inst->getOpcodeName() + ")")
         .str();
   } else {
-    size_t Idx = 0;
-    for (auto InstIter = Inst->getParent()->begin(),
-              InstEnd = Inst->getParent()->end();
-         InstIter != InstEnd; ++InstIter) {
-      if ((&*InstIter) == Inst) {
-        break;
-      }
-      Idx++;
-    }
+    size_t Idx = LoopUtils::getLLVMInstPosInBB(Inst);
     return (llvm::Twine(Inst->getFunction()->getName()) +
             "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
             "(" + Inst->getOpcodeName() + ")")
         .str();
   }
+}
+
+size_t LoopUtils::getLLVMInstPosInBB(const llvm::Instruction *Inst) {
+  size_t Idx = 0;
+  for (auto InstIter = Inst->getParent()->begin(),
+            InstEnd = Inst->getParent()->end();
+       InstIter != InstEnd; ++InstIter) {
+    if ((&*InstIter) == Inst) {
+      break;
+    }
+    Idx++;
+  }
+  return Idx;
 }
 
 std::string LoopUtils::formatLLVMValue(const llvm::Value *Value) {

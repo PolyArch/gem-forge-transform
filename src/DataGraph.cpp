@@ -389,6 +389,18 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
 
   // Maintain the run time environment.
   if (this->DetailLevel > SIMPLE) {
+    // Also try to extract information from the operand.
+    for (unsigned OperandIdx = 0,
+                  NumOperands = StaticInstruction->getNumOperands();
+         OperandIdx != NumOperands; ++OperandIdx) {
+      auto OperandValue = StaticInstruction->getOperand(OperandIdx);
+      auto DynamicOperandValue =
+          this->DynamicFrameStack.front().getValueNullable(OperandValue);
+      if (DynamicOperandValue == nullptr) {
+        this->DynamicFrameStack.front().insertValue(
+            OperandValue, *(DynamicInst->DynamicOperands[OperandIdx]));
+      }
+    }
     if (StaticInstruction->getName() != "") {
       // This inst will produce a result.
       // Add the result to the tiny run time environment.

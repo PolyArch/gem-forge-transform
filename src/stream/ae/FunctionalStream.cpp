@@ -1,6 +1,8 @@
 #include "FunctionalStream.h"
 #include "FunctionalStreamEngine.h"
 
+#include "llvm/Support/Format.h"
+
 #define DEBUG_TYPE "FunctionalStream"
 FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
     : S(_S), SE(_SE), Pattern(S->getPatternPath()),
@@ -29,8 +31,10 @@ FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
   }
 }
 void FunctionalStream::DEBUG_DUMP(llvm::raw_ostream &OS) const {
-  OS << this->S->formatName() << " idx " << this->CurrentIdx << " addr "
-     << this->CurrentAddress << " value " << this->CurrentValue << " valid "
+  OS << this->S->formatName() << " idx "
+     << llvm::format_hex(this->CurrentIdx, 18) << " addr "
+     << llvm::format_hex(this->CurrentAddress, 18) << " value "
+     << llvm::format_hex(this->CurrentValue, 18) << " valid "
      << this->IsValueValid;
 }
 
@@ -85,8 +89,13 @@ void FunctionalStream::updateLoadedValue(DataGraph *DG,
   case llvm::Type::IntegerTyID: {
     auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
     unsigned BitWidth = IntegerType->getBitWidth();
-    assert(BitWidth < sizeof(this->CurrentValue) * 8 &&
-           "Too wide a integer value.");
+    if (BitWidth > sizeof(this->CurrentValue) * 8) {
+      llvm::errs() << "Too wide an integer value " << BitWidth;
+      this->DEBUG_DUMP(llvm::errs());
+      llvm::errs() << '\n';
+    }
+    assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
+           "Too wide an integer value.");
     this->CurrentValue = std::stoul(DynamicVal.Value);
     this->IsValueValid = true;
     break;
@@ -229,8 +238,21 @@ FunctionalStream::computeAddress(DataGraph *DG) const {
       // This is an input value.
       const DynamicValue *DynamicVal =
           DG->DynamicFrameStack.front().getValueNullable(Input);
-      assert(DynamicVal != nullptr &&
-             "Failed to look up the dynamic value of the input.");
+
+      /**
+       * If somehow we failed to get the dynamic value from the datagraph, we
+       * abort and mark the result invalid.
+       * This is possible due to partial datagraph (I am starting to not like
+       * this partial datagraph idea, but it is necessary to enable more
+       * flexibility in tracing).
+       */
+
+      if (DynamicVal == nullptr) {
+        llvm::errs() << "Missing dynamic value for "
+                     << LoopUtils::formatLLVMValue(Input) << '\n';
+        return std::make_pair(false, 0);
+      }
+
       this->setGenericValueFromDynamicValue(Input->getType(), Args.back(),
                                             *DynamicVal);
     }

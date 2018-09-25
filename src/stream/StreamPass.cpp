@@ -28,7 +28,6 @@ bool StreamPass::finalize(llvm::Module &Module) {
 }
 
 std::string StreamPass::classifyStream(const MemStream &S) const {
-  const auto &Loop = S.getLoop();
 
   if (S.getNumBaseLoads() > 1) {
     return "MULTI_BASE";
@@ -1072,6 +1071,8 @@ void StreamPass::buildAddressInterpreterForChosenStreams() {
   for (const auto &InstMemStreamEntry : this->InstMemStreamMap) {
     for (const auto &S : InstMemStreamEntry.second) {
       if (S.isChosen()) {
+        DEBUG(llvm::errs() << "Generate address compute function for stream "
+                           << S.formatName() << '\n');
         S.generateComputeFunction(AddressModule);
       }
     }
@@ -1517,7 +1518,7 @@ void StreamPass::transformStream() {
     } else {
       // This is the end.
       while (!LoopStack.empty()) {
-        LoopStack.pop_back();
+        this->popLoopStackAndUnconfigureStreams(LoopStack, ActiveStreamInstMap);
       }
       while (!this->Trace->DynamicInstructionList.empty()) {
         this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
