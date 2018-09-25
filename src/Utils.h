@@ -60,6 +60,44 @@ public:
           "Should not send no call/invoke instruction to getArgOperand.");
     }
   }
+  /**
+   * Print an static instruction.
+   */
+  static std::string formatLLVMInst(const llvm::Instruction *Inst) {
+    if (Inst->getName() != "") {
+      return (llvm::Twine(Inst->getFunction()->getName()) +
+              "::" + Inst->getParent()->getName() + "::" + Inst->getName() +
+              "(" + Inst->getOpcodeName() + ")")
+          .str();
+    } else {
+      size_t Idx = Utils::getLLVMInstPosInBB(Inst);
+      return (llvm::Twine(Inst->getFunction()->getName()) +
+              "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
+              "(" + Inst->getOpcodeName() + ")")
+          .str();
+    }
+  }
+
+  static size_t getLLVMInstPosInBB(const llvm::Instruction *Inst) {
+    size_t Idx = 0;
+    for (auto InstIter = Inst->getParent()->begin(),
+              InstEnd = Inst->getParent()->end();
+         InstIter != InstEnd; ++InstIter) {
+      if ((&*InstIter) == Inst) {
+        break;
+      }
+      Idx++;
+    }
+    return Idx;
+  }
+
+  static std::string formatLLVMValue(const llvm::Value *Value) {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      return Utils::formatLLVMInst(Inst);
+    } else {
+      return Value->getName();
+    }
+  }
 };
 
 #endif

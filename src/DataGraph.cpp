@@ -520,8 +520,10 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
 void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
                               const TraceParser::TracedInst &Parsed) {
 
-  DEBUG(llvm::errs() << "Handle phi node ";
-        this->printStaticInst(llvm::errs(), StaticPhi); llvm::errs() << '\n');
+  DEBUG(llvm::errs() << "Handle phi node " << Utils::formatLLVMInst(StaticPhi)
+                     << '\n');
+  // llvm::errs() << "Handle phi node " << Utils::formatLLVMInst(StaticPhi)
+  //              << '\n';
 
   // First find the incoming value.
   llvm::Value *IncomingValue = nullptr;
@@ -579,10 +581,7 @@ void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
       }
     } else {
       // We sliently create the default memory base/offset.
-      Frame.RunTimeEnv.erase(StaticPhi);
-      Frame.RunTimeEnv.emplace(std::piecewise_construct,
-                               std::forward_as_tuple(StaticPhi),
-                               std::forward_as_tuple(Parsed.Result));
+      Frame.insertValue(StaticPhi, DynamicValue(Parsed.Result));
     }
   }
 

@@ -42,6 +42,7 @@ private:
   std::list<const llvm::Value *> Inputs;
   std::unordered_set<const llvm::PHINode *> BaseIVs;
   std::unordered_set<const llvm::LoadInst *> BaseLoads;
+  std::unordered_set<const llvm::ConstantData *> ConstantDatas;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
   bool HasCircle;
 

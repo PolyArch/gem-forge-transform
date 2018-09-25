@@ -12,7 +12,7 @@ public:
             size_t _LoopLevel,
             std::function<bool(const llvm::PHINode *)> IsInductionVar)
       : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _InnerMostLoop, _LoopLevel),
-        AddrDG(_InnerMostLoop, Utils::getMemAddrValue(_Inst), IsInductionVar) {
+        AddrDG(_Loop, Utils::getMemAddrValue(_Inst), IsInductionVar) {
     assert(Utils::isMemAccessInst(this->Inst) &&
            "Should be load/store instruction to build a stream.");
     auto PosInBB = LoopUtils::getLLVMInstPosInBB(this->Inst);

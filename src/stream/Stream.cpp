@@ -4,8 +4,9 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
                const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
                const llvm::Loop *_InnerMostLoop, size_t _LoopLevel)
     : Type(_Type), Folder(_Folder), Inst(_Inst), Loop(_Loop),
-      InnerMostLoop(_InnerMostLoop), LoopLevel(_LoopLevel), Qualified(false),
-      Chosen(false), TotalIters(0), TotalAccesses(0), TotalStreams(0), Iters(1),
+      InnerMostLoop(_InnerMostLoop), LoopLevel(_LoopLevel),
+      HasMissingBaseStream(false), Qualified(false), Chosen(false),
+      TotalIters(0), TotalAccesses(0), TotalStreams(0), Iters(1),
       LastAccessIters(0), StartId(DynamicInstruction::InvalidId), Pattern() {
   this->PatternFullPath = this->Folder + "/" + this->formatName() + ".pattern";
   this->PatternTextFullPath = this->PatternFullPath + ".txt";
