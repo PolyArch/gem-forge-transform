@@ -10,6 +10,7 @@ message StreamInfo {
     string pattern_path = 5;
     string history_path = 6;
     repeated uint64 chosen_base_ids = 7;
+    repeated uint64 chosen_base_step_ids = 8;
 }
 
 message StreamPattern {

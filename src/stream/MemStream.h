@@ -74,6 +74,11 @@ public:
     return this->AddressFunctionName;
   }
 
+  bool isCandidate() const override {
+    // I have to contain no circle to be a candidate.
+    return !this->AddrDG.hasCircle();
+  }
+
   const AddressDataGraph &getAddressDataGraph() const { return this->AddrDG; }
 
   void generateComputeFunction(std::unique_ptr<llvm::Module> &Module) const;
