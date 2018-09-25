@@ -15,10 +15,11 @@ public:
         AddrDG(_InnerMostLoop, Utils::getMemAddrValue(_Inst), IsInductionVar) {
     assert(Utils::isMemAccessInst(this->Inst) &&
            "Should be load/store instruction to build a stream.");
+    auto PosInBB = LoopUtils::getLLVMInstPosInBB(this->Inst);
     this->AddressFunctionName =
         (this->Inst->getFunction()->getName() + "_" +
          this->Inst->getParent()->getName() + "_" + this->Inst->getName() +
-         "_" + this->Inst->getOpcodeName())
+         "_" + this->Inst->getOpcodeName() + "_" + llvm::Twine(PosInBB))
             .str();
     this->searchAddressComputeInstructions(IsInductionVar);
   }

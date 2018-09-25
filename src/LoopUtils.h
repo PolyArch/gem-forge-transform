@@ -54,6 +54,7 @@ public:
   /**
    * Print an static instruction.
    */
+  static size_t getLLVMInstPosInBB(const llvm::Instruction *Inst);
   static std::string formatLLVMInst(const llvm::Instruction *Inst);
   static std::string formatLLVMValue(const llvm::Value *Value);
 
