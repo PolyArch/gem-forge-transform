@@ -35,6 +35,7 @@ void StreamPrefetchPass::transformStream() {
 
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
+      // Debug a certain range of transformed instructions.
       if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700) {
         DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
       }
@@ -59,7 +60,7 @@ void StreamPrefetchPass::transformStream() {
     } else {
       // This is the end.
       while (!LoopStack.empty()) {
-        LoopStack.pop_back();
+        this->popLoopStackAndUnconfigureStreams(LoopStack, ActiveStreamInstMap);
       }
       while (!this->Trace->DynamicInstructionList.empty()) {
         this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
@@ -88,6 +89,16 @@ void StreamPrefetchPass::transformStream() {
       }
     }
 
+    // Update the loaded value for functional stream engine.
+    if (llvm::isa<llvm::LoadInst>(NewStaticInst)) {
+      auto ChosenInstStreamIter = this->ChosenInstStreamMap.find(NewStaticInst);
+      if (ChosenInstStreamIter != this->ChosenInstStreamMap.end()) {
+        auto S = ChosenInstStreamIter->second;
+        this->FuncSE->updateLoadedValue(S, this->Trace,
+                                        *(NewDynamicInst->DynamicResult));
+      }
+    }
+
     auto PlanIter = this->InstPlanMap.find(NewStaticInst);
     if (PlanIter == this->InstPlanMap.end()) {
       continue;
@@ -100,6 +111,9 @@ void StreamPrefetchPass::transformStream() {
        */
       continue;
     } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
+
+      // Inform the functional stream engine to step.
+      this->FuncSE->step(TransformPlan.getParamStream(), this->Trace);
 
       /**
        * We insert the step instruction after the actual step instruction to

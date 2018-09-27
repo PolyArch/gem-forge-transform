@@ -30,6 +30,8 @@ public:
   std::string serializeToBytes(llvm::Type *Type) const;
   // Interpret the value as an address.
   uint64_t getAddr() const { return std::stoul(this->Value, nullptr, 16); }
+  // Interpret the value as an int.
+  uint64_t getInt() const { return std::stoul(this->Value); }
   std::string Value;
   // Base/Offset of memory address.
   std::string MemBase;

@@ -41,9 +41,41 @@ FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
     assert(FuncBaseStepStream != nullptr &&
            "Failed to find the functional base step stream.");
     // Register myself as the dependent step instruction.
+    this->BaseStepStreams.insert(FuncBaseStepStream);
     FuncBaseStepStream->DependentStepStreams.insert(this);
+    if (FuncBaseStepStream->isStepRoot()) {
+      this->BaseStepRootStreams.insert(FuncBaseStepStream);
+    } else {
+      for (auto StepRootStream : FuncBaseStepStream->BaseStepRootStreams) {
+        this->BaseStepRootStreams.insert(StepRootStream);
+      }
+    }
+  }
+  if (this->BaseStepRootStreams.size() > 1) {
+    llvm::errs() << "Found more than 1 step root streams for "
+                 << this->S->formatName() << '\n';
+  }
+  assert(this->BaseStepRootStreams.size() <= 1 &&
+         "More than 1 step root streams found.");
+  for (auto StepRootStream : this->BaseStepRootStreams) {
+    StepRootStream->registerToStepRoot(this);
   }
 }
+
+void FunctionalStream::registerToStepRoot(
+    FunctionalStream *NewStepDependentStream) {
+  assert(this->isStepRoot() &&
+         "Try to register step dependent stream for non-root stream.");
+  for (auto StepDependentStream : this->AllDependentStepStreamsSorted) {
+    if (StepDependentStream == NewStepDependentStream) {
+      llvm::errs() << "Step dependent stream has already been registered.";
+    }
+    assert(StepDependentStream != NewStepDependentStream &&
+           "Step dependent stream should be registered at most once.");
+  }
+  this->AllDependentStepStreamsSorted.emplace_back(NewStepDependentStream);
+}
+
 void FunctionalStream::DEBUG_DUMP(llvm::raw_ostream &OS) const {
   OS << this->S->formatName() << " idx " << this->CurrentIdx << " addr "
      << llvm::format_hex(this->CurrentAddress, 18) << " value "
@@ -80,7 +112,7 @@ void FunctionalStream::step(DataGraph *DG) {
   }
 
   // Send the step signal to dependent step streams.
-  for (auto &DependentStepStream : this->DependentStepStreams) {
+  for (auto &DependentStepStream : this->AllDependentStepStreamsSorted) {
     DEBUG(llvm::errs() << "Trigger step of dependent FunctionalStream of "
                        << DependentStepStream->S->formatName() << '\n');
     DependentStepStream->step(DG);

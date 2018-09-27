@@ -7,7 +7,8 @@
 bool InductionVarStream::isInductionVarStream(
     const llvm::PHINode *PHINode,
     const std::unordered_set<const llvm::Instruction *> &ComputeInsts) {
-  if (!PHINode->getType()->isIntegerTy()) {
+  if ((!PHINode->getType()->isIntegerTy()) &&
+      (!PHINode->getType()->isPointerTy())) {
     return false;
   }
   for (const auto &ComputeInst : ComputeInsts) {
