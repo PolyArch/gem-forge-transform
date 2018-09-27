@@ -24,11 +24,14 @@ public:
     return this->ComputeInsts;
   }
 
-  void addAccess(uint64_t Value) {
-    if (this->LastAccessIters != this->Iters) {
-      this->Pattern.addAccess(Value);
-      this->LastAccessIters = this->Iters;
-      this->TotalAccesses++;
+  void addAccess(const DynamicValue &DynamicVal) {
+    auto Type = this->PHIInst->getType();
+    if (Type->isIntegerTy()) {
+      this->addAccess(DynamicVal.getInt());
+    } else if (Type->isPointerTy()) {
+      this->addAccess(DynamicVal.getAddr());
+    } else {
+      llvm_unreachable("Invalid type for induction variable stream.");
     }
   }
 
@@ -64,5 +67,13 @@ public:
 private:
   const llvm::PHINode *PHIInst;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
+
+  void addAccess(uint64_t Value) {
+    if (this->LastAccessIters != this->Iters) {
+      this->Pattern.addAccess(Value);
+      this->LastAccessIters = this->Iters;
+      this->TotalAccesses++;
+    }
+  }
 };
 #endif

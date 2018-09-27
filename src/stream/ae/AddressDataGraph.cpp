@@ -1,6 +1,7 @@
 #include "stream/ae/AddressDataGraph.h"
 
 #include "LoopUtils.h"
+#include "Utils.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
@@ -127,7 +128,7 @@ void AddressDataGraph::format(std::ostream &OStream) const {
 bool AddressDataGraph::detectCircle() const {
   if (auto AddrInst = llvm::dyn_cast<llvm::Instruction>(this->AddrValue)) {
     if (!this->ComputeInsts.empty()) {
-      std::vector<std::pair<const llvm::Instruction *, int>> Stack;
+      std::list<std::pair<const llvm::Instruction *, int>> Stack;
       Stack.emplace_back(AddrInst, 0);
       while (!Stack.empty()) {
         auto &Entry = Stack.back();
@@ -137,8 +138,9 @@ bool AddressDataGraph::detectCircle() const {
           Entry.second = 1;
           for (unsigned OperandIdx = 0, NumOperand = Inst->getNumOperands();
                OperandIdx != NumOperand; ++OperandIdx) {
-            if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(
-                    Inst->getOperand(OperandIdx))) {
+            auto OperandValue = Inst->getOperand(OperandIdx);
+            if (auto OperandInst =
+                    llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
               if (this->ComputeInsts.count(OperandInst) != 0) {
                 // Check if this instruction is already in the stack.
                 for (const auto &StackElement : Stack) {

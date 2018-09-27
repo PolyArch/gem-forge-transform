@@ -43,8 +43,12 @@ private:
   FunctionalStreamEngine *SE;
 
   std::unordered_map<const llvm::Value *, FunctionalStream *> BaseStreams;
+  std::unordered_set<FunctionalStream *> BaseStepStreams;
+  std::unordered_set<FunctionalStream *> BaseStepRootStreams;
   std::unordered_set<FunctionalStream *> DependentStreams;
   std::unordered_set<FunctionalStream *> DependentStepStreams;
+
+  std::list<FunctionalStream *> AllDependentStepStreamsSorted;
 
   FunctionalStreamPattern Pattern;
 
@@ -65,6 +69,12 @@ private:
   std::list<uint64_t> FIFO;
 
   void DEBUG_DUMP(llvm::raw_ostream &OS) const;
+
+  bool isStepRoot() const {
+    return this->BaseStepStreams.empty() && this->S->Type == Stream::TypeT::IV;
+  }
+
+  void registerToStepRoot(FunctionalStream *NewStepDependentStream);
 
   std::pair<bool, uint64_t> computeAddress(DataGraph *DG) const;
   void setGenericValueFromDynamicValue(llvm::Type *Type,

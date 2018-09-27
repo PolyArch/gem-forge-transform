@@ -341,8 +341,8 @@ void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
     }
     Streams.emplace_back(this->OutputExtraFolderPath, Inst, *LoopIter,
                          InnerMostLoop, LoopLevel, IsInductionVar);
-    DEBUG(llvm::errs() << "Initialized MemStream "
-                       << Streams.back().formatName() << '\n');
+    // DEBUG(llvm::errs() << "Initialized MemStream "
+    //                    << Streams.back().formatName() << '\n');
     this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
     ++LoopIter;
   }
@@ -390,12 +390,12 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
       Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop,
                            InnerMostLoop, Level, std::move(ComputeInsts));
       this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
-      DEBUG(llvm::errs() << "Initialize IVStream "
-                         << Streams.back().formatName() << '\n');
+      // DEBUG(llvm::errs() << "Initialize IVStream "
+      //                    << Streams.back().formatName() << '\n');
     }
     ++LoopIter;
   }
-  DEBUG(llvm::errs() << "Initialize IVStream returned\n");
+  // DEBUG(llvm::errs() << "Initialize IVStream returned\n");
 }
 
 void StreamPass::activateStream(ActiveStreamMapT &ActiveStreams,
@@ -457,8 +457,8 @@ void StreamPass::activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
       // DEBUG(llvm::errs() << "Activate iv stream " << IVStream->formatName()
       //                    << "\n");
       ActivePHINodeIVStreamMap.emplace(PHINode, IVStream);
-      DEBUG(llvm::errs() << "Activate IVStream " << IVStream->formatName()
-                         << '\n');
+      // DEBUG(llvm::errs() << "Activate IVStream " << IVStream->formatName()
+      //                    << '\n');
     }
     // if (DynamicVal != nullptr) {
     //   IVStream->addAccess(Value);
@@ -783,12 +783,12 @@ void StreamPass::analyzeStream() {
         if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
           auto PHINodeIVStreamMapIter = this->PHINodeIVStreamMap.find(PHINode);
           if (PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end()) {
-            uint64_t Value =
-                std::stoul(NewDynamicInst->DynamicOperands[OperandIdx]->Value);
+            const auto &DynamicOperand =
+                *(NewDynamicInst->DynamicOperands[OperandIdx]);
             for (auto &IVStream : PHINodeIVStreamMapIter->second) {
               // DEBUG(llvm::errs() << "Add iv access " << IVStream.formatName()
               //                    << " with value " << Value << '\n');
-              IVStream.addAccess(Value);
+              IVStream.addAccess(DynamicOperand);
             }
           }
         }
@@ -920,6 +920,10 @@ void StreamPass::markQualifiedStream() {
     Queue.pop_front();
     if (S->isQualified()) {
       // We have already processed this stream.
+      continue;
+    }
+    if (!S->isCandidate()) {
+      // This stream is not even a candidate.
       continue;
     }
     DEBUG(llvm::errs() << "Mark stream " << S->formatName() << " qualified.\n");

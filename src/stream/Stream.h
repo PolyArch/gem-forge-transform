@@ -121,6 +121,9 @@ public:
     case llvm::Instruction::Add: {
       return true;
     }
+    case llvm::Instruction::GetElementPtr: {
+      return true;
+    }
     default: { return false; }
     }
   }
