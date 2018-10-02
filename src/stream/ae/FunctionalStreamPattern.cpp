@@ -1,14 +1,19 @@
 #include "FunctionalStreamPattern.h"
 
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 
 FunctionalStreamPattern::FunctionalStreamPattern(
     const std::string &_PatternPath)
     : PatternPath(_PatternPath), PatternStream(_PatternPath) {}
 
 void FunctionalStreamPattern::configure() {
-  assert(this->PatternStream.read(this->Pattern) &&
-         "Failed to read in the next pattern.");
+  bool Success = this->PatternStream.read(this->Pattern);
+  if (!Success) {
+    llvm::errs() << "Failed to read the next pattern from file "
+                 << this->PatternPath << "\n";
+  }
+  assert(Success && "Failed to read in the next pattern.");
 
   this->idxI = 0;
   this->idxJ = 0;

@@ -34,6 +34,7 @@ private:
    */
   uint64_t idxI;
   uint64_t idxJ;
+
 };
 
 #endif

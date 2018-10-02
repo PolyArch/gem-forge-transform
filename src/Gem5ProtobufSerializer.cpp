@@ -1,5 +1,7 @@
 #include "Gem5ProtobufSerializer.h"
 
+// #include "llvm/Support/raw_ostream.h"
+
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 
@@ -14,6 +16,10 @@ static const uint32_t Gem5MagicNumber = 0x356d6567;
 
 Gem5ProtobufSerializer::Gem5ProtobufSerializer(const std::string &FileName)
     : OutFileStream(FileName, std::ios::out | std::ios::binary) {
+
+  // llvm::errs() << "Try to open gem5 protobuf serializer file " << FileName
+  //              << '\n';
+
   assert(this->OutFileStream.is_open() &&
          "Failed to open output gem5 protobuf serialize file.");
   // Create the zero copy stream.

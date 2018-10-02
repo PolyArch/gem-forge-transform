@@ -388,14 +388,11 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
     if (LoopLevel > 0) {
       InnerMostLoop = Streams.front().getInnerMostLoop();
     }
-    auto ComputeInsts = InductionVarStream::searchComputeInsts(Inst, Loop);
-    if (InductionVarStream::isInductionVarStream(Inst, ComputeInsts)) {
-      Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop,
-                           InnerMostLoop, Level, std::move(ComputeInsts));
-      this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
-      // DEBUG(llvm::errs() << "Initialize IVStream "
-      //                    << Streams.back().formatName() << '\n');
-    }
+    Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop, InnerMostLoop,
+                         Level);
+    this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
+    // DEBUG(llvm::errs() << "Initialize IVStream "
+    //                    << Streams.back().formatName() << '\n');
     ++LoopIter;
   }
   // DEBUG(llvm::errs() << "Initialize IVStream returned\n");
@@ -477,7 +474,8 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
   LoopStack.emplace_back(Loop);
 
   if (this->InitializedLoops.count(Loop) == 0) {
-    // Find the memory access belongs to this level.
+    // Find all the possible memory and induction variable streams within the
+    // loop.
     auto &StreamInsts =
         this->MemorizedStreamInst
             .emplace(std::piecewise_construct, std::forward_as_tuple(Loop),
@@ -512,10 +510,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
     for (auto PHINodeIter = PHINodes.begin(), PHINodeEnd = PHINodes.end();
          PHINodeIter != PHINodeEnd; ++PHINodeIter) {
       auto PHINode = &*PHINodeIter;
-      auto ComputeInsts = InductionVarStream::searchComputeInsts(PHINode, Loop);
-      if (InductionVarStream::isInductionVarStream(PHINode, ComputeInsts)) {
-        StreamInsts.insert(PHINode);
-      }
+      StreamInsts.insert(PHINode);
     }
 
     this->InitializedLoops.insert(Loop);
