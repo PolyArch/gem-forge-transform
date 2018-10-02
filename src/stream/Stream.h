@@ -112,8 +112,17 @@ public:
     }
   }
   std::string formatName() const {
-    return "(" + this->formatType() + " " + LoopUtils::getLoopId(this->Loop) +
-           " " + LoopUtils::formatLLVMInst(this->Inst) + ")";
+    // return "(" + this->formatType() + " " + LoopUtils::getLoopId(this->Loop)
+    // +
+    //        " " + LoopUtils::formatLLVMInst(this->Inst) + ")";
+
+    // We need a more compact encoding of a stream name. Since the function is
+    // always the same, let it be (type function loop_header_bb inst_bb
+    // inst_name)
+    return "(" + this->formatType() + " " +
+           this->Inst->getFunction()->getName().str() + " " +
+           this->Loop->getHeader()->getName().str() + " " +
+           Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
   }
   virtual const std::unordered_set<const llvm::Instruction *> &
   getComputeInsts() const = 0;

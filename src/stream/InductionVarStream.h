@@ -6,12 +6,9 @@
 #include <sstream>
 class InductionVarStream : public Stream {
 public:
-  InductionVarStream(
-      const std::string &_Folder, const llvm::PHINode *_PHIInst,
-      const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop, size_t _Level,
-      std::unordered_set<const llvm::Instruction *> &&_ComputeInsts)
-      : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _InnerMostLoop, _Level),
-        PHIInst(_PHIInst), ComputeInsts(std::move(_ComputeInsts)) {}
+  InductionVarStream(const std::string &_Folder, const llvm::PHINode *_PHIInst,
+                     const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
+                     size_t _Level);
 
   InductionVarStream(const InductionVarStream &Other) = delete;
   InductionVarStream(InductionVarStream &&Other) = delete;
@@ -24,7 +21,13 @@ public:
     return this->ComputeInsts;
   }
 
+  bool isCandidate() const override { return this->IsCandidate; }
+
   void addAccess(const DynamicValue &DynamicVal) {
+    if (!this->IsCandidate) {
+      // I am not even a candidate, ignore all this.
+      return;
+    }
     auto Type = this->PHIInst->getType();
     if (Type->isIntegerTy()) {
       this->addAccess(DynamicVal.getInt());
@@ -34,21 +37,6 @@ public:
       llvm_unreachable("Invalid type for induction variable stream.");
     }
   }
-
-  /**
-   * Do a BFS on the PHINode and extract all the compute instructions.
-   */
-  static std::unordered_set<const llvm::Instruction *>
-  searchComputeInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
-
-  /**
-   * A phi node is an induction variable stream if:
-   * 1. It is of type integer.
-   * 2. Its compute instructions do not contain memory access or call/invoke.
-   */
-  static bool isInductionVarStream(
-      const llvm::PHINode *PHINode,
-      const std::unordered_set<const llvm::Instruction *> &ComputeInsts);
 
   std::string format() const {
     std::stringstream ss;
@@ -67,6 +55,7 @@ public:
 private:
   const llvm::PHINode *PHIInst;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
+  bool IsCandidate;
 
   void addAccess(uint64_t Value) {
     if (this->LastAccessIters != this->Iters) {
@@ -75,5 +64,20 @@ private:
       this->TotalAccesses++;
     }
   }
+
+  /**
+   * Do a BFS on the PHINode and extract all the compute instructions.
+   */
+  static std::unordered_set<const llvm::Instruction *>
+  searchComputeInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
+
+  /**
+   * A phi node is an induction variable stream if:
+   * 1. It is of type integer.
+   * 2. Its compute instructions do not contain memory access or call/invoke.
+   */
+  static bool isInductionVarStream(
+      const llvm::PHINode *PHINode,
+      const std::unordered_set<const llvm::Instruction *> &ComputeInsts);
 };
 #endif

@@ -78,6 +78,19 @@ public:
     }
   }
 
+  static std::string formatLLVMInstWithoutFunc(const llvm::Instruction *Inst) {
+    if (Inst->getName() != "") {
+      return (llvm::Twine(Inst->getParent()->getName()) +
+              "::" + Inst->getName() + "(" + Inst->getOpcodeName() + ")")
+          .str();
+    } else {
+      size_t Idx = Utils::getLLVMInstPosInBB(Inst);
+      return (llvm::Twine(Inst->getParent()->getName()) +
+              "::" + llvm::Twine(Idx) + "(" + Inst->getOpcodeName() + ")")
+          .str();
+    }
+  }
+
   static size_t getLLVMInstPosInBB(const llvm::Instruction *Inst) {
     size_t Idx = 0;
     for (auto InstIter = Inst->getParent()->begin(),
