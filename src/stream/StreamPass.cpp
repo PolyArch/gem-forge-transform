@@ -260,7 +260,10 @@ void StreamPass::dumpStats(std::ostream &O) {
 
 void StreamPass::transform() {
   this->analyzeStream();
+  this->buildStreamDependenceGraph();
+  this->markQualifiedStream();
   this->chooseStream();
+  // this->chooseStreamInnerMostLoop();
   this->buildChosenStreamDependenceGraph();
   this->buildAllChosenStreamDependenceGraph();
   /**
@@ -973,9 +976,44 @@ void StreamPass::addChosenStream(const llvm::Loop *Loop,
   S->markChosen();
 }
 
+void StreamPass::chooseStreamInnerMostLoop() {
+  /**
+   * This policy will configure the stream at the inner most loop level.
+   */
+  // First pick all the IVStreams.
+  for (auto &PHINodeIVStreamListEntry : this->PHINodeIVStreamMap) {
+    auto &IVStreams = PHINodeIVStreamListEntry.second;
+    InductionVarStream *ChosenStream = nullptr;
+    for (auto &S : IVStreams) {
+      if (S.isQualified()) {
+        ChosenStream = &S;
+        break;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      this->addChosenStream(ChosenStream->getLoop(), ChosenStream->getPHIInst(),
+                            ChosenStream);
+    }
+  }
+
+  for (auto &InstStreamEntry : this->InstMemStreamMap) {
+    auto &Streams = InstStreamEntry.second;
+    MemStream *ChosenStream = nullptr;
+    for (auto &S : Streams) {
+      if (S.getQualified()) {
+        ChosenStream = &S;
+        break;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      auto Loop = ChosenStream->getLoop();
+      auto Inst = ChosenStream->getInst();
+      this->addChosenStream(Loop, Inst, ChosenStream);
+    }
+  }
+}
+
 void StreamPass::chooseStream() {
-  this->buildStreamDependenceGraph();
-  this->markQualifiedStream();
 
   // First pick all the IVStreams.
   for (auto &PHINodeIVStreamListEntry : this->PHINodeIVStreamMap) {
@@ -1520,10 +1558,9 @@ void StreamPass::transformStream() {
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
       // Debug a certain range of transformed instructions.
-      // if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700)
-      // {
-      //   DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
-      // }
+      if (DynamicInst->getId() > 27400 && DynamicInst->getId() < 27600) {
+        DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
+      }
 
       this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();
@@ -1626,7 +1663,23 @@ void StreamPass::transformStream() {
 
         /**
          * Handle the dependence for the step instruction.
+         * Step inst should also be dependent on the dependent streams.
          */
+        for (const auto &AllChosenDependentStream :
+             TransformPlan.getParamStream()->getAllChosenDependentStreams()) {
+          auto StreamInst = AllChosenDependentStream->getInst();
+          auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+          // Also register myself as the latest stream inst for the dependent
+          // streams.
+          if (StreamInstIter == ActiveStreamInstMap.end()) {
+            ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
+          } else {
+            this->Trace->RegDeps.at(NewDynamicId)
+                .emplace_back(nullptr, StreamInstIter->second);
+            StreamInstIter->second = NewDynamicId;
+          }
+        }
+        // Add dependence to the prevous me and register myself.
         auto StreamInst = TransformPlan.getParamStream()->getInst();
         auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
         if (StreamInstIter == ActiveStreamInstMap.end()) {

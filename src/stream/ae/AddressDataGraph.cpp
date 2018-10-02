@@ -12,9 +12,17 @@
 AddressDataGraph::AddressDataGraph(
     const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
     std::function<bool(const llvm::PHINode *)> IsInductionVar)
-    : Loop(_Loop), AddrValue(_AddrValue), HasCircle(false) {
+    : Loop(_Loop), AddrValue(_AddrValue), HasCircle(false),
+      HasPHINodeInComputeInsts(false) {
   this->constructDataGraph(IsInductionVar);
   this->HasCircle = this->detectCircle();
+
+  for (const auto &ComputeInst : this->ComputeInsts) {
+    if (llvm::isa<llvm::PHINode>(ComputeInst)) {
+      this->HasPHINodeInComputeInsts = true;
+      break;
+    }
+  }
 }
 
 void AddressDataGraph::constructDataGraph(
@@ -188,6 +196,8 @@ llvm::Function *AddressDataGraph::generateComputeFunction(
     const std::string &FuncName, std::unique_ptr<llvm::Module> &Module) const {
   assert(!this->HasCircle &&
          "Can not create address function for cyclic address datagaph.");
+  assert(!this->HasPHINodeInComputeInsts &&
+         "Can not create address function with PHINode in the datagraph.");
   {
     auto TempFunc = Module->getFunction(FuncName);
     assert(TempFunc == nullptr && "Function is already inside the module.");

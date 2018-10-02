@@ -43,6 +43,9 @@ public:
   const std::unordered_set<Stream *> &getDependentStreams() const {
     return this->DependentStreams;
   }
+  const std::unordered_set<Stream *> &getAllChosenDependentStreams() const {
+    return this->AllChosenDependentStreams;
+  }
   /**
    * Interface to decide even if the stream can be considered as a candidate
    * (before mark it qualified or not).
@@ -156,6 +159,7 @@ protected:
   std::unordered_set<Stream *> ChosenBaseStreams;
   std::unordered_set<Stream *> ChosenBaseStepStreams;
   std::unordered_set<Stream *> AllChosenBaseStreams;
+  std::unordered_set<Stream *> AllChosenDependentStreams;
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;

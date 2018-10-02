@@ -11,6 +11,18 @@ import traceback
 import prettytable
 
 
+def call_helper(cmd):
+    """
+    Helper function to call a command and print the actual command when failed.
+    """
+    print(' '.join(cmd))
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError as e:
+        print('Error when executing {cmd}'.format(cmd=' '.join(cmd)))
+        raise e
+
+
 def error(msg, *args):
     return multiprocessing.get_logger().error(msg, *args)
 
@@ -26,7 +38,7 @@ class LogExceptions(object):
         except Exception as e:
             error(traceback.format_exc())
             # Reraise the original exception so the Pool worker can clean up
-            raise
+            raise ValueError('Job Failed.')
 
         return result
 
@@ -35,7 +47,7 @@ class JobScheduler:
     """
     A job scheduler.
     Since we use pool class, which use a queue.Queue to pass tasks to the worker
-    processes. Everything that goes through queue.Queue must be picklable. 
+    processes. Everything that goes through queue.Queue must be picklable.
     Pickle is a serialization protocol for python. ONLY TOP-LEVEL object can be
     pickled!
     This means only top-level function for the job, and no nested class object for
@@ -212,6 +224,11 @@ def test_job_fail(id):
     raise ValueError('Job deliberately failed.')
 
 
+def test_job_fail_bash(id):
+    print('job {job} failed in bash'.format(job=id))
+    call_helper(['false'])
+
+
 class TestJobScheduler(unittest.TestCase):
 
     # Test all jobs are finished.
@@ -222,6 +239,11 @@ class TestJobScheduler(unittest.TestCase):
             job = scheduler.jobs[job_id]
             self.assertEqual(
                 job.status, status, 'There is job {job} with wrong status.'.format(job=job_id))
+
+    def assert_job_status(self, scheduler, status, job_id):
+        job = scheduler.jobs[job_id]
+        self.assertEqual(
+            job.status, status, 'There is job {job} with wrong status.'.format(job=job_id))
 
     # Simple test case to test linear dependence.
     def test_linear(self):
@@ -246,6 +268,32 @@ class TestJobScheduler(unittest.TestCase):
             deps.append(new_job_id)
         scheduler.run()
         self.assert_all_jobs_status(scheduler, JobScheduler.STATE_FAILED)
+        self.assertEqual(scheduler.state, JobScheduler.STATE_FINISHED)
+
+    # Simple linear dependence when the middle one failed in bash.
+    def test_linear_fail_bash(self):
+        scheduler = JobScheduler(4, 1)
+        deps = []
+        job_ids = list()
+        failed_id = 0
+        for i in xrange(8):
+            if i == 4:
+                new_job_id = scheduler.add_job(
+                    'test_job_fail_bash', test_job_fail_bash, (i,), deps)
+                failed_id = new_job_id
+            else:
+                new_job_id = scheduler.add_job(
+                    'test_job', test_job, (i,), deps)
+            job_ids.append(new_job_id)
+            deps = list()
+            deps.append(new_job_id)
+        scheduler.run()
+        for i in job_ids:
+            if i >= failed_id:
+                self.assert_job_status(scheduler, JobScheduler.STATE_FAILED, i)
+            else:
+                self.assert_job_status(
+                    scheduler, JobScheduler.STATE_FINISHED, i)
         self.assertEqual(scheduler.state, JobScheduler.STATE_FINISHED)
 
 
@@ -390,25 +438,13 @@ class Variable:
         self.color = color
 
 
-def call_helper(cmd):
-    """
-    Helper function to call a command and print the actual command when failed.
-    """
-    print(' '.join(cmd))
-    try:
-        subprocess.check_call(cmd)
-    except subprocess.CalledProcessError as e:
-        print('Error when executing {cmd}'.format(cmd=' '.join(cmd)))
-        raise e
-
-
 class Results:
     def __init__(self):
         self.results = dict()
 
     """
     Add a result.
-    
+
     Parameters
     ----------
     group: which group does this result belongs to, e.g. baseline, replay.

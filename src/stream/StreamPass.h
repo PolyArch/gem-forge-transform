@@ -189,6 +189,7 @@ protected:
    * Stream Choice.
    *************************************************************/
   void chooseStream();
+  void chooseStreamInnerMostLoop();
   void buildStreamDependenceGraph();
   void markQualifiedStream();
   void addChosenStream(const llvm::Loop *Loop, const llvm::Instruction *Inst,

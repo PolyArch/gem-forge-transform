@@ -505,6 +505,32 @@ class StreamStatistics:
         vals = list(self.accesses.values())
         Access.print_table(vals)
 
+    def collect_stats(self):
+        result = dict()
+        for key in self.stats:
+            result[key] = self.stats[key]
+        if self.next is not None:
+            next_result = self.next.collect_stats()
+            for key in next_result:
+                result[key] += next_result[key]
+        return result
+
+    def print_stats(self):
+        result = self.collect_stats()
+        title = list()
+        data = list()
+        for key in result:
+            title.append(key)
+            data.append(result[key])
+        title.append('Removed(%)')
+        data.append(result['DeletedInstCount']/result['DynInstCount'] * 100)
+        title.append('ConfigPMI')
+        data.append(result['ConfigInstCount']/result['DynInstCount'] * 1000000)
+        table = prettytable.PrettyTable(title)
+        table.float_format = '.2'
+        table.add_row(data)
+        print(table)
+
     # def dump_csv(self, fn):
     #     vals = list(self.accesses.values())
     #     Access.dump_csv(vals, fn)

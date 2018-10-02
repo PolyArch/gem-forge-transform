@@ -6,11 +6,13 @@ message StreamInfo {
     string name = 1;
     uint64 id = 2;
     string type = 3;
-    int32 element_size = 4;
-    string pattern_path = 5;
-    string history_path = 6;
-    repeated uint64 chosen_base_ids = 7;
-    repeated uint64 chosen_base_step_ids = 8;
+    uint32 loop_level = 4;
+    uint32 config_loop_level = 5;
+    int32 element_size = 6;
+    string pattern_path = 7;
+    string history_path = 8;
+    repeated uint64 chosen_base_ids = 9;
+    repeated uint64 chosen_base_step_ids = 10;
 }
 
 message StreamPattern {
