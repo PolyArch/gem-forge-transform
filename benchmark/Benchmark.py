@@ -190,7 +190,7 @@ class Benchmark(object):
         else:
             link_cmd = [
                 C.CXX,
-                '-O3',
+                # '-O0',
                 self.get_trace_bc(),
                 self.trace_lib,
                 '-o',
@@ -230,6 +230,8 @@ class Benchmark(object):
         if output_tdg is not None:
             output_extra_folder = os.path.join(
                 os.getcwd(), output_tdg + '.extra')
+            if os.path.exists(output_extra_folder):
+                Util.call_helper(['rm', '-r', output_extra_folder])
             if not os.path.exists(output_extra_folder):
                 os.mkdir(output_extra_folder)
             opt_cmd.append('-output-datagraph=' + output_tdg)

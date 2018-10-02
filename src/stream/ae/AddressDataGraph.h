@@ -21,6 +21,9 @@ public:
   void format(std::ostream &OStream) const;
 
   bool hasCircle() const { return this->HasCircle; }
+  bool hasPHINodeInComputeInsts() const {
+    return this->HasPHINodeInComputeInsts;
+  }
 
   const std::list<const llvm::Value *> &getInputs() const {
     return this->Inputs;
@@ -45,6 +48,7 @@ private:
   std::unordered_set<const llvm::ConstantData *> ConstantDatas;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
   bool HasCircle;
+  bool HasPHINodeInComputeInsts;
 
   void
   constructDataGraph(std::function<bool(const llvm::PHINode *)> IsInductionVar);

@@ -50,6 +50,8 @@ void Stream::addAllChosenBaseStream(Stream *Other) {
   assert(Other->isChosen() &&
          "Other should be chosen to build the chosen stream dependence graph.");
   this->AllChosenBaseStreams.insert(Other);
+  // Register myself at other's all chosen dependent streams.
+  Other->AllChosenDependentStreams.insert(this);
 }
 
 void Stream::endStream() {
@@ -154,6 +156,8 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   ProtobufInfo.set_name(this->formatName());
   ProtobufInfo.set_id(this->getStreamId());
   ProtobufInfo.set_type(this->Inst->getOpcodeName());
+  ProtobufInfo.set_loop_level(this->InnerMostLoop->getLoopDepth());
+  ProtobufInfo.set_config_loop_level(this->Loop->getLoopDepth());
   ProtobufInfo.set_element_size(this->getElementSize(DataLayout));
   ProtobufInfo.set_pattern_path(this->PatternFullPath);
   ProtobufInfo.set_history_path(this->HistoryFullPath);

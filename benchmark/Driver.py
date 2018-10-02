@@ -123,8 +123,6 @@ class Driver:
             deps = list()
             if name in self.transform_jobs:
                 if transform_pass in self.transform_jobs[name]:
-                    assert(len(tdgs) == len(
-                        self.transform_jobs[name][transform_pass]))
                     deps.append(self.transform_jobs[name][transform_pass][i])
 
             job_scheduler.add_job(
@@ -154,7 +152,7 @@ build_datagraph_debugs = {
     'stream': [
         'ReplayPass',
         'StreamPass',
-        'FunctionalStream',
+        # 'FunctionalStream',
         # 'DataGraph',
         'LoopUtils',
         # 'StreamPattern',
@@ -181,9 +179,11 @@ simulate_datagraph_debugs = {
     'stream': [
         'StreamEngine',
         # 'LLVMTraceCPU',
+        'LLVMTraceCPUFetch',
+        'LLVMTraceCPUCommit',
     ],
     'stream-prefetch': [
-        'StreamEngine',
+        # 'StreamEngine',
         # 'LLVMTraceCPU',
     ],
     'inline-stream': [],
@@ -257,7 +257,7 @@ def main(options):
         if stream_pass_specified is not None:
             stream_stats = StreamStatistics.StreamStatistics(stream_tdg_stats)
             print('-------------------------- ' + benchmark.get_name())
-            # stream_stats.print_stats()
+            stream_stats.print_stats()
             stream_stats.print_stream_breakdown()
             # stream_stats.print_access()
             # stream_stats.print_stream_length()

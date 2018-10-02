@@ -136,9 +136,26 @@ void StreamPrefetchPass::transformStream() {
        * correct time.
        */
       auto &RegDeps = this->Trace->RegDeps.at(StepDynamicId);
-      // Dependent on the previous step instruction.
+      // Dependent on the original step instruction.
       RegDeps.emplace_back(nullptr, NewDynamicId);
 
+      /**
+       * Handle the dependence for the step instruction.
+       * Step inst should also be dependent on the dependent streams.
+       */
+      for (const auto &AllChosenDependentStream :
+           TransformPlan.getParamStream()->getAllChosenDependentStreams()) {
+        auto StreamInst = AllChosenDependentStream->getInst();
+        auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+        // Also register myself as the latest stream inst for the dependent
+        // streams.
+        if (StreamInstIter == ActiveStreamInstMap.end()) {
+          ActiveStreamInstMap.emplace(StreamInst, StepDynamicId);
+        } else {
+          RegDeps.emplace_back(nullptr, StreamInstIter->second);
+          StreamInstIter->second = StepDynamicId;
+        }
+      }
       // Dependent on the previous step/config instruction.
       // And also register myself as the latest step instruction for future step
       // instruction.

@@ -286,26 +286,26 @@ class SPEC2017Benchmark(Benchmark):
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        'lbm_s': {
-            'name': '619.lbm_s',
-            'links': ['-lm'],
-            # First 100m insts every 1b insts, skipping the first 3.3b
-            'start_inst': 33e8,
-            'max_inst': 2e7,
-            'skip_inst': 9e8,
-            'end_inst': 34e8,
-            'n_traces': 1,
-            'trace_func': 'LBM_performStreamCollideTRT',
-            'lang': 'C',
-        },
+        # 'lbm_s': {
+        #     'name': '619.lbm_s',
+        #     'links': ['-lm'],
+        #     # First 100m insts every 1b insts, skipping the first 3.3b
+        #     'start_inst': 33e8,
+        #     'max_inst': 2e7,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 34e8,
+        #     'n_traces': 1,
+        #     'trace_func': 'LBM_performStreamCollideTRT',
+        #     'lang': 'C',
+        # },
         # 'imagick_s': {
         #     'name': '638.imagick_s',
         #     'links': ['-lm'],
-        #     'start_inst': 1e7,
+        #     'start_inst': 10e8,
         #     'max_inst': 1e7,
         #     'skip_inst': 9e8,
         #     'end_inst': 200e8,
-        #     'n_traces': 22,
+        #     'n_traces': 20,
         #     # 'trace_func': 'MagickCommandGenesis',
         #     'trace_func': '',
         #     'lang': 'C',
@@ -410,7 +410,7 @@ class SPEC2017Benchmarks:
         #     'trace_func': '',
         #     'lang': 'CPP',
         # },
-        # 'namd_r': {
+        # 'namd_r': { 
         #     'name': '508.namd_r',
         #     'links': [],
         #     'start_inst': 1e8,
@@ -438,17 +438,17 @@ class SPEC2017Benchmarks:
         # Does not work with ellcc as RE.
         # Need to fix a comparison between integer and pointer error.
         # Only been able to trace the first one.
-        # 'parest_r': {
-        #     'name': '510.parest_r',
-        #     'links': [],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 110e8,
-        #     'n_traces': 1,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'parest_r': {
+            'name': '510.parest_r',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 110e8,
+            'n_traces': 1,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
         # # Does not work with ellcc as it uses linux header.
         # # Does not throw.
