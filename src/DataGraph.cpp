@@ -394,6 +394,16 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
                   NumOperands = StaticInstruction->getNumOperands();
          OperandIdx != NumOperands; ++OperandIdx) {
       auto OperandValue = StaticInstruction->getOperand(OperandIdx);
+      if (llvm::isa<llvm::GlobalVariable>(OperandValue)) {
+        // Insert to global variable env.
+        if (this->GlobalValueEnv.count(OperandValue) == 0) {
+          this->GlobalValueEnv.emplace(
+              OperandValue, *(DynamicInst->DynamicOperands[OperandIdx]));
+        } else {
+          this->GlobalValueEnv.at(OperandValue) =
+              *(DynamicInst->DynamicOperands[OperandIdx]);
+        }
+      }
       auto DynamicOperandValue =
           this->DynamicFrameStack.front().getValueNullable(OperandValue);
       if (DynamicOperandValue == nullptr) {

@@ -11,8 +11,9 @@ class TestHelloWorldBenchmark(Benchmark):
     def __init__(self):
         super(TestHelloWorldBenchmark, self).__init__(
             name='hello.a', raw_bc='all.bc', links=[],
-            trace_func='imagick_streams_work',
-            # trace_func='sparse_vec_multi',
+            # trace_func='imagick_streams_work',
+            # trace_func='xalancbmk_streams_work',
+            trace_func='sparse_vec_multi',
             # trace_func='sum2d',
             # trace_func='ivstream_test',
             # trace_func='tri_add',
@@ -53,6 +54,7 @@ class TestHelloWorldBenchmark(Benchmark):
             'a.c',
             'dump.c',
             'imagick_streams.c',
+            'xalancbmk_streams.c'
         ])
 
         Util.call_helper([
@@ -60,6 +62,7 @@ class TestHelloWorldBenchmark(Benchmark):
             'a.ll',
             'dump.ll',
             'imagick_streams.ll',
+            'xalancbmk_streams.ll',
             '-o',
             'all.bc'
         ])

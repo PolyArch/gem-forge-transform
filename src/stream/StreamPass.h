@@ -180,9 +180,9 @@ protected:
                       llvm::Instruction *Instruction);
   void activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
                         llvm::PHINode *PHINode);
-  void initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
+  void initializeMemStreamIfNecessary(const llvm::Loop *Loop,
                                       llvm::Instruction *Inst);
-  void initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
+  void initializeIVStreamIfNecessary(const llvm::Loop *Loop,
                                      llvm::PHINode *Inst);
 
   /*************************************************************
@@ -261,6 +261,7 @@ protected:
   std::unordered_map<const llvm::Loop *,
                      std::unordered_set<llvm::Instruction *>>
       MemorizedStreamInst;
+  std::unordered_map<const llvm::Loop *, int> MemorizedLoopPossiblePaths;
   std::unordered_map<const llvm::Loop *, bool> MemorizedLoopContinuous;
 
   std::unordered_map<llvm::Instruction *, uint64_t> MemAccessInstCount;
