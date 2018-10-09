@@ -52,6 +52,11 @@ public:
   static uint64_t getNumStaticInstInLoop(llvm::Loop *Loop);
 
   /**
+   * Count the number of possible path from the header of the loop to exit.
+   */
+  static int countPossiblePath(const llvm::Loop *Loop);
+
+  /**
    * Print an static instruction.
    */
   static size_t getLLVMInstPosInBB(const llvm::Instruction *Inst);
@@ -59,6 +64,12 @@ public:
   static std::string formatLLVMValue(const llvm::Value *Value);
 
   static const std::unordered_set<std::string> SupportedMathFunctions;
+
+private:
+  static int countPossiblePathFromBB(
+      const llvm::Loop *Loop,
+      std::unordered_set<const llvm::BasicBlock *> &OnPathBBs,
+      const llvm::BasicBlock *CurrentBB);
 };
 
 class LoopIterCounter {

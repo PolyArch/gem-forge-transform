@@ -55,10 +55,10 @@ def compile(source, vectorize, output_bc, defines=[], includes=[], link_stdlib=F
 class SPUBenchmark(Benchmark):
 
     TESTS = [
-        # 'ac',
-        # 'fc-layer',
-        # 'ksvm',
-        # 'scnn',
+        'ac',
+        'fc-layer',
+        'ksvm',
+        'scnn',
         'gbdt',
     ]
 

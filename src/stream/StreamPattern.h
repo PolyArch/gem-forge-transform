@@ -82,8 +82,9 @@ public:
     int64_t StrideJ;
     const std::vector<std::pair<bool, uint64_t>> History;
     ComputedPattern(std::vector<std::pair<bool, uint64_t>> _History)
-        : Base(0), StrideI(0), NI(0), StrideJ(0), History(std::move(_History)) {
-    }
+        : ValPattern(ValuePattern::UNKNOWN),
+          AccPattern(AccessPattern::UNCONDITIONAL), Base(0), StrideI(0), NI(0),
+          StrideJ(0), History(std::move(_History)) {}
   };
 
   StreamPattern() : AggregatedPatternPtr(nullptr) {}

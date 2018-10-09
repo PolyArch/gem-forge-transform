@@ -284,6 +284,12 @@ FunctionalStream::computeAddress(DataGraph *DG) const {
       // This is an input value.
       const DynamicValue *DynamicVal =
           DG->DynamicFrameStack.front().getValueNullable(Input);
+      if (llvm::isa<llvm::GlobalVariable>(Input)) {
+        auto GlobalValueEnvIter = DG->GlobalValueEnv.find(Input);
+        if (GlobalValueEnvIter != DG->GlobalValueEnv.end()) {
+          DynamicVal = &(GlobalValueEnvIter->second);
+        }
+      }
 
       /**
        * If somehow we failed to get the dynamic value from the datagraph, we

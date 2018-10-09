@@ -11,6 +11,9 @@ std::string StreamTransformPlan::format() const {
   std::stringstream ss;
   ss << std::setw(10) << std::left
      << StreamTransformPlan::formatPlanT(this->Plan);
+  if (this->Plan == StreamTransformPlan::PlanT::STEP) {
+    ss << '-' << this->ParamStream->formatName() << '-';
+  }
   for (auto UsedStream : this->UsedStreams) {
     ss << UsedStream->formatName() << ' ';
   }
@@ -118,6 +121,7 @@ void StreamPass::dumpStats(std::ostream &O) {
    * AliasInsts
    * Qualified
    * Chosen
+   * PossiblePaths
    */
 
   O << "--------------- Stream -----------------\n";
@@ -155,6 +159,9 @@ void StreamPass::dumpStats(std::ostream &O) {
         }
       }
 
+      int LoopPossiblePaths =
+          this->MemorizedLoopPossiblePaths.at(Stream.getLoop());
+
       size_t AliasInsts = Stream.getAliasInsts().size();
 
       if (Stream.getPattern().computed()) {
@@ -177,6 +184,7 @@ void StreamPass::dumpStats(std::ostream &O) {
       O << ' ' << AliasInsts;
       O << ' ' << Qualified;
       O << ' ' << Chosen;
+      O << ' ' << LoopPossiblePaths;
       O << '\n';
     }
   }
@@ -216,7 +224,9 @@ void StreamPass::dumpStats(std::ostream &O) {
     O << ' ' << -1;                              // AddrInsts
     O << ' ' << -1;                              // AliasInsts
     O << ' ' << "NO";                            // Qualified
-    O << ' ' << "NO" << '\n';                    // Chosen
+    O << ' ' << "NO";                            // Chosen
+    O << ' ' << 1;                               // PossiblePaths
+    O << '\n';
   }
 
   assert(TotalAccesses == this->DynMemInstCount && "Mismatch total accesses.");
@@ -245,6 +255,10 @@ void StreamPass::dumpStats(std::ostream &O) {
         AccPattern = StreamPattern::formatAccessPattern(Pattern.AccPattern);
         Updates = Pattern.Updates;
       }
+
+      int LoopPossiblePaths =
+          this->MemorizedLoopPossiblePaths.at(IVStream.getLoop());
+
       O << ' ' << AddrPattern;
       O << ' ' << AccPattern;
       O << ' ' << Iters;
@@ -253,6 +267,7 @@ void StreamPass::dumpStats(std::ostream &O) {
       O << ' ' << StreamCount;
       O << ' ' << StreamClass;
       O << ' ' << ComputeInsts;
+      O << ' ' << LoopPossiblePaths;
       O << '\n';
     }
   }
@@ -298,10 +313,12 @@ void StreamPass::transform() {
   this->transformStream();
 }
 
-void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
+void StreamPass::initializeMemStreamIfNecessary(const llvm::Loop *Loop,
                                                 llvm::Instruction *Inst) {
   assert(Utils::isMemAccessInst(Inst) &&
          "Try to initialize memory stream for non-memory access instruction.");
+  // DEBUG(llvm::errs() << "Try to initialize MemStream "
+  //                    << Utils::formatLLVMInst(Inst) << '\n');
   {
     // Initialize the global count.
     auto Iter = this->MemAccessInstCount.find(Inst);
@@ -322,36 +339,54 @@ void StreamPass::initializeMemStreamIfNecessary(const LoopStackT &LoopStack,
   }
 
   auto &Streams = Iter->second;
-  auto LoopIter = LoopStack.rbegin();
-  for (const auto &Stream : Streams) {
-    if (LoopIter == LoopStack.rend()) {
+  /**
+   * Find the correct place to insert the new stream.
+   */
+  auto StreamsIter = Streams.begin();
+  while (StreamsIter != Streams.end()) {
+    if (StreamsIter->getLoop() == Loop) {
+      // This means we have initialized the stream.
+      return;
+    } else if (Loop->contains(StreamsIter->getLoop())) {
+      // This is still an inner loop, we should keep looking.
+      StreamsIter++;
+    } else {
+      // This is an outer loop, we have found the right place to insert.
       break;
     }
-    assert(Stream.getLoop() == (*LoopIter) && "Mismatch initialized stream.");
-    ++LoopIter;
   }
 
-  // Initialize the remaining loops.
-  auto IsInductionVar = [this](const llvm::PHINode *PHINode) -> bool {
+  // Find the inner most loop.
+  auto IsIVStream = [this](const llvm::PHINode *PHINode) -> bool {
     return this->PHINodeIVStreamMap.count(PHINode) != 0;
-    // return false;
   };
-  while (LoopIter != LoopStack.rend()) {
-    auto LoopLevel = Streams.size();
-    const llvm::Loop *InnerMostLoop = *LoopIter;
-    if (LoopLevel > 0) {
-      InnerMostLoop = Streams.front().getInnerMostLoop();
+  auto InnerMostLoop = this->CachedLI->getLoopInfo(Inst->getFunction())
+                           ->getLoopFor(Inst->getParent());
+  auto LoopLevel = InnerMostLoop->getLoopDepth() - Loop->getLoopDepth();
+  auto NewStreamIter =
+      Streams.emplace(StreamsIter, this->OutputExtraFolderPath, Inst, Loop,
+                      InnerMostLoop, LoopLevel, IsIVStream);
+  {
+    // Do the same thing for InstStreamMap, we have a better code here.
+    auto &InstStreams = this->InstStreamMap.at(Inst);
+    auto InstStreamsIter = InstStreams.begin();
+    while (InstStreamsIter != InstStreams.end()) {
+      auto S = *InstStreamsIter;
+      assert(S->getLoop() != Loop &&
+             "The stream is already in the InstStreamMap.");
+      if (Loop->contains(S->getLoop())) {
+        InstStreamsIter++;
+      } else {
+        break;
+      }
     }
-    Streams.emplace_back(this->OutputExtraFolderPath, Inst, *LoopIter,
-                         InnerMostLoop, LoopLevel, IsInductionVar);
-    // DEBUG(llvm::errs() << "Initialized MemStream "
-    //                    << Streams.back().formatName() << '\n');
-    this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
-    ++LoopIter;
+    InstStreams.emplace(InstStreamsIter, &(*NewStreamIter));
   }
+  DEBUG(llvm::errs() << "Initialize MemStream " << NewStreamIter->formatName()
+                     << '\n');
 }
 
-void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
+void StreamPass::initializeIVStreamIfNecessary(const llvm::Loop *Loop,
                                                llvm::PHINode *Inst) {
 
   auto Iter = this->PHINodeIVStreamMap.find(Inst);
@@ -366,35 +401,49 @@ void StreamPass::initializeIVStreamIfNecessary(const LoopStackT &LoopStack,
   }
 
   auto &Streams = Iter->second;
-  auto LoopIter = LoopStack.rbegin();
-  for (const auto &Stream : Streams) {
-    if (LoopIter == LoopStack.rend()) {
+
+  /**
+   * Find the correct place to insert the new stream.
+   */
+  auto StreamsIter = Streams.begin();
+  while (StreamsIter != Streams.end()) {
+    if (StreamsIter->getLoop() == Loop) {
+      // This means we have initialized the stream.
+      return;
+    } else if (Loop->contains(StreamsIter->getLoop())) {
+      // This is still an inner loop, we should keep looking.
+      StreamsIter++;
+    } else {
+      // This is an outer loop, we have found the right place to insert.
       break;
     }
-    assert(Stream.getLoop() == (*LoopIter) && "Mismatch initialized stream.");
-    ++LoopIter;
   }
 
-  // Initialize the remaining loops.
-  auto IsInductionVar = [this](llvm::PHINode *PHINode) -> bool {
-    // return this->PHINodeIVStreamMap.count(PHINode) != 0;
-    return false;
-  };
-  while (LoopIter != LoopStack.rend()) {
-    auto LoopLevel = Streams.size();
-    auto Loop = *LoopIter;
-    auto Level = Streams.size();
-    const llvm::Loop *InnerMostLoop = *LoopIter;
-    if (LoopLevel > 0) {
-      InnerMostLoop = Streams.front().getInnerMostLoop();
+  // Find the inner most loop.
+  auto InnerMostLoop = this->CachedLI->getLoopInfo(Inst->getFunction())
+                           ->getLoopFor(Inst->getParent());
+  auto LoopLevel = InnerMostLoop->getLoopDepth() - Loop->getLoopDepth();
+  auto NewStreamIter = Streams.emplace(StreamsIter, this->OutputExtraFolderPath,
+                                       Inst, Loop, InnerMostLoop, LoopLevel);
+  {
+    // Do the same thing for InstStreamMap, we have a better code here.
+    auto &InstStreams = this->InstStreamMap.at(Inst);
+    auto InstStreamsIter = InstStreams.begin();
+    while (InstStreamsIter != InstStreams.end()) {
+      auto S = *InstStreamsIter;
+      assert(S->getLoop() != Loop &&
+             "The stream is already in the InstStreamMap.");
+      if (Loop->contains(S->getLoop())) {
+        InstStreamsIter++;
+      } else {
+        break;
+      }
     }
-    Streams.emplace_back(this->OutputExtraFolderPath, Inst, Loop, InnerMostLoop,
-                         Level);
-    this->InstStreamMap.at(Inst).emplace_back(&Streams.back());
-    // DEBUG(llvm::errs() << "Initialize IVStream "
-    //                    << Streams.back().formatName() << '\n');
-    ++LoopIter;
+    InstStreams.emplace(InstStreamsIter, &(*NewStreamIter));
   }
+  DEBUG(llvm::errs() << "Initialize IVStream " << NewStreamIter->formatName()
+                     << '\n');
+
   // DEBUG(llvm::errs() << "Initialize IVStream returned\n");
 }
 
@@ -403,7 +452,7 @@ void StreamPass::activateStream(ActiveStreamMapT &ActiveStreams,
 
   auto InstMemStreamMapIter = this->InstMemStreamMap.find(Inst);
   assert(InstMemStreamMapIter != this->InstMemStreamMap.end() &&
-         "Failed to look up streams to activate.");
+         "Failed to look up mem streams to activate.");
 
   for (auto &S : InstMemStreamMapIter->second) {
     const auto &Loop = S.getLoop();
@@ -433,12 +482,12 @@ void StreamPass::activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
   assert(PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end() &&
          "Failed to look up IV streams to activate.");
 
-  auto DynamicVal =
-      this->Trace->DynamicFrameStack.front().getValueNullable(PHINode);
-  uint64_t Value;
-  if (DynamicVal != nullptr) {
-    Value = std::stoul(DynamicVal->Value);
-  }
+  // auto DynamicVal =
+  //     this->Trace->DynamicFrameStack.front().getValueNullable(PHINode);
+  // uint64_t Value;
+  // if (DynamicVal != nullptr) {
+  //   Value = std::stoul(DynamicVal->Value);
+  // }
 
   for (auto &S : PHINodeIVStreamMapIter->second) {
     auto *IVStream = &S;
@@ -485,16 +534,6 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
     for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
          BBIter != BBEnd; ++BBIter) {
       auto BB = *BBIter;
-      bool IsAtThisLevel = true;
-      for (const auto &SubLoop : SubLoops) {
-        if (SubLoop->contains(BB)) {
-          IsAtThisLevel = false;
-          break;
-        }
-      }
-      if (!IsAtThisLevel) {
-        continue;
-      }
       for (auto InstIter = BB->begin(), InstEnd = BB->end();
            InstIter != InstEnd; ++InstIter) {
         auto StaticInst = &*InstIter;
@@ -505,13 +544,28 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
       }
     }
 
-    auto HeaderBB = Loop->getHeader();
-    auto PHINodes = HeaderBB->phis();
-    for (auto PHINodeIter = PHINodes.begin(), PHINodeEnd = PHINodes.end();
-         PHINodeIter != PHINodeEnd; ++PHINodeIter) {
-      auto PHINode = &*PHINodeIter;
-      StreamInsts.insert(PHINode);
+    // Do a BFS to find all the IV stream in the header of both this loop and
+    // subloops.
+    std::list<llvm::Loop *> Queue;
+    Queue.emplace_back(Loop);
+    while (!Queue.empty()) {
+      auto CurrentLoop = Queue.front();
+      Queue.pop_front();
+      for (auto &SubLoop : CurrentLoop->getSubLoops()) {
+        Queue.emplace_back(SubLoop);
+      }
+      auto HeaderBB = CurrentLoop->getHeader();
+      auto PHINodes = HeaderBB->phis();
+      for (auto PHINodeIter = PHINodes.begin(), PHINodeEnd = PHINodes.end();
+           PHINodeIter != PHINodeEnd; ++PHINodeIter) {
+        auto PHINode = &*PHINodeIter;
+        StreamInsts.insert(PHINode);
+      }
     }
+
+    // Count the number of passible paths.
+    this->MemorizedLoopPossiblePaths.emplace(
+        Loop, LoopUtils::countPossiblePath(Loop));
 
     this->InitializedLoops.insert(Loop);
   }
@@ -524,7 +578,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
    */
   for (auto StaticInst : Iter->second) {
     if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(StaticInst)) {
-      this->initializeIVStreamIfNecessary(LoopStack, PHINode);
+      this->initializeIVStreamIfNecessary(Loop, PHINode);
       this->activateIVStream(ActiveIVStreams, PHINode);
     }
   }
@@ -538,7 +592,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack,
       assert(
           Utils::isMemAccessInst(StaticInst) &&
           "Should be memory access instruction if not an induction variable.");
-      this->initializeMemStreamIfNecessary(LoopStack, StaticInst);
+      this->initializeMemStreamIfNecessary(Loop, StaticInst);
       this->activateStream(ActiveStreams, StaticInst);
     }
   }
@@ -549,9 +603,14 @@ void StreamPass::addAccess(const LoopStackT &LoopStack,
                            DynamicInstruction *DynamicInst) {
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Invalid llvm static instruction.");
-  this->initializeMemStreamIfNecessary(LoopStack, StaticInst);
+  {
+    // Initialize the global count.
+    auto Iter = this->MemAccessInstCount.find(StaticInst);
+    if (Iter == this->MemAccessInstCount.end()) {
+      this->MemAccessInstCount.emplace(StaticInst, 0);
+    }
+  }
   this->MemAccessInstCount.at(StaticInst)++;
-  this->activateStream(ActiveStreams, StaticInst);
   auto Iter = this->InstMemStreamMap.find(StaticInst);
   if (Iter == this->InstMemStreamMap.end()) {
     // This is possible as some times we have instructions not in a loop.
@@ -1093,14 +1152,24 @@ void StreamPass::buildAllChosenStreamDependenceGraph() {
         if (Entry.second == false) {
           // First time.
           Entry.second = true;
+          InStackStreams.insert(Entry.first);
           for (auto &ChosenBaseStream : Entry.first->getChosenBaseStreams()) {
-            // if (InStackStreams.count(ChosenBaseStream) != 0) {
-            // }
+            if (InStackStreams.count(ChosenBaseStream) != 0) {
+              llvm::errs() << "Found recursion in the chosen streams.\n";
+              for (const auto &StreamInStack : DFSStack) {
+                llvm::errs() << StreamInStack.first->formatName() << " -> ";
+                for (const auto &BaseStream :
+                     StreamInStack.first->getBaseStreams()) {
+                  llvm::errs() << BaseStream->formatName() << ' ';
+                }
+                llvm::errs() << '\n';
+              }
+              llvm::errs() << ChosenBaseStream->formatName() << '\n';
+            }
             assert(InStackStreams.count(ChosenBaseStream) == 0 &&
                    "Recursion found in chosen streams.");
             if (HandledStreams.count(ChosenBaseStream) == 0) {
               DFSStack.emplace_back(ChosenBaseStream, 0);
-              InStackStreams.insert(ChosenBaseStream);
             }
           }
         } else {
@@ -1189,7 +1258,7 @@ void StreamPass::DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop) {
       if (auto PlanPtr = this->getPlanNullable(Inst)) {
         PlanStr = PlanPtr->format();
       }
-      ss << std::setw(40) << std::left << LoopUtils::formatLLVMInst(Inst)
+      ss << std::setw(50) << std::left << LoopUtils::formatLLVMInst(Inst)
          << PlanStr << '\n';
     }
   }
@@ -1279,7 +1348,8 @@ void StreamPass::makeStreamTransformPlan() {
           DeleteCandidates.insert(ComputeInst);
           DEBUG(llvm::errs() << "Compute instruction "
                              << LoopUtils::formatLLVMInst(ComputeInst) << '\n');
-          if (Stream::isStepInst(ComputeInst) && S->hasNoBaseStream()) {
+          if (Stream::isStepInst(ComputeInst) && S->hasNoBaseStream() &&
+              S->Type == Stream::TypeT::IV) {
             /**
              * Mark a step instruction for streams that has no base stream.
              */
@@ -1553,9 +1623,9 @@ void StreamPass::transformStream() {
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
       // Debug a certain range of transformed instructions.
-      if (DynamicInst->getId() > 27400 && DynamicInst->getId() < 27600) {
-        DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
-      }
+      // if (DynamicInst->getId() > 27400 && DynamicInst->getId() < 27600) {
+      //   DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
+      // }
 
       this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();

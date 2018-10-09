@@ -216,6 +216,8 @@ public:
   // Especially used for mem/base initialization.
   std::list<DynamicFrame> DynamicFrameStack;
 
+  std::unordered_map<const llvm::Value *, DynamicValue> GlobalValueEnv;
+
   // Load one more inst from the trace.
   // Return DynamicInstructionList.end() if eof.
   DynamicInstIter loadOneDynamicInst();

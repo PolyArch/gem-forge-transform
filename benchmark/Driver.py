@@ -177,10 +177,10 @@ build_datagraph_debugs = {
 
 simulate_datagraph_debugs = {
     'stream': [
-        'StreamEngine',
+        # 'StreamEngine',
         # 'LLVMTraceCPU',
-        'LLVMTraceCPUFetch',
-        'LLVMTraceCPUCommit',
+        # 'LLVMTraceCPUFetch',
+        # 'LLVMTraceCPUCommit',
     ],
     'stream-prefetch': [
         # 'StreamEngine',
@@ -210,7 +210,7 @@ def choose_suite(options):
 
 
 def main(options):
-    job_scheduler = Util.JobScheduler(8, 1)
+    job_scheduler = Util.JobScheduler(options.cores, 1)
     test_suite = choose_suite(options)
     benchmarks = test_suite.get_benchmarks()
     driver = Driver(options)
@@ -235,60 +235,78 @@ def main(options):
                     simulate_datagraph_debugs[transform_pass])
     job_scheduler.run()
 
+    benchmark_stream_statistics = dict()
+
     for benchmark in benchmarks:
 
         stream_passes = ['stream', 'stream-prefetch']
         stream_pass_specified = None
         stream_tdgs = list()
+        replay_results = list()
+        stream_results = list()
         for p in stream_passes:
             if p in options.transform_passes:
                 stream_pass_specified = p
                 stream_tdgs = benchmark.get_tdgs(p)
+                replay_results = benchmark.get_results('replay')
+                stream_results = benchmark.get_results(p)
                 break
 
-        stream_tdg_stats = list()
-        for i in xrange(len(stream_tdgs)):
-            if options.trace_id:
-                if i not in options.trace_id:
-                    # Ignore those traces if not specified
-                    continue
-            stream_tdg_stats.append(stream_tdgs[i] + '.stats.txt')
-
         if stream_pass_specified is not None:
-            stream_stats = StreamStatistics.StreamStatistics(stream_tdg_stats)
-            print('-------------------------- ' + benchmark.get_name())
-            stream_stats.print_stats()
-            stream_stats.print_stream_breakdown()
-            # stream_stats.print_access()
-            # stream_stats.print_stream_length()
-            # stream_stats.print_stream_addr()
-            # stream_stats.print_stream_alias()
-            stream_stats.print_stream_qualified()
-            stream_stats.print_chosen_level()
-            stream_stats.print_chosen_len()
-            # stream_stats.dump_csv(os.path.join(
-            #     C.LLVM_TDG_RESULT_DIR,
-            #     benchmark.get_name() + '.stream.stats.csv'
-            # ))
-
-        if stream_pass_specified is not None:
-            replay_results = list()
-            stream_results = list()
+            filtered_trace_ids = list()
             for i in xrange(len(stream_tdgs)):
                 if options.trace_id:
                     if i not in options.trace_id:
+                        # Ignore those traces if not specified
                         continue
-                replay_results.append(benchmark.get_results('replay')[i])
-                stream_results.append(
-                    benchmark.get_results(stream_pass_specified)[i])
-            Util.ADFAAnalyzer.SYS_CPU_PREFIX = 'system.cpu.'
-            Util.ADFAAnalyzer.analyze_adfa(
-                benchmark.get_name(), replay_results, stream_results)
+                # Hack here to skip some traces.
+                if 'leela_s' in benchmark.get_name():
+                    if i in {2, 4, 5, 9}:
+                        continue
+                filtered_trace_ids.append(i)
+            filtered_stream_tdg_stats = [
+                stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
+            filtered_replay_results = [replay_results[x]
+                                       for x in filtered_trace_ids]
+            filtered_stream_results = [stream_results[x]
+                                       for x in filtered_trace_ids]
+
+            stream_stats = StreamStatistics.StreamStatistics(
+                benchmark.get_name(),
+                filtered_stream_tdg_stats,
+                filtered_replay_results,
+                filtered_stream_results)
+            benchmark_stream_statistics[benchmark.get_name()] = stream_stats
+            print('-------------------------- ' + benchmark.get_name())
+
+    if benchmark_stream_statistics:
+        StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_loop_path(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_stream_simulation_result(
+            benchmark_stream_statistics)
 
 
 if __name__ == '__main__':
     import optparse
     parser = optparse.OptionParser()
+    parser.add_option('--cores', action='store',
+                      type='int', dest='cores', default=8)
     parser.add_option('-b', '--build', action='store_true',
                       dest='build', default=False)
     parser.add_option('-t', '--trace', action='store_true',

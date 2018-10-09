@@ -1,4 +1,5 @@
 import prettytable
+import Util
 
 
 class Access:
@@ -25,6 +26,7 @@ class Access:
         self.alias_insts = int(fields[13])
         self.qualified = fields[14]
         self.chosen = fields[15]
+        self.loop_paths = int(fields[16])
 
     @staticmethod
     def get_fields():
@@ -106,12 +108,19 @@ class Access:
 
 
 class StreamStatistics:
-    def __init__(self, files):
+    def __init__(self, benchmark, files, replay_files=None, stream_files=None):
         self.next = None
+        self.benchmark = benchmark
+        self.replay_result = None
+        self.stream_result = None
+        if replay_files is not None:
+            self.replay_result = Util.Gem5RegionStats(benchmark, replay_files)
+        if stream_files is not None:
+            self.stream_result = Util.Gem5RegionStats(benchmark, stream_files)
         if isinstance(files, list):
             self.parse(files[0])
             if len(files) > 1:
-                self.next = StreamStatistics(files[1:])
+                self.next = StreamStatistics(benchmark, files[1:])
         else:
             self.parse(files)
 
@@ -204,7 +213,7 @@ class StreamStatistics:
         else:
             return self.stats['DynMemInstCount']
 
-    def calculate_stream_breakdown(self, level):
+    def _collect_stream_breakdown(self, level):
         filtered = list()
         for inst in self.inst_to_loop_level:
             streams = self.inst_to_loop_level[inst]
@@ -230,58 +239,56 @@ class StreamStatistics:
         for access in filtered:
             result[access.stream_class] += access.accesses
         if self.next is not None:
-            next_result = self.next.calculate_stream_breakdown(level)
+            next_result = self.next._collect_stream_breakdown(level)
             for field in result:
                 result[field] += next_result[field]
         return result
 
-    def print_stream_breakdown(self):
-        table = prettytable.PrettyTable([
+    @staticmethod
+    def get_stream_breakdown_title():
+        return [
             'OutOfLoop',
             'Recursive',
             'Incontinuous',
             'IndirectContinuous',
-            'L0_AFFINE',
-            'L0_RAMDOM',
-            'L0_AFFINE_IV',
-            'L0_RANDOM_IV',
-            'L0_MULTI_IV',
-            'L0_AFFINE_BASE',
-            'L0_RANDOM_BASE',
-            'L0_POINTER_CHASE',
-            'L0_CHAIN_BASE',
-            'L0_MULTI_BASE',
-        ])
-        table.float_format = '.4'
+            'AFFINE',
+            'RAMDOM',
+            'AFFINE_IV',
+            'RANDOM_IV',
+            'MULTI_IV',
+            'AFFINE_BASE',
+            'RANDOM_BASE',
+            'POINTER_CHASE',
+            'CHAIN_BASE',
+            'MULTI_BASE',
+        ]
+
+    def get_stream_breakdown_row(self, level):
         total_mem_insts = self.calculate_total_mem_accesses()
         out_of_loop = self.calculate_out_of_loop() / total_mem_insts
         row = [out_of_loop]
-        for level in xrange(1):
-            result = (
-                self.calculate_stream_breakdown(level)
-            )
-            print(sum(result.values()))
-            print(total_mem_insts)
-            if level == 0:
-                row += [
-                    result['RECURSIVE'] / total_mem_insts,
-                    result['INCONTINUOUS'] / total_mem_insts,
-                    result['INDIRECT_CONTINUOUS'] / total_mem_insts,
-                ]
+        result = (
+            self._collect_stream_breakdown(level)
+        )
+        if level == 0:
             row += [
-                result['AFFINE'] / total_mem_insts,
-                result['RANDOM'] / total_mem_insts,
-                result['AFFINE_IV'] / total_mem_insts,
-                result['RANDOM_IV'] / total_mem_insts,
-                result['MULTI_IV'] / total_mem_insts,
-                result['AFFINE_BASE'] / total_mem_insts,
-                result['RANDOM_BASE'] / total_mem_insts,
-                result['POINTER_CHASE'] / total_mem_insts,
-                result['CHAIN_BASE'] / total_mem_insts,
-                result['MULTI_BASE'] / total_mem_insts,
+                result['RECURSIVE'] / total_mem_insts,
+                result['INCONTINUOUS'] / total_mem_insts,
+                result['INDIRECT_CONTINUOUS'] / total_mem_insts,
             ]
-        table.add_row(row)
-        print(table)
+        row += [
+            result['AFFINE'] / total_mem_insts,
+            result['RANDOM'] / total_mem_insts,
+            result['AFFINE_IV'] / total_mem_insts,
+            result['RANDOM_IV'] / total_mem_insts,
+            result['MULTI_IV'] / total_mem_insts,
+            result['AFFINE_BASE'] / total_mem_insts,
+            result['RANDOM_BASE'] / total_mem_insts,
+            result['POINTER_CHASE'] / total_mem_insts,
+            result['CHAIN_BASE'] / total_mem_insts,
+            result['MULTI_BASE'] / total_mem_insts,
+        ]
+        return row
 
     def _collect_stream_length(self):
         result = list()
@@ -469,41 +476,29 @@ class StreamStatistics:
             result += self.next._collect_chosen_stream()
         return result
 
-    def print_chosen_len(self):
-        streams = self._collect_chosen_stream()
-        table = prettytable.PrettyTable([
-            '<10',
-            '<50',
-            '<100',
-            '<1000',
-            'inf'
-        ])
-        table.float_format = '.4'
-        summed_accesses = [0, 0, 0, 0, 0]
-        for stream in streams:
-            accesses = stream.accesses
-            streams = stream.streams
-            if accesses == 0 or streams == 0:
-                continue
-            avg_len = float(accesses) / float(streams)
-            if avg_len < 10.0:
-                summed_accesses[0] += accesses
-            elif avg_len < 50.0:
-                summed_accesses[1] += accesses
-            elif avg_len < 100.0:
-                summed_accesses[2] += accesses
-            elif avg_len < 1000.0:
-                summed_accesses[3] += accesses
-            else:
-                summed_accesses[4] += accesses
-        print summed_accesses
-        total_accesses = self.calculate_total_mem_accesses()
-        table.add_row([x / total_accesses for x in summed_accesses])
-        print(table)
-
     def print_access(self):
         vals = list(self.accesses.values())
         Access.print_table(vals)
+
+    def _collect_stream_loop_paths(self, max_paths):
+        result = [0] * max_paths
+        for inst in self.inst_to_loop_level:
+            streams = self.inst_to_loop_level[inst]
+            # Only check the inner most loop level.
+            stream = streams[0]
+            if stream.loop_paths >= max_paths:
+                result[max_paths - 1] += stream.accesses
+            else:
+                result[stream.loop_paths - 1] += stream.accesses
+        if self.next is not None:
+            next_result = self.next._collect_stream_loop_paths(max_paths)
+            for i in xrange(len(result)):
+                result[i] += next_result[i]
+        return result
+
+    def normalize_with_total_accesses(self, row):
+        total = self.calculate_total_mem_accesses()
+        return [x / total for x in row]
 
     def collect_stats(self):
         result = dict()
@@ -524,6 +519,9 @@ class StreamStatistics:
             data.append(result[key])
         title.append('Removed(%)')
         data.append(result['DeletedInstCount']/result['DynInstCount'] * 100)
+        title.append('Added(%)')
+        data.append((result['ConfigInstCount'] +
+                     result['StepInstCount'])/result['DynInstCount'] * 100)
         title.append('ConfigPMI')
         data.append(result['ConfigInstCount']/result['DynInstCount'] * 1000000)
         table = prettytable.PrettyTable(title)
@@ -534,3 +532,303 @@ class StreamStatistics:
     # def dump_csv(self, fn):
     #     vals = list(self.accesses.values())
     #     Access.dump_csv(vals, fn)
+
+    @staticmethod
+    def normalize_row(row):
+        total = sum(row)
+        if total > 0.0:
+            new_row = [x / total for x in row]
+            return new_row
+        else:
+            return row
+
+    @staticmethod
+    def print_benchmark_stream_breakdown(benchmark_statistic_map):
+        title = StreamStatistics.get_stream_breakdown_title()
+        title.insert(0, 'Benchmark')
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_stream_breakdown_row(0)
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.4'
+        print(table)
+
+    @staticmethod
+    def print_benchmark_stream_breakdown_coarse(benchmark_statistic_map):
+        title = [
+            'OutOfLoop',
+            'Incontinuous',
+            'Stream',
+        ]
+        title.insert(0, 'Benchmark')
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_stream_breakdown_row(0)
+            coarse_row = [
+                row[0],
+                row[2],
+                sum(row[4:-1])
+            ]
+            coarse_row = StreamStatistics.normalize_row(coarse_row)
+            coarse_row.insert(0, benchmark)
+            table.add_row(coarse_row)
+        table.float_format = '.4'
+        print(table)
+
+    @staticmethod
+    def print_benchmark_stream_breakdown_indirect(benchmark_statistic_map):
+        title = [
+            'Affine',
+            'Indirect',
+        ]
+        title.insert(0, 'Benchmark')
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_stream_breakdown_row(0)
+            indirect_row = [
+                row[4] + row[6],
+                row[5] + sum(row[7:-1])
+            ]
+            indirect_row = StreamStatistics.normalize_row(indirect_row)
+            indirect_row.insert(0, benchmark)
+            table.add_row(indirect_row)
+        table.float_format = '.4'
+        print(table)
+
+    @staticmethod
+    def print_benchmark_stream_paths(benchmark_statistic_map):
+        title = [
+            'Benchmark'
+        ]
+        max_paths = 5
+        for i in xrange(1, max_paths):
+            title.append('{i}'.format(i=i))
+        title.append('>={max_paths}'.format(max_paths=max_paths))
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats._collect_stream_loop_paths(max_paths)
+            # Normalize with ourselves.
+            row = StreamStatistics.normalize_row(row)
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.4'
+        print(table)
+
+    def get_chosen_stream_length_row(self):
+        streams = self._collect_chosen_stream()
+        row = [0, 0, 0, 0, 0]
+        for stream in streams:
+            accesses = stream.accesses
+            streams = stream.streams
+            if accesses == 0 or streams == 0:
+                continue
+            avg_len = float(accesses) / float(streams)
+            if avg_len < 10.0:
+                row[0] += accesses
+            elif avg_len < 50.0:
+                row[1] += accesses
+            elif avg_len < 100.0:
+                row[2] += accesses
+            elif avg_len < 1000.0:
+                row[3] += accesses
+            else:
+                row[4] += accesses
+        return row
+
+    @staticmethod
+    def print_benchmark_chosen_stream_length(benchmark_statistic_map):
+        title = [
+            'Benchmark',
+            '<10',
+            '<50',
+            '<100',
+            '<1000',
+            'inf'
+        ]
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_chosen_stream_length_row()
+            # Normalize with ourselves.
+            row = StreamStatistics.normalize_row(row)
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.4'
+        print(table)
+
+    def get_chosen_stream_percentage_row(self):
+        streams = self._collect_chosen_stream()
+        row = [0]
+        for stream in streams:
+            accesses = stream.accesses
+            row[0] += accesses
+        return row
+
+    @staticmethod
+    def print_benchmark_chosen_stream_percentage(benchmark_statistic_map):
+        title = [
+            'Benchmark',
+            'Percentage',
+        ]
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_chosen_stream_percentage_row()
+            # Normalize with total accesses
+            row = stats.normalize_with_total_accesses(row)
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.4'
+        print(table)
+
+    def get_chosen_stream_indirect(self):
+        streams = self._collect_chosen_stream()
+        row = [0, 0]
+        indirect_stream_class = {
+            'RANDOM',
+            'RANDOM_IV',
+            'MULTI_IV',
+            'AFFINE_BASE',
+            'RANDOM_BASE',
+            'POINTER_CHASE',
+            'CHAIN_BASE',
+            'MULTI_BASE',
+        }
+        for stream in streams:
+            accesses = stream.accesses
+            if stream.stream_class in indirect_stream_class:
+                row[1] += accesses
+            else:
+                row[0] += accesses
+        return row
+
+    @staticmethod
+    def print_benchmark_chosen_stream_indirect(benchmark_statistic_map):
+        title = [
+            'Benchmark',
+            'Affine',
+            'Indirect',
+        ]
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_chosen_stream_indirect()
+            row = StreamStatistics.normalize_row(row)
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.4'
+        print(table)
+
+    def get_chosen_stream_loop_path(self, max_paths):
+        streams = self._collect_chosen_stream()
+        row = [0] * max_paths
+        for stream in streams:
+            accesses = stream.accesses
+            if stream.loop_paths > max_paths:
+                row[max_paths - 1] += accesses
+            else:
+                row[stream.loop_paths - 1] += accesses
+        return row
+
+    @staticmethod
+    def print_benchmark_chosen_stream_loop_path(benchmark_statistic_map):
+        title = [
+            'Benchmark'
+        ]
+        max_paths = 5
+        for i in xrange(1, max_paths):
+            title.append('{i}'.format(i=i))
+        title.append('>={max_paths}'.format(max_paths=max_paths))
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_chosen_stream_loop_path(max_paths)
+            row = StreamStatistics.normalize_row(row)
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.4'
+        print(table)
+
+    def get_chosen_stream_configure_level_row(self, max_level):
+        streams = self._collect_chosen_stream()
+        row = [0] * max_level
+        for stream in streams:
+            accesses = stream.accesses
+            if stream.level >= max_level:
+                row[max_level - 1] += accesses
+            else:
+                row[stream.level] += accesses
+        return row
+
+    @staticmethod
+    def print_benchmark_chosen_stream_configure_level(benchmark_statistic_map):
+        title = [
+            'Benchmark'
+        ]
+        max_level = 3
+        for i in xrange(0, max_level - 1):
+            title.append('{i}'.format(i=i))
+        title.append('>={max_level}'.format(max_level=max_level - 1))
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_chosen_stream_configure_level_row(max_level)
+            row = StreamStatistics.normalize_row(row)
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.4'
+        print(table)
+
+    def get_stream_simulation_result_row(self):
+        stats = self.collect_stats()
+        prefix = 'system.cpu.'
+        row = list()
+        row.append(stats['DeletedInstCount']/stats['DynInstCount'] * 100)
+        row.append((stats['ConfigInstCount'] +
+                    stats['StepInstCount'])/stats['DynInstCount'] * 100)
+        row.append(stats['ConfigInstCount']/stats['DynInstCount'] * 1000000)
+        if self.replay_result is not None and self.stream_result is not None:
+            replay_cycles = self.replay_result['all'][prefix + 'numCycles']
+            stream_cycles = self.stream_result['all'][prefix + 'numCycles']
+            row.append(replay_cycles / stream_cycles)
+        else:
+            row.append('/')
+        if self.stream_result is not None:
+            stream_entries = self.stream_result['all']['tdg.accs.stream.numMemElements']
+            stream_used_entries = self.stream_result['all']['tdg.accs.stream.numMemElementsUsed']
+            if stream_used_entries > 0:
+                row.append(stream_used_entries / stream_entries)
+                stream_waited_cycles = self.stream_result['all']['tdg.accs.stream.memEntryWaitCycles']
+                row.append(stream_waited_cycles / stream_used_entries)
+            else:
+                row.append('/')
+                row.append('/')
+        else:
+            row.append('/')
+            row.append('/')
+        return row
+
+    @staticmethod
+    def print_benchmark_stream_simulation_result(benchmark_statistic_map):
+        title = [
+            'Benchmark',
+            'Removed',
+            'Added',
+            'ConfigPMI',
+            'Speedup',
+            'StreamUsage',
+            'WaitCycles',
+        ]
+        table = prettytable.PrettyTable(title)
+        for benchmark in benchmark_statistic_map:
+            stats = benchmark_statistic_map[benchmark]
+            row = stats.get_stream_simulation_result_row()
+            row.insert(0, benchmark)
+            table.add_row(row)
+        table.float_format = '.2'
+        print(table)

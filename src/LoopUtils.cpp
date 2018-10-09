@@ -83,6 +83,31 @@ uint64_t LoopUtils::getNumStaticInstInLoop(llvm::Loop *Loop) {
   return StaticInsts;
 }
 
+int LoopUtils::countPossiblePath(const llvm::Loop *Loop) {
+  std::unordered_set<const llvm::BasicBlock *> OnPathBBs;
+  return LoopUtils::countPossiblePathFromBB(Loop, OnPathBBs, Loop->getHeader());
+}
+
+int LoopUtils::countPossiblePathFromBB(
+    const llvm::Loop *Loop,
+    std::unordered_set<const llvm::BasicBlock *> &OnPathBBs,
+    const llvm::BasicBlock *CurrentBB) {
+  if (!Loop->contains(CurrentBB)) {
+    // Exiting the loop.
+    return 1;
+  }
+  int Count = 0;
+  OnPathBBs.insert(CurrentBB);
+  for (const auto Succ : llvm::successors(CurrentBB)) {
+    if (OnPathBBs.count(Succ)) {
+      continue;
+    }
+    Count += LoopUtils::countPossiblePathFromBB(Loop, OnPathBBs, Succ);
+  }
+  OnPathBBs.erase(CurrentBB);
+  return Count;
+}
+
 std::string LoopUtils::formatLLVMInst(const llvm::Instruction *Inst) {
   if (Inst->getName() != "") {
     return (llvm::Twine(Inst->getFunction()->getName()) +

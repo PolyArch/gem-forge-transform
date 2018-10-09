@@ -286,94 +286,94 @@ class SPEC2017Benchmark(Benchmark):
 class SPEC2017Benchmarks:
 
     BENCHMARK_PARAMS = {
-        # 'lbm_s': {
-        #     'name': '619.lbm_s',
-        #     'links': ['-lm'],
-        #     # First 100m insts every 1b insts, skipping the first 3.3b
-        #     'start_inst': 33e8,
-        #     'max_inst': 2e7,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 34e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'LBM_performStreamCollideTRT',
-        #     'lang': 'C',
-        # },
-        # 'imagick_s': {
-        #     'name': '638.imagick_s',
-        #     'links': ['-lm'],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 200e8,
-        #     'n_traces': 20,
-        #     # 'trace_func': 'MagickCommandGenesis',
-        #     'trace_func': '',
-        #     'lang': 'C',
-        # },
-        # 'nab_s': {
-        #     'name': '644.nab_s',
-        #     'links': ['-lm'],
-        #     # md start from 100b
-        #     'start_inst': 0,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 121e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'md',
-        #     'lang': 'C',
-        # },
-        # 'x264_s': {
-        #     'name': '625.x264_s',
-        #     'links': ['-lm'],
-        #     # x264_encoder_encode starts around 0.1e8.
-        #     # x264_adaptive_quant_frame starts around 4e8
-        #     # x264_lookahead_get_frames starts around 21e8
-        #     'start_inst': 4e8,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 20e8,
-        #     'end_inst': 28e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'x264_encoder_encode',
-        #     'lang': 'C',
-        # },
-        # 'mcf_s': {
-        #     'name': '605.mcf_s',
-        #     'links': [],
-        #     # global_opt starts around 0.3e8
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 21e8,
-        #     'n_traces': 2,
-        #     'trace_func': 'global_opt',
-        #     'lang': 'C',
-        # },
-        # 'xz_s': {
-        #     'name': '657.xz_s',
-        #     'links': [],
-        #     # I failed to find the pattern.
-        #     # To trace this, instrument the tracer twice, one with
-        #     # compressStream traced, the other with uncompressStream traced
-        #     'start_inst': 0,
-        #     'max_inst': 1e8,
-        #     'skip_inst': 9e8,
-        #     'end_inst': 1021e8,
-        #     'n_traces': 1,
-        #     'trace_func': 'uncompressStream',
-        #     'lang': 'C',
-        # },
-        # 'gcc_s': {
-        #     'name': '602.gcc_s',
-        #     'links': [],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 50e8,
-        #     'end_inst': 1000e8,
-        #     'n_traces': 10,
-        #     # 'trace_func': 'compile_file',
-        #     'trace_func': '',
-        #     'lang': 'C',
-        # },
+        'lbm_s': {
+            'name': '619.lbm_s',
+            'links': ['-lm'],
+            # First 100m insts every 1b insts, skipping the first 3.3b
+            'start_inst': 33e8,
+            'max_inst': 2e7,
+            'skip_inst': 9e8,
+            'end_inst': 34e8,
+            'n_traces': 1,
+            'trace_func': 'LBM_performStreamCollideTRT',
+            'lang': 'C',
+        },
+        'imagick_s': {
+            'name': '638.imagick_s',
+            'links': ['-lm'],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 9e8,
+            'end_inst': 200e8,
+            'n_traces': 20,
+            # 'trace_func': 'MagickCommandGenesis',
+            'trace_func': '',
+            'lang': 'C',
+        },
+        'nab_s': {
+            'name': '644.nab_s',
+            'links': ['-lm'],
+            # md start from 100b
+            'start_inst': 0,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 121e8,
+            'n_traces': 1,
+            'trace_func': 'md',
+            'lang': 'C',
+        },
+        'x264_s': {
+            'name': '625.x264_s',
+            'links': ['-lm'],
+            # x264_encoder_encode starts around 0.1e8.
+            # x264_adaptive_quant_frame starts around 4e8
+            # x264_lookahead_get_frames starts around 21e8
+            'start_inst': 4e8,
+            'max_inst': 1e8,
+            'skip_inst': 20e8,
+            'end_inst': 28e8,
+            'n_traces': 1,
+            'trace_func': 'x264_encoder_encode',
+            'lang': 'C',
+        },
+        'mcf_s': {
+            'name': '605.mcf_s',
+            'links': [],
+            # global_opt starts around 0.3e8
+            'start_inst': 1e8,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 21e8,
+            'n_traces': 2,
+            'trace_func': 'global_opt',
+            'lang': 'C',
+        },
+        'xz_s': {
+            'name': '657.xz_s',
+            'links': [],
+            # I failed to find the pattern.
+            # To trace this, instrument the tracer twice, one with
+            # compressStream traced, the other with uncompressStream traced
+            'start_inst': 0,
+            'max_inst': 1e8,
+            'skip_inst': 9e8,
+            'end_inst': 1021e8,
+            'n_traces': 1,
+            'trace_func': 'uncompressStream',
+            'lang': 'C',
+        },
+        'gcc_s': {
+            'name': '602.gcc_s',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 50e8,
+            'end_inst': 1000e8,
+            'n_traces': 2,
+            # 'trace_func': 'compile_file',
+            'trace_func': '',
+            'lang': 'C',
+        },
         # 'perlbench_s': {
         #     # Does not work with ellcc as it uses posix io function.
         #     'name': '600.perlbench_s',
@@ -387,82 +387,82 @@ class SPEC2017Benchmarks:
         #     'lang': 'C',
         # },
         # # C++ Benchmark
-        # 'deepsjeng_s': {
-        #     'name': '631.deepsjeng_s',
-        #     'links': [],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 110e8,
-        #     'n_traces': 10,
-        #     # 'trace_func': 'think(gamestate_t*, state_t*)',
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
-        # 'leela_s': {
-        #     'name': '641.leela_s',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
-        # 'namd_r': { 
-        #     'name': '508.namd_r',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
-        # # Will throw exception.
-        # # Does not work with ellcc as RE.
-        # 'povray_r': {
-        #     'name': '511.povray_r',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
-        # Throws exception.
-        # Does not work with ellcc as RE.
-        # Need to fix a comparison between integer and pointer error.
-        # Only been able to trace the first one.
-        'parest_r': {
-            'name': '510.parest_r',
+        'deepsjeng_s': {
+            'name': '631.deepsjeng_s',
             'links': [],
             'start_inst': 10e8,
             'max_inst': 1e7,
             'skip_inst': 10e8,
             'end_inst': 110e8,
-            'n_traces': 1,
+            'n_traces': 10,
+            # 'trace_func': 'think(gamestate_t*, state_t*)',
             'trace_func': '',
             'lang': 'CPP',
         },
-
-        # # Does not work with ellcc as it uses linux header.
-        # # Does not throw.
-        # 'xalancbmk_s': {
-        #     'name': '623.xalancbmk_s',
+        'leela_s': {
+            'name': '641.leela_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
+        'namd_r': { 
+            'name': '508.namd_r',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
+        # Will throw exception.
+        # Does not work with ellcc as RE.
+        'povray_r': {
+            'name': '511.povray_r',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
+        # Throws exception.
+        # Does not work with ellcc as RE.
+        # Need to fix a comparison between integer and pointer error.
+        # Only been able to trace the first one.
+        # 'parest_r': {
+        #     'name': '510.parest_r',
         #     'links': [],
-        #     'start_inst': 1e8,
+        #     'start_inst': 10e8,
         #     'max_inst': 1e7,
         #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
+        #     'end_inst': 110e8,
+        #     'n_traces': 1,
         #     'trace_func': '',
         #     'lang': 'CPP',
         # },
+
+        # Does not work with ellcc as it uses linux header.
+        # Does not throw.
+        'xalancbmk_s': {
+            'name': '623.xalancbmk_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
         # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
         # Does not throw.
