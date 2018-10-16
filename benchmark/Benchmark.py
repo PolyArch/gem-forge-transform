@@ -287,28 +287,22 @@ class Benchmark(object):
         Util.call_helper(opt_cmd)
 
     """
-    Replay the binary with gem5.
-
-    Returns
-    -------
-    The gem5 output directory (abs path).
+    Prepare the gem5 simulate command.
     """
 
-    def gem5_replay(self, tdg, debugs=[]):
-        GEM5_OUT_DIR = self.gem5_config.get_gem5_dir(tdg)
-        Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
-        print GEM5_OUT_DIR
+    def get_gem5_simulate_command(self, tdg, replay_bin, GEM5_OUT_DIR, debugs=[], hoffman2=False):
         gem5_args = [
-            C.GEM5_X86,
+            C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
             '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
-            C.GEM5_LLVM_TRACE_SE_CONFIG,
-            '--cmd={cmd}'.format(cmd=self.get_replay_bin()),
+            C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
+            '--cmd={cmd}'.format(cmd=replay_bin),
             '--llvm-standalone={standlone}'.format(standlone=self.standalone),
             '--llvm-trace-file={trace_file}'.format(trace_file=tdg),
             '--llvm-issue-width={ISSUE_WIDTH}'.format(
                 ISSUE_WIDTH=C.ISSUE_WIDTH),
             '--llvm-store-queue-size={STORE_QUEUE_SIZE}'.format(
                 STORE_QUEUE_SIZE=C.STORE_QUEUE_SIZE),
+            '--llvm-mcpat={use_mcpat}'.format(use_mcpat=C.GEM5_USE_MCPAT),
             '--caches',
             '--l2cache',
             '--cpu-type={cpu_type}'.format(cpu_type=C.CPU_TYPE),
@@ -327,6 +321,22 @@ class Benchmark(object):
         if self.args is not None:
             gem5_args.append(
                 '--options={binary_args}'.format(binary_args=' '.join(self.args)))
+        return gem5_args
+
+    """
+    Replay the binary with gem5.
+
+    Returns
+    -------
+    The gem5 output directory (abs path).
+    """
+
+    def gem5_replay(self, tdg, debugs=[]):
+        GEM5_OUT_DIR = self.gem5_config.get_gem5_dir(tdg)
+        Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
+        print GEM5_OUT_DIR
+        gem5_args = self.get_gem5_simulate_command(
+            tdg, self.get_replay_bin(), GEM5_OUT_DIR, debugs, False)
         print('# Replaying the datagraph...')
         Util.call_helper(gem5_args)
         return GEM5_OUT_DIR
@@ -345,3 +355,51 @@ class Benchmark(object):
             os.path.join(gem5_outdir, 'region.stats.txt'),
             result,
         ])
+
+    def simulate_hoffman2(self, tdg, result, debugs=[]):
+        _, tdg_name = os.path.split(tdg)
+        hoffman2_ssh_tdg = os.path.join(C.HOFFMAN2_SSH_SCRATCH, tdg_name)
+        hoffman2_tdg = os.path.join(C.HOFFMAN2_SCRATCH, tdg_name)
+        print('# SCP tdg {tdg}.'.format(tdg=tdg_name))
+        Util.call_helper([
+            'scp',
+            tdg,
+            hoffman2_ssh_tdg
+        ])
+        tdg_cache = tdg + '.cache'
+        tdg_cache_name = tdg_name + '.cache'
+        hoffman2_ssh_tdg_cache = os.path.join(
+            C.HOFFMAN2_SSH_SCRATCH, tdg_cache_name)
+        print('# SCP tdg cache {tdg}.'.format(tdg=tdg_cache_name))
+        Util.call_helper([
+            'scp',
+            tdg_cache,
+            hoffman2_ssh_tdg_cache
+        ])
+        tdg_extra = tdg + '.extra'
+        tdg_extra_name = tdg_name + '.extra'
+        hoffman2_ssh_tdg_extra = os.path.join(
+            C.HOFFMAN2_SSH_SCRATCH, tdg_extra_name)
+        print('# SCP tdg extra {tdg}.'.format(tdg=tdg_extra_name))
+        Util.call_helper([
+            'scp',
+            '-r',
+            tdg_extra,
+            hoffman2_ssh_tdg_extra
+        ])
+        replay_bin_name = self.get_replay_bin()
+        replay_bin = os.path.join(self.get_run_path(), replay_bin_name)
+        hoffman2_ssh_replay_bin = os.path.join(
+            C.HOFFMAN2_SSH_SCRATCH, replay_bin_name)
+        hoffman2_replay_bin = os.path.join(C.HOFFMAN2_SCRATCH, replay_bin_name)
+        Util.call_helper([
+            'scp',
+            '-r',
+            replay_bin,
+            hoffman2_ssh_replay_bin,
+        ])
+        # Create the command.
+        gem5_out_dir = self.gem5_config.get_config(tdg_name)
+        gem5_command = self.get_gem5_simulate_command(
+            hoffman2_tdg, hoffman2_replay_bin, gem5_out_dir, debugs, True)
+        return gem5_command

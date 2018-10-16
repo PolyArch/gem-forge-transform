@@ -47,7 +47,7 @@ class MachSuiteBenchmark(Benchmark):
             links=['-lm'],
             args=None,
             trace_func='run_benchmark',
-            standalone=0)
+            standalone=1)
 
     def get_name(self):
         return 'mach.{b}.{sub}'.format(
@@ -227,10 +227,10 @@ class MachSuiteBenchmark(Benchmark):
 class MachSuiteBenchmarks:
 
     BENCHMARK_PARAMS = {
-        "bfs": [
-            "queue",
-            #     # "bulk" # not working
-        ],
+        # "bfs": [
+        #     "queue",
+        #     #     # "bulk" # not working
+        # ],
         # "aes": [
         #     "aes"
         # ],
@@ -242,10 +242,10 @@ class MachSuiteBenchmarks:
         #     "grid",
         #     "knn"
         # ],
-        # "fft": [
-        #     "strided",
-        #     "transpose"
-        # ],
+        "fft": [
+            "strided",
+            "transpose"
+        ],
         # "viterbi": [
         #     "viterbi"
         # ],
