@@ -56,6 +56,12 @@ GEM5_SE_CONFIG = os.path.join(
     GEM5_DIR, 'configs/example/se.py')
 GEM5_M5OPS_X86 = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
 
+HOFFMAN2_GEM5_DIR = '/u/home/s/seanzw/llvm-trace-cpu'
+HOFFMAN2_GEM5_X86 = os.path.join(HOFFMAN2_GEM5_DIR, 'build/X86/gem5.opt')
+HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG = os.path.join(
+    HOFFMAN2_GEM5_DIR, 'configs/example/llvm_trace_replay.py')
+HOFFMAN2_GEM5_SE_CONFIG = os.path.join(
+    HOFFMAN2_GEM5_DIR, 'configs/example/se.py')
 
 """
 Gem5 parameters.
@@ -66,6 +72,7 @@ STORE_QUEUE_SIZE = 32
 GEM5_L1D_SIZE = '32kB'
 GEM5_L1I_SIZE = '32kB'
 GEM5_L2_SIZE = '256kB'
+GEM5_USE_MCPAT = 0
 
 
 USE_ELLCC = False
@@ -87,3 +94,6 @@ else:
     PROTOBUF_LIB = PROTOBUF_ELLCC_LIB
     print("Undefined libunwind for ellcc!")
     assert(False)
+
+HOFFMAN2_SSH_SCRATCH = 'seanzw@hoffman2.idre.ucla.edu:/u/flashscratch/s/seanzw'
+HOFFMAN2_SCRATCH = '/u/flashscratch/s/seanzw'

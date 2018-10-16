@@ -140,6 +140,38 @@ class Driver:
                 deps
             )
 
+    def simulate_hoffman2(self, benchmarks):
+        hoffman2_commands = list()
+        for benchmark in benchmarks:
+            for transform_pass in options.transform_passes:
+                name = benchmark.get_name()
+                tdgs = benchmark.get_tdgs(transform_pass)
+                results = benchmark.get_results(transform_pass)
+
+                for i in xrange(0, len(tdgs)):
+                    if self.options.trace_id:
+                        if i not in self.options.trace_id:
+                            # Ignore those traces if not specified.
+                            continue
+                    hoffman2_commands.append(
+                        benchmark.simulate_hoffman2(tdgs[i], results[i]))
+        for i in xrange(len(hoffman2_commands)):
+            print('{i} {cmd}'.format(i=i, cmd=' '.join(hoffman2_commands[i])))
+            # Hoffman2 index starts from 1.
+            command_file = 'command.{i}.sh'.format(i=i+1)
+            hoffman2_command_file = os.path.join(
+                C.HOFFMAN2_SSH_SCRATCH, command_file)
+            tmp_command_file = os.path.join('/tmp', command_file)
+            with open(tmp_command_file, 'w') as f:
+                f.write(' '.join(hoffman2_commands[i]))
+            print('# SCP command file {i}'.format(i=i+1))
+            Util.call_helper([
+                'scp',
+                tmp_command_file,
+                hoffman2_command_file,
+            ])
+            
+
 
 build_datagraph_debugs = {
     'inline-stream': [
@@ -177,6 +209,7 @@ build_datagraph_debugs = {
 
 simulate_datagraph_debugs = {
     'stream': [
+        'McPATManager',
         # 'StreamEngine',
         # 'LLVMTraceCPU',
         # 'LLVMTraceCPUFetch',
@@ -226,7 +259,7 @@ def main(options):
                     benchmark,
                     transform_pass,
                     build_datagraph_debugs[transform_pass])
-        if options.simulate:
+        if options.simulate and (not options.hoffman2):
             for transform_pass in options.transform_passes:
                 driver.schedule_simulate(
                     job_scheduler,
@@ -234,6 +267,10 @@ def main(options):
                     transform_pass,
                     simulate_datagraph_debugs[transform_pass])
     job_scheduler.run()
+
+    # If use hoffman2, prepare the cluster.
+    if options.simulate and options.hoffman2:
+        driver.simulate_hoffman2(benchmarks)
 
     benchmark_stream_statistics = dict()
 
@@ -322,6 +359,9 @@ if __name__ == '__main__':
     parser.add_option('-s', '--simulate', action='store_true',
                       dest='simulate', default=False)
     parser.add_option('--suite', action='store', type='string', dest='suite')
+    # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
+    parser.add_option('--hoffman2', action='store_true',
+                      dest='hoffman2', default=False)
     (options, args) = parser.parse_args()
     # Handle special values for the options.
     if options.transform_passes and 'all' in options.transform_passes:
