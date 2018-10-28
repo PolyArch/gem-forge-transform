@@ -25,8 +25,35 @@ void Stream::addBaseStream(Stream *Other) {
   this->BaseStreams.insert(Other);
   if (Other != nullptr) {
     Other->DependentStreams.insert(this);
+
+    if (Other->getInnerMostLoop() == this->InnerMostLoop) {
+      // We are in the same loop level. This is also a step stream for me.
+      this->BaseStepStreams.insert(Other);
+    }
+
   } else {
     this->HasMissingBaseStream = true;
+  }
+}
+
+/**
+ * This must happen after all the calls to addBaseStream.
+ */
+void Stream::computeBaseStepRootStreams() {
+  for (auto &BaseStepStream : this->BaseStepStreams) {
+    if (BaseStepStream->Type == Stream::TypeT::IV) {
+      // Induction variable is always a root stream.
+      this->BaseStepRootStreams.insert(BaseStepStream);
+      // No need to go deeper for IVStream.
+      continue;
+    }
+    if (BaseStepStream->getBaseStepRootStreams().empty()) {
+      // If this is empty, recompute (even if recomputed).
+      BaseStepStream->computeBaseStepRootStreams();
+    }
+    for (auto &BaseStepRootStream : BaseStepStream->getBaseStepRootStreams()) {
+      this->BaseStepRootStreams.insert(BaseStepRootStream);
+    }
   }
 }
 
@@ -124,6 +151,21 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   InfoTextFStream << this->HistoryFullPath << '\n';            // history path
 
   // The next line is the chosen base streams.
+  InfoTextFStream << "Base streams. ---------\n";
+  for (const auto &BaseStream : this->BaseStreams) {
+    InfoTextFStream << BaseStream->getStreamId() << ' '
+                    << BaseStream->formatName() << '\n';
+  }
+  InfoTextFStream << "Base step streams. ---------\n";
+  for (const auto &BaseStepStream : this->BaseStepStreams) {
+    InfoTextFStream << BaseStepStream->getStreamId() << ' '
+                    << BaseStepStream->formatName() << '\n';
+  }
+  InfoTextFStream << "Base step root streams. ---------\n";
+  for (const auto &BaseStepRootStream : this->BaseStepRootStreams) {
+    InfoTextFStream << BaseStepRootStream->getStreamId() << ' '
+                    << BaseStepRootStream->formatName() << '\n';
+  }
   InfoTextFStream << "Chosen base streams. ---------\n";
   for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
     InfoTextFStream << ChosenBaseStream->getStreamId() << ' '
@@ -138,7 +180,7 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   }
   InfoTextFStream << "------------------------------\n";
   // The next line is all chosen base streams.
-  InfoTextFStream << "Root chosen base streams. ----\n";
+  InfoTextFStream << "All chosen base streams. ----\n";
   for (const auto &AllChosenBaseStream : this->AllChosenBaseStreams) {
     InfoTextFStream << AllChosenBaseStream->getStreamId() << ' '
                     << AllChosenBaseStream->formatName() << '\n';

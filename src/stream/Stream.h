@@ -31,6 +31,9 @@ public:
   const std::unordered_set<Stream *> &getBaseStreams() const {
     return this->BaseStreams;
   }
+  const std::unordered_set<Stream *> &getBaseStepRootStreams() const {
+    return this->BaseStepRootStreams;
+  }
   const std::unordered_set<Stream *> &getChosenBaseStreams() const {
     return this->ChosenBaseStreams;
   }
@@ -87,6 +90,11 @@ public:
   void addBaseStream(Stream *Other);
   void addChosenBaseStream(Stream *Other);
   void addAllChosenBaseStream(Stream *Other);
+
+  /**
+   * This must happen after all the calls to addBaseStream.
+   */
+  void computeBaseStepRootStreams();
 
   void endIter() {
     if (this->LastAccessIters != this->Iters) {
@@ -164,6 +172,8 @@ protected:
   const size_t LoopLevel;
 
   std::unordered_set<Stream *> BaseStreams;
+  std::unordered_set<Stream *> BaseStepStreams;
+  std::unordered_set<Stream *> BaseStepRootStreams;
   std::unordered_set<Stream *> DependentStreams;
   std::unordered_set<Stream *> ChosenBaseStreams;
   std::unordered_set<Stream *> ChosenBaseStepStreams;

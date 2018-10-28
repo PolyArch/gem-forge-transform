@@ -26,6 +26,10 @@ public:
   uint64_t getValue() const { return this->CurrentValue; }
   void configure(DataGraph *DG);
   void step(DataGraph *DG);
+  /**
+   * Inform the functional stream that the current entry is actually used.
+   */
+  void access();
 
   /**
    * When a load comes in, we update the value only if there is dependent stream
@@ -65,6 +69,7 @@ private:
   uint64_t CurrentValue;
   bool IsAddressValid;
   bool IsValueValid;
+  bool CurrentEntryUsed;
 
   std::list<uint64_t> FIFO;
 

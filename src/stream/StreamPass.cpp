@@ -920,6 +920,19 @@ void StreamPass::buildStreamDependenceGraph() {
       }
     }
   }
+
+  /**
+   * After add all the base streams, we are going to compute the base step root
+   * streams. The computeBaseStepRootStreams() is by itself recursive. This will
+   * result in some overhead, but hopefully the dependency chain is not very
+   * long.
+   */
+  for (auto &InstStreamEntry : this->InstMemStreamMap) {
+    auto &Streams = InstStreamEntry.second;
+    for (auto &S : Streams) {
+      S.computeBaseStepRootStreams();
+    }
+  }
 }
 
 void StreamPass::markQualifiedStream() {
@@ -1100,6 +1113,7 @@ void StreamPass::chooseStream() {
     }
   }
 }
+
 void StreamPass::buildChosenStreamDependenceGraph() {
   for (auto &LoopInstStreamEntry : this->ChosenLoopInstStream) {
     auto Loop = LoopInstStreamEntry.first;
@@ -1788,6 +1802,8 @@ void StreamPass::transformStream() {
           // Add the used stream id to the dynamic instruction.
           NewDynamicInst->addUsedStreamId(UsedStream->getStreamId());
           auto UsedStreamInst = UsedStream->getInst();
+          // Inform the used stream that the current entry is used.
+          this->FuncSE->access(UsedStream);
           auto UsedStreamInstIter = ActiveStreamInstMap.find(UsedStreamInst);
           if (UsedStreamInstIter != ActiveStreamInstMap.end()) {
             RegDeps.emplace_back(nullptr, UsedStreamInstIter->second);
