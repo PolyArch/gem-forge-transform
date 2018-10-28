@@ -37,6 +37,7 @@ message StreamHistory {
     message HistoryEntry {
         bool valid = 1;
         uint64 addr = 2;
+        bool used = 3;
     }
     uint64 id = 1;
     repeated HistoryEntry history = 2;

@@ -87,6 +87,7 @@ void FunctionalStream::configure(DataGraph *DG) {
   this->Pattern.configure();
   this->CurrentIdx = InvalidIdx;
   this->CurrentIdx++;
+  this->CurrentEntryUsed = false;
   this->update(DG);
   DEBUG(llvm::errs() << "Configured ");
   DEBUG(this->DEBUG_DUMP(llvm::errs()));
@@ -98,7 +99,25 @@ void FunctionalStream::step(DataGraph *DG) {
   static int StackDepth = 0;
   StackDepth++;
 
+  /**
+   * Remember to update the history entry before we step.
+   * Note that our idx starts from 1.
+   */
+  assert(this->CurrentIdx != InvalidIdx &&
+         "Invalid current idx to be updated.");
+  if (this->ProtobufHistoryEntry.history_size() < this->CurrentIdx) {
+    this->ProtobufHistoryEntry.add_history();
+  }
+  assert(this->ProtobufHistoryEntry.history_size() == this->CurrentIdx &&
+         "Mismatch between history size and the current idx.");
+  auto History =
+      this->ProtobufHistoryEntry.mutable_history(this->CurrentIdx - 1);
+  History->set_valid(this->IsAddressValid);
+  History->set_addr(this->CurrentAddress);
+  History->set_used(this->CurrentEntryUsed);
+
   this->CurrentIdx++;
+  this->CurrentEntryUsed = false;
   this->update(DG);
   DEBUG(llvm::errs() << "Stpped ");
   DEBUG(this->DEBUG_DUMP(llvm::errs()));
@@ -119,6 +138,12 @@ void FunctionalStream::step(DataGraph *DG) {
   }
 
   StackDepth--;
+}
+
+void FunctionalStream::access() {
+  assert(this->CurrentIdx != InvalidIdx &&
+         "Access when there is no valid entry.");
+  this->CurrentEntryUsed = true;
 }
 
 void FunctionalStream::updateLoadedValue(DataGraph *DG,
@@ -177,8 +202,8 @@ void FunctionalStream::endStream() {
   for (size_t Idx = 0, NumHistory = this->ProtobufHistoryEntry.history_size();
        Idx < NumHistory; ++Idx) {
     const auto &History = this->ProtobufHistoryEntry.history(Idx);
-    this->HistoryTextFStream << History.valid() << ' ' << std::hex
-                             << History.addr() << '\n';
+    this->HistoryTextFStream << History.valid() << ' ' << History.used() << ' '
+                             << std::hex << History.addr() << '\n';
   }
   this->HistoryTextFStream << "-----------------------\n";
 
@@ -217,22 +242,6 @@ void FunctionalStream::update(DataGraph *DG) {
      */
     this->IsValueValid = false;
   }
-
-  /**
-   * Remember to update the history entry.
-   * Note that our idx starts from 1.
-   */
-  assert(this->CurrentIdx != InvalidIdx &&
-         "Invalid current idx to be updated.");
-  if (this->ProtobufHistoryEntry.history_size() < this->CurrentIdx) {
-    this->ProtobufHistoryEntry.add_history();
-  }
-  assert(this->ProtobufHistoryEntry.history_size() == this->CurrentIdx &&
-         "Mismatch between history size and the current idx.");
-  auto History =
-      this->ProtobufHistoryEntry.mutable_history(this->CurrentIdx - 1);
-  History->set_valid(this->IsAddressValid);
-  History->set_addr(this->CurrentAddress);
 }
 
 void FunctionalStream::updateRecursively(DataGraph *DG) {

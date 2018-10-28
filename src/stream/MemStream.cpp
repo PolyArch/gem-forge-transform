@@ -60,6 +60,21 @@ void MemStream::searchAddressComputeInstructions(
   }
 }
 
+bool MemStream::isCandidate() const {
+  // I have to contain no circle to be a candidate.
+  if (this->AddrDG.hasCircle()) {
+    return false;
+  }
+  if (this->AddrDG.hasPHINodeInComputeInsts()) {
+    return false;
+  }
+  if (this->BaseStepRootStreams.size() > 1) {
+    // More than 1 step streams.
+    return false;
+  }
+  return true;
+}
+
 void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
   this->AddrDG.format(OStream);
 }

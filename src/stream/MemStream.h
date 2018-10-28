@@ -74,11 +74,7 @@ public:
     return this->AddressFunctionName;
   }
 
-  bool isCandidate() const override {
-    // I have to contain no circle to be a candidate.
-    return (!this->AddrDG.hasCircle()) &&
-           (!this->AddrDG.hasPHINodeInComputeInsts());
-  }
+  bool isCandidate() const override;
 
   const AddressDataGraph &getAddressDataGraph() const { return this->AddrDG; }
 

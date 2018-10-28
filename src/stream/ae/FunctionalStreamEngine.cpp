@@ -33,6 +33,13 @@ void FunctionalStreamEngine::endStream(Stream *S) {
   }
 }
 
+void FunctionalStreamEngine::access(Stream *S) {
+  auto FS = this->getNullableFunctionalStream(S);
+  if (FS != nullptr) {
+    FS->access();
+  }
+}
+
 FunctionalStream *
 FunctionalStreamEngine::getOrInitializeFunctionalStream(Stream *S) {
   auto Iter = this->StreamMap.find(S);
