@@ -33,6 +33,9 @@ class Benchmark(object):
 
     def __init__(self, name, raw_bc, links, args=None, trace_func=None,
                  trace_lib='Protobuf', lang='C', standalone=1):
+        # Initialize the result directory.
+        Util.call_helper(
+            ['mkdir', '-p', C.LLVM_TDG_RESULT_DIR])
         self.name = name
         self.raw_bc = raw_bc
         self.links = links
@@ -75,6 +78,9 @@ class Benchmark(object):
             self.get_replay_bc(),
         ]
         Util.call_helper(clean_cmd)
+
+    def debug(self, msg):
+        print('> {name} <: {msg}'.format(name=self.get_name(), msg=msg))
 
     def get_name(self):
         assert('get_name is not implemented by derived class')
@@ -127,8 +133,6 @@ class Benchmark(object):
     def get_results(self, transform_pass):
         results = list()
         name = self.get_name()
-        Util.call_helper(
-            ['mkdir', '-p', C.LLVM_TDG_RESULT_DIR])
         tdgs = self.get_tdgs(transform_pass)
         for tdg in tdgs:
             results.append(self.gem5_config.get_result(tdg))
@@ -356,50 +360,67 @@ class Benchmark(object):
             result,
         ])
 
-    def simulate_hoffman2(self, tdg, result, debugs=[]):
+    def simulate_hoffman2(self, tdg, result, scp=True, debugs=[]):
         _, tdg_name = os.path.split(tdg)
         hoffman2_ssh_tdg = os.path.join(C.HOFFMAN2_SSH_SCRATCH, tdg_name)
         hoffman2_tdg = os.path.join(C.HOFFMAN2_SCRATCH, tdg_name)
         print('# SCP tdg {tdg}.'.format(tdg=tdg_name))
-        Util.call_helper([
-            'scp',
-            tdg,
-            hoffman2_ssh_tdg
-        ])
+        if scp:
+            Util.call_helper([
+                'scp',
+                tdg,
+                hoffman2_ssh_tdg
+            ])
         tdg_cache = tdg + '.cache'
         tdg_cache_name = tdg_name + '.cache'
         hoffman2_ssh_tdg_cache = os.path.join(
             C.HOFFMAN2_SSH_SCRATCH, tdg_cache_name)
         print('# SCP tdg cache {tdg}.'.format(tdg=tdg_cache_name))
-        Util.call_helper([
-            'scp',
-            tdg_cache,
-            hoffman2_ssh_tdg_cache
-        ])
+        if scp:
+            Util.call_helper([
+                'scp',
+                tdg_cache,
+                hoffman2_ssh_tdg_cache
+            ])
         tdg_extra = tdg + '.extra'
         tdg_extra_name = tdg_name + '.extra'
         hoffman2_ssh_tdg_extra = os.path.join(
             C.HOFFMAN2_SSH_SCRATCH, tdg_extra_name)
         print('# SCP tdg extra {tdg}.'.format(tdg=tdg_extra_name))
-        Util.call_helper([
-            'scp',
-            '-r',
-            tdg_extra,
-            hoffman2_ssh_tdg_extra
-        ])
+        if scp:
+            Util.call_helper([
+                'scp',
+                '-r',
+                tdg_extra,
+                hoffman2_ssh_tdg_extra
+            ])
         replay_bin_name = self.get_replay_bin()
         replay_bin = os.path.join(self.get_run_path(), replay_bin_name)
         hoffman2_ssh_replay_bin = os.path.join(
             C.HOFFMAN2_SSH_SCRATCH, replay_bin_name)
         hoffman2_replay_bin = os.path.join(C.HOFFMAN2_SCRATCH, replay_bin_name)
-        Util.call_helper([
-            'scp',
-            '-r',
-            replay_bin,
-            hoffman2_ssh_replay_bin,
-        ])
+        if self.standalone != 1:
+            if scp:
+                Util.call_helper([
+                    'scp',
+                    '-r',
+                    replay_bin,
+                    hoffman2_ssh_replay_bin,
+                ])
         # Create the command.
         gem5_out_dir = self.gem5_config.get_config(tdg_name)
         gem5_command = self.get_gem5_simulate_command(
             hoffman2_tdg, hoffman2_replay_bin, gem5_out_dir, debugs, True)
         return gem5_command
+
+    def get_hoffman2_retrive_cmd(self, tdg, result):
+        # Create the retrive command.
+        _, tdg_name = os.path.split(tdg)
+        gem5_out_dir = self.gem5_config.get_config(tdg_name)
+        retrive_cmd = [
+            'scp',
+            '-r',
+            os.path.join(C.HOFFMAN2_SSH_SCRATCH, gem5_out_dir, '*'),
+            self.gem5_config.get_gem5_dir(tdg),
+        ]
+        return retrive_cmd

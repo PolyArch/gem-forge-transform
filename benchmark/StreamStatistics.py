@@ -1,6 +1,8 @@
 import prettytable
 import Util
 
+from Utils import Gem5RegionStats
+
 
 class Access:
     def __init__(self, line):

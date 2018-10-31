@@ -1,5 +1,4 @@
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(LLVM_SRC_LIB_DIR "/home/zhengrong/Documents/llvm-6.0/llvm/lib")
 
 # First dive into trace, as it will give us PROTOBUF variables.
@@ -12,7 +11,7 @@ protobuf_generate_cpp(TDG_PROTOBUF_SRCS TDG_PROTOBUF_HDRS
 )
 
 # The llvm pass shared library.
-add_library(LLVMTDGPass MODULE
+add_library(LLVMTDGPass SHARED
     trace/TracePass.cpp
     trace/TraceParserGZip.cpp
     trace/GZipUtil.cpp
@@ -57,10 +56,6 @@ add_library(LLVMTDGPass MODULE
     # StreamAnalyzeTrace.cpp
 )
 
-# Make sure LLVMTDGPass is dependent on protobuf tracer library,
-# as we need the generated protobuf src file.
-# add_dependencies(LLVMTDGPass TracerProtobuf)
-# add_dependencies(LLVMTDGPass ProtobufStreamMessage)
 
 # Make sure we can find the protobuf headers.
 target_include_directories(LLVMTDGPass 

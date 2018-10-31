@@ -22,11 +22,10 @@ llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel(
         clEnumValN(DataGraph::DataGraphDetailLv::INTEGRATED, "integrated",
                    "All")));
 
-static llvm::cl::opt<std::string>
-    OutputDataGraphFileName("output-datagraph",
-                            llvm::cl::desc("Output datagraph file name."));
+llvm::cl::opt<std::string> GemForgeOutputDataGraphFileName(
+    "output-datagraph", llvm::cl::desc("Output datagraph file name."));
 
-static llvm::cl::opt<std::string> OutputExtraFolderPath(
+llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath(
     "output-extra-folder-path",
     llvm::cl::desc("Output extra information folder path, excluding the /"));
 
@@ -101,14 +100,7 @@ public:
 ReplayTrace::ReplayTrace(char _ID)
     : llvm::ModulePass(_ID), Trace(nullptr), OutTraceName("llvm.tdg"),
       OutputExtraFolderPath("llvm.tdg.extra"), Serializer(nullptr),
-      CacheWarmerPtr(nullptr) {
-  if (OutputDataGraphFileName.getNumOccurrences() == 1) {
-    this->OutTraceName = OutputDataGraphFileName.getValue();
-  }
-  if (::OutputExtraFolderPath.getNumOccurrences() == 1) {
-    this->OutputExtraFolderPath = ::OutputExtraFolderPath.getValue();
-  }
-}
+      CacheWarmerPtr(nullptr) {}
 
 ReplayTrace::~ReplayTrace() {}
 
@@ -168,6 +160,13 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
     assert(DataGraphDetailLevel >= DataGraph::DataGraphDetailLv::STANDALONE &&
            "User specified detail level is lower than standalone.");
     this->DGDetailLevel = DataGraphDetailLevel;
+  }
+
+  if (GemForgeOutputDataGraphFileName.getNumOccurrences() == 1) {
+    this->OutTraceName = GemForgeOutputDataGraphFileName.getValue();
+  }
+  if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
+    this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
   }
 
   DEBUG(llvm::errs() << "Initialize the datagraph with detail level "

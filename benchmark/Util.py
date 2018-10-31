@@ -8,7 +8,6 @@ import sys
 import unittest
 import time
 import traceback
-import prettytable
 
 
 def call_helper(cmd):
@@ -301,135 +300,6 @@ if __name__ == '__main__':
     unittest.main()
 
 
-class Gem5Stats:
-    def __init__(self, benchmark, fn):
-        self.benchmark = benchmark
-        self.fn = fn
-        self.stats = dict()
-        with open(self.fn, 'r') as stats:
-            for line in stats:
-                if len(line) == 0:
-                    continue
-                if line[0] == '-':
-                    continue
-                fields = line.split()
-                try:
-                    self.stats[fields[0]] = float(fields[1])
-                except Exception as e:
-                    pass
-                    # print('ignore line {line}'.format(line=line))
-
-    def get_default(self, key, default):
-        if key in self.stats:
-            return self.stats[key]
-        else:
-            return default
-
-    def __getitem__(self, key):
-        return self.stats[key]
-
-
-class Gem5RegionStats:
-    def __init__(self, benchmark, fn):
-        self.benchmark = benchmark
-        self.fn = fn
-        self.regions = dict()
-        self.region_parent = dict()
-        tail = None
-        if isinstance(fn, list):
-            # Multiple region stat files to merge.
-            assert(fn)
-            self.parse(fn[0])
-            if len(fn) > 1:
-                tail = Gem5RegionStats(benchmark, fn[1:])
-        else:
-            # This is a single file to process.
-            self.parse(fn)
-        if tail is not None:
-            # Merge the other stats.
-            self.merge(tail)
-
-    def __getitem__(self, region):
-        return self.regions[region]
-
-    def get_default(self, region, key, default):
-        if region in self.regions:
-            if key in self.regions[region]:
-                return self.regions[region][key]
-        return default
-
-    def parse(self, fn):
-        with open(fn, 'r') as stats:
-            region = None
-            region_id = None
-            for line in stats:
-                fields = line.split()
-                if fields[0] == '----':
-                    region_id = fields[1]
-                    self.regions[region_id] = dict()
-                    region = self.regions[region_id]
-                elif fields[0] == '-parent':
-                    if len(fields) == 2:
-                        # This region has a parent.
-                        self.region_parent[region_id] = fields[1]
-                    else:
-                        # This region has no parent.
-                        pass
-                else:
-                    stat_id = fields[0]
-                    value = float(fields[1])
-                    region[stat_id] = value
-
-    def merge(self, other):
-        assert(self.benchmark == other.benchmark)
-        # Merge region parent.
-        for region in other.region_parent:
-            parent = other.region_parent[region]
-            if region in self.region_parent:
-                assert(self.region_parent[region] == parent)
-            else:
-                self.region_parent[region] = parent
-        # Merge region stats.
-        for region in other.regions:
-            stats = other.regions[region]
-            if region in self.regions:
-                # Add the stats together.
-                my_stats = self.regions[region]
-                for stat_id in stats:
-                    # assert(stat_id in my_stats)
-                    if stat_id in my_stats:
-                        my_stats[stat_id] += stats[stat_id]
-                    else:
-                        my_stats[stat_id] = stats[stat_id]
-            else:
-                # Copy other's stats.
-                self.regions[region] = stats
-
-    def print_regions(self):
-        children = dict()
-        roots = list()
-        for region in self.regions:
-            if region in self.region_parent:
-                parent = self.region_parent[region]
-                if parent not in children:
-                    children[parent] = list()
-                children[parent].append(region)
-            else:
-                # This region has no parent.
-                roots.append(region)
-        stack = list()
-        for root in roots:
-            stack.append((root, 0))
-        print('================= Regions Tree ====================')
-        while stack:
-            region, level = stack.pop()
-            print(('  ' * level) + region)
-            if region in children:
-                for child in children[region]:
-                    stack.append((child, level + 1))
-        print('================= Regions Tree ====================')
-
-
 class Variable:
     def __init__(self, name, baseline_key, test_key, color):
         self.name = name
@@ -662,6 +532,7 @@ class RegionAggStats:
 
     @staticmethod
     def print_table(selves):
+        import prettytable
         title = [
             'REGION',
             'INSTS',
