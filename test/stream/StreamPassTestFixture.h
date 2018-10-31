@@ -15,6 +15,21 @@ protected:
    */
   virtual void setUpEnvironment(const std::string &InputSourceFile);
 
+  template <typename T>
+  void testTwoSets(const std::unordered_set<T> &Expected,
+                   const std::unordered_set<T> &Actual,
+                   std::function<std::string(const T &)> Formatter) {
+    EXPECT_EQ(Expected.size(), Actual.size());
+    for (const auto &E : Expected) {
+      EXPECT_EQ(1, Actual.count(E))
+          << "Missing element " << Formatter(E) << '\n';
+    }
+    for (const auto &E : Actual) {
+      EXPECT_EQ(1, Expected.count(E))
+          << "Extra element " << Formatter(E) << '\n';
+    }
+  }
+
   using PlanT = StreamTransformPlan::PlanT;
 
   llvm::LLVMContext Context;
@@ -22,6 +37,7 @@ protected:
   StreamPass Pass;
 
   std::unique_ptr<TestInput> Input;
+  std::string OutputExtraFolder;
 };
 
 #endif

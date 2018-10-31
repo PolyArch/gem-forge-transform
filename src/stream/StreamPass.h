@@ -37,6 +37,9 @@ public:
   const std::unordered_set<Stream *> &getUsedStreams() const {
     return this->UsedStreams;
   }
+  const std::unordered_set<Stream *> &getStepStreams() const {
+    return this->StepStreams;
+  }
   Stream *getParamStream() const { return this->ParamStream; }
 
   void addUsedStream(Stream *UsedStream) {
@@ -45,6 +48,7 @@ public:
 
   void planToDelete() { this->Plan = DELETE; }
   void planToStep(Stream *S) {
+    this->StepStreams.insert(S);
     this->ParamStream = S;
     this->Plan = STEP;
   }
@@ -59,6 +63,7 @@ public:
 
 private:
   std::unordered_set<Stream *> UsedStreams;
+  std::unordered_set<Stream *> StepStreams;
   Stream *ParamStream;
 };
 
@@ -140,8 +145,7 @@ public:
   static char ID;
   StreamPass(char _ID = ID)
       : ReplayTrace(_ID), DynInstCount(0), DynMemInstCount(0), StepInstCount(0),
-        ConfigInstCount(0), DeletedInstCount(0) {
-  }
+        ConfigInstCount(0), DeletedInstCount(0) {}
 
   /**
    * Type define.
