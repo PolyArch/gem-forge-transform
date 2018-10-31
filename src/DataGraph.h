@@ -14,6 +14,10 @@
 #include <unordered_set>
 #include <vector>
 
+extern llvm::cl::opt<std::string> TraceFileName;
+extern llvm::cl::opt<std::string> TraceFileFormat;
+extern llvm::cl::opt<std::string> InstUIDFileName;
+
 /**
  * AddrToMemAccessMap maintains a map from memory address to the last access
  * instruction's id.

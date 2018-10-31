@@ -1,11 +1,13 @@
 import os
 import subprocess
 import multiprocessing
+import prettytable
 
 import Constants as C
 import Util
 import StreamStatistics
 from Benchmark import Benchmark
+from Utils import McPAT
 
 
 class MachSuiteBenchmark(Benchmark):
@@ -52,6 +54,12 @@ class MachSuiteBenchmark(Benchmark):
     def get_name(self):
         return 'mach.{b}.{sub}'.format(
             b=self.benchmark_name, sub=self.subbenchmark_name)
+
+    def get_baseline_result(self):
+        return os.path.join(
+            C.LLVM_TDG_RESULT_DIR,
+            self.get_name() + '.baseline.txt'
+        )
 
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
@@ -136,7 +144,6 @@ class MachSuiteBenchmark(Benchmark):
 
     def run_baseline(self):
         GEM5_OUT_DIR = '{cpu_type}.baseline'.format(cpu_type=C.CPU_TYPE)
-        Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
 
         binary = self.get_baseline_binary()
         gem5_cmd = [
@@ -149,6 +156,7 @@ class MachSuiteBenchmark(Benchmark):
                 ISSUE_WIDTH=C.ISSUE_WIDTH),
             '--llvm-store-queue-size={STORE_QUEUE_SIZE}'.format(
                 STORE_QUEUE_SIZE=C.STORE_QUEUE_SIZE),
+            '--llvm-mcpat=1',
             '--caches',
             '--l2cache',
             '--cpu-type={cpu_type}'.format(cpu_type=C.CPU_TYPE),
@@ -164,16 +172,14 @@ class MachSuiteBenchmark(Benchmark):
         return os.path.join(os.getcwd(), GEM5_OUT_DIR)
 
     def baseline(self):
-
-        Util.call_helper(['mkdir', '-p', 'result'])
-
         os.chdir(self.work_path)
         self.build_baseline()
         gem5_outdir = self.run_baseline()
         # Copy the result out.
         os.chdir(self.cwd)
         Util.call_helper(
-            ['cp', os.path.join(gem5_outdir, 'stats.txt'), self.get_result('baseline')])
+            ['cp', os.path.join(gem5_outdir, 'stats.txt'), self.get_baseline_result()])
+        return gem5_outdir
 
     def trace(self):
         os.chdir(self.work_path)
@@ -196,21 +202,6 @@ class MachSuiteBenchmark(Benchmark):
 
         os.chdir(self.cwd)
 
-    # def simulate(self, tdg, result, debugs):
-    #     os.chdir(self.work_path)
-    #     gem5_outdir = self.gem5_replay(
-    #         standalone=0,
-    #         output_tdg=tdg,
-    #         debugs=debugs,
-    #     )
-    #     Util.call_helper([
-    #         'cp',
-    #         # os.path.join(gem5_outdir, 'stats.txt'),
-    #         os.path.join(gem5_outdir, 'region.stats.txt'),
-    #         result,
-    #     ])
-    #     os.chdir(self.cwd)
-
     def statistics(self):
         os.chdir(self.work_path)
         debugs = [
@@ -227,49 +218,49 @@ class MachSuiteBenchmark(Benchmark):
 class MachSuiteBenchmarks:
 
     BENCHMARK_PARAMS = {
-        # "bfs": [
-        #     "queue",
-        #     #     # "bulk" # not working
-        # ],
-        # "aes": [
-        #     "aes"
-        # ],
-        # "stencil": [
-        #     "stencil2d",
-        #     "stencil3d"
-        # ],
-        # "md": [
-        #     "grid",
-        #     "knn"
-        # ],
+        "bfs": [
+            "queue",
+            #     # "bulk" # not working
+        ],
+        "aes": [
+            "aes"
+        ],
+        "stencil": [
+            "stencil2d",
+            "stencil3d"
+        ],
+        "md": [
+            "grid",
+            "knn"
+        ],
         "fft": [
             "strided",
             "transpose"
         ],
-        # "viterbi": [
-        #     "viterbi"
-        # ],
-        # "sort": [
-        #     # "radix",
-        #     "merge"
-        # ],
-        # "spmv": [
-        #     "ellpack",
-        #     "crs"
-        # ],
-        # "kmp": [
-        #     "kmp"
-        # ],
-        # #  "backprop": [
-        # #     "backprop" # Not working.
-        # #  ],
-        # "gemm": [
-        #     "blocked",
-        #     "ncubed"
-        # ],
-        # "nw": [
-        #     "nw"
-        # ]
+        "viterbi": [
+            "viterbi"
+        ],
+        "sort": [
+            # "radix",
+            "merge"
+        ],
+        "spmv": [
+            "ellpack",
+            "crs"
+        ],
+        "kmp": [
+            "kmp"
+        ],
+        #  "backprop": [
+        #     # "backprop" # Not working.
+        #  ],
+        "gemm": [
+            "blocked",
+            "ncubed"
+        ],
+        "nw": [
+            "nw"
+        ]
     }
 
     def __init__(self, folder):
@@ -324,3 +315,112 @@ class MachSuiteBenchmarks:
     #                 'baseline', 'replay', names)
     # benchmarks.draw('MachSuite.standalone.replay.pdf',
     #                 'standalone', 'replay', names)
+
+
+def show_difference(all_mcpats):
+    baseline_sums = dict()
+    replay_sums = dict()
+    for b in all_mcpats:
+        baseline_mcpat, replay_mcpat = all_mcpats[b]
+        for component in baseline_mcpat.components:
+            for idx in xrange(len(baseline_mcpat.components[component])):
+                baseline_c = baseline_mcpat.components[component][idx]
+                replay_c = replay_mcpat.components[component][idx]
+                name = baseline_c.get_name()
+                if name not in baseline_sums:
+                    baseline_sums[name] = 0.0
+                    replay_sums[name] = 0.0
+                baseline_sums[name] += baseline_c.dynamic_power
+                replay_sums[name] += replay_c.dynamic_power
+    table = prettytable.PrettyTable([
+        'component',
+        'baseline',
+        'replay',
+        'diff',
+    ])
+    for name in baseline_sums:
+        diff = '/'
+        if baseline_sums[name] != 0.0:
+            diff = (replay_sums[name] - baseline_sums[name]
+                    ) / baseline_sums[name] * 100
+        row = [
+            name,
+            baseline_sums[name],
+            replay_sums[name],
+            diff,
+        ]
+        table.add_row(row)
+    table.float_format = '.2'
+    print(table)
+
+
+if __name__ == '__main__':
+    # Main function will run the baseline.
+    suite = MachSuiteBenchmarks('./MachSuite')
+    benchmarks = suite.get_benchmarks()
+
+    sum_table = prettytable.PrettyTable([
+        'benchmark',
+        'baseline',
+        'replay',
+    ])
+
+    baseline_replay_mcpats = dict()
+    replay_stream_mcpats = dict()
+
+    for benchmark in benchmarks:
+        # benchmark.baseline()
+
+        table = prettytable.PrettyTable([
+            'component',
+            'baseline',
+            'replay',
+        ])
+        baseline_gem5_dir = os.path.join(
+            benchmark.get_run_path(),
+            '{cpu_type}.baseline'.format(cpu_type=C.CPU_TYPE))
+        baseline_mcpat = McPAT.McPAT(
+            os.path.join(baseline_gem5_dir, 'mcpat.txt'))
+
+        # Only one tdg for MachSuite.
+        replay_tdg = benchmark.get_tdgs('replay')[0]
+        replay_gem5_dir = os.path.join(
+            benchmark.get_run_path(),
+            benchmark.gem5_config.get_gem5_dir(replay_tdg)
+        )
+        replay_mcpat = McPAT.McPAT(os.path.join(replay_gem5_dir, 'mcpat.txt'))
+
+        stream_tdg = benchmark.get_tdgs('stream')[0]
+        stream_gem5_dir = os.path.join(
+            benchmark.get_run_path(),
+            benchmark.gem5_config.get_gem5_dir(stream_tdg)
+        )
+        stream_mcpat = McPAT.McPAT(os.path.join(stream_gem5_dir, 'mcpat.txt'))
+
+        for component in baseline_mcpat.components:
+            baseline_components = baseline_mcpat.components[component]
+            replay_components = replay_mcpat.components[component]
+            assert(len(baseline_components) == len(replay_components))
+            for i in xrange(len(baseline_components)):
+                row = [
+                    baseline_components[i].get_name(),
+                    baseline_components[i].dynamic_power,
+                    replay_components[i].dynamic_power,
+                ]
+                table.add_row(row)
+        print(table.get_string(title=benchmark.get_name()))
+        row = [
+            benchmark.get_name(),
+            baseline_mcpat.components['core'][0].dynamic_power,
+            replay_mcpat.components['core'][0].dynamic_power,
+        ]
+        sum_table.add_row(row)
+
+        baseline_replay_mcpats[benchmark.get_name()] = (
+            baseline_mcpat, replay_mcpat)
+        replay_stream_mcpats[benchmark.get_name()] = (
+            replay_mcpat, stream_mcpat)
+
+    print(sum_table.get_string(title='sum'))
+    show_difference(baseline_replay_mcpats)
+    show_difference(replay_stream_mcpats)

@@ -9,12 +9,12 @@
 #include <fstream>
 #include <vector>
 
-static llvm::cl::opt<std::string> TraceFileName("trace-file",
-                                                llvm::cl::desc("Trace file."));
-static llvm::cl::opt<std::string>
+llvm::cl::opt<std::string> TraceFileName("trace-file",
+                                         llvm::cl::desc("Trace file."));
+llvm::cl::opt<std::string>
     TraceFileFormat("trace-format", llvm::cl::desc("Trace file format."));
 
-static llvm::cl::opt<std::string> InstUIDFileName(
+llvm::cl::opt<std::string> InstUIDFileName(
     "datagraph-inst-uid-file",
     llvm::cl::desc("Inst UID Map file for datagraph building."));
 

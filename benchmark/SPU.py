@@ -181,8 +181,6 @@ class SPUBenchmark(Benchmark):
 
         os.chdir(self.cwd)
 
-    def debug(self, msg):
-        print('> {name} <: {msg}'.format(name=self.get_name(), msg=msg))
 
 
 class SPUBenchmarks:

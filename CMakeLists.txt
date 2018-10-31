@@ -39,5 +39,10 @@ include_directories(
     )
 link_directories(${LLVM_LIBRARY_DIRS})
 
+# Generate the compile commands.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_subdirectory(src)
-# add_subdirectory(test)
+add_subdirectory(test)
+
+enable_testing()
+add_test(NAME whatever COMMAND GemForgeTest)

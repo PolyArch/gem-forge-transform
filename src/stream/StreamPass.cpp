@@ -22,6 +22,7 @@ std::string StreamTransformPlan::format() const {
 
 bool StreamPass::initialize(llvm::Module &Module) {
   bool Ret = ReplayTrace::initialize(Module);
+  this->AddressModulePath = this->OutputExtraFolderPath + "/stream.addr.ll";
   this->MemorizedStreamInst.clear();
   return Ret;
 }
@@ -1226,6 +1227,9 @@ void StreamPass::buildAddressInterpreterForChosenStreams() {
   std::error_code EC;
   llvm::raw_fd_ostream ModuleFStream(this->AddressModulePath, EC,
                                      llvm::sys::fs::OpenFlags::F_None);
+  llvm::outs() << "AddressModulePath " << this->AddressModulePath << '\n';
+  assert(!ModuleFStream.has_error() &&
+         "Failed to open the address computation module file.");
   AddressModule->print(ModuleFStream, nullptr);
   ModuleFStream.close();
 
@@ -1319,6 +1323,21 @@ void StreamPass::makeStreamTransformPlan() {
   std::unordered_set<const llvm::Instruction *> DeleteCandidates;
   std::unordered_set<const llvm::Instruction *> DeletedInsts;
   std::list<const llvm::Instruction *> NewlyDeletedQueue;
+  /**
+   * Initialize the transform plan for all the instructions
+   * in the loop.
+   */
+  for (auto &LoopInstStreamEntry : this->ChosenLoopInstStream) {
+    auto Loop = LoopInstStreamEntry.first;
+    for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+         BBIter != BBEnd; ++BBIter) {
+      auto BB = *BBIter;
+      for (auto InstIter = BB->begin(), InstEnd = BB->end();
+           InstIter != InstEnd; ++InstIter) {
+        this->getOrCreatePlan(&*InstIter);
+      }
+    }
+  }
 
   for (auto &LoopInstStreamEntry : this->ChosenLoopInstStream) {
 
@@ -1470,7 +1489,7 @@ void StreamPass::makeStreamTransformPlan() {
         }
       }
     }
-    DEBUG(this->DEBUG_PLAN_FOR_LOOP(OutMostLoop));
+    this->DEBUG_PLAN_FOR_LOOP(OutMostLoop);
   }
 }
 

@@ -15,6 +15,8 @@
 #include <string>
 
 extern llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel;
+extern llvm::cl::opt<std::string> GemForgeOutputDataGraphFileName;
+extern llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath;
 
 class ReplayTrace : public llvm::ModulePass {
 public:

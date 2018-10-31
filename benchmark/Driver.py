@@ -3,10 +3,13 @@ import MachSuite
 import TestHelloWorld
 import SPU
 import Graph500
+import CortexSuite
 
 import Util
 import StreamStatistics
 import Constants as C
+
+from Utils import BenchmarkResult
 
 import os
 
@@ -142,6 +145,7 @@ class Driver:
 
     def simulate_hoffman2(self, benchmarks):
         hoffman2_commands = list()
+        retrive_commands = list()
         for benchmark in benchmarks:
             for transform_pass in options.transform_passes:
                 name = benchmark.get_name()
@@ -153,8 +157,12 @@ class Driver:
                         if i not in self.options.trace_id:
                             # Ignore those traces if not specified.
                             continue
-                    hoffman2_commands.append(
-                        benchmark.simulate_hoffman2(tdgs[i], results[i]))
+                    hoffman2_command = benchmark.simulate_hoffman2(
+                        tdgs[i], results[i], False)
+                    hoffman2_commands.append(hoffman2_command)
+                    retrive_command = benchmark.get_hoffman2_retrive_cmd(
+                        tdgs[i], results[i])
+                    retrive_commands.append(retrive_command)
         for i in xrange(len(hoffman2_commands)):
             print('{i} {cmd}'.format(i=i, cmd=' '.join(hoffman2_commands[i])))
             # Hoffman2 index starts from 1.
@@ -163,6 +171,14 @@ class Driver:
                 C.HOFFMAN2_SSH_SCRATCH, command_file)
             tmp_command_file = os.path.join('/tmp', command_file)
             with open(tmp_command_file, 'w') as f:
+                for j in xrange(len(hoffman2_commands[i])):
+                    if ' ' in hoffman2_commands[i][j]:
+                        idx = hoffman2_commands[i][j].find('=')
+                        hoffman2_commands[i][j] = (
+                            hoffman2_commands[i][j][0:idx+1] + '"' +
+                            hoffman2_commands[i][j][idx+1:-1] + '"'
+                        )
+
                 f.write(' '.join(hoffman2_commands[i]))
             print('# SCP command file {i}'.format(i=i+1))
             Util.call_helper([
@@ -170,7 +186,11 @@ class Driver:
                 tmp_command_file,
                 hoffman2_command_file,
             ])
-            
+        tmp_retrive_command_file = os.path.join('/tmp', 'retrive_hoffman2.sh')
+        with open(tmp_retrive_command_file, 'w') as f:
+            for cmd in retrive_commands:
+                f.write(' '.join(cmd))
+                f.write('\n')
 
 
 build_datagraph_debugs = {
@@ -220,7 +240,10 @@ simulate_datagraph_debugs = {
         # 'LLVMTraceCPU',
     ],
     'inline-stream': [],
-    'replay': [],
+    'replay': [
+        # 'TDGLoadStoreQueue',
+        # 'LLVMTraceCPU',
+    ],
     'adfa': [],
     'simd': [],
 }
@@ -237,6 +260,8 @@ def choose_suite(options):
         return TestHelloWorld.TestHelloWorldBenchmarks()
     elif options.suite == 'graph500':
         return Graph500.Graph500Benchmarks()
+    elif options.suite == 'cortex':
+        return CortexSuite.CortexSuite()
     else:
         print('Unknown suite ' + options.suite)
         assert(False)
@@ -246,6 +271,12 @@ def main(options):
     job_scheduler = Util.JobScheduler(options.cores, 1)
     test_suite = choose_suite(options)
     benchmarks = test_suite.get_benchmarks()
+
+    # Filter out other benchmarks not specified by the user.
+    if options.benchmark is not None:
+        benchmarks = [b for b in benchmarks if b.get_name()
+                      in options.benchmark]
+
     driver = Driver(options)
     for benchmark in benchmarks:
         if options.build:
@@ -272,71 +303,81 @@ def main(options):
     if options.simulate and options.hoffman2:
         driver.simulate_hoffman2(benchmarks)
 
-    benchmark_stream_statistics = dict()
+    suite_result = BenchmarkResult.SuiteResult(
+        benchmarks, options.transform_passes)
+    energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
+    time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
+    suite_result.compare([energy_attribute, time_attribute])
 
-    for benchmark in benchmarks:
+    # benchmark_stream_statistics = dict()
 
-        stream_passes = ['stream', 'stream-prefetch']
-        stream_pass_specified = None
-        stream_tdgs = list()
-        replay_results = list()
-        stream_results = list()
-        for p in stream_passes:
-            if p in options.transform_passes:
-                stream_pass_specified = p
-                stream_tdgs = benchmark.get_tdgs(p)
-                replay_results = benchmark.get_results('replay')
-                stream_results = benchmark.get_results(p)
-                break
+    # for benchmark in benchmarks:
 
-        if stream_pass_specified is not None:
-            filtered_trace_ids = list()
-            for i in xrange(len(stream_tdgs)):
-                if options.trace_id:
-                    if i not in options.trace_id:
-                        # Ignore those traces if not specified
-                        continue
-                # Hack here to skip some traces.
-                if 'leela_s' in benchmark.get_name():
-                    if i in {2, 4, 5, 9}:
-                        continue
-                filtered_trace_ids.append(i)
-            filtered_stream_tdg_stats = [
-                stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
-            filtered_replay_results = [replay_results[x]
-                                       for x in filtered_trace_ids]
-            filtered_stream_results = [stream_results[x]
-                                       for x in filtered_trace_ids]
+    #     stream_passes = ['stream', 'stream-prefetch']
+    #     stream_pass_specified = None
+    #     stream_tdgs = list()
+    #     replay_results = list()
+    #     stream_results = list()
+    #     for p in stream_passes:
+    #         if p in options.transform_passes:
+    #             stream_pass_specified = p
+    #             stream_tdgs = benchmark.get_tdgs(p)
+    #             replay_results = benchmark.get_results('replay')
+    #             stream_results = benchmark.get_results(p)
+    #             break
 
-            stream_stats = StreamStatistics.StreamStatistics(
-                benchmark.get_name(),
-                filtered_stream_tdg_stats,
-                filtered_replay_results,
-                filtered_stream_results)
-            benchmark_stream_statistics[benchmark.get_name()] = stream_stats
-            print('-------------------------- ' + benchmark.get_name())
+    #     if stream_pass_specified is not None:
+    #         filtered_trace_ids = list()
+    #         for i in xrange(len(stream_tdgs)):
+    #             if options.trace_id:
+    #                 if i not in options.trace_id:
+    #                     # Ignore those traces if not specified
+    #                     continue
+    #             # Hack here to skip some traces.
+    #             if 'leela_s' in benchmark.get_name():
+    #                 if i in {2, 4, 5, 9}:
+    #                     continue
+    #             filtered_trace_ids.append(i)
+    #         filtered_stream_tdg_stats = [
+    #             stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
+    #         filtered_replay_results = [replay_results[x]
+    #                                    for x in filtered_trace_ids]
+    #         filtered_stream_results = [stream_results[x]
+    #                                    for x in filtered_trace_ids]
 
-    if benchmark_stream_statistics:
-        StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_loop_path(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_stream_simulation_result(
-            benchmark_stream_statistics)
+    #         stream_stats = StreamStatistics.StreamStatistics(
+    #             benchmark.get_name(),
+    #             filtered_stream_tdg_stats,
+    #             filtered_replay_results,
+    #             filtered_stream_results)
+    #         benchmark_stream_statistics[benchmark.get_name()] = stream_stats
+    #         print('-------------------------- ' + benchmark.get_name())
+
+    # if benchmark_stream_statistics:
+    #     StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_loop_path(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
+    #         benchmark_stream_statistics)
+    #     StreamStatistics.StreamStatistics.print_benchmark_stream_simulation_result(
+    #         benchmark_stream_statistics)
+
+
+def parse_benchmarks(option, opt, value, parser):
+    setattr(parser.values, option.dest, value.split(','))
 
 
 if __name__ == '__main__':
@@ -354,6 +395,8 @@ if __name__ == '__main__':
                       type='string', dest='transform_passes')
     parser.add_option('--trace-id', action='append', type='int',
                       dest='trace_id')
+    parser.add_option('--benchmark', type='string', action='callback',
+                      callback=parse_benchmarks, dest='benchmark')
     parser.add_option('-d', '--build-datagraph', action='store_true',
                       dest='build_datagraph', default=False)
     parser.add_option('-s', '--simulate', action='store_true',

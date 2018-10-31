@@ -141,7 +141,19 @@ public:
   StreamPass(char _ID = ID)
       : ReplayTrace(_ID), DynInstCount(0), DynMemInstCount(0), StepInstCount(0),
         ConfigInstCount(0), DeletedInstCount(0) {
-    this->AddressModulePath = this->OutputExtraFolderPath + "/stream.addr.ll";
+  }
+
+  /**
+   * Type define.
+   */
+  using InstTransformPlanMapT =
+      std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
+
+  /**
+   * Public accessors for unit testing.
+   */
+  const InstTransformPlanMapT &getInstTransformPlanMap() const {
+    return this->InstPlanMap;
   }
 
 protected:
@@ -248,8 +260,7 @@ protected:
   std::unordered_map<const llvm::Loop *, std::list<Stream *>>
       ChosenLoopSortedStreams;
 
-  std::unordered_map<const llvm::Instruction *, StreamTransformPlan>
-      InstPlanMap;
+  InstTransformPlanMapT InstPlanMap;
 
   std::unique_ptr<llvm::Interpreter> AddrInterpreter;
   std::unique_ptr<FunctionalStreamEngine> FuncSE;
