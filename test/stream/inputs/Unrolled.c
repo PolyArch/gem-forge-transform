@@ -4,9 +4,14 @@
 char *list[N];
 int element_size;
 
+char **bar(char *p) { return (char **)p; }
+
 void foo() {
   char *p = (char *)(&(list[N - 1]));
-  char **pp = (char **)p;
+  /**
+   * bar() is used to force clang make pp a phi node in the loop.
+   */
+  char **pp = bar(p);
   int size = element_size;
   for (int i = N - 2; i >= 0; i -= 2) {
     p -= size;

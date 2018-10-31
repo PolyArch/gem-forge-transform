@@ -19,5 +19,8 @@ void StreamTransformPassTestFixture::setUpEnvironment(
    */
   this->Input->setUpLLVMOptions("stream");
 
+  this->OutputExtraFolder =
+      this->Input->getAndCreateOutputDataGraphExtraFolder("stream");
+
   //   this->Pass.doInitialization(*this->Module);
 }

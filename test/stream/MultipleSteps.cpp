@@ -14,20 +14,27 @@ TEST_F(StreamTransformPassTestFixture, MultipleSteps) {
   std::vector<PlanT> ExpectedTransformPlanTypes = {
       PlanT::DELETE,  // phi
       PlanT::DELETE,  // phi
-      PlanT::DELETE,  // bitcast
-      PlanT::DELETE,  // gep
+      PlanT::DELETE,  // phi
+      PlanT::NOTHING, // gep
       PlanT::STORE,   // store
       PlanT::DELETE,  // bitcast
       PlanT::STEP,    // gep
       PlanT::STORE,   // store
+      PlanT::DELETE,  // bitcast
       PlanT::STEP,    // add
       PlanT::NOTHING, // icmp
       PlanT::NOTHING, // br
   };
 
+  std::unordered_map<std::string, std::unordered_set<std::string>>
+      ExpectedStepStreamsMap = {
+          {"tmp13", {"tmp6"}},
+          {"tmp11", {"tmp7", "tmp8"}},
+      };
+
   for (auto BBIter = Func->begin(), BBEnd = Func->end(); BBIter != BBEnd;
        ++BBIter) {
-    if (BBIter->getName() != "bb4") {
+    if (BBIter->getName() != "bb5") {
       continue;
     }
 
@@ -42,6 +49,23 @@ TEST_F(StreamTransformPassTestFixture, MultipleSteps) {
       EXPECT_EQ(ExpectedTransformPlanTypes[InstIdx], PlanIter->second.Plan)
           << "Mismatch transformation plan for inst "
           << Utils::formatLLVMInst(Inst) << '\n';
+
+      std::string InstName = Inst->getName();
+      if (ExpectedStepStreamsMap.count(InstName) == 0) {
+        continue;
+      }
+
+      if (PlanIter->second.Plan == PlanT::STEP) {
+        std::unordered_set<std::string> ActualStepStreams;
+        for (const auto &StepStream : PlanIter->second.getStepStreams()) {
+          ActualStepStreams.insert(StepStream->getInst()->getName());
+        }
+        this->testTwoSets<std::string>(
+            ExpectedStepStreamsMap.at(InstName), ActualStepStreams,
+            [](const std::string &E) -> std::string { return E; });
+      }
     }
+    EXPECT_EQ(ExpectedTransformPlanTypes.size(), InstIdx)
+        << "Mismatch number of instructions.\n";
   }
 }

@@ -1315,14 +1315,16 @@ void StreamPass::makeStreamTransformPlan() {
    *  c. Find all the compute instructions and mark them as delete candidates.
    *  d. Mark address/phi instruction as deleted.
    *  e. Mark S as processed.
-   * 2. Use the deleted instruction as the seed, and mark the delete candidates
-   * as deleted iff. all users of the candidate are already marked as deleted.
+   * 2. Use the deleted dependence edge as the seed, and mark the delete
+   * candidates as deleted iff. all the use edges of the candidate are already
+   * marked as deleted.
    */
   std::unordered_set<const llvm::Loop *> ProcessedLoops;
   std::list<const llvm::Loop *> LoopBFSQueue;
   std::unordered_set<const llvm::Instruction *> DeleteCandidates;
   std::unordered_set<const llvm::Instruction *> DeletedInsts;
-  std::list<const llvm::Instruction *> NewlyDeletedQueue;
+  std::list<const llvm::Use *> NewlyDeletingQueue;
+  std::unordered_set<const llvm::Use *> DeletedUses;
   /**
    * Initialize the transform plan for all the instructions
    * in the loop.
@@ -1354,7 +1356,8 @@ void StreamPass::makeStreamTransformPlan() {
     LoopBFSQueue.clear();
     DeleteCandidates.clear();
     DeletedInsts.clear();
-    NewlyDeletedQueue.clear();
+    NewlyDeletingQueue.clear();
+    DeletedUses.clear();
     LoopBFSQueue.emplace_back(OutMostLoop);
     while (!LoopBFSQueue.empty()) {
       auto Loop = LoopBFSQueue.front();
@@ -1376,33 +1379,31 @@ void StreamPass::makeStreamTransformPlan() {
         DEBUG(llvm::errs() << "make transform plan for stream "
                            << S->formatName() << '\n');
 
-        // Add all the compute instructions as delete candidates.
-        for (const auto &ComputeInst : S->getComputeInsts()) {
-          DeleteCandidates.insert(ComputeInst);
-          DEBUG(llvm::errs() << "Compute instruction "
-                             << LoopUtils::formatLLVMInst(ComputeInst) << '\n');
-          if (Stream::isStepInst(ComputeInst) && S->hasNoBaseStream() &&
-              S->Type == Stream::TypeT::IV) {
-            /**
-             * Mark a step instruction for streams that has no base stream.
-             */
-            this->getOrCreatePlan(ComputeInst).planToStep(S);
-            DEBUG(llvm::errs()
-                  << "Select transform plan for inst "
-                  << LoopUtils::formatLLVMInst(ComputeInst) << " to "
-                  << StreamTransformPlan::formatPlanT(
-                         StreamTransformPlan::PlanT::STEP)
-                  << '\n');
+        // Handle all the step instructions.
+        if (S->Type == Stream::TypeT::IV) {
+          for (const auto &StepInst : S->getStepInsts()) {
+            this->getOrCreatePlan(StepInst).planToStep(S);
+            DEBUG(llvm::errs() << "Select transform plan for inst "
+                               << LoopUtils::formatLLVMInst(StepInst) << " to "
+                               << StreamTransformPlan::formatPlanT(
+                                      StreamTransformPlan::PlanT::STEP)
+                               << '\n');
             /**
              * A hack here to make the user of step instruction also user of the
              * stream. PURE EVIL!!
+             * TODO: Is there better way to do this?
              */
-            for (auto U : ComputeInst->users()) {
+            for (auto U : StepInst->users()) {
               if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
                 this->getOrCreatePlan(I).addUsedStream(S);
               }
             }
           }
+        }
+
+        // Add all the compute instructions as delete candidates.
+        for (const auto &ComputeInst : S->getComputeInsts()) {
+          DeleteCandidates.insert(ComputeInst);
         }
 
         // Add uses for all the users to use myself.
@@ -1422,14 +1423,18 @@ void StreamPass::makeStreamTransformPlan() {
           assert(SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING &&
                  "Already have a plan for the store.");
           SelfPlan.planToStore(S);
+          // For store, only the address use is deleted.
+          NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(1));
         } else {
-          // This is a load.
+          // For load or iv, delete all the uses.
           SelfPlan.planToDelete();
+          for (unsigned OperandIdx = 0,
+                        NumOperands = SelfInst->getNumOperands();
+               OperandIdx != NumOperands; ++OperandIdx) {
+            NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(OperandIdx));
+          }
         }
-        // Self inst is always marked as deleted for later as a seed to find
-        // deletable instructions. Even though a store instructions is not
-        // really deleted.
-        NewlyDeletedQueue.emplace_back(SelfInst);
+
         DEBUG(llvm::errs() << "Select transform plan for inst "
                            << LoopUtils::formatLLVMInst(SelfInst) << " to "
                            << StreamTransformPlan::formatPlanT(SelfPlan.Plan)
@@ -1438,53 +1443,55 @@ void StreamPass::makeStreamTransformPlan() {
     }
 
     // Second step: find deletable instruction from the candidates.
-    while (!NewlyDeletedQueue.empty()) {
-      auto NewlyDeletedInst = NewlyDeletedQueue.front();
-      NewlyDeletedQueue.pop_front();
-      if (DeletedInsts.count(NewlyDeletedInst) != 0) {
-        // This has already been processed.
+    while (!NewlyDeletingQueue.empty()) {
+      auto NewlyDeletingUse = NewlyDeletingQueue.front();
+      NewlyDeletingQueue.pop_front();
+
+      if (DeletedUses.count(NewlyDeletingUse) != 0) {
+        // We have already process this use.
         continue;
       }
-      // Actually mark this one as delete if we have no other plan for it.
-      auto &Plan = this->getOrCreatePlan(NewlyDeletedInst);
-      switch (Plan.Plan) {
-      case StreamTransformPlan::PlanT::NOTHING:
-      case StreamTransformPlan::PlanT::DELETE: {
-        Plan.planToDelete();
-        break;
-      }
-      }
-      DEBUG(
-          llvm::errs() << "Select transform plan for addr inst "
-                       << LoopUtils::formatLLVMInst(NewlyDeletedInst) << " to "
-                       << StreamTransformPlan::formatPlanT(Plan.Plan) << '\n');
-      DeletedInsts.insert(NewlyDeletedInst);
-      // Check all the operand.
-      for (unsigned OperandIdx = 0,
-                    NumOperands = NewlyDeletedInst->getNumOperands();
-           OperandIdx != NumOperands; ++OperandIdx) {
-        auto Operand = NewlyDeletedInst->getOperand(OperandIdx);
-        if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(Operand)) {
-          if (DeleteCandidates.count(OperandInst) == 0) {
-            continue;
+
+      DeletedUses.insert(NewlyDeletingUse);
+
+      auto NewlyDeletingValue = NewlyDeletingUse->get();
+      if (auto NewlyDeletingOperandInst =
+              llvm::dyn_cast<llvm::Instruction>(NewlyDeletingValue)) {
+        // The operand of the deleting use is an instruction.
+        if (DeleteCandidates.count(NewlyDeletingOperandInst) == 0) {
+          // The operand is not even a delete candidate.
+          continue;
+        }
+        if (DeletedInsts.count(NewlyDeletingOperandInst) != 0) {
+          // This inst is already deleted.
+          continue;
+        }
+        // Check if all the uses have been deleted.
+        bool AllUsesDeleted = true;
+        for (const auto &U : NewlyDeletingOperandInst->uses()) {
+          if (DeletedUses.count(&U) == 0) {
+            AllUsesDeleted = false;
+            break;
           }
-          if (DeletedInsts.count(OperandInst) != 0) {
-            // This inst is already deleted.
-            continue;
+        }
+        if (AllUsesDeleted) {
+          // We can safely delete this one now.
+          // Actually mark this one as delete if we have no other plan for it.
+          auto &Plan = this->getOrCreatePlan(NewlyDeletingOperandInst);
+          switch (Plan.Plan) {
+          case StreamTransformPlan::PlanT::NOTHING:
+          case StreamTransformPlan::PlanT::DELETE: {
+            Plan.planToDelete();
+            break;
           }
-          // This is a candidate, check whether all of its users are deleted.
-          bool AllUsersDeleted = true;
-          for (auto U : OperandInst->users()) {
-            if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
-              if (DeletedInsts.count(I) == 0) {
-                AllUsersDeleted = false;
-                break;
-              }
-            }
           }
-          if (AllUsersDeleted) {
-            // We can safely mark this one as newly deleted now.
-            NewlyDeletedQueue.emplace_back(OperandInst);
+          // Add all the uses to NewlyDeletingQueue.
+          for (unsigned
+                   OperandIdx = 0,
+                   NumOperands = NewlyDeletingOperandInst->getNumOperands();
+               OperandIdx != NumOperands; ++OperandIdx) {
+            NewlyDeletingQueue.push_back(
+                &NewlyDeletingOperandInst->getOperandUse(OperandIdx));
           }
         }
       }
@@ -1742,11 +1749,14 @@ void StreamPass::transformStream() {
          */
         this->DeletedInstCount++;
         NeedToHandleUseInformation = false;
+
       } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
 
         // Inform the functional stream engine.
         this->FuncSE->step(TransformPlan.getParamStream(), this->Trace);
 
+        // Clear the possible future dependence on the original static
+        // instruction.
         this->Trace->DynamicFrameStack.front()
             .updateRegisterDependenceLookUpMap(NewStaticInst,
                                                std::list<DynamicId>());
@@ -1777,7 +1787,7 @@ void StreamPass::transformStream() {
             StreamInstIter->second = NewDynamicId;
           }
         }
-        // Add dependence to the prevous me and register myself.
+        // Add dependence to the previous me and register myself.
         auto StreamInst = TransformPlan.getParamStream()->getInst();
         auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
         if (StreamInstIter == ActiveStreamInstMap.end()) {

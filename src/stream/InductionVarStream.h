@@ -20,6 +20,10 @@ public:
   getComputeInsts() const override {
     return this->ComputeInsts;
   }
+  const std::unordered_set<const llvm::Instruction *> &
+  getStepInsts() const override {
+    return this->StepInsts;
+  }
 
   bool isCandidate() const override { return this->IsCandidate; }
 
@@ -55,6 +59,7 @@ public:
 private:
   const llvm::PHINode *PHIInst;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
+  std::unordered_set<const llvm::Instruction *> StepInsts;
   bool IsCandidate;
 
   void addAccess(uint64_t Value) {
@@ -70,6 +75,15 @@ private:
    */
   static std::unordered_set<const llvm::Instruction *>
   searchComputeInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
+
+  /**
+   * Do a BFS on the PHINode and extract all the step instructions.
+   */
+  static std::unordered_set<const llvm::Instruction *>
+  searchStepInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
+
+  /**
+   * Find the step instructions by looking at the possible in
 
   /**
    * A phi node is an induction variable stream if:
