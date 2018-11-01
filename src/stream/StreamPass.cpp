@@ -12,7 +12,11 @@ std::string StreamTransformPlan::format() const {
   ss << std::setw(10) << std::left
      << StreamTransformPlan::formatPlanT(this->Plan);
   if (this->Plan == StreamTransformPlan::PlanT::STEP) {
-    ss << '-' << this->ParamStream->formatName() << '-';
+    ss << '-';
+    for (auto StepStream : this->StepStreams) {
+      ss << StepStream->formatName();
+    }
+    ss << '-';
   }
   for (auto UsedStream : this->UsedStreams) {
     ss << UsedStream->formatName() << ' ';
@@ -1752,8 +1756,52 @@ void StreamPass::transformStream() {
 
       } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
 
-        // Inform the functional stream engine.
-        this->FuncSE->step(TransformPlan.getParamStream(), this->Trace);
+        /**
+         * A step transform plan means that this instructions is deleted, and
+         * one or more step instructions are inserted.
+         */
+
+        // Insert all the step instructions.
+        for (auto StepStream : TransformPlan.getStepStreams()) {
+          // Inform the functional stream engine that this stream stepped.
+          this->FuncSE->step(StepStream, this->Trace);
+
+          // Create the new StepInst.
+          auto StepInst = new StreamStepInst(StepStream);
+          auto StepInstId = StepInst->getId();
+
+          this->Trace->insertDynamicInst(NewInstIter, StepInst);
+
+          /**
+           * Handle the dependence for the step instruction.
+           * Step inst should also wait for the dependent stream insts.
+           */
+          auto &RegDeps = this->Trace->RegDeps.at(StepInstId);
+          for (const auto &AllChosenDependentStream :
+               StepStream->getAllChosenDependentStreams()) {
+            auto StreamInst = AllChosenDependentStream->getInst();
+            auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+            // Also register myself as the latest stream inst for the dependent
+            // streams.
+            if (StreamInstIter == ActiveStreamInstMap.end()) {
+              ActiveStreamInstMap.emplace(StreamInst, StepInstId);
+            } else {
+              RegDeps.emplace_back(nullptr, StreamInstIter->second);
+              StreamInstIter->second = StepInstId;
+            }
+          }
+          // Add dependence to the previous me and register myself.
+          auto StreamInst = StepStream->getInst();
+          auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+          if (StreamInstIter == ActiveStreamInstMap.end()) {
+            ActiveStreamInstMap.emplace(StreamInst, StepInstId);
+          } else {
+            RegDeps.emplace_back(nullptr, StreamInstIter->second);
+            StreamInstIter->second = StepInstId;
+          }
+
+          this->StepInstCount++;
+        }
 
         // Clear the possible future dependence on the original static
         // instruction.
@@ -1761,44 +1809,15 @@ void StreamPass::transformStream() {
             .updateRegisterDependenceLookUpMap(NewStaticInst,
                                                std::list<DynamicId>());
 
+        // Delete this instruction.
         auto NewDynamicId = NewDynamicInst->getId();
-        delete NewDynamicInst;
-
-        auto StepInst =
-            new StreamStepInst(TransformPlan.getParamStream(), NewDynamicId);
-        *NewInstIter = StepInst;
-        NewDynamicInst = StepInst;
-
+        this->Trace->commitDynamicInst(NewDynamicId);
+        this->Trace->DynamicInstructionList.erase(NewInstIter);
+        NewDynamicInst = nullptr;
         /**
-         * Handle the dependence for the step instruction.
-         * Step inst should also be dependent on the dependent streams.
+         * No more handling use information for the deleted instruction.
          */
-        for (const auto &AllChosenDependentStream :
-             TransformPlan.getParamStream()->getAllChosenDependentStreams()) {
-          auto StreamInst = AllChosenDependentStream->getInst();
-          auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
-          // Also register myself as the latest stream inst for the dependent
-          // streams.
-          if (StreamInstIter == ActiveStreamInstMap.end()) {
-            ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
-          } else {
-            this->Trace->RegDeps.at(NewDynamicId)
-                .emplace_back(nullptr, StreamInstIter->second);
-            StreamInstIter->second = NewDynamicId;
-          }
-        }
-        // Add dependence to the previous me and register myself.
-        auto StreamInst = TransformPlan.getParamStream()->getInst();
-        auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
-        if (StreamInstIter == ActiveStreamInstMap.end()) {
-          ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
-        } else {
-          this->Trace->RegDeps.at(NewDynamicId)
-              .emplace_back(nullptr, StreamInstIter->second);
-          StreamInstIter->second = NewDynamicId;
-        }
-
-        this->StepInstCount++;
+        this->DeletedInstCount++;
         NeedToHandleUseInformation = false;
 
       } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {

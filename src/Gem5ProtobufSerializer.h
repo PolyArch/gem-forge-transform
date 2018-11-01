@@ -7,17 +7,32 @@
 #include <fstream>
 #include <string>
 
-class Gem5ProtobufSerializer {
+class ProtobufSerializer {
 public:
-  Gem5ProtobufSerializer(const std::string &FileName);
-  ~Gem5ProtobufSerializer();
+  ProtobufSerializer(const std::string &FileName,
+                     std::ios_base::openmode OpenMode);
+  virtual ~ProtobufSerializer();
 
-  void serialize(const google::protobuf::Message &Message);
+  virtual void serialize(const google::protobuf::Message &Message) = 0;
 
-private:
+protected:
   std::ofstream OutFileStream;
   google::protobuf::io::ZeroCopyOutputStream *OutZeroCopyStream;
+};
 
+class Gem5ProtobufSerializer : public ProtobufSerializer {
+public:
+  Gem5ProtobufSerializer(const std::string &FileName);
+
+  void serialize(const google::protobuf::Message &Message) override;
+};
+
+class TextProtobufSerializer : public ProtobufSerializer {
+public:
+  TextProtobufSerializer(const std::string &FileName)
+      : ProtobufSerializer(FileName, std::ios::out) {}
+
+  void serialize(const google::protobuf::Message &Message) override;
 };
 
 class Gem5ProtobufReader {

@@ -33,6 +33,7 @@ public:
   const std::string &getProfileFile() const { return this->ProfileFile; }
   const std::string &getTraceFile() const { return this->TraceFile; }
   std::string getOutputDataGraphFile(const std::string &Pass) const;
+  std::string getOutputDataGraphTextFile(const std::string &Pass) const;
   std::string getAndCreateOutputDataGraphExtraFolder(const std::string &Pass) const;
 
   void setUpLLVMOptions(const std::string &Pass) const;

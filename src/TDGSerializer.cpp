@@ -7,14 +7,23 @@
 
 #define DEBUG_TYPE "TDGSerializer"
 
-TDGSerializer::TDGSerializer(const std::string &FileName)
-    : Gem5Serializer(FileName), SerializedStaticInfomation(false),
-      SerializedInsts(0) {}
+TDGSerializer::TDGSerializer(const std::string &FileName, bool TextMode)
+    : Gem5Serializer(FileName), TextSerializer(nullptr),
+      SerializedStaticInfomation(false), SerializedInsts(0) {
+  if (TextMode) {
+    this->TextSerializer = new TextProtobufSerializer(FileName + ".txt");
+  }
+}
 
 TDGSerializer::~TDGSerializer() {
   // Serialize the remainning instructions.
   if (this->TDG.instructions_size() > 0) {
     this->write();
+  }
+
+  if (this->TextSerializer != nullptr) {
+    delete this->TextSerializer;
+    this->TextSerializer = nullptr;
   }
 
   llvm::errs() << "Serialized " << this->SerializedInsts << '\n';
@@ -25,6 +34,9 @@ void TDGSerializer::serializeStaticInfo(
   assert(!this->SerializedStaticInfomation &&
          "StaticInfomation already serialized.");
   this->Gem5Serializer.serialize(StaticInfo);
+  if (this->TextSerializer != nullptr) {
+    this->TextSerializer->serialize(StaticInfo);
+  }
   this->SerializedStaticInfomation = true;
 }
 
@@ -68,6 +80,9 @@ void TDGSerializer::write() {
   for (size_t I = 0; I < this->TDG.instructions_size(); ++I) {
     auto &TDGInstruction = this->TDG.instructions(I);
     this->Gem5Serializer.serialize(TDGInstruction);
+    if (this->TextSerializer != nullptr) {
+      this->TextSerializer->serialize(TDGInstruction);
+    }
   }
 
   this->SerializedInsts += this->TDG.instructions_size();
