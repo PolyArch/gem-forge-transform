@@ -14,7 +14,7 @@
 
 class TDGSerializer {
 public:
-  explicit TDGSerializer(const std::string &FileName);
+  explicit TDGSerializer(const std::string &FileName, bool TextMode = false);
   ~TDGSerializer();
 
   /**
@@ -26,6 +26,7 @@ public:
 
 private:
   Gem5ProtobufSerializer Gem5Serializer;
+  TextProtobufSerializer *TextSerializer;
 
   // Flag static information serialized.
   bool SerializedStaticInfomation;

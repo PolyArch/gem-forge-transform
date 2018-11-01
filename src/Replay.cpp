@@ -28,6 +28,9 @@ llvm::cl::opt<std::string> GemForgeOutputDataGraphFileName(
 llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath(
     "output-extra-folder-path",
     llvm::cl::desc("Output extra information folder path, excluding the /"));
+llvm::cl::opt<bool> GemForgeOutputDataGraphTextMode(
+    "output-datagraph-text-mode", llvm::cl::init(false),
+    llvm::cl::desc("Output datagraph in text mode."));
 
 #define DEBUG_TYPE "ReplayPass"
 namespace {
@@ -172,7 +175,8 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
   DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
                      << this->DGDetailLevel << ".\n");
   this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
-  this->Serializer = new TDGSerializer(this->OutTraceName);
+  this->Serializer = new TDGSerializer(
+      this->OutTraceName, GemForgeOutputDataGraphTextMode.getValue());
   this->CacheWarmerPtr = new CacheWarmer(this->OutTraceName + ".cache");
 
   this->CachedLI = new CachedLoopInfo(

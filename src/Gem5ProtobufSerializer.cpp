@@ -4,6 +4,7 @@
 
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/text_format.h>
 
 namespace {
 /**
@@ -14,29 +15,30 @@ namespace {
 static const uint32_t Gem5MagicNumber = 0x356d6567;
 } // namespace
 
-Gem5ProtobufSerializer::Gem5ProtobufSerializer(const std::string &FileName)
-    : OutFileStream(FileName, std::ios::out | std::ios::binary) {
+ProtobufSerializer::ProtobufSerializer(const std::string &FileName,
+                                       std::ios_base::openmode OpenMode) {
 
-  llvm::errs() << "Try to open gem5 protobuf serializer file " << FileName
-               << '\n';
+  llvm::errs() << "Try to open protobuf serializer file " << FileName << '\n';
+  this->OutFileStream.open(FileName, OpenMode);
 
   assert(this->OutFileStream.is_open() &&
-         "Failed to open output gem5 protobuf serialize file.");
+         "Failed to open output protobuf serialize file.");
   // Create the zero copy stream.
   this->OutZeroCopyStream =
       new google::protobuf::io::OstreamOutputStream(&this->OutFileStream);
-
-  // We have to write the magic number so that it can be
-  // recognized by gem5.
-
-  google::protobuf::io::CodedOutputStream CodedStream(this->OutZeroCopyStream);
-  CodedStream.WriteLittleEndian32(Gem5MagicNumber);
 }
 
-Gem5ProtobufSerializer::~Gem5ProtobufSerializer() {
+ProtobufSerializer::~ProtobufSerializer() {
   delete this->OutZeroCopyStream;
   this->OutZeroCopyStream = nullptr;
   this->OutFileStream.close();
+}
+
+Gem5ProtobufSerializer::Gem5ProtobufSerializer(const std::string &FileName)
+    : ProtobufSerializer(FileName, std::ios::out | std::ios::binary) {
+  // Write the magic number so that gem5 can read this.
+  google::protobuf::io::CodedOutputStream CodedStream(this->OutZeroCopyStream);
+  CodedStream.WriteLittleEndian32(Gem5MagicNumber);
 }
 
 void Gem5ProtobufSerializer::serialize(
@@ -44,6 +46,11 @@ void Gem5ProtobufSerializer::serialize(
   google::protobuf::io::CodedOutputStream CodedStream(this->OutZeroCopyStream);
   CodedStream.WriteVarint32(Message.ByteSize());
   Message.SerializeWithCachedSizes(&CodedStream);
+}
+
+void TextProtobufSerializer::serialize(
+    const google::protobuf::Message &Message) {
+  google::protobuf::TextFormat::Print(Message, this->OutZeroCopyStream);
 }
 
 Gem5ProtobufReader::Gem5ProtobufReader(const std::string &FileName)

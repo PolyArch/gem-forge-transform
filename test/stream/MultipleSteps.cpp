@@ -69,3 +69,10 @@ TEST_F(StreamTransformPassTestFixture, MultipleSteps) {
         << "Mismatch number of instructions.\n";
   }
 }
+
+TEST_F(StreamTransformPassTestFixture, BasicListTransverse) {
+  this->setUpEnvironment(
+      GetTestInputSource("/stream/inputs/BasicListTransverse.c"));
+
+  this->Pass.runOnModule(*(this->Module));
+}

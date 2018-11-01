@@ -31,6 +31,10 @@ std::string TestInput::getOutputDataGraphFile(const std::string &Pass) const {
   return this->Prefix + "." + Pass + ".0.tdg";
 }
 
+std::string TestInput::getOutputDataGraphTextFile(const std::string &Pass) const {
+  return this->getOutputDataGraphFile(Pass) + ".txt";
+}
+
 std::string TestInput::getAndCreateOutputDataGraphExtraFolder(
     const std::string &Pass) const {
   auto ExtraFolder = this->Prefix + "." + Pass + ".0.tdg.extra";
@@ -65,6 +69,10 @@ void TestInput::setUpLLVMOptions(const std::string &Pass) const {
   GemForgeOutputExtraFolderPath.addOccurrence(
       0, "output-extra-folder-path",
       this->getAndCreateOutputDataGraphExtraFolder(Pass));
+
+  GemForgeOutputDataGraphTextMode.reset();
+  GemForgeOutputDataGraphTextMode.addOccurrence(0, "output-datagraph-text-mode",
+                                                "true");
 
   TraceFileName.reset();
   TraceFileName.addOccurrence(0, "trace-file", this->getTraceFile());
