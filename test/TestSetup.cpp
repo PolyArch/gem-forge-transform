@@ -10,8 +10,9 @@ makeLLVMModule(llvm::LLVMContext &Context, const std::string &ModuleFileName) {
   return llvm::parseIRFile(ModuleFileName, Err, Context);
 }
 
-TestInput::TestInput(const std::string &_TestInputSource)
-    : TestInputSource(_TestInputSource) {
+TestInput::TestInput(const std::string &_TestInputSource,
+                     const std::string &_Pass)
+    : TestInputSource(_TestInputSource), Pass(_Pass) {
 
   assert(this->TestInputSource.size() > 2 &&
          "Test input source file should be at least '.c'.");
@@ -25,14 +26,8 @@ TestInput::TestInput(const std::string &_TestInputSource)
   this->InstUidMapFile = this->Prefix + ".inst.uid.txt";
   this->ProfileFile = this->Prefix + ".profile";
   this->TraceFile = this->Prefix + ".0.trace";
-}
-
-std::string TestInput::getOutputDataGraphFile(const std::string &Pass) const {
-  return this->Prefix + "." + Pass + ".0.tdg";
-}
-
-std::string TestInput::getOutputDataGraphTextFile(const std::string &Pass) const {
-  return this->getOutputDataGraphFile(Pass) + ".txt";
+  this->OutputDataGraphFile = this->Prefix + "." + Pass + ".0.tdg";
+  this->OutputDataGraphTextFile = this->OutputDataGraphFile + ".txt";
 }
 
 std::string TestInput::getAndCreateOutputDataGraphExtraFolder(
@@ -62,8 +57,8 @@ void TestInput::setUpLLVMOptions(const std::string &Pass) const {
          "Should be standalone mode.");
 
   GemForgeOutputDataGraphFileName.reset();
-  GemForgeOutputDataGraphFileName.addOccurrence(
-      0, "output-datagraph", this->getOutputDataGraphFile(Pass));
+  GemForgeOutputDataGraphFileName.addOccurrence(0, "output-datagraph",
+                                                this->getOutputDataGraphFile());
 
   GemForgeOutputExtraFolderPath.reset();
   GemForgeOutputExtraFolderPath.addOccurrence(

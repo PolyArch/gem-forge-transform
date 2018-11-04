@@ -116,9 +116,9 @@ class StreamStatistics:
         self.replay_result = None
         self.stream_result = None
         if replay_files is not None:
-            self.replay_result = Util.Gem5RegionStats(benchmark, replay_files)
+            self.replay_result = Gem5RegionStats.Gem5RegionStats(benchmark, replay_files)
         if stream_files is not None:
-            self.stream_result = Util.Gem5RegionStats(benchmark, stream_files)
+            self.stream_result = Gem5RegionStats.Gem5RegionStats(benchmark, stream_files)
         if isinstance(files, list):
             self.parse(files[0])
             if len(files) > 1:

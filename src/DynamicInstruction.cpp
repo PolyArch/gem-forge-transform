@@ -194,7 +194,7 @@ void DynamicInstruction::serializeToProtobuf(
     if (DepIter != DG->RegDeps.end()) {
       for (const auto &RegDep : DepIter->second) {
         if (RegDepsSeen.find(RegDep.second) == RegDepsSeen.end()) {
-          ProtobufEntry->add_deps(RegDep.second);
+          ProtobufEntry->add_reg_deps(RegDep.second);
           RegDepsSeen.insert(RegDep.second);
         }
       }
@@ -204,7 +204,7 @@ void DynamicInstruction::serializeToProtobuf(
     auto DepIter = DG->MemDeps.find(this->getId());
     if (DepIter != DG->MemDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
-        ProtobufEntry->add_deps(DepInstId);
+        ProtobufEntry->add_mem_deps(DepInstId);
       }
     }
   }
@@ -212,7 +212,7 @@ void DynamicInstruction::serializeToProtobuf(
     auto DepIter = DG->CtrDeps.find(this->getId());
     if (DepIter != DG->CtrDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
-        ProtobufEntry->add_deps(DepInstId);
+        ProtobufEntry->add_ctr_deps(DepInstId);
       }
     }
   }

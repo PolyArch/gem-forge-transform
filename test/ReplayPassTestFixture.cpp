@@ -11,7 +11,7 @@ void ReplayPassTestFixture::TearDown() {}
 void ReplayPassTestFixture::setUpEnvironment(
     const std::string &InputSourceFile) {
 
-  this->Input = std::make_unique<TestInput>(InputSourceFile);
+  this->Input = std::make_unique<TestInput>(InputSourceFile, "replay");
   this->Module = makeLLVMModule(this->Context, this->Input->getBitCodeFile());
 
   /**
