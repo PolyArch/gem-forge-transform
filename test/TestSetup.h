@@ -26,25 +26,33 @@ std::unique_ptr<llvm::Module> makeLLVMModule(llvm::LLVMContext &Context,
 
 class TestInput {
 public:
-  TestInput(const std::string &_TestInputSource);
+  TestInput(const std::string &_TestInputSource, const std::string &_Pass);
 
   const std::string &getBitCodeFile() const { return this->BitCodeFile; }
   const std::string &getInstUidMapFile() const { return this->InstUidMapFile; }
   const std::string &getProfileFile() const { return this->ProfileFile; }
   const std::string &getTraceFile() const { return this->TraceFile; }
-  std::string getOutputDataGraphFile(const std::string &Pass) const;
-  std::string getOutputDataGraphTextFile(const std::string &Pass) const;
-  std::string getAndCreateOutputDataGraphExtraFolder(const std::string &Pass) const;
+  std::string getOutputDataGraphFile() const {
+    return this->OutputDataGraphFile;
+  }
+  std::string getOutputDataGraphTextFile() const {
+    return this->OutputDataGraphTextFile;
+  }
+  std::string
+  getAndCreateOutputDataGraphExtraFolder(const std::string &Pass) const;
 
   void setUpLLVMOptions(const std::string &Pass) const;
 
 private:
   std::string TestInputSource;
+  std::string Pass;
   std::string Prefix;
   std::string BitCodeFile;
   std::string InstUidMapFile;
   std::string ProfileFile;
   std::string TraceFile;
+  std::string OutputDataGraphFile;
+  std::string OutputDataGraphTextFile;
 };
 
 #endif

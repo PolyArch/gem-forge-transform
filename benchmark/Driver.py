@@ -4,6 +4,7 @@ import TestHelloWorld
 import SPU
 import Graph500
 import CortexSuite
+import SDVBS
 
 import Util
 import StreamStatistics
@@ -262,6 +263,8 @@ def choose_suite(options):
         return Graph500.Graph500Benchmarks()
     elif options.suite == 'cortex':
         return CortexSuite.CortexSuite()
+    elif options.suite == 'sdvbs':
+        return SDVBS.SDVBSSuite()
     else:
         print('Unknown suite ' + options.suite)
         assert(False)
@@ -309,71 +312,72 @@ def main(options):
     time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
     suite_result.compare([energy_attribute, time_attribute])
 
-    # benchmark_stream_statistics = dict()
+    benchmark_stream_statistics = dict()
 
-    # for benchmark in benchmarks:
+    for benchmark in benchmarks:
 
-    #     stream_passes = ['stream', 'stream-prefetch']
-    #     stream_pass_specified = None
-    #     stream_tdgs = list()
-    #     replay_results = list()
-    #     stream_results = list()
-    #     for p in stream_passes:
-    #         if p in options.transform_passes:
-    #             stream_pass_specified = p
-    #             stream_tdgs = benchmark.get_tdgs(p)
-    #             replay_results = benchmark.get_results('replay')
-    #             stream_results = benchmark.get_results(p)
-    #             break
+         stream_passes = ['stream', 'stream-prefetch']
+         stream_pass_specified = None
+         stream_tdgs = list()
+         replay_results = list()
+         stream_results = list()
+         for p in stream_passes:
+             if p in options.transform_passes:
+                 stream_pass_specified = p
+                 stream_tdgs = benchmark.get_tdgs(p)
+                 replay_results = benchmark.get_results('replay')
+                 stream_results = benchmark.get_results(p)
+                 break
 
-    #     if stream_pass_specified is not None:
-    #         filtered_trace_ids = list()
-    #         for i in xrange(len(stream_tdgs)):
-    #             if options.trace_id:
-    #                 if i not in options.trace_id:
-    #                     # Ignore those traces if not specified
-    #                     continue
-    #             # Hack here to skip some traces.
-    #             if 'leela_s' in benchmark.get_name():
-    #                 if i in {2, 4, 5, 9}:
-    #                     continue
-    #             filtered_trace_ids.append(i)
-    #         filtered_stream_tdg_stats = [
-    #             stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
-    #         filtered_replay_results = [replay_results[x]
-    #                                    for x in filtered_trace_ids]
-    #         filtered_stream_results = [stream_results[x]
-    #                                    for x in filtered_trace_ids]
+         if stream_pass_specified is not None:
+             filtered_trace_ids = list()
+             for i in xrange(len(stream_tdgs)):
+                 if options.trace_id:
+                     if i not in options.trace_id:
+                         # Ignore those traces if not specified
+                         continue
+                 # Hack here to skip some traces.
+                 if 'leela_s' in benchmark.get_name():
+                     if i in {2, 4, 5, 9}:
+                         continue
+                 filtered_trace_ids.append(i)
+             filtered_stream_tdg_stats = [
+                 stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
+             filtered_replay_results = [replay_results[x]
+                                        for x in filtered_trace_ids]
+             filtered_stream_results = [stream_results[x]
+                                        for x in filtered_trace_ids]
 
-    #         stream_stats = StreamStatistics.StreamStatistics(
-    #             benchmark.get_name(),
-    #             filtered_stream_tdg_stats,
-    #             filtered_replay_results,
-    #             filtered_stream_results)
-    #         benchmark_stream_statistics[benchmark.get_name()] = stream_stats
-    #         print('-------------------------- ' + benchmark.get_name())
+             stream_stats = StreamStatistics.StreamStatistics(
+                 benchmark.get_name(),
+                 filtered_stream_tdg_stats,
+                 filtered_replay_results,
+                 filtered_stream_results)
+             benchmark_stream_statistics[benchmark.get_name()] = stream_stats
+             print('-------------------------- ' + benchmark.get_name())
 
-    # if benchmark_stream_statistics:
-    #     StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_loop_path(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
-    #         benchmark_stream_statistics)
-    #     StreamStatistics.StreamStatistics.print_benchmark_stream_simulation_result(
-    #         benchmark_stream_statistics)
+    if benchmark_stream_statistics:
+     #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
+     #        benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
+     #        benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
+     #        benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
+     #        benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
+            benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
+     #        benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
+     #        benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_loop_path(
+     #        benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
+     #        benchmark_stream_statistics)
+     #    StreamStatistics.StreamStatistics.print_benchmark_stream_simulation_result(
+     #        benchmark_stream_statistics)
+        pass
 
 
 def parse_benchmarks(option, opt, value, parser):

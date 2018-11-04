@@ -17,8 +17,10 @@ message TDGInstruction {
   string op = 1;
   uint64 id = 2;
   uint64 bb = 3;
-  repeated uint64 deps = 4;
+  repeated uint64 reg_deps = 4;
   repeated uint64 used_stream_ids = 5;
+  repeated uint64 mem_deps = 6;
+  repeated uint64 ctr_deps = 7;
   oneof extra {
     StoreExtra store = 8;
     LoadExtra load = 9;

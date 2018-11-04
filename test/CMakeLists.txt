@@ -42,6 +42,7 @@ add_executable(GemForgeTest
   stream/StreamPassTestFixture.cpp
   stream/MultipleSteps.cpp
   stream/StepInstDetectionTest.cpp
+  stream/StreamInstDependenceTest.cpp
 )
 
 # target_compile_definitions(GemForgeTest

@@ -8,7 +8,9 @@ import os
 class CortexBenchmark(Benchmark):
 
     FLAGS = {
-        'rbm': ['O2'],
+        # RBM has vectorized loop with extra iterations.
+        # So far we can not handle it.
+        'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
         'sphinx': ['O2'],
         'srr': ['O2'],
         'lda': ['O2'],
@@ -25,32 +27,66 @@ class CortexBenchmark(Benchmark):
                 'TEST_USERS': 10,
                 'MOVIES': 10,
                 'LOOPS': 20,
-            }
+            },
+            'medium': {
+                'USERS': 100,
+                'TEST_USERS': 100,
+                'MOVIES': 100,
+                'LOOPS': 20,
+            },
+            'large': {
+                'USERS': 100,
+                'TEST_USERS': 100,
+                'MOVIES': 100,
+                'LOOPS': 200,
+            },
         },
         'sphinx': {
-            'small': {}
+            'small': {},
+            'medium': {},
+            'large': {},
         },
         'srr': {
             'small': {
                 'SYNTHETIC1': None,
-            }
+            },
+            'medium': {
+                'ALPACA': None,
+            },
+            'large': {
+                'BOOKCASE': None,
+            },
         },
         'lda': {
-            'small': {}
+            'small': {},
+            'medium': {},
+            'large': {},
         },
         'svd3': {
-            'small': {}
+            'small': {},
+            'medium': {},
+            'large': {},
         },
         'pca': {
-            'small': {}
+            'small': {},
+            'medium': {},
+            'large': {},
         },
         'motion-estimation': {
             'small': {
                 'SYNTHETIC1': None,
-            }
+            },
+            'medium': {
+                'ALPACA': None,
+            },
+            'large': {
+                'BOOKCASE': None,
+            },
         },
         'liblinear': {
-            'small': {}
+            'small': {},
+            'medium': {},
+            'large': {},
         },
     }
 
@@ -95,27 +131,43 @@ class CortexBenchmark(Benchmark):
     ARGS = {
         'rbm': {
             'small': [],
+            'medium': [],
+            'large': [],
         },
         'sphinx': {
-            'small': ['medium/audio.raw', 'language_model/HUB4/'],
+            'small': ['small/audio.raw', 'language_model/turtle/'],
+            'medium': ['medium/audio.raw', 'language_model/HUB4/'],
+            'large': ['large/audio.raw', 'language_model/HUB4/'],
         },
         'srr': {
             'small': [],
+            'medium': [],
+            'large': [],
         },
         'lda': {
             'small': ['est', '.1', '3', 'settings.txt', 'small/small_data.dat', 'random', 'small/result'],
+            'medium': ['est', '.1', '3', 'settings.txt', 'medium/medium_data.dat', 'random', 'medium/result'],
+            'large': ['est', '.1', '3', 'settings.txt', 'large/large_data.dat', 'random', 'large/result'],
         },
         'svd3': {
             'small': ['small.txt'],
+            'medium': ['med.txt'],
+            'large': ['large.txt'],
         },
         'pca': {
             'small': ['small.data', '1593', '256', 'R'],
+            'medium': ['medium.data', '722', '800', 'R'],
+            'large': ['large.data', '5000', '1059', 'R'],
         },
         'motion-estimation': {
             'small': [],
+            'medium': [],
+            'large': [],
         },
         'liblinear': {
             'small': ['data/100M/crime_scale'],
+            'medium': ['data/10B/epsilon'],
+            'large': ['data/100B/kdda'],
         },
     }
 
@@ -237,15 +289,19 @@ class CortexBenchmark(Benchmark):
 
 
 class CortexSuite:
-    FOLDER = '/home/zhengrong/Documents/CortexSuite/cortex'
+    # FOLDER = '/home/zhengrong/Documents/CortexSuite/cortex'
+    FOLDER = '/media/zhengrong/My Passport/Documents/CortexSuite/cortex'
 
-    def __init__(self, folder=None, input_size='small'):
+    def __init__(self, folder=None):
         if folder is None:
             folder = CortexSuite.FOLDER
         self.benchmarks = list()
-        for benchmark_name in CortexBenchmark.INCLUDES:
-            benchmark = CortexBenchmark(folder, benchmark_name, input_size)
-            self.benchmarks.append(benchmark)
+        for input_size in ['small', 'medium', 'large']:
+        # for input_size in ['small', 'large']:
+        # for input_size in ['small']:
+            for benchmark_name in CortexBenchmark.INCLUDES:
+                benchmark = CortexBenchmark(folder, benchmark_name, input_size)
+                self.benchmarks.append(benchmark)
 
     def get_benchmarks(self):
         return self.benchmarks

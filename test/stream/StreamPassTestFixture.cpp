@@ -10,7 +10,7 @@ void StreamTransformPassTestFixture::TearDown() {}
 void StreamTransformPassTestFixture::setUpEnvironment(
     const std::string &InputSourceFile) {
 
-  this->Input = std::make_unique<TestInput>(InputSourceFile);
+  this->Input = std::make_unique<TestInput>(InputSourceFile, "stream");
   this->Module = makeLLVMModule(this->Context, this->Input->getBitCodeFile());
   assert(this->Module != nullptr && "Failed to initialize the module.");
 

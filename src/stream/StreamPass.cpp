@@ -1839,6 +1839,75 @@ void StreamPass::transformStream() {
             new StreamStoreInst(TransformPlan.getParamStream(), NewDynamicId);
         *NewInstIter = StoreInst;
         NewDynamicInst = StoreInst;
+
+        /**
+         * Remove register dependences for the stored address.
+         */
+        auto &RegDeps = this->Trace->RegDeps.at(NewDynamicId);
+        auto RegDepIter = RegDeps.begin();
+        while (RegDepIter != RegDeps.end()) {
+          if (RegDepIter->first != nullptr &&
+              RegDepIter->first == NewStaticInst->getOperand(1)) {
+            // This is a register dependence on the address.
+            RegDepIter = RegDeps.erase(RegDepIter);
+          } else {
+            // This is a register dependence on the value.
+            ++RegDepIter;
+          }
+        }
+
+        /**
+         * Stream store is guaranteed to be no alias we have to worry.
+         */
+        auto &MemDeps = this->Trace->MemDeps.at(NewDynamicId);
+        MemDeps.clear();
+
+        /**
+         * If the store stream has not step instruction, we have to explicitly
+         * serialize between these stream-store instructions.
+         */
+        auto StoreStream = TransformPlan.getParamStream();
+        auto StoreInstId = NewDynamicId;
+        if (StoreStream->getBaseStepRootStreams().empty()) {
+          // There is no step stream for me.
+
+          /**
+           * Handle the use information.
+           */
+          auto &RegDeps = this->Trace->RegDeps.at(NewDynamicInst->getId());
+          for (auto &UsedStream : TransformPlan.getUsedStreams()) {
+            // Add the used stream id to the dynamic instruction.
+            NewDynamicInst->addUsedStreamId(UsedStream->getStreamId());
+            auto UsedStreamInst = UsedStream->getInst();
+            // Inform the used stream that the current entry is used.
+            this->FuncSE->access(UsedStream);
+            auto UsedStreamInstIter = ActiveStreamInstMap.find(UsedStreamInst);
+            if (UsedStreamInstIter != ActiveStreamInstMap.end()) {
+              RegDeps.emplace_back(nullptr, UsedStreamInstIter->second);
+            }
+            for (auto &ChosenBaseStream :
+                 UsedStream->getAllChosenBaseStreams()) {
+              auto Iter = ActiveStreamInstMap.find(ChosenBaseStream->getInst());
+              if (Iter != ActiveStreamInstMap.end()) {
+                RegDeps.emplace_back(nullptr, Iter->second);
+              }
+            }
+          }
+
+          // We already handle the use information.
+          NeedToHandleUseInformation = false;
+
+          // Add dependence to the previous me and register myself.
+          auto StreamInst = StoreStream->getInst();
+          auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+          if (StreamInstIter == ActiveStreamInstMap.end()) {
+            ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
+          } else {
+            RegDeps.emplace_back(nullptr, StreamInstIter->second);
+            StreamInstIter->second = NewDynamicId;
+          }
+
+        }
       }
 
       if (NeedToHandleUseInformation) {
