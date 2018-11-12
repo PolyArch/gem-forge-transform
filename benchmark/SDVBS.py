@@ -9,7 +9,7 @@ class SDVBSBenchmark(Benchmark):
     FLAGS = {
         'disparity': ['O2'],
         'localization': ['O2'],
-        'mser': ['O2'],
+        # 'mser': ['O2'],
         'multi_ncut': ['O2'],
         'sift': ['O2'],
         'stitch': ['O2'],

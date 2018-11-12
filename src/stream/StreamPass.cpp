@@ -282,17 +282,18 @@ void StreamPass::transform() {
   this->analyzeStream();
   this->buildStreamDependenceGraph();
   this->markQualifiedStream();
-  this->chooseStream();
-  // this->chooseStreamInnerMostLoop();
+  this->disqualifyStream();
+  // this->chooseStream();
+  this->chooseStreamInnerMostLoop();
   this->buildChosenStreamDependenceGraph();
   this->buildAllChosenStreamDependenceGraph();
+
   /**
-   * This has to be finalized after we build the chosen stream dependence
-   * graphs, which will be dumped into the info file of the stream.
+   * Finalize the pattern, which will be used by the functional streams.
    */
   for (auto &InstStreamEntry : this->InstStreamMap) {
     for (auto &S : InstStreamEntry.second) {
-      S->finalize(this->Trace->DataLayout);
+      S->finalizePattern();
     }
   }
   this->buildAddressInterpreterForChosenStreams();
@@ -316,6 +317,32 @@ void StreamPass::transform() {
   this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
 
   this->transformStream();
+
+  /**
+   * Add the coalesce info.
+   */
+  this->FuncSE->finalizeCoalesceInfo();
+
+  /**
+   * Finalize the infomations, after we have the coalesce information.
+   */
+  for (auto &InstStreamEntry : this->InstStreamMap) {
+    for (auto &S : InstStreamEntry.second) {
+      S->finalizeInfo(this->Trace->DataLayout);
+    }
+  }
+
+  /**
+   * Finally dump the information for loops.
+   */
+  for (const auto &LoopStreamsPair : this->ChosenLoopSortedStreams) {
+    std::string LoopInfoFileName = this->OutputExtraFolderPath + "/" +
+                                   LoopUtils::getLoopId(LoopStreamsPair.first) +
+                                   ".info.txt";
+    std::ofstream LoopInfoOS(LoopInfoFileName);
+    assert(LoopInfoOS.is_open() && "Failed to open a loop info file.");
+    this->dumpInfoForLoop(LoopStreamsPair.first, LoopInfoOS, "");
+  }
 }
 
 void StreamPass::initializeMemStreamIfNecessary(const llvm::Loop *Loop,
@@ -859,10 +886,26 @@ void StreamPass::analyzeStream() {
   }
 }
 
-MemStream *StreamPass::getMemStreamByInstLoop(llvm::Instruction *Inst,
+MemStream *StreamPass::getMemStreamByInstLoop(const llvm::Instruction *Inst,
                                               const llvm::Loop *Loop) {
   auto Iter = this->InstMemStreamMap.find(Inst);
   if (Iter == this->InstMemStreamMap.end()) {
+    return nullptr;
+  }
+  auto &Streams = Iter->second;
+  for (auto &S : Streams) {
+    if (S.getLoop() == Loop) {
+      return &S;
+    }
+  }
+  llvm_unreachable("Failed to find the stream at specified loop level.");
+}
+
+InductionVarStream *
+StreamPass::getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
+                                     const llvm::Loop *Loop) {
+  auto Iter = this->PHINodeIVStreamMap.find(PHINode);
+  if (Iter == this->PHINodeIVStreamMap.end()) {
     return nullptr;
   }
   auto &Streams = Iter->second;
@@ -883,21 +926,12 @@ void StreamPass::buildStreamDependenceGraph() {
        * First handle the base IV stream.
        */
       for (const auto &BasePHINode : S.getBaseInductionVars()) {
-        bool FoundBaseStream = false;
-        auto PHINodeIVStreamMapIter =
-            this->PHINodeIVStreamMap.find(BasePHINode);
-        if (PHINodeIVStreamMapIter != this->PHINodeIVStreamMap.end()) {
-          for (auto &IVStream : PHINodeIVStreamMapIter->second) {
-            if (IVStream.getLoop() != Loop) {
-              continue;
-            }
-            DEBUG(llvm::errs() << "Add IV dependence " << S.formatName()
-                               << " -> " << IVStream.formatName() << "\n");
-            S.addBaseStream(&IVStream);
-            FoundBaseStream = true;
-          }
-        }
-        if (!FoundBaseStream) {
+        auto BaseIVStream = this->getIVStreamByPHINodeLoop(BasePHINode, Loop);
+        if (BaseIVStream != nullptr) {
+          DEBUG(llvm::errs() << "Add IV dependence " << S.formatName() << " -> "
+                             << BaseIVStream->formatName() << "\n");
+          S.addBaseStream(BaseIVStream);
+        } else {
           DEBUG(llvm::errs()
                 << "Add missing IV dependence " << S.formatName() << " -> "
                 << Utils::formatLLVMInst(BasePHINode) << " at loop "
@@ -927,6 +961,12 @@ void StreamPass::buildStreamDependenceGraph() {
   }
 
   /**
+   * Notice that we do not add the dependence edge from memory stream to iv
+   * stream as to avoid the cycle. However, those dependencies are enforced
+   * later after we mark all the qualified streams.
+   */
+
+  /**
    * After add all the base streams, we are going to compute the base step root
    * streams. The computeBaseStepRootStreams() is by itself recursive. This will
    * result in some overhead, but hopefully the dependency chain is not very
@@ -947,16 +987,34 @@ void StreamPass::markQualifiedStream() {
    */
   for (auto &PHINodeIVStreamListEntry : this->PHINodeIVStreamMap) {
     for (auto &IVStream : PHINodeIVStreamListEntry.second) {
+
+      if (!IVStream.isCandidate()) {
+        // Ignore streams that are not candidates.
+        continue;
+      }
+
       const auto &Pattern = IVStream.getPattern();
       if (!Pattern.computed()) {
         // Only consider the computed pattern.
         continue;
       }
+
       auto AddrPattern = Pattern.getPattern().ValPattern;
       if (AddrPattern > StreamPattern::ValuePattern::UNKNOWN &&
           AddrPattern <= StreamPattern::ValuePattern::QUARDRIC) {
         // This is affine induction variable.
         Queue.emplace_back(&IVStream);
+        continue;
+      }
+
+      /**
+       * For IVStreams with base load, mark them qualifed for now.
+       * These dependence will be enforced later. This is to handle the cycle
+       * dependencies.
+       */
+      if (!IVStream.getBaseLoads().empty()) {
+        Queue.emplace_back(&IVStream);
+        continue;
       }
     }
   }
@@ -1028,6 +1086,71 @@ void StreamPass::markQualifiedStream() {
   }
 }
 
+void StreamPass::disqualifyStream() {
+  /**
+   * For IVStreams with base loads, we assume they are qualified from the
+   * beginning point. Now it's time to check if their base memory streams are
+   * actually qualified. If not, we need to propagate the dequalified signal
+   * along the dependence chain.
+   */
+
+  /**
+   * Temporary map stores the back-edge from mem-stream to iv-stream.
+   * TODO: Maybe we can embed this into Stream.h
+   */
+  std::unordered_map<Stream *, std::unordered_set<Stream *>> BackEdges;
+  std::list<Stream *> DisqualifiedQueue;
+  for (auto &PHINodeIVStreamPair : this->PHINodeIVStreamMap) {
+    for (auto &IVStream : PHINodeIVStreamPair.second) {
+      auto Loop = IVStream.getLoop();
+      for (const auto &BaseLoad : IVStream.getBaseLoads()) {
+        auto BaseMemStream = this->getMemStreamByInstLoop(BaseLoad, Loop);
+        if (BaseMemStream == nullptr) {
+          // Somehow this memory stream is missing.
+          DisqualifiedQueue.push_back(&IVStream);
+        } else {
+          // Insert the back edge.
+          BackEdges[BaseMemStream].insert(&IVStream);
+          // If the base stream is still not qualified, we have to disqualify
+          // the iv stream.
+          if (!BaseMemStream->isQualified()) {
+            DisqualifiedQueue.push_back(&IVStream);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Propagate the disqualfied signal.
+   */
+  while (!DisqualifiedQueue.empty()) {
+    auto CurrentStream = DisqualifiedQueue.front();
+    DisqualifiedQueue.pop_front();
+    if (!CurrentStream->isQualified()) {
+      // This stream is already disqualified.
+      continue;
+    }
+    CurrentStream->markUnqualified();
+
+    // Propagate to dependent streams.
+    for (const auto &DependentStream : CurrentStream->getDependentStreams()) {
+      if (DependentStream->isQualified()) {
+        DisqualifiedQueue.push_back(DependentStream);
+      }
+    }
+
+    // Also need to check back edges.
+    if (BackEdges.count(CurrentStream) != 0) {
+      for (auto &BackDependentStream : BackEdges.at(CurrentStream)) {
+        if (BackDependentStream->isQualified()) {
+          DisqualifiedQueue.push_back(BackDependentStream);
+        }
+      }
+    }
+  }
+}
+
 void StreamPass::addChosenStream(const llvm::Loop *Loop,
                                  const llvm::Instruction *Inst, Stream *S) {
   auto ChosenLoopInstStreamIter = this->ChosenLoopInstStream.find(Loop);
@@ -1059,8 +1182,8 @@ void StreamPass::chooseStreamInnerMostLoop() {
     for (auto &S : IVStreams) {
       if (S.isQualified()) {
         ChosenStream = &S;
-        break;
       }
+      break;
     }
     if (ChosenStream != nullptr) {
       this->addChosenStream(ChosenStream->getLoop(), ChosenStream->getPHIInst(),
@@ -1074,8 +1197,8 @@ void StreamPass::chooseStreamInnerMostLoop() {
     for (auto &S : Streams) {
       if (S.getQualified()) {
         ChosenStream = &S;
-        break;
       }
+      break;
     }
     if (ChosenStream != nullptr) {
       auto Loop = ChosenStream->getLoop();
@@ -1265,6 +1388,26 @@ StreamPass::getPlanNullable(const llvm::Instruction *Inst) {
   return &UserPlanIter->second;
 }
 
+void StreamPass::dumpInfoForLoop(const llvm::Loop *Loop, std::ostream &OS,
+                                 const std::string &Padding) const {
+#define INFO_OUT (OS << Padding)
+
+  INFO_OUT << LoopUtils::getLoopId(Loop) << '\n';
+  auto SortedChosenStreamsIter = this->ChosenLoopSortedStreams.find(Loop);
+  if (SortedChosenStreamsIter != this->ChosenLoopSortedStreams.end()) {
+    for (const auto &S : SortedChosenStreamsIter->second) {
+      INFO_OUT << S->formatName() << ' ' << S->getCoalesceGroup() << '\n';
+    }
+  }
+
+  std::string SubLoopPadding = Padding + "  ";
+  for (const auto &SubLoop : Loop->getSubLoops()) {
+    this->dumpInfoForLoop(SubLoop, OS, SubLoopPadding);
+  }
+
+#undef INFO_OUT
+}
+
 void StreamPass::DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop) {
   std::stringstream ss;
   ss << "DEBUG PLAN FOR LOOP " << LoopUtils::getLoopId(Loop)
@@ -1430,8 +1573,10 @@ void StreamPass::makeStreamTransformPlan() {
           // For store, only the address use is deleted.
           NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(1));
         } else {
-          // For load or iv, delete all the uses.
-          SelfPlan.planToDelete();
+          // For load or iv, delete if we have no other plan for it.
+          if (SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING) {
+            SelfPlan.planToDelete();
+          }
           for (unsigned OperandIdx = 0,
                         NumOperands = SelfInst->getNumOperands();
                OperandIdx != NumOperands; ++OperandIdx) {
@@ -1613,7 +1758,8 @@ void StreamPass::pushLoopStackAndConfigureStreams(
 }
 
 void StreamPass::popLoopStackAndUnconfigureStreams(
-    LoopStackT &LoopStack, ActiveStreamInstMapT &ActiveStreamInstMap) {
+    LoopStackT &LoopStack, DataGraph::DynamicInstIter NewInstIter,
+    ActiveStreamInstMapT &ActiveStreamInstMap) {
   assert(!LoopStack.empty() &&
          "Loop stack is empty when calling popLoopStackAndUnconfigureStreams.");
   auto EndedLoop = LoopStack.back();
@@ -1627,12 +1773,62 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
     return;
   }
 
+  std::unordered_set<DynamicInstruction::DynamicId> InitDepIds;
+
+  if (NewInstIter != this->Trace->DynamicInstructionList.end()) {
+    auto NewDynamicInst = *NewInstIter;
+    for (const auto &RegDep :
+         this->Trace->RegDeps.at(NewDynamicInst->getId())) {
+      InitDepIds.insert(RegDep.second);
+    }
+  }
+
   for (auto &S : Iter->second) {
     auto Inst = S->getInst();
+
+    auto EndInst = new StreamEndInst(S);
+    auto EndInstId = EndInst->getId();
+
+    this->Trace->insertDynamicInst(NewInstIter, EndInst);
+
+    /**
+     * Insert the register dependence.
+     */
+    auto &RegDeps = this->Trace->RegDeps.at(EndInstId);
+    for (auto &BaseStream : S->getBaseStreams()) {
+      auto BaseStreamInst = BaseStream->getInst();
+      auto ActiveStreamInstMapIter = ActiveStreamInstMap.find(BaseStreamInst);
+      if (ActiveStreamInstMapIter != ActiveStreamInstMap.end()) {
+        RegDeps.emplace_back(nullptr, ActiveStreamInstMapIter->second);
+      }
+    }
+
+    /**
+     * Also be dependent on previous step/config inst of myself.
+     * Also add myself in the active stream inst map.
+     */
     auto ActiveStreamInstMapIter = ActiveStreamInstMap.find(Inst);
     assert(ActiveStreamInstMapIter != ActiveStreamInstMap.end() &&
            "The stream is not configured.");
     // ActiveStreamInstMap.erase(ActiveStreamInstMapIter);
+    if (ActiveStreamInstMapIter != ActiveStreamInstMap.end()) {
+      // There is a previous dependence.
+      RegDeps.emplace_back(nullptr, ActiveStreamInstMapIter->second);
+      ActiveStreamInstMapIter->second = EndInstId;
+    } else {
+      ActiveStreamInstMap.emplace(Inst, EndInstId);
+    }
+
+    /**
+     * Also insert the init deps.
+     */
+    for (auto DepId : InitDepIds) {
+      RegDeps.emplace_back(nullptr, DepId);
+    }
+
+    /**
+     * Inform the stream engine.
+     */
     this->FuncSE->endStream(S);
   }
 }
@@ -1692,7 +1888,8 @@ void StreamPass::transformStream() {
     } else {
       // This is the end.
       while (!LoopStack.empty()) {
-        this->popLoopStackAndUnconfigureStreams(LoopStack, ActiveStreamInstMap);
+        this->popLoopStackAndUnconfigureStreams(LoopStack, NewInstIter,
+                                                ActiveStreamInstMap);
       }
       while (!this->Trace->DynamicInstructionList.empty()) {
         this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
@@ -1708,7 +1905,8 @@ void StreamPass::transformStream() {
         break;
       }
       // No special handling when popping loop stack.
-      this->popLoopStackAndUnconfigureStreams(LoopStack, ActiveStreamInstMap);
+      this->popLoopStackAndUnconfigureStreams(LoopStack, NewInstIter,
+                                              ActiveStreamInstMap);
     }
 
     if (NewLoop != nullptr && IsAtHeadOfCandidate) {
@@ -1728,6 +1926,24 @@ void StreamPass::transformStream() {
         auto S = ChosenInstStreamIter->second;
         this->FuncSE->updateLoadedValue(S, this->Trace,
                                         *(NewDynamicInst->DynamicResult));
+      }
+    }
+
+    // Update the phi node value for functional stream engine.
+    for (unsigned OperandIdx = 0, NumOperands = NewStaticInst->getNumOperands();
+         OperandIdx != NumOperands; ++OperandIdx) {
+      auto OperandValue = NewStaticInst->getOperand(OperandIdx);
+      if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
+
+        auto ChosenInstStreamIter = this->ChosenInstStreamMap.find(PHINode);
+        if (ChosenInstStreamIter == this->ChosenInstStreamMap.end()) {
+          // This is not a phi node we are about.
+          continue;
+        }
+
+        auto S = ChosenInstStreamIter->second;
+        this->FuncSE->updatePHINodeValue(
+            S, this->Trace, *(NewDynamicInst->DynamicOperands[OperandIdx]));
       }
     }
 
@@ -1906,7 +2122,6 @@ void StreamPass::transformStream() {
             RegDeps.emplace_back(nullptr, StreamInstIter->second);
             StreamInstIter->second = NewDynamicId;
           }
-
         }
       }
 

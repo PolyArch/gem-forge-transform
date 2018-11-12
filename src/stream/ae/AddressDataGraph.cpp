@@ -81,7 +81,7 @@ void AddressDataGraph::constructDataGraph(
   }
 
   /**
-   * Generate the sorted inputs list.
+   * Generate the sorted inputs list, (actually just get a fixed order).
    */
   this->Inputs.insert(this->Inputs.end(), UnsortedInputs.begin(),
                       UnsortedInputs.end());

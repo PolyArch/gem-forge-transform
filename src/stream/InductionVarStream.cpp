@@ -11,37 +11,53 @@ InductionVarStream::InductionVarStream(const std::string &_Folder,
                                        size_t _Level)
     : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _InnerMostLoop, _Level),
       PHIInst(_PHIInst) {
-  this->ComputeInsts =
-      InductionVarStream::searchComputeInsts(this->PHIInst, this->Loop);
+  this->searchComputeInsts(this->PHIInst, this->Loop);
   this->StepInsts =
       InductionVarStream::searchStepInsts(this->PHIInst, this->InnerMostLoop);
-  this->IsCandidate = InductionVarStream::isInductionVarStream(
-      this->PHIInst, this->ComputeInsts);
+  this->IsCandidate = this->isCandidateImpl();
 }
 
-bool InductionVarStream::isInductionVarStream(
-    const llvm::PHINode *PHINode,
-    const std::unordered_set<const llvm::Instruction *> &ComputeInsts) {
-  if ((!PHINode->getType()->isIntegerTy()) &&
-      (!PHINode->getType()->isPointerTy())) {
+bool InductionVarStream::isCandidateImpl() const {
+  if ((!this->PHIInst->getType()->isIntegerTy()) &&
+      (!this->PHIInst->getType()->isPointerTy())) {
     return false;
   }
-  for (const auto &ComputeInst : ComputeInsts) {
+  for (const auto &ComputeInst : this->ComputeInsts) {
     switch (ComputeInst->getOpcode()) {
     case llvm::Instruction::Call:
-    case llvm::Instruction::Invoke:
-    case llvm::Instruction::Store:
-    case llvm::Instruction::Load: {
+    case llvm::Instruction::Invoke: {
       return false;
     }
+    }
+  }
+  // Do not enable IVMemStream for now.
+  bool EnableIVMemStream = true;
+  if (EnableIVMemStream) {
+    size_t BaseLoadInTheInnerMostLoop = 0;
+    for (const auto &BaseLoad : this->BaseLoadInsts) {
+      if (this->InnerMostLoop->contains(BaseLoad)) {
+        BaseLoadInTheInnerMostLoop++;
+      }
+    }
+    if (BaseLoadInTheInnerMostLoop > 1) {
+      return false;
+    }
+    // For iv stream with base loads, we only allow it to be configured at inner
+    // most loop level.
+    if (BaseLoadInTheInnerMostLoop > 0 && this->Loop != this->InnerMostLoop) {
+      return false;
+    }
+
+  } else {
+    if (!this->BaseLoadInsts.empty()) {
+      return false;
     }
   }
   return true;
 }
 
-std::unordered_set<const llvm::Instruction *>
-InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
-                                       const llvm::Loop *Loop) {
+void InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
+                                            const llvm::Loop *Loop) {
 
   std::list<llvm::Instruction *> Queue;
 
@@ -64,14 +80,12 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
     }
   }
 
-  std::unordered_set<const llvm::Instruction *> ComputeInsts;
-
   while (!Queue.empty()) {
     auto CurrentInst = Queue.front();
     Queue.pop_front();
     DEBUG(llvm::errs() << "Processing "
                        << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
-    if (ComputeInsts.count(CurrentInst) != 0) {
+    if (this->ComputeInsts.count(CurrentInst) != 0) {
       // We have already processed this one.
       DEBUG(llvm::errs() << "Already processed\n");
       continue;
@@ -81,15 +95,21 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
       DEBUG(llvm::errs() << "Not in loop\n");
       continue;
     }
-    if (Utils::isCallOrInvokeInst(CurrentInst)) {
-      // So far I do not know how to process the call/invoke instruction.
-      DEBUG(llvm::errs() << "Is call or invoke\n");
-      continue;
-    }
 
     DEBUG(llvm::errs() << "Found compute inst "
                        << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
-    ComputeInsts.insert(CurrentInst);
+    this->ComputeInsts.insert(CurrentInst);
+
+    if (Utils::isCallOrInvokeInst(CurrentInst)) {
+      // So far I do not know how to process the call/invoke instruction.
+      continue;
+    }
+
+    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(CurrentInst)) {
+      // We found a base load. Do not go further.
+      this->BaseLoadInsts.insert(LoadInst);
+      continue;
+    }
 
     // BFS on the operands.
     for (unsigned OperandIdx = 0, NumOperands = CurrentInst->getNumOperands();
@@ -102,7 +122,6 @@ InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
       }
     }
   }
-  return ComputeInsts;
 }
 
 std::unordered_set<const llvm::Instruction *>
@@ -160,6 +179,9 @@ InductionVarStream::searchStepInsts(const llvm::PHINode *PHINode,
       // Find a step instruction, do not go further.
       DEBUG(llvm::errs() << "Found step inst "
                          << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
+      StepInsts.insert(CurrentInst);
+    } else if (llvm::isa<llvm::LoadInst>(CurrentInst)) {
+      // Base load instruction is also considered as StepInst.
       StepInsts.insert(CurrentInst);
     } else {
       // BFS on the operands of non-step instructions.

@@ -51,7 +51,7 @@ public:
   getComputeInsts() const override {
     return this->AddrInsts;
   }
-  const std::unordered_set<llvm::LoadInst *> &getBaseLoads() const {
+  const std::unordered_set<const llvm::LoadInst *> &getBaseLoads() const override {
     return this->BaseLoads;
   }
   const std::unordered_set<llvm::PHINode *> &getBaseInductionVars() const {
@@ -85,7 +85,7 @@ protected:
 
 private:
   MemoryFootprint Footprint;
-  std::unordered_set<llvm::LoadInst *> BaseLoads;
+  std::unordered_set<const llvm::LoadInst *> BaseLoads;
   std::unordered_set<llvm::PHINode *> BaseInductionVars;
   std::unordered_set<const llvm::Instruction *> AddrInsts;
   std::unordered_set<llvm::Instruction *> AliasInsts;

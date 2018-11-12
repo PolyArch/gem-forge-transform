@@ -59,6 +59,7 @@ public:
            "Marking a stream with missing base stream qualified.");
     this->Qualified = true;
   }
+  void markUnqualified() { this->Qualified = false; }
   bool isQualified() const { return this->Qualified; }
   void markChosen() {
     assert(!this->HasMissingBaseStream &&
@@ -66,6 +67,13 @@ public:
     this->Chosen = true;
   }
   bool isChosen() const { return this->Chosen; }
+  void setCoalesceGroup(int CoalesceGroup) {
+    assert(this->CoalesceGroup == -1 && "Coalesce group is already set.");
+    this->CoalesceGroup = CoalesceGroup;
+  }
+  int getCoalesceGroup() const {
+    return this->CoalesceGroup;
+  }
   const llvm::Loop *getLoop() const { return this->Loop; }
   const llvm::Loop *getInnerMostLoop() const { return this->InnerMostLoop; }
   const llvm::Instruction *getInst() const { return this->Inst; }
@@ -107,7 +115,8 @@ public:
 
   void endStream();
 
-  void finalize(llvm::DataLayout *DataLayout);
+  void finalizePattern();
+  void finalizeInfo(llvm::DataLayout *DataLayout);
 
   virtual bool isAliased() const { return false; }
   std::string formatType() const {
@@ -136,6 +145,9 @@ public:
   getStepInsts() const {
     assert(false && "getStepInst only implemented for IVStream.");
   }
+
+  virtual const std::unordered_set<const llvm::LoadInst *> &
+  getBaseLoads() const = 0;
 
   static bool isStepInst(const llvm::Instruction *Inst) {
     auto Opcode = Inst->getOpcode();
@@ -184,6 +196,8 @@ protected:
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;
+
+  int CoalesceGroup;
   /**
    * Stores the total iterations for this stream
    */

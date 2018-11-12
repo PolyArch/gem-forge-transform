@@ -6,8 +6,9 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
     : Type(_Type), Folder(_Folder), Inst(_Inst), Loop(_Loop),
       InnerMostLoop(_InnerMostLoop), LoopLevel(_LoopLevel),
       HasMissingBaseStream(false), Qualified(false), Chosen(false),
-      TotalIters(0), TotalAccesses(0), TotalStreams(0), Iters(1),
-      LastAccessIters(0), StartId(DynamicInstruction::InvalidId), Pattern() {
+      CoalesceGroup(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
+      Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
+      Pattern() {
   this->PatternFullPath = this->Folder + "/" + this->formatName() + ".pattern";
   this->PatternTextFullPath = this->PatternFullPath + ".txt";
   this->InfoFullPath = this->Folder + "/" + this->formatName() + ".info";
@@ -134,11 +135,14 @@ void Stream::endStream() {
   this->PatternSerializer->serialize(this->ProtobufPattern);
 }
 
-void Stream::finalize(llvm::DataLayout *DataLayout) {
+void Stream::finalizePattern() {
   this->Pattern.finalizePattern();
   this->PatternTextFStream.close();
   delete this->PatternSerializer;
   this->PatternSerializer = nullptr;
+}
+
+void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
 
   std::ofstream InfoTextFStream(this->InfoTextFullPath);
   assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
@@ -149,40 +153,48 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   InfoTextFStream << this->getElementSize(DataLayout) << '\n'; // element size
   InfoTextFStream << this->PatternFullPath << '\n';            // pattern path
   InfoTextFStream << this->HistoryFullPath << '\n';            // history path
+  InfoTextFStream << "Chosen: " << this->Chosen << '\n';       // chosen
+  InfoTextFStream << "Coalesce: " << this->CoalesceGroup
+                  << '\n'; // coalesce group id
+
+  InfoTextFStream << "Base loads. ---------\n";
+  for (const auto &BaseLoad : this->getBaseLoads()) {
+    InfoTextFStream << "  " << Utils::formatLLVMInst(BaseLoad) << '\n';
+  }
 
   // The next line is the chosen base streams.
   InfoTextFStream << "Base streams. ---------\n";
   for (const auto &BaseStream : this->BaseStreams) {
-    InfoTextFStream << BaseStream->getStreamId() << ' '
+    InfoTextFStream << "  " << BaseStream->getStreamId() << ' '
                     << BaseStream->formatName() << '\n';
   }
   InfoTextFStream << "Base step streams. ---------\n";
   for (const auto &BaseStepStream : this->BaseStepStreams) {
-    InfoTextFStream << BaseStepStream->getStreamId() << ' '
+    InfoTextFStream << "  " << BaseStepStream->getStreamId() << ' '
                     << BaseStepStream->formatName() << '\n';
   }
   InfoTextFStream << "Base step root streams. ---------\n";
   for (const auto &BaseStepRootStream : this->BaseStepRootStreams) {
-    InfoTextFStream << BaseStepRootStream->getStreamId() << ' '
+    InfoTextFStream << "  " << BaseStepRootStream->getStreamId() << ' '
                     << BaseStepRootStream->formatName() << '\n';
   }
   InfoTextFStream << "Chosen base streams. ---------\n";
   for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
-    InfoTextFStream << ChosenBaseStream->getStreamId() << ' '
+    InfoTextFStream << "  " << ChosenBaseStream->getStreamId() << ' '
                     << ChosenBaseStream->formatName() << '\n';
   }
   InfoTextFStream << "------------------------------\n";
   // The next line is the chosen step streams.
   InfoTextFStream << "Chosen base step streams. ---------\n";
   for (const auto &ChosenBaseStepStream : this->ChosenBaseStepStreams) {
-    InfoTextFStream << ChosenBaseStepStream->getStreamId() << ' '
+    InfoTextFStream << "  " << ChosenBaseStepStream->getStreamId() << ' '
                     << ChosenBaseStepStream->formatName() << '\n';
   }
   InfoTextFStream << "------------------------------\n";
   // The next line is all chosen base streams.
   InfoTextFStream << "All chosen base streams. ----\n";
   for (const auto &AllChosenBaseStream : this->AllChosenBaseStreams) {
-    InfoTextFStream << AllChosenBaseStream->getStreamId() << ' '
+    InfoTextFStream << "  " << AllChosenBaseStream->getStreamId() << ' '
                     << AllChosenBaseStream->formatName() << '\n';
   }
   InfoTextFStream << "------------------------------\n";
@@ -203,6 +215,7 @@ void Stream::finalize(llvm::DataLayout *DataLayout) {
   ProtobufInfo.set_element_size(this->getElementSize(DataLayout));
   ProtobufInfo.set_pattern_path(this->PatternFullPath);
   ProtobufInfo.set_history_path(this->HistoryFullPath);
+  ProtobufInfo.set_coalesce_group(this->CoalesceGroup);
   for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
     ProtobufInfo.add_chosen_base_ids(ChosenBaseStream->getStreamId());
   }

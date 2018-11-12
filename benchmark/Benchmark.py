@@ -3,30 +3,7 @@ import subprocess
 
 import Constants as C
 import Util
-
-
-class Gem5ReplayConfig(object):
-    def __init__(self, prefetch):
-        self.prefetch = prefetch
-
-    def get_gem5_dir(self, tdg):
-        dirname, basename = os.path.split(tdg)
-        gem5_dir = os.path.join(dirname, self.get_config(basename))
-        return gem5_dir
-
-    def get_result(self, tdg):
-        dirname, basename = os.path.split(tdg)
-        return os.path.join(
-            C.LLVM_TDG_RESULT_DIR,
-            '{config}.txt'.format(
-                config=self.get_config(basename),
-            ))
-
-    def get_config(self, tdg_basename):
-        return '{tdg}.{cpu_type}.{prefetch}'.format(
-            cpu_type=C.CPU_TYPE,
-            prefetch=('prefetch' if self.prefetch else 'noprefetch'),
-            tdg=tdg_basename)
+import Utils.Gem5ConfigureManager
 
 
 class Benchmark(object):
@@ -43,8 +20,6 @@ class Benchmark(object):
         self.trace_func = trace_func
         self.lang = lang
         self.standalone = standalone
-        self.gem5_config = Gem5ReplayConfig(False)
-        # self.gem5_config = Gem5ReplayConfig(True)
 
         self.pass_so = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
@@ -131,12 +106,13 @@ class Benchmark(object):
         return tdgs
 
     def get_results(self, transform_pass):
-        results = list()
-        name = self.get_name()
-        tdgs = self.get_tdgs(transform_pass)
-        for tdg in tdgs:
-            results.append(self.gem5_config.get_result(tdg))
-        return results
+        # results = list()
+        # name = self.get_name()
+        # tdgs = self.get_tdgs(transform_pass)
+        # for tdg in tdgs:
+        #     results.append(self.gem5_config.get_result(tdg))
+        # return results
+        raise ValueError('Not implemented')
 
     """
     Generate the trace.
@@ -235,7 +211,10 @@ class Benchmark(object):
             output_extra_folder = os.path.join(
                 os.getcwd(), output_tdg + '.extra')
             if os.path.exists(output_extra_folder):
-                Util.call_helper(['rm', '-r', output_extra_folder])
+                try:
+                    Util.call_helper(['rm', '-r', output_extra_folder])
+                except Exception as e:
+                    pass
             if not os.path.exists(output_extra_folder):
                 os.mkdir(output_extra_folder)
             opt_cmd.append('-output-datagraph=' + output_tdg)
@@ -294,10 +273,17 @@ class Benchmark(object):
     Prepare the gem5 simulate command.
     """
 
-    def get_gem5_simulate_command(self, tdg, replay_bin, GEM5_OUT_DIR, debugs=[], hoffman2=False):
+    def get_gem5_simulate_command(
+            self,
+            tdg,
+            gem5_config,
+            replay_bin,
+            gem5_out_dir,
+            debugs=[],
+            hoffman2=False):
         gem5_args = [
             C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
-            '--outdir={outdir}'.format(outdir=GEM5_OUT_DIR),
+            '--outdir={outdir}'.format(outdir=gem5_out_dir),
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=replay_bin),
             '--llvm-standalone={standlone}'.format(standlone=self.standalone),
@@ -315,9 +301,25 @@ class Benchmark(object):
             '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
             '--l2_size={l2_size}'.format(l2_size=C.GEM5_L2_SIZE),
         ]
-        if self.gem5_config.prefetch:
+        if gem5_config.prefetch:
             gem5_args.append(
                 '--llvm-prefetch=1'
+            )
+        if gem5_config.stream_engine_is_oracle:
+            gem5_args.append(
+                '--gem-forge-stream-engine-is-oracle=1'
+            )
+        if gem5_config.stream_engine_max_run_ahead_length is not None:
+            gem5_args.append(
+                '--gem-forge-stream-engine-max-run-ahead-length={x}'.format(
+                    x=gem5_config.stream_engine_max_run_ahead_length
+                )
+            )
+        if gem5_config.stream_engine_throttling is not None:
+            gem5_args.append(
+                '--gem-forge-stream-engine-throttling={x}'.format(
+                    x=gem5_config.stream_engine_throttling
+                )
             )
         if debugs:
             gem5_args.insert(
@@ -335,32 +337,37 @@ class Benchmark(object):
     The gem5 output directory (abs path).
     """
 
-    def gem5_replay(self, tdg, debugs=[]):
-        GEM5_OUT_DIR = self.gem5_config.get_gem5_dir(tdg)
-        Util.call_helper(['mkdir', '-p', GEM5_OUT_DIR])
-        print GEM5_OUT_DIR
+    def gem5_replay(self, tdg, gem5_config, debugs=[]):
+        print gem5_config
+        print tdg
+        gem5_out_dir = gem5_config.get_gem5_dir(tdg)
+        print gem5_out_dir
+        Util.call_helper(['mkdir', '-p', gem5_out_dir])
+        print 'what?'
         gem5_args = self.get_gem5_simulate_command(
-            tdg, self.get_replay_bin(), GEM5_OUT_DIR, debugs, False)
+            tdg, gem5_config, self.get_replay_bin(), gem5_out_dir, debugs, False)
         print('# Replaying the datagraph...')
         Util.call_helper(gem5_args)
-        return GEM5_OUT_DIR
+        return gem5_out_dir
 
     """
     Simulate the datagraph with gem5.
     """
 
-    def simulate(self, tdg, result, debugs):
+    def simulate(self, tdg, gem5_config, debugs):
+        print('# Simulating the datagraph')
         gem5_outdir = self.gem5_replay(
             tdg=tdg,
+            gem5_config=gem5_config,
             debugs=debugs,
         )
-        Util.call_helper([
-            'cp',
-            os.path.join(gem5_outdir, 'region.stats.txt'),
-            result,
-        ])
+        # Util.call_helper([
+        #     'cp',
+        #     os.path.join(gem5_outdir, 'region.stats.txt'),
+        #     result,
+        # ])
 
-    def simulate_hoffman2(self, tdg, result, scp=True, debugs=[]):
+    def simulate_hoffman2(self, tdg, gem5_config, result, scp=True, debugs=[]):
         _, tdg_name = os.path.split(tdg)
         hoffman2_ssh_tdg = os.path.join(C.HOFFMAN2_SSH_SCRATCH, tdg_name)
         hoffman2_tdg = os.path.join(C.HOFFMAN2_SCRATCH, tdg_name)
@@ -410,17 +417,17 @@ class Benchmark(object):
         # Create the command.
         gem5_out_dir = self.gem5_config.get_config(tdg_name)
         gem5_command = self.get_gem5_simulate_command(
-            hoffman2_tdg, hoffman2_replay_bin, gem5_out_dir, debugs, True)
+            hoffman2_tdg, gem5_config, hoffman2_replay_bin, gem5_out_dir, debugs, True)
         return gem5_command
 
-    def get_hoffman2_retrive_cmd(self, tdg, result):
+    def get_hoffman2_retrive_cmd(self, tdg, gem5_config, result):
         # Create the retrive command.
         _, tdg_name = os.path.split(tdg)
-        gem5_out_dir = self.gem5_config.get_config(tdg_name)
+        gem5_out_dir = gem5_config.get_config(tdg_name)
         retrive_cmd = [
             'scp',
             '-r',
             os.path.join(C.HOFFMAN2_SSH_SCRATCH, gem5_out_dir, '*'),
-            self.gem5_config.get_gem5_dir(tdg),
+            gem5_config.get_gem5_dir(tdg),
         ]
         return retrive_cmd
