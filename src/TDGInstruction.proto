@@ -30,6 +30,7 @@ message TDGInstruction {
     StreamConfigExtra stream_config = 21;
     StreamStepExtra stream_step = 22;
     StreamStoreExtra stream_store = 23;
+    StreamEndExtra stream_end = 24;
   }
 
   message StoreExtra {
@@ -75,6 +76,10 @@ message TDGInstruction {
   }
 
   message StreamStoreExtra {
+    uint64 stream_id = 1;
+  }
+
+  message StreamEndExtra {
     uint64 stream_id = 1;
   }
 }

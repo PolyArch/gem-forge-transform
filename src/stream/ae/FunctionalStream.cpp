@@ -146,14 +146,61 @@ void FunctionalStream::access() {
   this->CurrentEntryUsed = true;
 }
 
-void FunctionalStream::updateLoadedValue(DataGraph *DG,
-                                         const DynamicValue &DynamicVal) {
-  assert(this->S->Type == Stream::TypeT::MEM &&
-         "Function updatedLoadedValue should never be called for IV stream.");
+void FunctionalStream::updatePHINodeValue(DataGraph *DG,
+                                          const DynamicValue &DynamicVal) {
+  assert(
+      this->S->Type == Stream::TypeT::IV &&
+      "Function updatePHINodeValue should never be called for non-iv stream.");
+
   auto Type = this->S->getInst()->getType();
   switch (Type->getTypeID()) {
   case llvm::Type::PointerTyID: {
-    this->CurrentValue = std::stoul(DynamicVal.Value, 0, 16);
+    this->CurrentValue = DynamicVal.getAddr();
+    this->IsValueValid = true;
+    this->CurrentAddress = CurrentValue;
+    this->IsAddressValid = true;
+    break;
+  }
+  case llvm::Type::IntegerTyID: {
+    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
+    unsigned BitWidth = IntegerType->getBitWidth();
+    if (BitWidth > sizeof(this->CurrentValue) * 8) {
+      llvm::errs() << "Too wide an integer value " << BitWidth;
+      this->DEBUG_DUMP(llvm::errs());
+      llvm::errs() << '\n';
+    }
+    assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
+           "Too wide an integer value.");
+    this->CurrentValue = DynamicVal.getInt();
+    this->IsValueValid = true;
+    this->CurrentAddress = CurrentValue;
+    this->IsAddressValid = true;
+    break;
+  }
+  default: {
+    llvm_unreachable("Unsupported llvm type for an iv stream.");
+    return;
+  }
+  }
+
+  // If we are here, it means we should update the dependent streams.
+  DEBUG(llvm::errs() << "Updated loaded value ");
+  DEBUG(this->DEBUG_DUMP(llvm::errs()));
+  DEBUG(llvm::errs() << '\n');
+  for (auto &DependentStream : this->DependentStreams) {
+    DependentStream->updateRecursively(DG);
+  }
+}
+
+void FunctionalStream::updateLoadedValue(DataGraph *DG,
+                                         const DynamicValue &DynamicVal) {
+  assert(
+      this->S->Type == Stream::TypeT::MEM &&
+      "Function updatedLoadedValue should never be called for non-mem stream.");
+  auto Type = this->S->getInst()->getType();
+  switch (Type->getTypeID()) {
+  case llvm::Type::PointerTyID: {
+    this->CurrentValue = DynamicVal.getAddr();
     this->IsValueValid = true;
     break;
   }
@@ -167,7 +214,7 @@ void FunctionalStream::updateLoadedValue(DataGraph *DG,
     }
     assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
            "Too wide an integer value.");
-    this->CurrentValue = std::stoul(DynamicVal.Value);
+    this->CurrentValue = DynamicVal.getInt();
     this->IsValueValid = true;
     break;
   }
@@ -218,6 +265,27 @@ void FunctionalStream::update(DataGraph *DG) {
     auto ComputedAddress = this->computeAddress(DG);
     this->IsAddressValid = ComputedAddress.first;
     this->CurrentAddress = ComputedAddress.second;
+    // } else if (this->S->Type == Stream::TypeT::IV &&
+    //            !this->S->getBaseLoads().empty()) {
+    //   // This is an iv stream with base load. Be careful.
+    //   if (this->CurrentIdx == 1) {
+    //     // This is the first element, we should look for the incoming value.
+    //     auto PHINode = llvm::dyn_cast<llvm::PHINode>(this->S->getInst());
+    //     assert(PHINode != nullptr && "IVStream should have phi node.");
+    //     auto Loop = this->S->getLoop();
+    //     for (unsigned IncomingIdx = 0,
+    //                   NumIncomingValues = PHINode->getNumIncomingValues();
+    //          IncomingIdx != NumIncomingValues; ++IncomingIdx) {
+    //       auto BB = PHINode->getIncomingBlock(IncomingIdx);
+    //       if (Loop->contains(BB)) {
+    //         continue;
+    //       }
+    //       // Found the outside incoming value we are look
+    //     }
+
+    //   } else {
+    //     // Later iterations should use the value from the base load.
+    //   }
   } else {
     // This is a direct stream.
     const auto NextValue = this->Pattern.getNextValue();

@@ -11,6 +11,7 @@ import StreamStatistics
 import Constants as C
 
 from Utils import BenchmarkResult
+from Utils import Gem5ConfigureManager
 
 import os
 
@@ -41,8 +42,8 @@ def transform(benchmark, pass_name, trace, profile_file, tdg, debugs):
     benchmark.transform(pass_name, trace, profile_file, tdg, debugs)
 
 
-def simulate(benchmark, tdg, result, debugs):
-    benchmark.simulate(tdg, result, debugs)
+def simulate(benchmark, tdg, gem5_config, debugs):
+    benchmark.simulate(tdg, gem5_config, debugs)
 
 
 class Driver:
@@ -60,6 +61,8 @@ class Driver:
         self.trace_jobs = dict()
         self.transform_jobs = dict()
         self.options = options
+        self.gem5_config_manager = (
+            Gem5ConfigureManager.Gem5ReplayConfigureManager(options))
 
     def schedule_trace(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -117,7 +120,6 @@ class Driver:
     def schedule_simulate(self, job_scheduler, benchmark, transform_pass, debugs):
         name = benchmark.get_name()
         tdgs = benchmark.get_tdgs(transform_pass)
-        results = benchmark.get_results(transform_pass)
 
         for i in xrange(0, len(tdgs)):
             if self.options.trace_id:
@@ -129,20 +131,24 @@ class Driver:
                 if transform_pass in self.transform_jobs[name]:
                     deps.append(self.transform_jobs[name][transform_pass][i])
 
-            job_scheduler.add_job(
-                '{name}.{transform_pass}.simulate'.format(
-                    name=name,
-                    transform_pass=transform_pass,
-                ),
-                simulate,
-                (
-                    benchmark,
-                    tdgs[i],
-                    results[i],
-                    debugs,
-                ),
-                deps
+            gem5_configs = self.gem5_config_manager.get_configs(
+                transform_pass
             )
+            for gem5_config in gem5_configs:
+                job_scheduler.add_job(
+                    '{name}.{transform_pass}.simulate'.format(
+                        name=name,
+                        transform_pass=transform_pass,
+                    ),
+                    simulate,
+                    (
+                        benchmark,
+                        tdgs[i],
+                        gem5_config,
+                        debugs,
+                    ),
+                    deps
+                )
 
     def simulate_hoffman2(self, benchmarks):
         hoffman2_commands = list()
@@ -307,54 +313,61 @@ def main(options):
         driver.simulate_hoffman2(benchmarks)
 
     suite_result = BenchmarkResult.SuiteResult(
-        benchmarks, options.transform_passes)
+        benchmarks, driver.gem5_config_manager, options.transform_passes)
     energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
     time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
     suite_result.compare([energy_attribute, time_attribute])
+
+    if len(options.transform_passes) > 1 and 'replay' in options.transform_passes:
+        for transform in options.transform_passes:
+            if transform == 'replay':
+                continue
+            suite_result.compare_transform_speedup(transform)
+            suite_result.compare_transform_energy(transform)
 
     benchmark_stream_statistics = dict()
 
     for benchmark in benchmarks:
 
-         stream_passes = ['stream', 'stream-prefetch']
-         stream_pass_specified = None
-         stream_tdgs = list()
-         replay_results = list()
-         stream_results = list()
-         for p in stream_passes:
-             if p in options.transform_passes:
-                 stream_pass_specified = p
-                 stream_tdgs = benchmark.get_tdgs(p)
-                 replay_results = benchmark.get_results('replay')
-                 stream_results = benchmark.get_results(p)
-                 break
+        stream_passes = ['stream', 'stream-prefetch']
+        stream_pass_specified = None
+        stream_tdgs = list()
+        replay_results = list()
+        stream_results = list()
+        for p in stream_passes:
+            if p in options.transform_passes:
+                stream_pass_specified = p
+                stream_tdgs = benchmark.get_tdgs(p)
+                replay_results = benchmark.get_results('replay')
+                stream_results = benchmark.get_results(p)
+                break
 
-         if stream_pass_specified is not None:
-             filtered_trace_ids = list()
-             for i in xrange(len(stream_tdgs)):
-                 if options.trace_id:
-                     if i not in options.trace_id:
-                         # Ignore those traces if not specified
-                         continue
-                 # Hack here to skip some traces.
-                 if 'leela_s' in benchmark.get_name():
-                     if i in {2, 4, 5, 9}:
-                         continue
-                 filtered_trace_ids.append(i)
-             filtered_stream_tdg_stats = [
-                 stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
-             filtered_replay_results = [replay_results[x]
-                                        for x in filtered_trace_ids]
-             filtered_stream_results = [stream_results[x]
-                                        for x in filtered_trace_ids]
+        if stream_pass_specified is not None:
+            filtered_trace_ids = list()
+            for i in xrange(len(stream_tdgs)):
+                if options.trace_id:
+                    if i not in options.trace_id:
+                        # Ignore those traces if not specified
+                        continue
+                # Hack here to skip some traces.
+                if 'leela_s' in benchmark.get_name():
+                    if i in {2, 4, 5, 9}:
+                        continue
+                filtered_trace_ids.append(i)
+            filtered_stream_tdg_stats = [
+                stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
+            filtered_replay_results = [replay_results[x]
+                                       for x in filtered_trace_ids]
+            filtered_stream_results = [stream_results[x]
+                                       for x in filtered_trace_ids]
 
-             stream_stats = StreamStatistics.StreamStatistics(
-                 benchmark.get_name(),
-                 filtered_stream_tdg_stats,
-                 filtered_replay_results,
-                 filtered_stream_results)
-             benchmark_stream_statistics[benchmark.get_name()] = stream_stats
-             print('-------------------------- ' + benchmark.get_name())
+            stream_stats = StreamStatistics.StreamStatistics(
+                benchmark.get_name(),
+                filtered_stream_tdg_stats,
+                filtered_replay_results,
+                filtered_stream_results)
+            benchmark_stream_statistics[benchmark.get_name()] = stream_stats
+            print('-------------------------- ' + benchmark.get_name())
 
     if benchmark_stream_statistics:
      #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
@@ -384,6 +397,11 @@ def parse_benchmarks(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
 
 
+def parse_stream_engine_maximum_run_ahead_length(option, opt, value, parser):
+    vs = value.split(',')
+    setattr(parser.values, option.dest, [int(x) for x in vs])
+
+
 if __name__ == '__main__':
     import optparse
     parser = optparse.OptionParser()
@@ -409,6 +427,10 @@ if __name__ == '__main__':
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)
+    parser.add_option('--se-ahead', action='callback', type='string',
+                      callback=parse_stream_engine_maximum_run_ahead_length, dest='se_ahead')
+    parser.add_option('--se-throttling', action='store',
+                      type='string', dest='se_throttling', default='static')
     (options, args) = parser.parse_args()
     # Handle special values for the options.
     if options.transform_passes and 'all' in options.transform_passes:

@@ -16,6 +16,7 @@ public:
     DELETE,
     STEP,
     STORE,
+    LOAD_STEP,
   } Plan;
 
   static std::string formatPlanT(const PlanT Plan) {
@@ -28,6 +29,8 @@ public:
       return "STEP";
     case STORE:
       return "STORE";
+    case LOAD_STEP:
+      return "LOAD_STEP";
     }
     llvm_unreachable("Illegal StreamTransformPlan::PlanT to be formatted.");
   }
@@ -140,6 +143,24 @@ private:
   Stream *S;
 };
 
+class StreamEndInst : public DynamicInstruction {
+public:
+  StreamEndInst(Stream *_S) : DynamicInstruction(), S(_S) {}
+  std::string getOpName() const override { return "stream-end"; }
+
+protected:
+  void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                                DataGraph *DG) const override {
+    auto EndExtra = ProtobufEntry->mutable_stream_end();
+    assert(ProtobufEntry->has_stream_end() &&
+           "The protobuf entry should have stream end extra struct.");
+    EndExtra->set_stream_id(this->S->getStreamId());
+  }
+
+private:
+  Stream *S;
+};
+
 class StreamPass : public ReplayTrace {
 public:
   static char ID;
@@ -159,6 +180,11 @@ public:
   const InstTransformPlanMapT &getInstTransformPlanMap() const {
     return this->InstPlanMap;
   }
+
+  MemStream *getMemStreamByInstLoop(const llvm::Instruction *Inst,
+                                    const llvm::Loop *Loop);
+  InductionVarStream *getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
+                                               const llvm::Loop *Loop);
 
 protected:
   bool initialize(llvm::Module &Module) override;
@@ -208,14 +234,13 @@ protected:
   void chooseStreamInnerMostLoop();
   void buildStreamDependenceGraph();
   void markQualifiedStream();
+  void disqualifyStream();
   void addChosenStream(const llvm::Loop *Loop, const llvm::Instruction *Inst,
                        Stream *S);
   void buildChosenStreamDependenceGraph();
   void buildAllChosenStreamDependenceGraph();
   void buildAddressInterpreterForChosenStreams();
   std::string getAddressModuleName() const;
-  MemStream *getMemStreamByInstLoop(llvm::Instruction *Inst,
-                                    const llvm::Loop *Loop);
 
   /*************************************************************
    * Stream transform.
@@ -229,6 +254,8 @@ protected:
   void makeStreamTransformPlan();
   StreamTransformPlan &getOrCreatePlan(const llvm::Instruction *Inst);
   StreamTransformPlan *getPlanNullable(const llvm::Instruction *Inst);
+  void dumpInfoForLoop(const llvm::Loop *Loop, std::ostream &OS,
+                       const std::string &Padding) const;
   void DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop);
   void DEBUG_SORTED_STREAMS_FOR_LOOP(const llvm::Loop *Loop);
   void sortChosenStream(Stream *S, std::list<Stream *> &Stack,
@@ -239,6 +266,7 @@ protected:
                                    ActiveStreamInstMapT &ActiveStreamInstMap);
   void
   popLoopStackAndUnconfigureStreams(LoopStackT &LoopStack,
+                                    DataGraph::DynamicInstIter NewInstIter,
                                     ActiveStreamInstMapT &ActiveStreamInstMap);
   void DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst);
   virtual void transformStream();
@@ -248,7 +276,7 @@ protected:
   std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
       InstStreamMap;
 
-  std::unordered_map<llvm::Instruction *, std::list<MemStream>>
+  std::unordered_map<const llvm::Instruction *, std::list<MemStream>>
       InstMemStreamMap;
 
   std::unordered_map<const llvm::PHINode *, std::list<InductionVarStream>>

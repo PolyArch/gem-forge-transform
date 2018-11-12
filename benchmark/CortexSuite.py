@@ -296,9 +296,12 @@ class CortexSuite:
         if folder is None:
             folder = CortexSuite.FOLDER
         self.benchmarks = list()
-        for input_size in ['small', 'medium', 'large']:
-        # for input_size in ['small', 'large']:
-        # for input_size in ['small']:
+        input_sizes = [
+            # 'small',
+            # 'medium',
+            'large',
+        ]
+        for input_size in input_sizes:
             for benchmark_name in CortexBenchmark.INCLUDES:
                 benchmark = CortexBenchmark(folder, benchmark_name, input_size)
                 self.benchmarks.append(benchmark)

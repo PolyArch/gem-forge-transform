@@ -52,6 +52,7 @@ add_library(LLVMTDGPass SHARED
     stream/ae/FunctionalStreamPattern.cpp
     stream/ae/FunctionalStream.cpp
     stream/ae/FunctionalStreamEngine.cpp
+    stream/ae/DynamicStreamCoalescer.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
 )

@@ -61,7 +61,6 @@ protected:
     }
   }
 
-  using PlanT = StreamTransformPlan::PlanT;
 
   llvm::LLVMContext Context;
   std::unique_ptr<llvm::Module> Module;

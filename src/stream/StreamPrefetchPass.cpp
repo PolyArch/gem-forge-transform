@@ -60,7 +60,8 @@ void StreamPrefetchPass::transformStream() {
     } else {
       // This is the end.
       while (!LoopStack.empty()) {
-        this->popLoopStackAndUnconfigureStreams(LoopStack, ActiveStreamInstMap);
+        this->popLoopStackAndUnconfigureStreams(LoopStack, NewInstIter,
+                                                ActiveStreamInstMap);
       }
       while (!this->Trace->DynamicInstructionList.empty()) {
         this->Serializer->serialize(this->Trace->DynamicInstructionList.front(),
@@ -76,7 +77,8 @@ void StreamPrefetchPass::transformStream() {
         break;
       }
       // No special handling when popping loop stack.
-      this->popLoopStackAndUnconfigureStreams(LoopStack, ActiveStreamInstMap);
+      this->popLoopStackAndUnconfigureStreams(LoopStack, NewInstIter,
+                                              ActiveStreamInstMap);
     }
 
     if (NewLoop != nullptr && IsAtHeadOfCandidate) {

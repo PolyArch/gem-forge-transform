@@ -40,9 +40,10 @@ add_executable(GemForgeTest
   TestSetup.cpp
   ReplayPassTestFixture.cpp
   stream/StreamPassTestFixture.cpp
-  stream/MultipleSteps.cpp
   stream/StepInstDetectionTest.cpp
+  stream/StreamTransformPlanTest.cpp
   stream/StreamInstDependenceTest.cpp
+  stream/StreamCoalesceTest.cpp
 )
 
 # target_compile_definitions(GemForgeTest

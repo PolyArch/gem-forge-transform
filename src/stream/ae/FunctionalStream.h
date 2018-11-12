@@ -23,6 +23,17 @@ public:
   FunctionalStream &operator=(const FunctionalStream &Other) = delete;
   FunctionalStream &operator=(FunctionalStream &&Other) = delete;
 
+  Stream *getStream() { return this->S; }
+  bool isStepRoot() const {
+    return this->BaseStepStreams.empty() && this->S->Type == Stream::TypeT::IV;
+  }
+
+  const std::list<FunctionalStream *> &
+  getAllDependentStepStreamsSorted() const {
+    return this->AllDependentStepStreamsSorted;
+  }
+
+  uint64_t getAddress() const { return this->CurrentAddress; }
   uint64_t getValue() const { return this->CurrentValue; }
   void configure(DataGraph *DG);
   void step(DataGraph *DG);
@@ -36,6 +47,12 @@ public:
    * and the type is supported.
    */
   void updateLoadedValue(DataGraph *DG, const DynamicValue &DynamicVal);
+
+  /**
+   * When a phi node comes in, we update the value if this is an iv stream with
+   * base load.
+   */
+  void updatePHINodeValue(DataGraph *DG, const DynamicValue &DynamicValue);
 
   /**
    * Dump the history into the file when the stream ends.
@@ -74,10 +91,6 @@ private:
   std::list<uint64_t> FIFO;
 
   void DEBUG_DUMP(llvm::raw_ostream &OS) const;
-
-  bool isStepRoot() const {
-    return this->BaseStepStreams.empty() && this->S->Type == Stream::TypeT::IV;
-  }
 
   void registerToStepRoot(FunctionalStream *NewStepDependentStream);
 

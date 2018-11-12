@@ -20,6 +20,10 @@ public:
   getComputeInsts() const override {
     return this->ComputeInsts;
   }
+  const std::unordered_set<const llvm::LoadInst *> &
+  getBaseLoads() const override {
+    return this->BaseLoadInsts;
+  }
   const std::unordered_set<const llvm::Instruction *> &
   getStepInsts() const override {
     return this->StepInsts;
@@ -59,6 +63,7 @@ public:
 private:
   const llvm::PHINode *PHIInst;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
+  std::unordered_set<const llvm::LoadInst *> BaseLoadInsts;
   std::unordered_set<const llvm::Instruction *> StepInsts;
   bool IsCandidate;
 
@@ -73,8 +78,7 @@ private:
   /**
    * Do a BFS on the PHINode and extract all the compute instructions.
    */
-  static std::unordered_set<const llvm::Instruction *>
-  searchComputeInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
+  void searchComputeInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
 
   /**
    * Do a BFS on the PHINode and extract all the step instructions.
@@ -88,10 +92,9 @@ private:
   /**
    * A phi node is an induction variable stream if:
    * 1. It is of type integer.
-   * 2. Its compute instructions do not contain memory access or call/invoke.
+   * 2. Its compute instructions or call/invoke.
+   * 3. Contains at most one base load stream in the same inner most loop.
    */
-  static bool isInductionVarStream(
-      const llvm::PHINode *PHINode,
-      const std::unordered_set<const llvm::Instruction *> &ComputeInsts);
+  bool isCandidateImpl() const;
 };
 #endif
