@@ -290,3 +290,14 @@ void AddressDataGraph::translate(
   // Insert into the value map.
   ValueMap.emplace(Inst, NewInst);
 }
+
+
+/**
+ * Two address datagraphs can be coalesce iff.
+ * 1. 
+ */
+bool AddressDataGraph::isAbleToCoalesceWith(const AddressDataGraph& Other) const {
+
+
+
+}
