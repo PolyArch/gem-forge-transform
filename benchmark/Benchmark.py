@@ -321,6 +321,20 @@ class Benchmark(object):
                     x=gem5_config.stream_engine_throttling
                 )
             )
+
+        if gem5_config.stream_engine_enable_coalesce == 'coalesce':
+            gem5_args.append(
+                '--gem-forge-stream-engine-enable-coalesce=1'
+            )
+        elif gem5_config.stream_engine_enable_coalesce == 'merge':
+            # Enable merge also enables coalesce.
+            gem5_args.append(
+                '--gem-forge-stream-engine-enable-coalesce=1'
+            )
+            gem5_args.append(
+                '--gem-forge-stream-engine-enable-merge=1'
+            )
+
         if debugs:
             gem5_args.insert(
                 1, '--debug-flags={flags}'.format(flags=','.join(debugs)))

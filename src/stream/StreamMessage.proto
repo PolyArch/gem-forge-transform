@@ -12,8 +12,9 @@ message StreamInfo {
     string pattern_path = 7;
     string history_path = 8;
     int32 coalesce_group = 9;
-    repeated uint64 chosen_base_ids = 10;
-    repeated uint64 chosen_base_step_ids = 11;
+    repeated uint64 chosen_base_ids = 20;
+    repeated uint64 chosen_base_step_ids = 21;
+    repeated uint64 chosen_base_step_root_ids = 22;
 }
 
 message StreamPattern {

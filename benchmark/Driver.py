@@ -431,6 +431,8 @@ if __name__ == '__main__':
                       callback=parse_stream_engine_maximum_run_ahead_length, dest='se_ahead')
     parser.add_option('--se-throttling', action='store',
                       type='string', dest='se_throttling', default='static')
+    parser.add_option('--se-coalesce', action='store',
+                      type='string', dest='se_coalesce', default='single')
     (options, args) = parser.parse_args()
     # Handle special values for the options.
     if options.transform_passes and 'all' in options.transform_passes:

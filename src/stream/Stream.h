@@ -71,9 +71,7 @@ public:
     assert(this->CoalesceGroup == -1 && "Coalesce group is already set.");
     this->CoalesceGroup = CoalesceGroup;
   }
-  int getCoalesceGroup() const {
-    return this->CoalesceGroup;
-  }
+  int getCoalesceGroup() const { return this->CoalesceGroup; }
   const llvm::Loop *getLoop() const { return this->Loop; }
   const llvm::Loop *getInnerMostLoop() const { return this->InnerMostLoop; }
   const llvm::Instruction *getInst() const { return this->Inst; }
@@ -191,6 +189,7 @@ protected:
   std::unordered_set<Stream *> DependentStreams;
   std::unordered_set<Stream *> ChosenBaseStreams;
   std::unordered_set<Stream *> ChosenBaseStepStreams;
+  std::unordered_set<Stream *> ChosenBaseStepRootStreams;
   std::unordered_set<Stream *> AllChosenBaseStreams;
   std::unordered_set<Stream *> AllChosenDependentStreams;
   bool HasMissingBaseStream;

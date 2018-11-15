@@ -68,6 +68,9 @@ void Stream::addChosenBaseStream(Stream *Other) {
   // Set the base stream as step stream if we share the same inner most level.
   if (Other->InnerMostLoop == this->InnerMostLoop) {
     this->ChosenBaseStepStreams.insert(Other);
+    if (this->BaseStepRootStreams.count(Other) != 0) {
+      this->ChosenBaseStepRootStreams.insert(Other);
+    }
   }
 }
 
@@ -191,6 +194,12 @@ void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
                     << ChosenBaseStepStream->formatName() << '\n';
   }
   InfoTextFStream << "------------------------------\n";
+  InfoTextFStream << "Chosen base step root streams. ---------\n";
+  for (const auto &ChosenBaseStepRootStream : this->ChosenBaseStepRootStreams) {
+    InfoTextFStream << "  " << ChosenBaseStepRootStream->getStreamId() << ' '
+                    << ChosenBaseStepRootStream->formatName() << '\n';
+  }
+  InfoTextFStream << "------------------------------\n";
   // The next line is all chosen base streams.
   InfoTextFStream << "All chosen base streams. ----\n";
   for (const auto &AllChosenBaseStream : this->AllChosenBaseStreams) {
@@ -221,6 +230,10 @@ void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
   }
   for (const auto &ChosenBaseStepStream : this->ChosenBaseStepStreams) {
     ProtobufInfo.add_chosen_base_step_ids(ChosenBaseStepStream->getStreamId());
+  }
+  for (const auto &ChosenBaseStepRootStream : this->ChosenBaseStepRootStreams) {
+    ProtobufInfo.add_chosen_base_step_root_ids(
+        ChosenBaseStepRootStream->getStreamId());
   }
   InfoSerializer.serialize(ProtobufInfo);
 }

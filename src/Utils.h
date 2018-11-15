@@ -7,6 +7,13 @@
 
 class Utils {
 public:
+  static constexpr uint64_t CacheLineSize = 64;
+  static constexpr uint64_t CacheLineMask = ~((1ul << 6) - 1);
+
+  static uint64_t getCacheLineAddr(uint64_t Addr) {
+    return Addr & CacheLineMask;
+  }
+
   static bool isMemAccessInst(const llvm::Instruction *Inst) {
     return llvm::isa<llvm::StoreInst>(Inst) || llvm::isa<llvm::LoadInst>(Inst);
   }
