@@ -6,7 +6,7 @@ class Gem5ReplayConfig(object):
 
     THROTTLING_DEFAULT = 'static'
     ENABLE_COALESCE_DEFAULT = 'single'
-    L1_DCACHE_DEFAULT = 'orignal'
+    L1_DCACHE_DEFAULT = 'original'
 
     def __init__(self, **kwargs):
         self.prefetch = kwargs['prefetch']
