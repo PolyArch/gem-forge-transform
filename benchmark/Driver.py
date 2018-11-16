@@ -433,6 +433,9 @@ if __name__ == '__main__':
                       type='string', dest='se_throttling', default='static')
     parser.add_option('--se-coalesce', action='store',
                       type='string', dest='se_coalesce', default='single')
+    # Enable stream aware cache.
+    parser.add_option('--se-l1d', action='store',
+                      type='string', dest='se_l1d', default='original')
     (options, args) = parser.parse_args()
     # Handle special values for the options.
     if options.transform_passes and 'all' in options.transform_passes:

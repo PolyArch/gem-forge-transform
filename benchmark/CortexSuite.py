@@ -297,8 +297,8 @@ class CortexSuite:
             folder = CortexSuite.FOLDER
         self.benchmarks = list()
         input_sizes = [
-            # 'small',
-            # 'medium',
+            'small',
+            'medium',
             'large',
         ]
         for input_size in input_sizes:
