@@ -334,10 +334,10 @@ class Benchmark(object):
             gem5_args.append(
                 '--gem-forge-stream-engine-enable-merge=1'
             )
-
-        if gem5_config.stream_engine_l1d == 'aware':
+        if gem5_config.stream_engine_l1d != 'original':
             gem5_args.append(
-                '--gem-forge-stream-engine-l1d=aware'
+                '--gem-forge-stream-engine-l1d={l1d}'.format(
+                    l1d=gem5_config.stream_engine_l1d)
             )
 
         if debugs:

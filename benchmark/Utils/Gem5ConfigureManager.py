@@ -56,27 +56,6 @@ class Gem5ReplayConfig(object):
             ))
             raise ValueError(
                 'Unable to extract transform pass from tdg file name.')
-        # config = '{tdg}.{cpu_type}'.format(
-        #     cpu_type=C.CPU_TYPE,
-        #     tdg=tdg_basename)
-        # if self.prefetch:
-        #     config += '.prefetch'
-        # if '.stream.' in tdg_basename:
-        #     if self.stream_engine_is_oracle:
-        #         config += '.oracle'
-        #     if self.stream_engine_max_run_ahead_length is not None:
-        #         config += '.ahead{x}'.format(
-        #             x=self.stream_engine_max_run_ahead_length)
-        #     if self.stream_engine_throttling != Gem5ReplayConfig.THROTTLING_DEFAULT:
-        #         config += '.{throttling}'.format(
-        #             throttling=self.stream_engine_throttling
-        #         )
-        #     if self.stream_engine_enable_coalesce != Gem5ReplayConfig.ENABLE_COALESCE_DEFAULT:
-        #         config += '.{enable_coalesce}'.format(
-        #             enable_coalesce=self.stream_engine_enable_coalesce
-        #         )
-        # print config
-        # return config
 
     def get_config_id(self, transform, prefix='config'):
         config = prefix
