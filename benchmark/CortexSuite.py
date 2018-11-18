@@ -272,11 +272,11 @@ class CortexBenchmark(Benchmark):
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def transform(self, pass_name, trace, profile_file, tdg, debugs):
+    def transform(self, transform_config, trace, profile_file, tdg, debugs):
         os.chdir(self.work_path)
 
         self.build_replay(
-            pass_name=pass_name,
+            transform_config=transform_config,
             trace_file=trace,
             profile_file=profile_file,
             # tdg_detail='integrated',

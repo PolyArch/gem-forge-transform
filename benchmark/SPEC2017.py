@@ -270,10 +270,10 @@ class SPEC2017Benchmark(Benchmark):
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def transform(self, pass_name, trace_file, profile_file, output_tdg, debugs):
+    def transform(self, transform_config, trace_file, profile_file, output_tdg, debugs):
         os.chdir(self.get_run_path())
         self.build_replay(
-            pass_name=pass_name,
+            transform_config=transform_config,
             trace_file=trace_file,
             profile_file=profile_file,
             tdg_detail='standalone',

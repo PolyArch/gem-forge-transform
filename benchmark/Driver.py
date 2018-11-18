@@ -12,6 +12,7 @@ import Constants as C
 
 from Utils import BenchmarkResult
 from Utils import Gem5ConfigureManager
+from Utils import TransformManager
 
 import os
 
@@ -38,8 +39,8 @@ def trace(benchmark):
     benchmark.trace()
 
 
-def transform(benchmark, pass_name, trace, profile_file, tdg, debugs):
-    benchmark.transform(pass_name, trace, profile_file, tdg, debugs)
+def transform(benchmark, transform_config, trace, profile_file, tdg, debugs):
+    benchmark.transform(transform_config, trace, profile_file, tdg, debugs)
 
 
 def simulate(benchmark, tdg, gem5_config, debugs):
@@ -63,6 +64,8 @@ class Driver:
         self.options = options
         self.gem5_config_manager = (
             Gem5ConfigureManager.Gem5ReplayConfigureManager(options))
+        self.transform_manager = (
+            TransformManager.TransformManager(options))
 
     def schedule_trace(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -80,46 +83,57 @@ class Driver:
 
         profile_file = benchmark.get_profile()
         traces = benchmark.get_traces()
-        tdgs = benchmark.get_tdgs(transform_pass)
 
-        assert(len(traces) == len(tdgs))
-        if name not in self.transform_jobs:
-            self.transform_jobs[name] = dict()
-        assert(transform_pass not in self.transform_jobs[name])
-        self.transform_jobs[name][transform_pass] = dict()
+        transform_configs = self.transform_manager.get_configs(transform_pass)
+        for transform_config in transform_configs:
+            transform_config_id = transform_config.get_id()
+            tdgs = benchmark.get_tdgs(transform_config)
 
-        for i in xrange(0, len(traces)):
-            if self.options.trace_id:
-                if i not in self.options.trace_id:
-                    # Ignore those traces if not specified
-                    continue
-            deps = list()
-            if name in self.trace_jobs:
-                deps.append(self.trace_jobs[name])
+            assert(len(traces) == len(tdgs))
+            if name not in self.transform_jobs:
+                self.transform_jobs[name] = dict()
+            assert(transform_config_id not in self.transform_jobs[name])
+            self.transform_jobs[name][transform_config_id] = dict()
 
-            # Schedule the job.
-            self.transform_jobs[name][transform_pass][i] = (
-                job_scheduler.add_job(
-                    '{name}.{transform_pass}.transform'.format(
-                        name=name,
-                        transform_pass=transform_pass
-                    ),
-                    transform,
-                    (
-                        benchmark,
-                        pass_name,
-                        traces[i],
-                        profile_file,
-                        tdgs[i],
-                        debugs,
-                    ),
-                    deps
+            for i in xrange(0, len(traces)):
+                if self.options.trace_id:
+                    if i not in self.options.trace_id:
+                        # Ignore those traces if not specified
+                        continue
+                deps = list()
+                if name in self.trace_jobs:
+                    deps.append(self.trace_jobs[name])
+
+                # Schedule the job.
+                self.transform_jobs[name][transform_config_id][i] = (
+                    job_scheduler.add_job(
+                        '{name}.{transform_id}.transform'.format(
+                            name=name,
+                            transform_id=transform_config_id
+                        ),
+                        transform,
+                        (
+                            benchmark,
+                            transform_config,
+                            traces[i],
+                            profile_file,
+                            tdgs[i],
+                            debugs,
+                        ),
+                        deps
+                    )
                 )
-            )
 
-    def schedule_simulate(self, job_scheduler, benchmark, transform_pass, debugs):
+    def schedule_simulate(self, job_scheduler, benchmark, transform, debugs):
+        for transform_config in self.transform_manager.get_configs(transform):
+            self.schedule_simulate_for_transform_config(
+                job_scheduler, benchmark, transform_config, debugs)
+
+    def schedule_simulate_for_transform_config(self, job_scheduler, benchmark, transform_config, debugs):
         name = benchmark.get_name()
-        tdgs = benchmark.get_tdgs(transform_pass)
+        tdgs = benchmark.get_tdgs(transform_config)
+        transform_id = transform_config.get_id()
+        transform = transform_config.get_transform()
 
         for i in xrange(0, len(tdgs)):
             if self.options.trace_id:
@@ -128,17 +142,17 @@ class Driver:
                     continue
             deps = list()
             if name in self.transform_jobs:
-                if transform_pass in self.transform_jobs[name]:
-                    deps.append(self.transform_jobs[name][transform_pass][i])
+                if transform_id in self.transform_jobs[name]:
+                    deps.append(self.transform_jobs[name][transform_id][i])
 
             gem5_configs = self.gem5_config_manager.get_configs(
-                transform_pass
+                transform
             )
             for gem5_config in gem5_configs:
                 job_scheduler.add_job(
-                    '{name}.{transform_pass}.simulate'.format(
+                    '{name}.{transform_id}.simulate'.format(
                         name=name,
-                        transform_pass=transform_pass,
+                        transform_id=transform_id,
                     ),
                     simulate,
                     (
@@ -150,54 +164,54 @@ class Driver:
                     deps
                 )
 
-    def simulate_hoffman2(self, benchmarks):
-        hoffman2_commands = list()
-        retrive_commands = list()
-        for benchmark in benchmarks:
-            for transform_pass in options.transform_passes:
-                name = benchmark.get_name()
-                tdgs = benchmark.get_tdgs(transform_pass)
-                results = benchmark.get_results(transform_pass)
+    # def simulate_hoffman2(self, benchmarks):
+    #     hoffman2_commands = list()
+    #     retrive_commands = list()
+    #     for benchmark in benchmarks:
+    #         for transform_pass in options.transform_passes:
+    #             name = benchmark.get_name()
+    #             tdgs = benchmark.get_tdgs(transform_pass)
+    #             results = benchmark.get_results(transform_pass)
 
-                for i in xrange(0, len(tdgs)):
-                    if self.options.trace_id:
-                        if i not in self.options.trace_id:
-                            # Ignore those traces if not specified.
-                            continue
-                    hoffman2_command = benchmark.simulate_hoffman2(
-                        tdgs[i], results[i], False)
-                    hoffman2_commands.append(hoffman2_command)
-                    retrive_command = benchmark.get_hoffman2_retrive_cmd(
-                        tdgs[i], results[i])
-                    retrive_commands.append(retrive_command)
-        for i in xrange(len(hoffman2_commands)):
-            print('{i} {cmd}'.format(i=i, cmd=' '.join(hoffman2_commands[i])))
-            # Hoffman2 index starts from 1.
-            command_file = 'command.{i}.sh'.format(i=i+1)
-            hoffman2_command_file = os.path.join(
-                C.HOFFMAN2_SSH_SCRATCH, command_file)
-            tmp_command_file = os.path.join('/tmp', command_file)
-            with open(tmp_command_file, 'w') as f:
-                for j in xrange(len(hoffman2_commands[i])):
-                    if ' ' in hoffman2_commands[i][j]:
-                        idx = hoffman2_commands[i][j].find('=')
-                        hoffman2_commands[i][j] = (
-                            hoffman2_commands[i][j][0:idx+1] + '"' +
-                            hoffman2_commands[i][j][idx+1:-1] + '"'
-                        )
+    #             for i in xrange(0, len(tdgs)):
+    #                 if self.options.trace_id:
+    #                     if i not in self.options.trace_id:
+    #                         # Ignore those traces if not specified.
+    #                         continue
+    #                 hoffman2_command = benchmark.simulate_hoffman2(
+    #                     tdgs[i], results[i], False)
+    #                 hoffman2_commands.append(hoffman2_command)
+    #                 retrive_command = benchmark.get_hoffman2_retrive_cmd(
+    #                     tdgs[i], results[i])
+    #                 retrive_commands.append(retrive_command)
+    #     for i in xrange(len(hoffman2_commands)):
+    #         print('{i} {cmd}'.format(i=i, cmd=' '.join(hoffman2_commands[i])))
+    #         # Hoffman2 index starts from 1.
+    #         command_file = 'command.{i}.sh'.format(i=i+1)
+    #         hoffman2_command_file = os.path.join(
+    #             C.HOFFMAN2_SSH_SCRATCH, command_file)
+    #         tmp_command_file = os.path.join('/tmp', command_file)
+    #         with open(tmp_command_file, 'w') as f:
+    #             for j in xrange(len(hoffman2_commands[i])):
+    #                 if ' ' in hoffman2_commands[i][j]:
+    #                     idx = hoffman2_commands[i][j].find('=')
+    #                     hoffman2_commands[i][j] = (
+    #                         hoffman2_commands[i][j][0:idx+1] + '"' +
+    #                         hoffman2_commands[i][j][idx+1:-1] + '"'
+    #                     )
 
-                f.write(' '.join(hoffman2_commands[i]))
-            print('# SCP command file {i}'.format(i=i+1))
-            Util.call_helper([
-                'scp',
-                tmp_command_file,
-                hoffman2_command_file,
-            ])
-        tmp_retrive_command_file = os.path.join('/tmp', 'retrive_hoffman2.sh')
-        with open(tmp_retrive_command_file, 'w') as f:
-            for cmd in retrive_commands:
-                f.write(' '.join(cmd))
-                f.write('\n')
+    #             f.write(' '.join(hoffman2_commands[i]))
+    #         print('# SCP command file {i}'.format(i=i+1))
+    #         Util.call_helper([
+    #             'scp',
+    #             tmp_command_file,
+    #             hoffman2_command_file,
+    #         ])
+    #     tmp_retrive_command_file = os.path.join('/tmp', 'retrive_hoffman2.sh')
+    #     with open(tmp_retrive_command_file, 'w') as f:
+    #         for cmd in retrive_commands:
+    #             f.write(' '.join(cmd))
+    #             f.write('\n')
 
 
 build_datagraph_debugs = {
@@ -300,12 +314,12 @@ def main(options):
                     transform_pass,
                     build_datagraph_debugs[transform_pass])
         if options.simulate and (not options.hoffman2):
-            for transform_pass in options.transform_passes:
+            for transform in options.transform_passes:
                 driver.schedule_simulate(
                     job_scheduler,
                     benchmark,
-                    transform_pass,
-                    simulate_datagraph_debugs[transform_pass])
+                    transform,
+                    simulate_datagraph_debugs[transform])
     job_scheduler.run()
 
     # If use hoffman2, prepare the cluster.
@@ -313,7 +327,10 @@ def main(options):
         driver.simulate_hoffman2(benchmarks)
 
     suite_result = BenchmarkResult.SuiteResult(
-        benchmarks, driver.gem5_config_manager, options.transform_passes)
+        benchmarks,
+        driver.transform_manager,
+        driver.gem5_config_manager,
+        options.transform_passes)
     energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
     time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
     suite_result.compare([energy_attribute, time_attribute])
@@ -322,8 +339,9 @@ def main(options):
         for transform in options.transform_passes:
             if transform == 'replay':
                 continue
-            suite_result.compare_transform_speedup(transform)
-            suite_result.compare_transform_energy(transform)
+            for transform_config in driver.transform_manager.get_configs(transform):
+                suite_result.compare_transform_speedup(transform_config)
+                suite_result.compare_transform_energy(transform_config)
 
     benchmark_stream_statistics = dict()
 
@@ -337,9 +355,10 @@ def main(options):
         for p in stream_passes:
             if p in options.transform_passes:
                 stream_pass_specified = p
-                stream_tdgs = benchmark.get_tdgs(p)
-                replay_results = benchmark.get_results('replay')
-                stream_results = benchmark.get_results(p)
+                stream_tdgs = benchmark.get_tdgs(
+                    driver.transform_manager.get_configs(p)[0])
+                # replay_results = benchmark.get_results('replay')
+                # stream_results = benchmark.get_results(p)
                 break
 
         if stream_pass_specified is not None:
@@ -356,16 +375,17 @@ def main(options):
                 filtered_trace_ids.append(i)
             filtered_stream_tdg_stats = [
                 stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
-            filtered_replay_results = [replay_results[x]
-                                       for x in filtered_trace_ids]
-            filtered_stream_results = [stream_results[x]
-                                       for x in filtered_trace_ids]
+            # filtered_replay_results = [replay_results[x]
+            #                            for x in filtered_trace_ids]
+            # filtered_stream_results = [stream_results[x]
+            #                            for x in filtered_trace_ids]
 
             stream_stats = StreamStatistics.StreamStatistics(
                 benchmark.get_name(),
                 filtered_stream_tdg_stats,
-                filtered_replay_results,
-                filtered_stream_results)
+                None,  # filtered_replay_results,
+                None,  # filtered_stream_results,
+            )
             benchmark_stream_statistics[benchmark.get_name()] = stream_stats
             print('-------------------------- ' + benchmark.get_name())
 
@@ -427,6 +447,8 @@ if __name__ == '__main__':
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)
+    parser.add_option('--stream-choose-strategy', action='store', type='string',
+                      dest='stream_choose_strategy', default='outer')
     parser.add_option('--se-ahead', action='callback', type='string',
                       callback=parse_stream_engine_maximum_run_ahead_length, dest='se_ahead')
     parser.add_option('--se-throttling', action='store',

@@ -9,6 +9,10 @@
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
 
+enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
+
+extern llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy;
+
 struct StreamTransformPlan {
 public:
   enum PlanT {
@@ -230,8 +234,15 @@ protected:
   /*************************************************************
    * Stream Choice.
    *************************************************************/
-  void chooseStream();
+  void chooseStreamOuterMostLoop();
   void chooseStreamInnerMostLoop();
+  virtual void chooseStream() {
+    if (StreamPassChooseStrategy == StreamPassChooseStrategyE::OUTER_MOST) {
+      this->chooseStreamOuterMostLoop();
+    } else {
+      this->chooseStreamInnerMostLoop();
+    }
+  }
   void buildStreamDependenceGraph();
   void markQualifiedStream();
   void disqualifyStream();
