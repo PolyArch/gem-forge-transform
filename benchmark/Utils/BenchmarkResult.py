@@ -55,45 +55,48 @@ class TransformResult:
 
 
 class BenchmarkResult:
-    def __init__(self, benchmark, gem5_config_manager, transforms):
+    def __init__(self, benchmark, transform_manager, gem5_config_manager, transforms):
         self.benchmark = benchmark
+        self.transform_manager = transform_manager
         self.gem5_config_manager = gem5_config_manager
         self.transform_results = dict()
         for transform in transforms:
-            self.transform_results[transform] = list()
+            for transform_config in self.transform_manager.get_configs(transform):
+                transform_id = transform_config.get_id()
+                self.transform_results[transform_id] = list()
 
-            tdgs = self.benchmark.get_tdgs(transform)
-            gem5_configs = self.gem5_config_manager.get_configs(transform)
+                tdgs = self.benchmark.get_tdgs(transform_config)
+                gem5_configs = self.gem5_config_manager.get_configs(transform)
 
-            for gem5_config in gem5_configs:
-                folders = [gem5_config.get_gem5_dir(
-                    tdg) for tdg in tdgs]
-                self.transform_results[transform].append(
-                    TransformResult(benchmark, folders)
-                )
+                for gem5_config in gem5_configs:
+                    folders = [gem5_config.get_gem5_dir(
+                        tdg) for tdg in tdgs]
+                    self.transform_results[transform_id].append(
+                        TransformResult(benchmark, folders)
+                    )
 
-    def compute(self, func, transforms):
+    def compute(self, func, transform_ids):
         values = list()
-        for transform in transforms:
-            assert(transform in self.transform_results)
+        for transform_id in transform_ids:
+            assert(transform_id in self.transform_results)
             # Compute function only calculate for the first
             # result.
-            result = self.transform_results[transform][0]
+            result = self.transform_results[transform_id][0]
             values.append(func(result))
         return values
 
-    def compute_speedup_over_replay(self, transform):
+    def compute_speedup_over_replay(self, transform_id):
         replay_time = self.transform_results['replay'][0].compute_time()
         speedups = list()
-        for transform_result in self.transform_results[transform]:
+        for transform_result in self.transform_results[transform_id]:
             transform_time = transform_result.compute_time()
             speedups.append(replay_time / transform_time)
         return speedups
 
-    def compute_energy_efficiency_over_replay(self, transform):
+    def compute_energy_efficiency_over_replay(self, transform_id):
         replay_energy = self.transform_results['replay'][0].compute_energy()
         efficiency = list()
-        for transform_result in self.transform_results[transform]:
+        for transform_result in self.transform_results[transform_id]:
             transform_energy = transform_result.compute_energy()
             efficiency.append(replay_energy / transform_energy)
         return efficiency
@@ -108,13 +111,18 @@ class BenchmarkResult:
 
 
 class SuiteResult:
-    def __init__(self, benchmarks, gem5_config_manager, transforms):
+    def __init__(self, benchmarks, transform_manager, gem5_config_manager, transforms):
         self.transforms = transforms
+        self.transform_ids = list()
+        for transform in self.transforms:
+            for config in transform_manager.get_configs(transform):
+                self.transform_ids.append(config.get_id())
         self.benchmark_results = dict()
+        self.transform_manager = transform_manager
         self.gem5_config_manager = gem5_config_manager
         for benchmark in benchmarks:
             result = BenchmarkResult(
-                benchmark, gem5_config_manager, transforms)
+                benchmark, transform_manager, gem5_config_manager, transforms)
             self.benchmark_results[benchmark] = result
         self.ordered_benchmarks = list()
         for benchmark in benchmarks:
@@ -134,25 +142,28 @@ class SuiteResult:
         attribute_names = [a.name for a in attributes]
         table = SimpleTable.SimpleTable(
             'benchmark', SuiteResult._cross_product(
-                attribute_names, self.transforms))
+                attribute_names, self.transform_ids))
         for benchmark in self.benchmark_results:
             result = self.benchmark_results[benchmark]
             data = list()
             for attribute in attributes:
-                attribute_values = attribute(result, self.transforms)
+                attribute_values = attribute(result, self.transform_ids)
                 data += attribute_values
             table.add_row(benchmark.get_name(), data)
         # If there are two transforms, compare the attributes.
-        if len(self.transforms) == 2:
+        if len(self.transform_ids) == 2:
             for b in xrange(len(attributes)):
                 table.add_ratio_column(b * 2, b * 2 + 1)
         # Add one more geomean for speedup.
         for a in xrange(len(attributes)):
-            if len(self.transforms) != 2:
+            if len(self.transform_ids) != 2:
                 break
             if attributes[a].name == 'time':
                 table.add_geomean_row(
-                    len(self.transforms) * len(attributes) + a)
+                    len(self.transform_ids) * len(attributes) + a)
+            if attributes[a].name == 'energy':
+                table.add_geomean_row(
+                    len(self.transform_ids) * len(attributes) + a)
 
         print(table)
         return table
@@ -168,15 +179,17 @@ class SuiteResult:
     -------------------------------------------------------------
     """
 
-    def compare_transform_speedup(self, transform):
+    def compare_transform_speedup(self, transform_config):
+        transform = transform_config.get_transform()
+        transform_id = transform_config.get_id()
         configs = self.gem5_config_manager.get_configs(transform)
-        config_ids = [config.get_config_id(transform) for config in configs]
+        config_ids = [config.get_config_id(transform_id) for config in configs]
         table = SimpleTable.SimpleTable(
             'benchmark', config_ids
         )
         for benchmark in self.ordered_benchmarks:
             result = self.benchmark_results[benchmark]
-            speedups = result.compute_speedup_over_replay(transform)
+            speedups = result.compute_speedup_over_replay(transform_id)
             table.add_row(benchmark.get_name(), speedups)
         print(table)
         return table
@@ -188,15 +201,18 @@ class SuiteResult:
     -------------------------------------------------------------------
     """
 
-    def compare_transform_energy(self, transform):
+    def compare_transform_energy(self, transform_config):
+        transform = transform_config.get_transform()
+        transform_id = transform_config.get_id()
         configs = self.gem5_config_manager.get_configs(transform)
-        config_ids = [config.get_config_id(transform) for config in configs]
+        config_ids = [config.get_config_id(transform_id) for config in configs]
         table = SimpleTable.SimpleTable(
             'benchmark', config_ids
         )
         for benchmark in self.ordered_benchmarks:
             result = self.benchmark_results[benchmark]
-            speedups = result.compute_energy_efficiency_over_replay(transform)
+            speedups = result.compute_energy_efficiency_over_replay(
+                transform_id)
             table.add_row(benchmark.get_name(), speedups)
         print(table)
         return table

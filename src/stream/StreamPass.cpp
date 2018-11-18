@@ -7,6 +7,14 @@
 
 #define DEBUG_TYPE "StreamPass"
 
+llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy(
+    "stream-pass-choose-strategy",
+    llvm::cl::desc("Choose how to choose the configure loop level:"),
+    llvm::cl::values(clEnumValN(StreamPassChooseStrategyE::OUTER_MOST, "outer",
+                                "Always pick the outer most loop level."),
+                     clEnumValN(StreamPassChooseStrategyE::INNER_MOST, "inner",
+                                "Always pick the inner most loop level.")));
+
 std::string StreamTransformPlan::format() const {
   std::stringstream ss;
   ss << std::setw(10) << std::left
@@ -283,8 +291,7 @@ void StreamPass::transform() {
   this->buildStreamDependenceGraph();
   this->markQualifiedStream();
   this->disqualifyStream();
-  // this->chooseStream();
-  this->chooseStreamInnerMostLoop();
+  this->chooseStream();
   this->buildChosenStreamDependenceGraph();
   this->buildAllChosenStreamDependenceGraph();
 
@@ -1208,7 +1215,7 @@ void StreamPass::chooseStreamInnerMostLoop() {
   }
 }
 
-void StreamPass::chooseStream() {
+void StreamPass::chooseStreamOuterMostLoop() {
 
   // First pick all the IVStreams.
   for (auto &PHINodeIVStreamListEntry : this->PHINodeIVStreamMap) {

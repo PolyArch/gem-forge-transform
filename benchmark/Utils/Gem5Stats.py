@@ -27,6 +27,13 @@ class Gem5Stats:
         return self['sim_seconds']
 
     def __getitem__(self, key):
-        return self.stats[key]
+        try:
+            return self.stats[key]
+        except Exception as e:
+            print('Failed to get {key} from {file}'.format(
+                key=key,
+                file=self.fn
+            ))
+            raise e
 
     

@@ -68,7 +68,7 @@ void Stream::addChosenBaseStream(Stream *Other) {
   // Set the base stream as step stream if we share the same inner most level.
   if (Other->InnerMostLoop == this->InnerMostLoop) {
     this->ChosenBaseStepStreams.insert(Other);
-    if (this->BaseStepRootStreams.count(Other) != 0) {
+    if (Other->Type == Stream::TypeT::IV) {
       this->ChosenBaseStepRootStreams.insert(Other);
     }
   }

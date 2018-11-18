@@ -36,10 +36,12 @@ class SimpleTable:
 
     def compute_geomean(self, data):
         p = 1.0
+        n = 0.0
         for v in data:
-            p *= v
-        return p ** (1.0 / len(data))
-
+            if isinstance(v, float):
+                p *= v
+                n += 1.0
+        return p ** (1.0 / n)
 
     def __str__(self):
         import prettytable

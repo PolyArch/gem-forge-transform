@@ -91,28 +91,28 @@ class Benchmark(object):
                 i=i))
         return traces
 
-    def get_tdgs(self, transform_pass):
+    def get_tdgs(self, transform_config):
         tdgs = list()
         name = self.get_name()
         for i in xrange(self.get_n_traces()):
             if name.endswith('gcc_s') and i == 7:
                 # So far there is a but causing tdg #7 not transformable.
                 continue
-            tdgs.append('{run}/{name}.{transform_pass}.{i}.tdg'.format(
+            tdgs.append('{run}/{name}.{transform_id}.{i}.tdg'.format(
                 run=self.get_run_path(),
                 name=name,
-                transform_pass=transform_pass,
+                transform_id=transform_config.get_id(),
                 i=i))
         return tdgs
 
-    def get_results(self, transform_pass):
-        # results = list()
-        # name = self.get_name()
-        # tdgs = self.get_tdgs(transform_pass)
-        # for tdg in tdgs:
-        #     results.append(self.gem5_config.get_result(tdg))
-        # return results
-        raise ValueError('Not implemented')
+    def get_results(self, transform_config):
+        results = list()
+        name = self.get_name()
+        tdgs = self.get_tdgs(transform_config)
+        for tdg in tdgs:
+            results.append(self.gem5_config.get_result(tdg))
+        return results
+        # raise ValueError('Not implemented')
 
     """
     Generate the trace.
@@ -185,7 +185,7 @@ class Benchmark(object):
     """
 
     def build_replay(self,
-                     pass_name='replay',
+                     transform_config,
                      trace_file='llvm.0.trace',
                      profile_file='llvm.profile',
                      tdg_detail='integrated',
@@ -195,7 +195,10 @@ class Benchmark(object):
         opt_cmd = [
             C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
-            '-{pass_name}'.format(pass_name=pass_name),
+        ]
+        transform_options = transform_config.get_options()
+        opt_cmd += transform_options
+        opt_cmd += [
             '-trace-file={trace_file}'.format(trace_file=trace_file),
             '-datagraph-inst-uid-file={inst_uid}'.format(
                 inst_uid=self.get_inst_uid()),
@@ -226,18 +229,18 @@ class Benchmark(object):
                 '-debug-only={debugs}'.format(debugs=','.join(debugs)))
         print('# Processing trace...')
         Util.call_helper(opt_cmd)
-        build_cmd = [
-            C.CC if self.lang == 'C' else C.CXX,
-            '-static',
-            '-o',
-            self.get_replay_bin(),
-            '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
-            C.GEM5_M5OPS_X86,
-            C.LLVM_TDG_REPLAY_C,
-            self.get_replay_bc(),
-        ]
-        build_cmd += self.links
         if tdg_detail == 'integrated':
+            build_cmd = [
+                C.CC if self.lang == 'C' else C.CXX,
+                '-static',
+                '-o',
+                self.get_replay_bin(),
+                '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
+                C.GEM5_M5OPS_X86,
+                C.LLVM_TDG_REPLAY_C,
+                self.get_replay_bc(),
+            ]
+            build_cmd += self.links
             print('# Building replay binary...')
             Util.call_helper(build_cmd)
 
