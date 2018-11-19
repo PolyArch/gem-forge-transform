@@ -83,7 +83,8 @@ if not USE_ELLCC:
     CXX = os.path.join(LLVM_BIN_PATH, 'clang++')
     LLVM_LINK = os.path.join(LLVM_BIN_PATH, 'llvm-link')
     LLVM_DIS = os.path.join(LLVM_BIN_PATH, 'llvm-dis')
-    PROTOBUF_LIB = os.path.join('-lprotobuf')
+    # Some one installed a wrong version of protobuf on my computer.
+    PROTOBUF_LIB = os.path.join('/usr/local/lib/libprotobuf.a')
     LIBUNWIND_LIB = os.path.join('-lunwind')
 else:
     OPT = os.path.join(ELLCC_BIN_PATH, 'opt')

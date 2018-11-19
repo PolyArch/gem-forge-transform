@@ -208,13 +208,11 @@ class SDVBSSuite:
         input_names = [
             # 'sqcif',
             # 'qcif',
-            'cif',
+            # 'cif',
             # 'vga',
-            # 'fullhd',
+            'fullhd',
         ]
         for input_name in input_names:
-            # for input_size in ['small', 'large']:
-            # for input_size in ['small']:
             for benchmark_name in SDVBSBenchmark.FLAGS:
                 benchmark = SDVBSBenchmark(
                     self.folder, benchmark_name, input_name)
