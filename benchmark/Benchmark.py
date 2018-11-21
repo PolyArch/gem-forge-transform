@@ -306,7 +306,7 @@ class Benchmark(object):
             # '--l2_size={l2_size}'.format(l2_size=C.GEM5_L2_SIZE),
         ]
 
-        additional_options = gem5_config.get_options()
+        additional_options = gem5_config.get_options(tdg)
         gem5_args += additional_options
 
         if debugs:

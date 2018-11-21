@@ -173,6 +173,7 @@ void DynamicInstruction::serializeToProtobuf(
    */
   auto StaticInst = this->getStaticInstruction();
   if (StaticInst != nullptr) {
+    ProtobufEntry->set_pc(reinterpret_cast<uint64_t>(StaticInst));
     auto BB = StaticInst->getParent();
     if (BB->getFirstNonPHI() == StaticInst) {
       /**

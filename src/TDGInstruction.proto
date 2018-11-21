@@ -17,20 +17,21 @@ message TDGInstruction {
   string op = 1;
   uint64 id = 2;
   uint64 bb = 3;
-  repeated uint64 reg_deps = 4;
-  repeated uint64 used_stream_ids = 5;
-  repeated uint64 mem_deps = 6;
-  repeated uint64 ctr_deps = 7;
+  uint64 pc = 4;
+  repeated uint64 reg_deps = 8;
+  repeated uint64 used_stream_ids = 9;
+  repeated uint64 mem_deps = 10;
+  repeated uint64 ctr_deps = 11;
   oneof extra {
-    StoreExtra store = 8;
-    LoadExtra load = 9;
-    AllocExtra alloc = 10;
-    BranchExtra branch = 11;
-    ADFAConfigExtra adfa_config = 20;
-    StreamConfigExtra stream_config = 21;
-    StreamStepExtra stream_step = 22;
-    StreamStoreExtra stream_store = 23;
-    StreamEndExtra stream_end = 24;
+    StoreExtra store = 32;
+    LoadExtra load = 33;
+    AllocExtra alloc = 34;
+    BranchExtra branch = 35;
+    ADFAConfigExtra adfa_config = 36;
+    StreamConfigExtra stream_config = 37;
+    StreamStepExtra stream_step = 38;
+    StreamStoreExtra stream_store = 39;
+    StreamEndExtra stream_end = 40;
   }
 
   message StoreExtra {

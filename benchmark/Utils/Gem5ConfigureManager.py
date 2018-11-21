@@ -48,14 +48,15 @@ class Gem5ReplayConfig(object):
                 config=self.get_config(basename),
             ))
 
-    def get_options(self):
+    def get_options(self, tdg):
+        dirname, tdg_base = os.path.split(tdg)
+        if '.replay.' in tdg_base:
+            transform = 'replay'
+        if '.stream.' in tdg_base:
+            transform = 'stream'
         options = list()
         L2Size = '1MB'
         L2TagLat = 20
-        if self.prefetch:
-            options.append(
-                '--llvm-prefetch=1'
-            )
         if self.l1d_mshrs != Gem5ReplayConfig.L1D_MSHRS_DEFAULT:
             options.append(
                 '--l1d_mshrs={l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
@@ -65,39 +66,45 @@ class Gem5ReplayConfig(object):
                 '--l1_5dcache'
             )
             L2Size = '8MB'
-        if self.stream_engine_is_oracle:
-            options.append(
-                '--gem-forge-stream-engine-is-oracle=1'
-            )
-        if self.stream_engine_max_run_ahead_length is not None:
-            options.append(
-                '--gem-forge-stream-engine-max-run-ahead-length={x}'.format(
-                    x=self.stream_engine_max_run_ahead_length
+        if transform == 'replay':
+            if self.prefetch:
+                options.append(
+                    '--llvm-prefetch=1'
                 )
-            )
-        if self.stream_engine_throttling is not None:
-            options.append(
-                '--gem-forge-stream-engine-throttling={x}'.format(
-                    x=self.stream_engine_throttling
+        if transform == 'stream':
+            if self.stream_engine_is_oracle:
+                options.append(
+                    '--gem-forge-stream-engine-is-oracle=1'
                 )
-            )
-        if self.stream_engine_enable_coalesce == 'coalesce':
-            options.append(
-                '--gem-forge-stream-engine-enable-coalesce=1'
-            )
-        elif self.stream_engine_enable_coalesce == 'merge':
-            # Enable merge also enables coalesce.
-            options.append(
-                '--gem-forge-stream-engine-enable-coalesce=1'
-            )
-            options.append(
-                '--gem-forge-stream-engine-enable-merge=1'
-            )
-        if self.stream_engine_l1d != 'original':
-            options.append(
-                '--gem-forge-stream-engine-l1d={l1d}'.format(
-                    l1d=self.stream_engine_l1d)
-            )
+            if self.stream_engine_max_run_ahead_length is not None:
+                options.append(
+                    '--gem-forge-stream-engine-max-run-ahead-length={x}'.format(
+                        x=self.stream_engine_max_run_ahead_length
+                    )
+                )
+            if self.stream_engine_throttling is not None:
+                options.append(
+                    '--gem-forge-stream-engine-throttling={x}'.format(
+                        x=self.stream_engine_throttling
+                    )
+                )
+            if self.stream_engine_enable_coalesce == 'coalesce':
+                options.append(
+                    '--gem-forge-stream-engine-enable-coalesce=1'
+                )
+            elif self.stream_engine_enable_coalesce == 'merge':
+                # Enable merge also enables coalesce.
+                options.append(
+                    '--gem-forge-stream-engine-enable-coalesce=1'
+                )
+                options.append(
+                    '--gem-forge-stream-engine-enable-merge=1'
+                )
+            if self.stream_engine_l1d != 'original':
+                options.append(
+                    '--gem-forge-stream-engine-l1d={l1d}'.format(
+                        l1d=self.stream_engine_l1d)
+                )
         options.append(
             '--l2_size={l2size}'.format(l2size=L2Size),
         )
@@ -118,12 +125,13 @@ class Gem5ReplayConfig(object):
     def get_config_id(self, transform, prefix='config'):
         config = prefix
         config += '.{cpu_type}'.format(cpu_type=C.CPU_TYPE)
-        if self.prefetch:
-            config += '.prefetch'
         if self.l1d_mshrs != Gem5ReplayConfig.L1D_MSHRS_DEFAULT:
             config += '.l1dmshr{l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
         if self.l1_5d:
             config += '.l1_5d'
+        if transform == 'replay':
+            if self.prefetch:
+                config += '.prefetch'
         if transform == 'stream':
             if self.stream_engine_is_oracle:
                 config += '.oracle'
@@ -156,7 +164,7 @@ class Gem5ReplayConfigureManager(object):
     def _init_replay_configs(self):
         self.configs['replay'] = [
             Gem5ReplayConfig(
-                prefetch=False,
+                prefetch=self.options.replay_prefetch,
                 l1d_mshrs=self.options.l1d_mshrs,
                 l1_5d=self.options.l1_5d,
                 stream_engine_is_oracle=False,
@@ -170,7 +178,7 @@ class Gem5ReplayConfigureManager(object):
             for run_ahead_length in self.options.se_ahead:
                 self.configs['stream'].append(
                     Gem5ReplayConfig(
-                        prefetch=False,
+                        prefetch=self.options.replay_prefetch,
                         l1d_mshrs=self.options.l1d_mshrs,
                         l1_5d=self.options.l1_5d,
                         stream_engine_is_oracle=self.options.se_oracle,
@@ -184,7 +192,7 @@ class Gem5ReplayConfigureManager(object):
             # Default run ahead by 10
             self.configs['stream'].append(
                 Gem5ReplayConfig(
-                    prefetch=False,
+                    prefetch=self.options.replay_prefetch,
                     l1d_mshrs=self.options.l1d_mshrs,
                     l1_5d=self.options.l1_5d,
                     stream_engine_is_oracle=self.options.se_oracle,
