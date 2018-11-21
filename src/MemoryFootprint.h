@@ -22,6 +22,8 @@ public:
     return this->NumCacheLinesAccessed;
   }
 
+  void clear();
+
 private:
   static const size_t LOG_THRESHOLD = 1000000;
 

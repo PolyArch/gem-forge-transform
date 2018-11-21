@@ -4,6 +4,7 @@ from Benchmark import Benchmark
 import Util
 import Constants as C
 
+
 class Graph500Benchmark(Benchmark):
 
     TRACE_FUNC = 'make_bfs_tree'
@@ -32,8 +33,8 @@ class Graph500Benchmark(Benchmark):
     def get_run_path(self):
         return self.work_path
 
-    def get_n_traces(self):
-        return 1
+    def get_trace_ids(self):
+        return [0]
 
     def get_raw_bc(self):
         return os.path.join(
@@ -46,7 +47,7 @@ class Graph500Benchmark(Benchmark):
         os.chdir(self.work_path)
         Util.call_helper(['make', 'clean'])
         Util.call_helper([
-            'make', 
+            'make',
         ])
         Util.call_helper([
             './make-edgelist',

@@ -31,7 +31,12 @@ class SDVBSBenchmark(Benchmark):
     }
 
     TRACE_FUNC = {
-        'disparity': ['computeSAD', 'integralImage2D2D', 'finalSAD', 'findDisparity'],
+        'disparity': [
+            'computeSAD',
+            'integralImage2D2D',
+            'finalSAD',
+            'findDisparity'
+        ],
         'localization': ['workload'],
         'mser': ['mser'],
         'multi_ncut': ['segment_image'],
@@ -50,6 +55,27 @@ class SDVBSBenchmark(Benchmark):
             'fTranspose',
             'getANMS',
         ],
+    }
+
+    TRACE_IDS = {
+        # 'disparity': [0],
+        # 'localization': [0],
+        # 'mser': [0],
+        # 'multi_ncut': [0],
+        # 'sift': [0],
+        # 'stitch': [0],
+        # 'svm': [0],
+        # 'texture_synthesis': [0],
+        # 'tracking': [0]
+        'disparity': [0, 1, 2, 3, 5, 6, 7, 8],
+        'localization': [0, 4],
+        'mser': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'multi_ncut': [0, 1, 2, 3, 4, 5, 6],
+        'sift': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'stitch': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'svm': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'texture_synthesis': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'tracking': [0, 1, 4, 5, 6, 7, 8]
     }
 
     def __init__(self, folder, benchmark_name, input_name):
@@ -82,7 +108,12 @@ class SDVBSBenchmark(Benchmark):
         self.includes = [self.source_dir, self.common_src_dir]
         self.trace_functions = '.'.join(
             SDVBSBenchmark.TRACE_FUNC[self.benchmark_name])
+
+        self.trace_ids = SDVBSBenchmark.TRACE_IDS[self.benchmark_name]
+        self.start_inst = 1
         self.max_inst = 1e7
+        self.skip_inst = 1e8
+        self.end_inst = 10e8
 
         # Create the args.
         args = [self.input_dir, self.work_path]
@@ -108,8 +139,8 @@ class SDVBSBenchmark(Benchmark):
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
 
-    def get_n_traces(self):
-        return 1
+    def get_trace_ids(self):
+        return self.trace_ids
 
     def find_all_sources(self, folder):
         sources = list()
@@ -176,6 +207,10 @@ class SDVBSBenchmark(Benchmark):
             # debugs=['TracePass']
         )
         os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
+        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 

@@ -116,6 +116,13 @@ void FunctionalStream::step(DataGraph *DG) {
   History->set_addr(this->CurrentAddress);
   History->set_used(this->CurrentEntryUsed);
 
+  /**
+   * Add the memory footprint.
+   */
+  if (this->S->Type == Stream::TypeT::MEM) {
+    this->MemFootprint.access(this->CurrentAddress);
+  }
+
   this->CurrentIdx++;
   this->CurrentEntryUsed = false;
   this->update(DG);
@@ -241,6 +248,16 @@ void FunctionalStream::updateLoadedValue(DataGraph *DG,
 }
 
 void FunctionalStream::endStream() {
+
+  // Add footprint information.
+  if (this->S->Type == Stream::TypeT::MEM) {
+    this->ProtobufHistoryEntry.set_num_cache_lines(
+        this->MemFootprint.getNumCacheLinesAccessed());
+    this->ProtobufHistoryEntry.set_num_accesses(
+        this->MemFootprint.getNumAccesses());
+    this->MemFootprint.clear();
+  }
+
   this->HistorySerializer.serialize(this->ProtobufHistoryEntry);
 
   /**

@@ -25,6 +25,14 @@ void MemoryFootprint::access(Address Addr) {
   this->release();
 }
 
+void MemoryFootprint::clear() {
+  this->NumCacheLinesAccessed = 0;
+  this->NumAccesses = 0;
+  this->AccessId = 0;
+  this->Log.clear();
+  this->Map.clear();
+}
+
 void MemoryFootprint::release() {
   while (this->Log.size() > MemoryFootprint::LOG_THRESHOLD) {
     const auto &Entry = this->Log.front();

@@ -108,8 +108,8 @@ class SPEC2017Benchmark(Benchmark):
     def get_raw_bc(self):
         return self.target + '.bc'
 
-    def get_n_traces(self):
-        return self.n_traces
+    def get_trace_ids(self):
+        return xrange(self.n_traces)
 
     def build_raw_bc(self):
         # Clear the existing build.
