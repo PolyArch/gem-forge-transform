@@ -456,6 +456,8 @@ if __name__ == '__main__':
                       dest='l1d_mshrs', default=4)
     parser.add_option('--l1_5d', action='store_true',
                       dest='l1_5d', default=False)
+    parser.add_option('--rp-prefetch', action='store_true',
+                      dest='replay_prefetch', default=False)
     parser.add_option('--stream-choose-strategy', action='store', type='string',
                       dest='stream_choose_strategy', default='outer')
     parser.add_option('--se-oracle', action='store_true',
