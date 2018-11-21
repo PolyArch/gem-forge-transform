@@ -23,7 +23,7 @@ get_benchmarks() returns a list of benchmarks.
 Interface for benchmark:
 get_name() returns a unique name.
 get_run_path() returns the path to run.
-get_n_traces() returns the number of traces.
+get_trace_ids() returns the trace ids.
 build_raw_bc() build the raw bitcode.
 trace() generates the trace.
 transform(pass_name, trace, profile_file, tdg, debugs)
@@ -417,6 +417,11 @@ def parse_benchmarks(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
 
 
+def parse_trace_ids(option, opt, value, parser):
+    vs = value.split(',')
+    setattr(parser.values, option.dest, [int(x) for x in vs])
+
+
 def parse_stream_engine_maximum_run_ahead_length(option, opt, value, parser):
     vs = value.split(',')
     setattr(parser.values, option.dest, [int(x) for x in vs])
@@ -435,8 +440,8 @@ if __name__ == '__main__':
                       type='string', dest='directory')
     parser.add_option('-p', '--pass', action='append',
                       type='string', dest='transform_passes')
-    parser.add_option('--trace-id', action='append', type='int',
-                      dest='trace_id')
+    parser.add_option('--trace-id', type='string', action='callback',
+                      dest='trace_id', callback=parse_trace_ids)
     parser.add_option('--benchmark', type='string', action='callback',
                       callback=parse_benchmarks, dest='benchmark')
     parser.add_option('-d', '--build-datagraph', action='store_true',
@@ -447,8 +452,14 @@ if __name__ == '__main__':
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)
+    parser.add_option('--l1d-mshrs', action='store', type='int',
+                      dest='l1d_mshrs', default=4)
+    parser.add_option('--l1_5d', action='store_true',
+                      dest='l1_5d', default=False)
     parser.add_option('--stream-choose-strategy', action='store', type='string',
                       dest='stream_choose_strategy', default='outer')
+    parser.add_option('--se-oracle', action='store_true',
+                      dest='se_oracle', default=False)
     parser.add_option('--se-ahead', action='callback', type='string',
                       callback=parse_stream_engine_maximum_run_ahead_length, dest='se_ahead')
     parser.add_option('--se-throttling', action='store',

@@ -62,6 +62,7 @@ public:
 private:
   Stream *S;
   FunctionalStreamEngine *SE;
+  MemoryFootprint MemFootprint;
 
   std::unordered_map<const llvm::Value *, FunctionalStream *> BaseStreams;
   std::unordered_set<FunctionalStream *> BaseStepStreams;

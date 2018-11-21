@@ -72,7 +72,8 @@ std::string getProfileFileName() {
 // This helps to solve the problem when the tracer runtime calls some functions
 // which is also traced (so no recursion).
 static bool insideMyself = false;
-static uint64_t count;
+static uint64_t count = 0;
+static uint64_t countInTraceFunc = 0;
 static uint64_t tracedCount = 0;
 
 // Use this flag to ingore all the initialization phase.
@@ -94,6 +95,11 @@ static uint64_t START_INST = 0;
 static uint64_t MAX_INST = 1;
 static uint64_t SKIP_INST = 0;
 static uint64_t END_INST = 0;
+
+/**
+ * Determins how to interpret the START_INST and so on.
+ */
+static bool MEASURE_IN_TRACE_FUNC = false;
 
 static uint64_t PRINT_INTERVAL = 10000000;
 
@@ -157,6 +163,15 @@ static void initialize() {
     MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
     END_INST = getUint64Env("LLVM_TDG_END_INST");
 
+    const char *meaureInTraceFunc =
+        std::getenv("LLVM_TDG_MEASURE_IN_TRACE_FUNC");
+    std::string MEASURE_IN_TRACE_FUNC_VAL = "TRUE";
+    if (meaureInTraceFunc != nullptr) {
+      MEASURE_IN_TRACE_FUNC = MEASURE_IN_TRACE_FUNC_VAL == meaureInTraceFunc;
+    } else {
+      MEASURE_IN_TRACE_FUNC = false;
+    }
+
     PRINT_INTERVAL = getUint64Env("LLVM_TDG_PRINT_INTERVAL");
     if (PRINT_INTERVAL == 0) {
       PRINT_INTERVAL = 10000000;
@@ -183,8 +198,12 @@ static void initialize() {
  */
 static bool shouldLog() {
   if (START_INST > 0) {
-    if (count >= START_INST) {
-      return (count - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
+    auto c = count;
+    if (MEASURE_IN_TRACE_FUNC) {
+      c = countInTraceFunc;
+    }
+    if (c >= START_INST) {
+      return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
     } else {
       return false;
     }
@@ -349,6 +368,9 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
   assert(currentInstOpName == nullptr && "Previous inst has not been closed.");
   currentInstOpName = OpCodeName;
   count++;
+  if (tracedFunctionsInStack > 0) {
+    countInTraceFunc++;
+  }
   if (count % PRINT_INTERVAL < 5) {
     // Print every PRINT_INTERVAL instructions.
     printf("%lu:", count);
@@ -443,8 +465,12 @@ void printInstEnd() {
     tracedCount++;
     printInstEndImpl();
     // Check if we are about to switch file.
+    auto c = count;
+    if (MEASURE_IN_TRACE_FUNC) {
+      c = countInTraceFunc;
+    }
     if (START_INST > 0) {
-      if ((count - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
+      if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
         // We are the last one of every MAX_INST. Switch file.
         switchFileImpl();
       }
@@ -473,8 +499,16 @@ void printInstEnd() {
   currentInstOpName = nullptr;
 
   // Check if we are about to exit.
+  auto c = count;
+  if (MEASURE_IN_TRACE_FUNC) {
+    c = countInTraceFunc;
+  }
   if (START_INST > 0) {
-    if (END_INST > 0 && count == END_INST) {
+    if (END_INST > 0 && c == END_INST) {
+      std::exit(0);
+    }
+  } else if (END_INST > 0) {
+    if (c == END_INST) {
       std::exit(0);
     }
   } else if (MAX_INST > 0) {

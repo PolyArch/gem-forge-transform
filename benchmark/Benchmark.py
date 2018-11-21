@@ -81,7 +81,7 @@ class Benchmark(object):
     def get_traces(self):
         traces = list()
         name = self.get_name()
-        for i in xrange(self.get_n_traces()):
+        for i in self.get_trace_ids():
             if name.endswith('gcc_s') and i == 7:
                 # So far there is a bug causing tdg #7 not transformable.
                 continue
@@ -94,7 +94,7 @@ class Benchmark(object):
     def get_tdgs(self, transform_config):
         tdgs = list()
         name = self.get_name()
-        for i in xrange(self.get_n_traces()):
+        for i in self.get_trace_ids():
             if name.endswith('gcc_s') and i == 7:
                 # So far there is a but causing tdg #7 not transformable.
                 continue
@@ -301,47 +301,13 @@ class Benchmark(object):
             '--cpu-type={cpu_type}'.format(cpu_type=C.CPU_TYPE),
             '--num-cpus=1',
             '--l1d_size={l1d_size}'.format(l1d_size=C.GEM5_L1D_SIZE),
+            # '--l1d_mshrs={l1d_mshrs}'.format(l1d_mshrs=C.GEM5_L1D_MSHR),
             '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
-            '--l2_size={l2_size}'.format(l2_size=C.GEM5_L2_SIZE),
+            # '--l2_size={l2_size}'.format(l2_size=C.GEM5_L2_SIZE),
         ]
-        if gem5_config.prefetch:
-            gem5_args.append(
-                '--llvm-prefetch=1'
-            )
-        if gem5_config.stream_engine_is_oracle:
-            gem5_args.append(
-                '--gem-forge-stream-engine-is-oracle=1'
-            )
-        if gem5_config.stream_engine_max_run_ahead_length is not None:
-            gem5_args.append(
-                '--gem-forge-stream-engine-max-run-ahead-length={x}'.format(
-                    x=gem5_config.stream_engine_max_run_ahead_length
-                )
-            )
-        if gem5_config.stream_engine_throttling is not None:
-            gem5_args.append(
-                '--gem-forge-stream-engine-throttling={x}'.format(
-                    x=gem5_config.stream_engine_throttling
-                )
-            )
 
-        if gem5_config.stream_engine_enable_coalesce == 'coalesce':
-            gem5_args.append(
-                '--gem-forge-stream-engine-enable-coalesce=1'
-            )
-        elif gem5_config.stream_engine_enable_coalesce == 'merge':
-            # Enable merge also enables coalesce.
-            gem5_args.append(
-                '--gem-forge-stream-engine-enable-coalesce=1'
-            )
-            gem5_args.append(
-                '--gem-forge-stream-engine-enable-merge=1'
-            )
-        if gem5_config.stream_engine_l1d != 'original':
-            gem5_args.append(
-                '--gem-forge-stream-engine-l1d={l1d}'.format(
-                    l1d=gem5_config.stream_engine_l1d)
-            )
+        additional_options = gem5_config.get_options()
+        gem5_args += additional_options
 
         if debugs:
             gem5_args.insert(

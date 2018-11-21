@@ -64,8 +64,8 @@ class MachSuiteBenchmark(Benchmark):
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
 
-    def get_n_traces(self):
-        return 1
+    def get_trace_ids(self):
+        return [0]
 
     def get_run_path(self):
         return self.work_path
