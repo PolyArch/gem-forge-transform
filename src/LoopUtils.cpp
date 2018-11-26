@@ -16,7 +16,7 @@
 // }
 
 const std::unordered_set<std::string> LoopUtils::SupportedMathFunctions{
-    "exp", "sin", "sqrt", "acos", "fabs", "abs", "rand"};
+    "exp", "sin", "sqrt", "acos", "fabs", "abs", "rand", "log", "lgamma"};
 
 std::string printLoop(const llvm::Loop *Loop) {
   return std::string(Loop->getHeader()->getParent()->getName()) +

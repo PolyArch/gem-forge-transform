@@ -171,6 +171,25 @@ class CortexBenchmark(Benchmark):
         },
     }
 
+    TRACE_IDS = {
+        # 'rbm': 0],
+        # 'sphinx': [8],
+        # 'srr': [0],
+        # 'lda': [1],
+        # 'svd3': [0,1,2,4,5,6,7,8,9],
+        # 'pca': [1,2,3,4,5,6,7,8,9],
+        # 'motion-estimation': [0,1,3,8],
+        # 'liblinear': [0,1,2,3,4,5,6,7,8,9],
+        'rbm': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'sphinx': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'srr': [1, 2, 3, 4, 5, 6, 8, 9],
+        'lda': [0, 5, 6, 8],
+        'svd3': [0, 1, 2, 4, 5, 6, 7, 8, 9],
+        'pca': [1, 2, 3, 4, 5, 6, 7, 9],
+        'motion-estimation': [0, 1, 3, 8],
+        'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    }
+
     def __init__(self, folder, benchmark_name, input_size):
         self.benchmark_name = benchmark_name
         self.input_size = input_size
@@ -181,7 +200,12 @@ class CortexBenchmark(Benchmark):
         self.includes = CortexBenchmark.INCLUDES[self.benchmark_name]
         self.trace_functions = '.'.join(
             CortexBenchmark.TRACE_FUNC[self.benchmark_name])
+
+        self.trace_ids = CortexBenchmark.TRACE_IDS[self.benchmark_name]
+        self.start_inst = 1
         self.max_inst = 1e7
+        self.skip_inst = 1e8
+        self.end_inst = 11e8
 
         super(CortexBenchmark, self).__init__(
             name=self.get_name(),
@@ -205,7 +229,7 @@ class CortexBenchmark(Benchmark):
         return '{name}.bc'.format(name=self.get_name())
 
     def get_trace_ids(self):
-        return [0]
+        return self.trace_ids
 
     def find_all_sources(self, folder):
         sources = list()
@@ -269,6 +293,10 @@ class CortexBenchmark(Benchmark):
             # debugs=['TracePass']
         )
         os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
+        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
@@ -297,8 +325,8 @@ class CortexSuite:
             folder = CortexSuite.FOLDER
         self.benchmarks = list()
         input_sizes = [
-            'small',
-            'medium',
+            # 'small',
+            # 'medium',
             'large',
         ]
         for input_size in input_sizes:

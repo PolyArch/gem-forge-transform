@@ -53,6 +53,69 @@ class TransformResult:
         time = self.stats[idx].get_sim_seconds()
         return time
 
+    def compute_placed_level(self, level, idx=-1):
+        if idx == -1:
+            return sum([self.compute_placed_level(level, i) for i in xrange(len(self.folders))])
+        accesses = self.stats[idx].__getitem__(
+            'tdg.accs.stream.numAccessPlacedInCacheLevel::{level}'.format(level=level))
+        return accesses
+
+    def compute_hit_higher(self, level, idx=-1):
+        if idx == -1:
+            return sum([self.compute_hit_higher(level, i) for i in xrange(len(self.folders))])
+        accesses = self.stats[idx].__getitem__(
+            'tdg.accs.stream.numAccessHitHigherThanPlacedCacheLevel::{level}'.format(level=level))
+        return accesses
+
+    def compute_hit_lower(self, level, idx=-1):
+        if idx == -1:
+            return sum([self.compute_hit_lower(level, i) for i in xrange(len(self.folders))])
+        accesses = self.stats[idx].__getitem__(
+            'tdg.accs.stream.numAccessHitLowerThanPlacedCacheLevel::{level}'.format(level=level))
+        return accesses
+
+    def compute_l1d_hits(self, idx=-1):
+        if idx == -1:
+            return sum([self.compute_l1d_hits(i) for i in xrange(len(self.folders))])
+        l1d_hits = self.stats[idx].__getitem__(
+            'system.cpu.dcache.demand_hits::total')
+        return l1d_hits
+
+    def compute_l1d_misses(self, idx=-1):
+        if idx == -1:
+            return sum([self.compute_l1d_misses(i) for i in xrange(len(self.folders))])
+        l1d_misses = self.stats[idx].__getitem__(
+            'system.cpu.dcache.demand_misses::total')
+        return l1d_misses
+
+    def compute_l1_5d_hits(self, idx=-1):
+        if idx == -1:
+            return sum([self.compute_l1_5d_hits(i) for i in xrange(len(self.folders))])
+        l1d_hits = self.stats[idx].get_default(
+            'system.cpu.l1_5dcache.demand_hits::total', 0)
+        return l1d_hits
+
+    def compute_l1_5d_misses(self, idx=-1):
+        if idx == -1:
+            return sum([self.compute_l1_5d_misses(i) for i in xrange(len(self.folders))])
+        l1d_misses = self.stats[idx].get_default(
+            'system.cpu.l1_5dcache.demand_misses::total', 0)
+        return l1d_misses
+
+    def compute_l1d_coalesce_hits(self, idx=-1):
+        if idx == -1:
+            return sum([self.compute_l1d_coalesce_hits(i) for i in xrange(len(self.folders))])
+        l1d_hits = self.stats[idx].get_default(
+            'system.cpu.dcache.coalesced_demand_hits::total', 0)
+        return l1d_hits
+
+    def compute_l1d_coalesce_misses(self, idx=-1):
+        if idx == -1:
+            return sum([self.compute_l1d_coalesce_misses(i) for i in xrange(len(self.folders))])
+        l1d_misses = self.stats[idx].get_default(
+            'system.cpu.dcache.coalesced_demand_misses::total', 0)
+        return l1d_misses
+
 
 class BenchmarkResult:
     def __init__(self, benchmark, transform_manager, gem5_config_manager, transforms):
@@ -100,6 +163,37 @@ class BenchmarkResult:
             transform_energy = transform_result.compute_energy()
             efficiency.append(replay_energy / transform_energy)
         return efficiency
+
+    def compute_hit_lower(self, transform_id):
+        transform_result = self.transform_results[transform_id][0]
+        return [transform_result.compute_hit_lower(level) for level in xrange(5)]
+
+    def compute_hit_higher(self, transform_id):
+        transform_result = self.transform_results[transform_id][0]
+        return [transform_result.compute_hit_higher(level) for level in xrange(5)]
+
+    def compute_stream_placement(self, transform_id):
+        transform_result = self.transform_results[transform_id][0]
+        return [transform_result.compute_placed_level(level) for level in xrange(5)]
+
+    def compute_cache_hit_rate(self, transform_id):
+        transform_result = self.transform_results[transform_id][0]
+        hit_rates = list()
+        l1d_hits = transform_result.compute_l1d_hits()
+        l1d_misses = transform_result.compute_l1d_misses()
+        hit_rates.append(l1d_hits / (l1d_hits + l1d_misses))
+        l1_5d_hits = transform_result.compute_l1_5d_hits()
+        l1_5d_misses = transform_result.compute_l1_5d_misses()
+        hit_rates.append(l1_5d_hits / (l1_5d_hits + l1_5d_misses))
+        return hit_rates
+
+    def compute_cache_coalesce_hit_rate(self, transform_id):
+        transform_result = self.transform_results[transform_id][0]
+        hit_rates = list()
+        l1d_hits = transform_result.compute_l1d_coalesce_hits()
+        l1d_misses = transform_result.compute_l1d_coalesce_misses()
+        hit_rates.append(l1d_hits / (l1d_hits + l1d_misses))
+        return hit_rates
 
     @staticmethod
     def get_attribute_energy():
@@ -216,3 +310,67 @@ class SuiteResult:
             table.add_row(benchmark.get_name(), speedups)
         print(table)
         return table
+
+    def show_hit_lower(self, transform_config):
+        transform = transform_config.get_transform()
+        transform_id = transform_config.get_id()
+        config = self.gem5_config_manager.get_configs(transform)[0]
+        table = SimpleTable.SimpleTable(
+            'benchmark', [str(x) for x in xrange(5)])
+        for benchmark in self.ordered_benchmarks:
+            result = self.benchmark_results[benchmark]
+            hit_lower_row = result.compute_hit_lower(transform_id)
+            table.add_row(benchmark.get_name(), hit_lower_row)
+        print("hit lower table")
+        print(table)
+
+    def show_hit_higher(self, transform_config):
+        transform = transform_config.get_transform()
+        transform_id = transform_config.get_id()
+        config = self.gem5_config_manager.get_configs(transform)[0]
+        table = SimpleTable.SimpleTable(
+            'benchmark', [str(x) for x in xrange(5)])
+        for benchmark in self.ordered_benchmarks:
+            result = self.benchmark_results[benchmark]
+            hit_lower_row = result.compute_hit_higher(transform_id)
+            table.add_row(benchmark.get_name(), hit_lower_row)
+        print("hit higher table")
+        print(table)
+
+    def show_stream_placement(self, transform_config):
+        transform = transform_config.get_transform()
+        transform_id = transform_config.get_id()
+        config = self.gem5_config_manager.get_configs(transform)[0]
+        table = SimpleTable.SimpleTable(
+            'benchmark', [str(x) for x in xrange(5)])
+        for benchmark in self.ordered_benchmarks:
+            result = self.benchmark_results[benchmark]
+            hit_lower_row = result.compute_stream_placement(transform_id)
+            table.add_row(benchmark.get_name(), hit_lower_row)
+        print("stream placed level table")
+        print(table)
+
+    def show_cache_hits(self, transform_config):
+        transform = transform_config.get_transform()
+        transform_id = transform_config.get_id()
+        config = self.gem5_config_manager.get_configs(transform)[0]
+        table = SimpleTable.SimpleTable('benchmark', ['l1d_hit', 'l1_5d_hit'])
+        for benchmark in self.ordered_benchmarks:
+            result = self.benchmark_results[benchmark]
+            cache_hit_rates = result.compute_cache_hit_rate(transform_id)
+            table.add_row(benchmark.get_name(), cache_hit_rates)
+        print('cache hit table')
+        print(table)
+
+    def show_cache_coalesce_hits(self, transform_config):
+        transform = transform_config.get_transform()
+        transform_id = transform_config.get_id()
+        config = self.gem5_config_manager.get_configs(transform)[0]
+        table = SimpleTable.SimpleTable('benchmark', ['l1d_hit'])
+        for benchmark in self.ordered_benchmarks:
+            result = self.benchmark_results[benchmark]
+            cache_hit_rates = result.compute_cache_coalesce_hit_rate(
+                transform_id)
+            table.add_row(benchmark.get_name(), cache_hit_rates)
+        print('cache coalesce hit table')
+        print(table)

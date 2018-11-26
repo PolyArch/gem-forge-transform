@@ -343,6 +343,19 @@ def main(options):
                 suite_result.compare_transform_speedup(transform_config)
                 suite_result.compare_transform_energy(transform_config)
 
+    if options.dump_stream_placement:
+        if 'stream' in options.transform_passes:
+            for transform_config in driver.transform_manager.get_configs('stream'):
+                suite_result.show_stream_placement(transform_config)
+                suite_result.show_hit_lower(transform_config)
+                suite_result.show_hit_higher(transform_config)
+
+    if options.dump_cache_hits:
+        if 'stream' in options.transform_passes:
+            for transform_config in driver.transform_manager.get_configs('stream'):
+                suite_result.show_cache_hits(transform_config)
+                # suite_result.show_cache_coalesce_hits(transform_config)
+
     benchmark_stream_statistics = dict()
 
     for benchmark in benchmarks:
@@ -392,18 +405,18 @@ def main(options):
     if benchmark_stream_statistics:
      #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
      #        benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
-     #        benchmark_stream_statistics)
+        # StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
+        #     benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
      #        benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
      #        benchmark_stream_statistics)
         StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
             benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
-     #        benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
-     #        benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
+            benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
+            benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_loop_path(
      #        benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
@@ -454,12 +467,16 @@ if __name__ == '__main__':
                       dest='hoffman2', default=False)
     parser.add_option('--l1d-mshrs', action='store', type='int',
                       dest='l1d_mshrs', default=4)
+    parser.add_option('--l1d-assoc', action='store', type='int',
+                      dest='l1d_assoc', default=2)
     parser.add_option('--l1_5d', action='store_true',
                       dest='l1_5d', default=False)
     parser.add_option('--rp-prefetch', action='store_true',
                       dest='replay_prefetch', default=False)
     parser.add_option('--stream-choose-strategy', action='store', type='string',
                       dest='stream_choose_strategy', default='outer')
+    parser.add_option('--se-prefetch', action='store_true',
+                      dest='se_prefetch', default=False)
     parser.add_option('--se-oracle', action='store_true',
                       dest='se_oracle', default=False)
     parser.add_option('--se-ahead', action='callback', type='string',
@@ -471,6 +488,12 @@ if __name__ == '__main__':
     # Enable stream aware cache.
     parser.add_option('--se-l1d', action='store',
                       type='string', dest='se_l1d', default='original')
+
+    # Dump infos.
+    parser.add_option('--dump-stream-placement', action='store_true',
+                      dest='dump_stream_placement', default=False)
+    parser.add_option('--dump-cache-hits', action='store_true',
+                      dest='dump_cache_hits', default=False)
     (options, args) = parser.parse_args()
     # Handle special values for the options.
     if options.transform_passes and 'all' in options.transform_passes:
