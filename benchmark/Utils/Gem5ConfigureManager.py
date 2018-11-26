@@ -11,7 +11,9 @@ class Gem5ReplayConfig(object):
 
     def __init__(self, **kwargs):
         self.prefetch = kwargs['prefetch']
+        self.stream_engine_prefetch = kwargs['stream_engine_prefetch']
         self.l1d_mshrs = kwargs['l1d_mshrs']
+        self.l1d_assoc = kwargs['l1d_assoc']
         self.l1_5d = kwargs['l1_5d']
         self.stream_engine_is_oracle = kwargs['stream_engine_is_oracle']
         if 'stream_engine_max_run_ahead_length' in kwargs:
@@ -72,6 +74,10 @@ class Gem5ReplayConfig(object):
                     '--llvm-prefetch=1'
                 )
         if transform == 'stream':
+            if self.stream_engine_prefetch:
+                options.append(
+                    '--llvm-prefetch=1'
+                )
             if self.stream_engine_is_oracle:
                 options.append(
                     '--gem-forge-stream-engine-is-oracle=1'
@@ -108,6 +114,9 @@ class Gem5ReplayConfig(object):
         options.append(
             '--l2_size={l2size}'.format(l2size=L2Size),
         )
+        options.append(
+            '--l1d_assoc={l1d_assoc}'.format(l1d_assoc=self.l1d_assoc),
+        )
         return options
 
     def get_config(self, tdg_basename):
@@ -127,6 +136,8 @@ class Gem5ReplayConfig(object):
         config += '.{cpu_type}'.format(cpu_type=C.CPU_TYPE)
         if self.l1d_mshrs != Gem5ReplayConfig.L1D_MSHRS_DEFAULT:
             config += '.l1dmshr{l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
+        if self.l1d_assoc != 2:
+            config += '.l1dassoc{l1d_assoc}'.format(l1d_assoc=self.l1d_assoc)
         if self.l1_5d:
             config += '.l1_5d'
         if transform == 'replay':
@@ -148,6 +159,8 @@ class Gem5ReplayConfig(object):
                 )
             if self.stream_engine_l1d != Gem5ReplayConfig.L1_DCACHE_DEFAULT:
                 config += '.{l1d}'.format(l1d=self.stream_engine_l1d)
+            if self.stream_engine_prefetch:
+                config += '.se_prefetch'
         return config
 
 
@@ -165,7 +178,9 @@ class Gem5ReplayConfigureManager(object):
         self.configs['replay'] = [
             Gem5ReplayConfig(
                 prefetch=self.options.replay_prefetch,
+                stream_engine_prefetch=self.options.se_prefetch,
                 l1d_mshrs=self.options.l1d_mshrs,
+                l1d_assoc=self.options.l1d_assoc,
                 l1_5d=self.options.l1_5d,
                 stream_engine_is_oracle=False,
                 stream_engine_max_run_ahead_length=2,
@@ -179,7 +194,9 @@ class Gem5ReplayConfigureManager(object):
                 self.configs['stream'].append(
                     Gem5ReplayConfig(
                         prefetch=self.options.replay_prefetch,
+                        stream_engine_prefetch=self.options.se_prefetch,
                         l1d_mshrs=self.options.l1d_mshrs,
+                        l1d_assoc=self.options.l1d_assoc,
                         l1_5d=self.options.l1_5d,
                         stream_engine_is_oracle=self.options.se_oracle,
                         stream_engine_max_run_ahead_length=run_ahead_length,
@@ -193,7 +210,9 @@ class Gem5ReplayConfigureManager(object):
             self.configs['stream'].append(
                 Gem5ReplayConfig(
                     prefetch=self.options.replay_prefetch,
+                    stream_engine_prefetch=self.options.se_prefetch,
                     l1d_mshrs=self.options.l1d_mshrs,
+                    l1d_assoc=self.options.l1d_assoc,
                     l1_5d=self.options.l1_5d,
                     stream_engine_is_oracle=self.options.se_oracle,
                     stream_engine_max_run_ahead_length=10,
