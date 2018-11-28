@@ -62,7 +62,7 @@ class SDVBSBenchmark(Benchmark):
         # 'localization': [4],
         # 'mser': [0],
         # 'multi_ncut': [6],
-        # 'sift': [0],
+        # 'sift': [1],
         # 'stitch': [5],
         # 'svm': [0],
         # 'texture_synthesis': [0],
