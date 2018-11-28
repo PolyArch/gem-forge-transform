@@ -1,7 +1,8 @@
 
 import os
 
-LLVM_TDG_DIR = '/home/zhengrong/Documents/LLVM-TDG'
+# Where is llvm-tdg
+LLVM_TDG_DIR = os.getenv('LLVM_TDG_PATH')
 LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'src')
 LLVM_TDG_RESULT_DIR = os.path.join(LLVM_TDG_DIR, 'benchmark', 'result')
 
@@ -10,9 +11,9 @@ LLVM_TDG_REPLAY_C = os.path.join(LLVM_TDG_DIR, 'benchmark', 'replay.c')
 """
 Normal llvm install path.
 """
-LLVM_PATH = '/home/zhengrong/Documents/llvm-6.0/install'
+LLVM_PATH = os.getenv('LLVM_RELEASE_INSTALL_PATH')
 LLVM_BIN_PATH = os.path.join(LLVM_PATH, 'bin')
-LLVM_DEBUG_PATH = '/home/zhengrong/Documents/llvm-6.0/install-debug'
+LLVM_DEBUG_PATH = os.getenv('LLVM_DEBUG_INSTALL_PATH')
 LLVM_DEBUG_BIN_PATH = os.path.join(LLVM_DEBUG_PATH, 'bin')
 
 
@@ -47,7 +48,7 @@ LLVM_COMPILER_RT_LIB = os.path.join(STDLIB_PATH, 'libcompiler-rt.a')
 """
 GEM5_PATH
 """
-GEM5_DIR = '/home/zhengrong/Documents/llvm-trace-cpu'
+GEM5_DIR = os.getenv('LLVM_TRACE_CPU_PATH')
 GEM5_INCLUDE_DIR = os.path.join(GEM5_DIR, 'include')
 GEM5_X86 = os.path.join(GEM5_DIR, 'build/X86/gem5.opt')
 GEM5_LLVM_TRACE_SE_CONFIG = os.path.join(

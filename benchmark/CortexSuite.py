@@ -177,7 +177,7 @@ class CortexBenchmark(Benchmark):
         # 'srr': [1],
         # 'lda': [1],
         # 'svd3': [0,1,2,4,5,6,7,8,9],
-        # 'pca': [1,2,3,4,5,6,7,8,9],
+        # 'pca': [1],
         # 'motion-estimation': [0,1,3,8],
         # 'liblinear': [0],
         'rbm': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -321,8 +321,8 @@ class CortexSuite:
     FOLDER = '/media/zhengrong/My Passport/Documents/CortexSuite/cortex'
 
     def __init__(self, folder=None):
-        if folder is None:
-            folder = CortexSuite.FOLDER
+        folder = os.getenv('CORTEX_SUITE_PATH')
+        assert(folder is not None)
         self.benchmarks = list()
         input_sizes = [
             # 'small',

@@ -442,9 +442,14 @@ def parse_stream_engine_maximum_run_ahead_length(option, opt, value, parser):
 
 if __name__ == '__main__':
     import optparse
+    default_cores = os.getenv('LLVM_TDG_CPUS')
+    if default_cores is not None:
+        default_cores = int(default_cores)
+    else:
+        default_cores = 8
     parser = optparse.OptionParser()
     parser.add_option('--cores', action='store',
-                      type='int', dest='cores', default=8)
+                      type='int', dest='cores', default=default_cores)
     parser.add_option('-b', '--build', action='store_true',
                       dest='build', default=False)
     parser.add_option('-t', '--trace', action='store_true',

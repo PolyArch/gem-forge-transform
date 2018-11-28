@@ -1,7 +1,4 @@
 
-import matplotlib
-import matplotlib.pyplot as plt
-import numpy
 import multiprocessing
 import subprocess
 import sys
@@ -339,6 +336,9 @@ class Results:
     """
 
     def draw(self, pdf_fn, baseline, test, variables):
+        import matplotlib
+        import matplotlib.pyplot as plt
+        import numpy
 
         assert(baseline in self.results)
         assert(test in self.results)
