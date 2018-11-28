@@ -236,7 +236,7 @@ class SDVBSSuite:
 
     def __init__(self, folder=None):
         if folder is None:
-            self.folder = SDVBSSuite.FOLDER
+            self.folder = os.getenv('SDVBS_SUITE_PATH')
         else:
             self.folder = folder
         self.benchmarks = list()

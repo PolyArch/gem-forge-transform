@@ -1,5 +1,8 @@
 
-set(LLVM_SRC_LIB_DIR "/home/zhengrong/Documents/llvm-6.0/llvm/lib")
+set(LLVM_SRC_LIB_DIR "$ENV{LLVM_SRC_LIB_PATH}")
+if (${LLVM_SRC_LIB_DIR} STREQUAL "")
+  message(fatal_error "Please specify where is source tree of llvm")
+endif()
 
 # First dive into trace, as it will give us PROTOBUF variables.
 add_subdirectory(trace)
