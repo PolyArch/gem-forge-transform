@@ -3,6 +3,7 @@
 
 #include "DynamicInstruction.h"
 
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Instruction.h"
 
 class Utils {
@@ -76,12 +77,22 @@ public:
               "::" + Inst->getParent()->getName() + "::" + Inst->getName() +
               "(" + Inst->getOpcodeName() + ")")
           .str();
+      // return (llvm::Twine(
+      //             Utils::getDemangledFunctionName(Inst->getFunction())) +
+      //         "::" + Inst->getParent()->getName() + "::" + Inst->getName() +
+      //         "(" + Inst->getOpcodeName() + ")")
+      //     .str();
     } else {
       size_t Idx = Utils::getLLVMInstPosInBB(Inst);
       return (llvm::Twine(Inst->getFunction()->getName()) +
               "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
               "(" + Inst->getOpcodeName() + ")")
           .str();
+      // return (llvm::Twine(
+      //             Utils::getDemangledFunctionName(Inst->getFunction())) +
+      //         "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
+      //         "(" + Inst->getOpcodeName() + ")")
+      //     .str();
     }
   }
 
@@ -97,6 +108,12 @@ public:
           .str();
     }
   }
+
+  static const std::string &
+  getDemangledFunctionName(const llvm::Function *Func);
+
+  static std::unordered_map<const llvm::Function *, std::string>
+      MemorizedDemangledFunctionNames;
 
   static size_t getLLVMInstPosInBB(const llvm::Instruction *Inst) {
     size_t Idx = 0;

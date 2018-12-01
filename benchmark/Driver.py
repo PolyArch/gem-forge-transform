@@ -359,45 +359,13 @@ def main(options):
     benchmark_stream_statistics = dict()
 
     for benchmark in benchmarks:
-
-        stream_passes = ['stream', 'stream-prefetch']
-        stream_pass_specified = None
-        stream_tdgs = list()
-        replay_results = list()
-        stream_results = list()
-        for p in stream_passes:
-            if p in options.transform_passes:
-                stream_pass_specified = p
-                stream_tdgs = benchmark.get_tdgs(
-                    driver.transform_manager.get_configs(p)[0])
-                # replay_results = benchmark.get_results('replay')
-                # stream_results = benchmark.get_results(p)
-                break
-
-        if stream_pass_specified is not None:
-            filtered_trace_ids = list()
-            for i in xrange(len(stream_tdgs)):
-                if options.trace_id:
-                    if i not in options.trace_id:
-                        # Ignore those traces if not specified
-                        continue
-                # Hack here to skip some traces.
-                if 'leela_s' in benchmark.get_name():
-                    if i in {2, 4, 5, 9}:
-                        continue
-                filtered_trace_ids.append(i)
-            filtered_stream_tdg_stats = [
-                stream_tdgs[x] + '.stats.txt' for x in filtered_trace_ids]
-            # filtered_replay_results = [replay_results[x]
-            #                            for x in filtered_trace_ids]
-            # filtered_stream_results = [stream_results[x]
-            #                            for x in filtered_trace_ids]
+        if 'stream' in options.transform_passes:
+            stream_tdgs = benchmark.get_tdgs(
+                driver.transform_manager.get_configs('stream')[0])
 
             stream_stats = StreamStatistics.StreamStatistics(
                 benchmark.get_name(),
-                filtered_stream_tdg_stats,
-                None,  # filtered_replay_results,
-                None,  # filtered_stream_results,
+                stream_tdgs
             )
             benchmark_stream_statistics[benchmark.get_name()] = stream_stats
             print('-------------------------- ' + benchmark.get_name())
@@ -421,8 +389,8 @@ def main(options):
      #        benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
      #        benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_stream_simulation_result(
-     #        benchmark_stream_statistics)
+        StreamStatistics.StreamStatistics.print_benchmark_static_max_n_alive_streams(
+            benchmark_stream_statistics)
         pass
 
 

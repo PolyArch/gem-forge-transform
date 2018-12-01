@@ -134,6 +134,10 @@ public:
            this->Inst->getFunction()->getName().str() + " " +
            this->Loop->getHeader()->getName().str() + " " +
            Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
+    // return "(" + this->formatType() + " " +
+    //        Utils::getDemangledFunctionName(this->Inst->getFunction()) + " " +
+    //        this->Loop->getHeader()->getName().str() + " " +
+    //        Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
   }
 
   virtual const std::unordered_set<const llvm::Instruction *> &

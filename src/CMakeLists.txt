@@ -25,6 +25,7 @@ add_library(LLVMTDGPass SHARED
     ${TDG_PROTOBUF_SRCS}
     DynamicInstruction.cpp
     DataGraph.cpp
+    Utils.cpp
     LoopUtils.cpp
     LoopUnroller.cpp
     PostDominanceFrontier.cpp

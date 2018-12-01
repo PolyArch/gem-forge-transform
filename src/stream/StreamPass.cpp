@@ -1399,7 +1399,12 @@ void StreamPass::dumpInfoForLoop(const llvm::Loop *Loop, std::ostream &OS,
                                  const std::string &Padding) const {
 #define INFO_OUT (OS << Padding)
 
-  INFO_OUT << LoopUtils::getLoopId(Loop) << '\n';
+  auto ParentLoop = Loop->getParentLoop();
+  std::string ParentLoopId = "None";
+  if (ParentLoop != nullptr) {
+    ParentLoopId = LoopUtils::getLoopId(ParentLoop);
+  }
+  INFO_OUT << LoopUtils::getLoopId(Loop) << ' ' << ParentLoopId << '\n';
   auto SortedChosenStreamsIter = this->ChosenLoopSortedStreams.find(Loop);
   if (SortedChosenStreamsIter != this->ChosenLoopSortedStreams.end()) {
     for (const auto &S : SortedChosenStreamsIter->second) {
