@@ -332,8 +332,10 @@ def main(options):
         driver.gem5_config_manager,
         options.transform_passes)
     energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
+    se_energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_se_energy()
     time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
-    suite_result.compare([energy_attribute, time_attribute])
+    suite_result.compare(
+        [energy_attribute, se_energy_attribute, time_attribute])
 
     if len(options.transform_passes) > 1 and 'replay' in options.transform_passes:
         for transform in options.transform_passes:

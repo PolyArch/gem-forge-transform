@@ -1,5 +1,6 @@
 import Gem5RegionStats
 import Gem5Stats
+import StreamEngineEnergy
 import McPAT
 import SimpleTable
 
@@ -24,6 +25,7 @@ class TransformResult:
         self.region_stats = list()
         self.stats = list()
         self.mcpats = list()
+        self.ses = list()
         self.config = None
         for folder in folders:
             config = os.path.join(folder, 'config.json')
@@ -31,6 +33,8 @@ class TransformResult:
                 self.config = json.load(f)
             stats = os.path.join(folder, 'stats.txt')
             self.stats.append(Gem5Stats.Gem5Stats(benchmark, stats))
+            self.ses.append(
+                StreamEngineEnergy.StreamEngineEnergy(self.stats[-1]))
             region_stats = os.path.join(folder, 'region.stats.txt')
             self.region_stats.append(
                 Gem5RegionStats.Gem5RegionStats(benchmark, region_stats))
@@ -45,6 +49,11 @@ class TransformResult:
         time = self.compute_time(idx)
         energy = system_power * time
         return energy
+
+    def compute_se_energy(self, idx=-1):
+        if idx == -1:
+            return sum([self.compute_se_energy(i) for i in xrange(len(self.folders))])
+        return self.ses[idx].get_se_energy()
 
     def compute_time(self, idx=-1):
         if idx == -1:
@@ -198,6 +207,10 @@ class BenchmarkResult:
     @staticmethod
     def get_attribute_energy():
         return Attribute('energy', lambda self, transforms: self.compute(TransformResult.compute_energy, transforms))
+
+    @staticmethod
+    def get_attribute_se_energy():
+        return Attribute('se_energy', lambda self, transforms: self.compute(TransformResult.compute_se_energy, transforms))
 
     @staticmethod
     def get_attribute_time():
