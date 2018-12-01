@@ -9,6 +9,11 @@ def max_two_array(a, b):
     return [max(a[i], b[i]) for i in xrange(len(a))]
 
 
+def add_two_array(a, b):
+    assert(len(a) == len(b))
+    return [a[i] + b[i] for i in xrange(len(a))]
+
+
 class Access:
     def __init__(self, line):
         if line[-1] == '\n':
@@ -155,13 +160,24 @@ class StreamLoopInfo:
         self.ivs = 0
         self.loads = 0
         self.stores = 0
+        self.coalesced_loads = 0
+        self.coalesced_stores = 0
+        seen_coalesced_id = set()
         for s in self.configured_streams:
             if s.isIV():
                 self.ivs += 1
             elif s.isLoad():
                 self.loads += 1
+                if s.coalesced_id != -1:
+                    if s.coalesced_id not in seen_coalesced_id:
+                        self.coalesced_loads += 1
+                        seen_coalesced_id.add(s.coalesced_id)
             elif s.isStore():
                 self.stores += 1
+                if s.coalesced_id != -1:
+                    if s.coalesced_id not in seen_coalesced_id:
+                        self.coalesced_stores += 1
+                        seen_coalesced_id.add(s.coalesced_id)
 
     def parse_header_line(self, line):
         fields = line.split(' ')
@@ -176,14 +192,18 @@ class StreamLoopInfo:
     def get_static_max_n_alive_streams(self):
         n_streams = [
             self.ivs + self.loads + self.stores,
+            self.ivs + self.coalesced_loads + self.coalesced_stores,
             self.ivs,
             self.loads,
             self.stores,
+            self.coalesced_loads,
+            self.coalesced_stores,
         ]
+        nested_streams = [0] * len(n_streams)
         for nli in self.nested_loops:
             nested_result = nli.get_static_max_n_alive_streams()
-            n_streams = max_two_array(n_streams, nested_result)
-        return n_streams
+            nested_streams = max_two_array(nested_streams, nested_result)
+        return add_two_array(n_streams, nested_streams)
 
 
 class StreamStatistics:
@@ -880,7 +900,7 @@ class StreamStatistics:
         print(table)
 
     def get_static_max_n_alive_streams(self):
-        n_streams = [0, 0, 0, 0]
+        n_streams = [0] * 7
         for li_name in self.loop_info:
             li = self.loop_info[li_name]
             if li.parent is not None:
@@ -898,9 +918,12 @@ class StreamStatistics:
         title = [
             'Benchmark',
             'Max Alive Streams',
+            'Max Alive Coalesced',
             'IVs',
             'Loads',
             'Stores',
+            'Coalesced Loads',
+            'Coalesced Stores',
         ]
         table = prettytable.PrettyTable(title)
         for benchmark in benchmark_statistic_map:

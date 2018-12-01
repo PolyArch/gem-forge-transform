@@ -326,38 +326,6 @@ def main(options):
     if options.simulate and options.hoffman2:
         driver.simulate_hoffman2(benchmarks)
 
-    suite_result = BenchmarkResult.SuiteResult(
-        benchmarks,
-        driver.transform_manager,
-        driver.gem5_config_manager,
-        options.transform_passes)
-    energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
-    se_energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_se_energy()
-    time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
-    suite_result.compare(
-        [energy_attribute, se_energy_attribute, time_attribute])
-
-    if len(options.transform_passes) > 1 and 'replay' in options.transform_passes:
-        for transform in options.transform_passes:
-            if transform == 'replay':
-                continue
-            for transform_config in driver.transform_manager.get_configs(transform):
-                suite_result.compare_transform_speedup(transform_config)
-                suite_result.compare_transform_energy(transform_config)
-
-    if options.dump_stream_placement:
-        if 'stream' in options.transform_passes:
-            for transform_config in driver.transform_manager.get_configs('stream'):
-                suite_result.show_stream_placement(transform_config)
-                suite_result.show_hit_lower(transform_config)
-                suite_result.show_hit_higher(transform_config)
-
-    if options.dump_cache_hits:
-        if 'stream' in options.transform_passes:
-            for transform_config in driver.transform_manager.get_configs('stream'):
-                suite_result.show_cache_hits(transform_config)
-                # suite_result.show_cache_coalesce_hits(transform_config)
-
     benchmark_stream_statistics = dict()
 
     for benchmark in benchmarks:
@@ -393,7 +361,38 @@ def main(options):
      #        benchmark_stream_statistics)
         StreamStatistics.StreamStatistics.print_benchmark_static_max_n_alive_streams(
             benchmark_stream_statistics)
-        pass
+
+    suite_result = BenchmarkResult.SuiteResult(
+        benchmarks,
+        driver.transform_manager,
+        driver.gem5_config_manager,
+        options.transform_passes)
+    energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
+    se_energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_se_energy()
+    time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
+    suite_result.compare(
+        [energy_attribute, se_energy_attribute, time_attribute])
+
+    if len(options.transform_passes) > 1 and 'replay' in options.transform_passes:
+        for transform in options.transform_passes:
+            if transform == 'replay':
+                continue
+            for transform_config in driver.transform_manager.get_configs(transform):
+                suite_result.compare_transform_speedup(transform_config)
+                suite_result.compare_transform_energy(transform_config)
+
+    if options.dump_stream_placement:
+        if 'stream' in options.transform_passes:
+            for transform_config in driver.transform_manager.get_configs('stream'):
+                suite_result.show_stream_placement(transform_config)
+                suite_result.show_hit_lower(transform_config)
+                suite_result.show_hit_higher(transform_config)
+
+    if options.dump_cache_hits:
+        if 'stream' in options.transform_passes:
+            for transform_config in driver.transform_manager.get_configs('stream'):
+                suite_result.show_cache_hits(transform_config)
+                # suite_result.show_cache_coalesce_hits(transform_config)
 
 
 def parse_benchmarks(option, opt, value, parser):
