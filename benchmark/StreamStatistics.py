@@ -1,7 +1,12 @@
 import prettytable
 import Util
 
-from Utils import Gem5RegionStats
+import os
+
+
+def max_two_array(a, b):
+    assert(len(a) == len(b))
+    return [max(a[i], b[i]) for i in xrange(len(a))]
 
 
 class Access:
@@ -109,27 +114,99 @@ class Access:
         return self.level > other.level
 
 
+class StreamLoopInfoConfiguredStream:
+    def __init__(self, line):
+        assert(line[0] == '(')
+        fields = line.split(' ')
+        self.type = fields[0][1:]
+        self.func = fields[1]
+        self.inst = self.func + '::' + fields[3][0:-1]
+        self.coalesced_id = int(fields[4])
+
+    def isIV(self):
+        return self.type == 'IV'
+
+    def isLoad(self):
+        return self.type == 'MEM' and 'load' in self.inst
+
+    def isStore(self):
+        return self.type == 'MEM' and 'store' in self.inst
+
+
+class StreamLoopInfo:
+    def __init__(self, fn):
+        self.name = None
+        self.parent_name = None
+        self.parent = None
+        self.nested_loops = list()
+        self.configured_streams = list()
+        with open(fn) as f:
+            cur_line = 0
+            for line in f:
+                if cur_line == 0:
+                    self.parse_header_line(line)
+                if line[0] == '(':
+                    self.configured_streams.append(
+                        StreamLoopInfoConfiguredStream(line))
+                cur_line += 1
+        assert(self.name is not None)
+        assert(self.parent_name is not None)
+
+        self.ivs = 0
+        self.loads = 0
+        self.stores = 0
+        for s in self.configured_streams:
+            if s.isIV():
+                self.ivs += 1
+            elif s.isLoad():
+                self.loads += 1
+            elif s.isStore():
+                self.stores += 1
+
+    def parse_header_line(self, line):
+        fields = line.split(' ')
+        self.name = fields[0]
+        self.parent_name = fields[1]
+
+    def add_nested_loop(self, loop_info):
+        self.nested_loops.append(loop_info)
+        assert(loop_info.parent is None)
+        loop_info.parent = self
+
+    def get_static_max_n_alive_streams(self):
+        n_streams = [
+            self.ivs + self.loads + self.stores,
+            self.ivs,
+            self.loads,
+            self.stores,
+        ]
+        for nli in self.nested_loops:
+            nested_result = nli.get_static_max_n_alive_streams()
+            n_streams = max_two_array(n_streams, nested_result)
+        return n_streams
+
+
 class StreamStatistics:
-    def __init__(self, benchmark, files, replay_files=None, stream_files=None):
+    def __init__(self, benchmark, stream_tdgs):
         self.next = None
         self.benchmark = benchmark
-        self.replay_result = None
-        self.stream_result = None
-        if replay_files is not None:
-            self.replay_result = Gem5RegionStats.Gem5RegionStats(benchmark, replay_files)
-        if stream_files is not None:
-            self.stream_result = Gem5RegionStats.Gem5RegionStats(benchmark, stream_files)
-        if isinstance(files, list):
-            self.parse(files[0])
-            if len(files) > 1:
-                self.next = StreamStatistics(benchmark, files[1:])
-        else:
-            self.parse(files)
+
+        self.loop_info = dict()
+        self.inst_to_loop_level = dict()
+
+        # Parse the stat file.
+        self.parse(stream_tdgs[0] + '.stats.txt')
+
+        # Parse loop info in the extra folder.
+        self.parse_extra_folder(stream_tdgs[0] + '.extra')
+
+        # Recursively parse any other files.
+        if len(stream_tdgs) > 1:
+            self.next = StreamStatistics(benchmark, stream_tdgs[1:])
 
         self.group_by_loop_level()
 
     def group_by_loop_level(self):
-        self.inst_to_loop_level = dict()
         for access in self.accesses.values():
             # Ignore the out of region accesses.
             if access.loop == 'UNKNOWN':
@@ -171,6 +248,22 @@ class StreamStatistics:
         uid = access.inst + '|' + access.loop
         assert(uid not in self.accesses)
         self.accesses[uid] = access
+
+    def parse_extra_folder(self, extra_folder):
+        for filename in os.listdir(extra_folder):
+            if filename.endswith('.info.txt') and (not filename.startswith('(')):
+                # This is a loop info file.
+                self.parse_loop_info_txt(os.path.join(extra_folder, filename))
+        # Build the tree between parent loop and children loops.
+        for name in self.loop_info:
+            li = self.loop_info[name]
+            if li.parent_name in self.loop_info:
+                parent_li = self.loop_info[li.parent_name]
+                parent_l1.add_nested_loop(li)
+
+    def parse_loop_info_txt(self, fn):
+        loop_info = StreamLoopInfo(fn)
+        self.loop_info[loop_info.name] = loop_info
 
     def calculate_footprint(self):
         visited = set()
@@ -786,51 +879,33 @@ class StreamStatistics:
         table.float_format = '.4'
         print(table)
 
-    def get_stream_simulation_result_row(self):
-        stats = self.collect_stats()
-        prefix = 'system.cpu.'
-        row = list()
-        row.append(stats['DeletedInstCount']/stats['DynInstCount'] * 100)
-        row.append((stats['ConfigInstCount'] +
-                    stats['StepInstCount'])/stats['DynInstCount'] * 100)
-        row.append(stats['ConfigInstCount']/stats['DynInstCount'] * 1000000)
-        if self.replay_result is not None and self.stream_result is not None:
-            replay_cycles = self.replay_result['all'][prefix + 'numCycles']
-            stream_cycles = self.stream_result['all'][prefix + 'numCycles']
-            row.append(replay_cycles / stream_cycles)
-        else:
-            row.append('/')
-        if self.stream_result is not None:
-            stream_entries = self.stream_result['all']['tdg.accs.stream.numMemElements']
-            stream_used_entries = self.stream_result['all']['tdg.accs.stream.numMemElementsUsed']
-            if stream_used_entries > 0:
-                row.append(stream_used_entries / stream_entries)
-                stream_waited_cycles = self.stream_result['all']['tdg.accs.stream.memEntryWaitCycles']
-                row.append(stream_waited_cycles / stream_used_entries)
-            else:
-                row.append('/')
-                row.append('/')
-        else:
-            row.append('/')
-            row.append('/')
-        return row
+    def get_static_max_n_alive_streams(self):
+        n_streams = [0, 0, 0, 0]
+        for li_name in self.loop_info:
+            li = self.loop_info[li_name]
+            if li.parent is not None:
+                # This is not the outer most loop.
+                continue
+            n_streams = max_two_array(
+                n_streams, li.get_static_max_n_alive_streams())
+        if self.next is not None:
+            n_streams = max_two_array(
+                n_streams, self.next.get_static_max_n_alive_streams())
+        return n_streams
 
     @staticmethod
-    def print_benchmark_stream_simulation_result(benchmark_statistic_map):
+    def print_benchmark_static_max_n_alive_streams(benchmark_statistic_map):
         title = [
             'Benchmark',
-            'Removed',
-            'Added',
-            'ConfigPMI',
-            'Speedup',
-            'StreamUsage',
-            'WaitCycles',
+            'Max Alive Streams',
+            'IVs',
+            'Loads',
+            'Stores',
         ]
         table = prettytable.PrettyTable(title)
         for benchmark in benchmark_statistic_map:
             stats = benchmark_statistic_map[benchmark]
-            row = stats.get_stream_simulation_result_row()
+            row = stats.get_static_max_n_alive_streams()
             row.insert(0, benchmark)
             table.add_row(row)
-        table.float_format = '.2'
         print(table)

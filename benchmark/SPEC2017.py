@@ -17,10 +17,10 @@ class SPEC2017Benchmark(Benchmark):
         self.trace_job_id = None
         self.transform_job_ids = dict()
 
-        self.spec = os.environ.get('SPEC')
+        self.spec = os.environ.get('SPEC2017_SUITE_PATH')
         if self.spec is None:
             print(
-                'Unable to find SPEC env var. Please source shrc before using this script')
+                'Unable to find SPEC2017_SUITE_PATH env var. Please source shrc before using this script')
             sys.exit()
 
         self.work_load = params['name']
@@ -31,7 +31,8 @@ class SPEC2017Benchmark(Benchmark):
         self.max_inst = params['max_inst']
         self.skip_inst = params['skip_inst']
         self.end_inst = params['end_inst']
-        self.n_traces = params['n_traces']
+        self.trace_ids = xrange(params['n_traces'])
+        # self.trace_ids = [1]
 
         self.trace_stdlib = False
         self.cwd = os.getcwd()
@@ -109,7 +110,7 @@ class SPEC2017Benchmark(Benchmark):
         return self.target + '.bc'
 
     def get_trace_ids(self):
-        return xrange(self.n_traces)
+        return self.trace_ids
 
     def build_raw_bc(self):
         # Clear the existing build.
@@ -386,58 +387,58 @@ class SPEC2017Benchmarks:
         #     'trace_func': '',
         #     'lang': 'C',
         # },
-        # # C++ Benchmark
-        #     'deepsjeng_s': {
-        #         'name': '631.deepsjeng_s',
-        #         'links': [],
-        #         'start_inst': 10e8,
-        #         'max_inst': 1e7,
-        #         'skip_inst': 10e8,
-        #         'end_inst': 110e8,
-        #         'n_traces': 10,
-        #         # 'trace_func': 'think(gamestate_t*, state_t*)',
-        #         'trace_func': '',
-        #         'lang': 'CPP',
-        #     },
-        #    'leela_s': {
-        #        'name': '641.leela_s',
-        #        'links': [],
-        #        'start_inst': 1e8,
-        #        'max_inst': 1e7,
-        #        'skip_inst': 10e8,
-        #        'end_inst': 100e8,
-        #        'n_traces': 10,
-        #        'trace_func': '',
-        #        'lang': 'CPP',
-        #    },
-        #    'namd_r': {
-        #        'name': '508.namd_r',
-        #        'links': [],
-        #        'start_inst': 1e8,
-        #        'max_inst': 1e7,
-        #        'skip_inst': 10e8,
-        #        'end_inst': 100e8,
-        #        'n_traces': 10,
-        #        'trace_func': '',
-        #        'lang': 'CPP',
-        #    },
-        #    # Will throw exception.
-        #    # Does not work with ellcc as RE.
-        #    'povray_r': {
-        #        'name': '511.povray_r',
-        #        'links': [],
-        #        'start_inst': 1e8,
-        #        'max_inst': 1e7,
-        #        'skip_inst': 10e8,
-        #        'end_inst': 100e8,
-        #        'n_traces': 10,
-        #        'trace_func': '',
-        #        'lang': 'CPP',
-        #    },
-        #         # Throws exception.
-        #         # Does not work with ellcc as RE.
-        #         # Need to fix a comparison between integer and pointer error.
-        #         # Only been able to trace the first one.
+        # C++ Benchmark
+        'deepsjeng_s': {
+            'name': '631.deepsjeng_s',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 110e8,
+            'n_traces': 10,
+            # 'trace_func': 'think(gamestate_t*, state_t*)',
+            'trace_func': '',
+            'lang': 'CPP',
+        },
+        'leela_s': {
+            'name': '641.leela_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
+        'namd_r': {
+            'name': '508.namd_r',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
+        # Will throw exception.
+        # Does not work with ellcc as RE.
+        'povray_r': {
+            'name': '511.povray_r',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
+        # Throws exception.
+        # Does not work with ellcc as RE.
+        # Need to fix a comparison between integer and pointer error.
+        # Only been able to trace the first one.
         'parest_r': {
             'name': '510.parest_r',
             'links': [],
@@ -450,19 +451,19 @@ class SPEC2017Benchmarks:
             'lang': 'CPP',
         },
 
-        #         # Does not work with ellcc as it uses linux header.
-        #         # Does not throw.
-        #    'xalancbmk_s': {
-        #        'name': '623.xalancbmk_s',
-        #        'links': [],
-        #        'start_inst': 1e8,
-        #        'max_inst': 1e7,
-        #        'skip_inst': 10e8,
-        #        'end_inst': 100e8,
-        #        'n_traces': 10,
-        #        'trace_func': '',
-        #        'lang': 'CPP',
-        #    },
+        # Does not work with ellcc as it uses linux header.
+        # Does not throw.
+        'xalancbmk_s': {
+            'name': '623.xalancbmk_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
         # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
         # Does not throw.
@@ -496,10 +497,10 @@ class SPEC2017Benchmarks:
     }
 
     def __init__(self):
-        self.spec = os.environ.get('SPEC')
+        self.spec = os.environ.get('SPEC2017_SUITE_PATH')
         if self.spec is None:
             print(
-                'Unable to find SPEC env var. Please source shrc before using this script')
+                'Unable to find SPEC2017_SUITE_PATH env var. Please source shrc before using this script')
             sys.exit()
 
         # Remember to setup gllvm.
