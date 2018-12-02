@@ -189,6 +189,9 @@ public:
                                     const llvm::Loop *Loop);
   InductionVarStream *getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
                                                const llvm::Loop *Loop);
+  const InductionVarStream *
+  getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
+                           const llvm::Loop *Loop) const;
 
 protected:
   bool initialize(llvm::Module &Module) override;

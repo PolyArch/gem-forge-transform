@@ -45,66 +45,110 @@ bool StreamPass::finalize(llvm::Module &Module) {
 
 std::string StreamPass::classifyStream(const MemStream &S) const {
 
-  if (S.getNumBaseLoads() > 1) {
-    return "MULTI_BASE";
-  } else if (S.getNumBaseLoads() == 1) {
-    const auto &BaseLoad = *S.getBaseLoads().begin();
-    if (BaseLoad == S.getInst()) {
-      // Chasing myself.
-      return "POINTER_CHASE";
-    }
-    auto BaseStreamsIter = this->InstMemStreamMap.find(BaseLoad);
-    if (BaseStreamsIter != this->InstMemStreamMap.end()) {
-      const auto &BaseStreams = BaseStreamsIter->second;
-      for (const auto &BaseStream : BaseStreams) {
-        if (BaseStream.getLoop() == S.getLoop()) {
-          if (BaseStream.getNumBaseLoads() != 0) {
-            return "CHAIN_BASE";
-          }
-          if (BaseStream.getPattern().computed()) {
-            auto Pattern = BaseStream.getPattern().getPattern().ValPattern;
-            if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
-              return "AFFINE_BASE";
-            }
-          }
-        }
+  if (S.getNumBaseLoads() > 0) {
+    // We have dependent base loads here.
+    return "INDIRECT";
+  }
+
+  // No base loads.
+  const auto &BaseInductionVars = S.getBaseInductionVars();
+  if (BaseInductionVars.empty()) {
+    // No base ivs, should be a constant stream, but here we treat it as AFFINE.
+    return "AFFINE";
+  }
+
+  if (BaseInductionVars.size() > 1) {
+    // Multiple IVs.
+    return "MULTI_IV";
+  }
+
+  const auto &BaseIV = *BaseInductionVars.begin();
+  auto BaseIVStream = this->getIVStreamByPHINodeLoop(BaseIV, S.getLoop());
+  if (BaseIVStream == nullptr) {
+    // This should not happen, but so far make it indirect.
+    return "INDIRECT";
+  }
+
+  const auto &BaseIVBaseLoads = BaseIVStream->getBaseLoads();
+  if (!BaseIVBaseLoads.empty()) {
+    for (const auto &BaseIVBaseLoad : BaseIVBaseLoads) {
+      if (BaseIVBaseLoad == S.getInst()) {
+        return "POINTER_CHASE";
       }
     }
-    return "RANDOM_BASE";
-  } else {
-    auto BaseInductionVars = S.getBaseInductionVars();
-    if (BaseInductionVars.size() > 1) {
-      return "MULTI_IV";
-    } else if (BaseInductionVars.size() == 1) {
-      const auto &BaseIV = *BaseInductionVars.begin();
-      auto BaseIVStreamIter = this->PHINodeIVStreamMap.find(BaseIV);
-      if (BaseIVStreamIter != this->PHINodeIVStreamMap.end()) {
-        for (const auto &BaseIVStream : BaseIVStreamIter->second) {
-          if (BaseIVStream.getLoop() != S.getLoop()) {
-            continue;
-          }
-          if (BaseIVStream.getPattern().computed()) {
-            auto Pattern = BaseIVStream.getPattern().getPattern().ValPattern;
-            if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
-              return "AFFINE_IV";
-            }
-          }
-        }
-      }
-      return "RANDOM_IV";
-    } else {
-      if (S.getPattern().computed()) {
-        auto Pattern = S.getPattern().getPattern().ValPattern;
-        if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
-          return "AFFINE";
-        } else {
-          return "RANDOM";
-        }
-      } else {
-        return "RANDOM";
-      }
+    return "INDIRECT";
+  }
+
+  if (BaseIVStream->getPattern().computed()) {
+    auto Pattern = BaseIVStream->getPattern().getPattern().ValPattern;
+    if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
+      // The pattern of the IV is AFFINE.
+      return "AFFINE";
     }
   }
+
+  return "RANDOM";
+
+  // if (S.getNumBaseLoads() > 1) {
+  //   return "MULTI_BASE";
+  // } else if (S.getNumBaseLoads() == 1) {
+  //   const auto &BaseLoad = *S.getBaseLoads().begin();
+  //   if (BaseLoad == S.getInst()) {
+  //     // Chasing myself.
+  //     return "POINTER_CHASE";
+  //   }
+  //   auto BaseStreamsIter = this->InstMemStreamMap.find(BaseLoad);
+  //   if (BaseStreamsIter != this->InstMemStreamMap.end()) {
+  //     const auto &BaseStreams = BaseStreamsIter->second;
+  //     for (const auto &BaseStream : BaseStreams) {
+  //       if (BaseStream.getLoop() == S.getLoop()) {
+  //         if (BaseStream.getNumBaseLoads() != 0) {
+  //           return "CHAIN_BASE";
+  //         }
+  //         if (BaseStream.getPattern().computed()) {
+  //           auto Pattern = BaseStream.getPattern().getPattern().ValPattern;
+  //           if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
+  //             return "AFFINE_BASE";
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  //   return "RANDOM_BASE";
+  // } else {
+  //   auto BaseInductionVars = S.getBaseInductionVars();
+  //   if (BaseInductionVars.size() > 1) {
+  //     return "MULTI_IV";
+  //   } else if (BaseInductionVars.size() == 1) {
+  //     const auto &BaseIV = *BaseInductionVars.begin();
+  //     auto BaseIVStreamIter = this->PHINodeIVStreamMap.find(BaseIV);
+  //     if (BaseIVStreamIter != this->PHINodeIVStreamMap.end()) {
+  //       for (const auto &BaseIVStream : BaseIVStreamIter->second) {
+  //         if (BaseIVStream.getLoop() != S.getLoop()) {
+  //           continue;
+  //         }
+  //         if (BaseIVStream.getPattern().computed()) {
+  //           auto Pattern = BaseIVStream.getPattern().getPattern().ValPattern;
+  //           if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
+  //             return "AFFINE_IV";
+  //           }
+  //         }
+  //       }
+  //     }
+  //     return "RANDOM_IV";
+  //   } else {
+  //     if (S.getPattern().computed()) {
+  //       auto Pattern = S.getPattern().getPattern().ValPattern;
+  //       if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
+  //         return "AFFINE";
+  //       } else {
+  //         return "RANDOM";
+  //       }
+  //     } else {
+  //       return "RANDOM";
+  //     }
+  //   }
+  // }
 }
 
 void StreamPass::dumpStats(std::ostream &O) {
@@ -917,6 +961,22 @@ StreamPass::getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
   }
   auto &Streams = Iter->second;
   for (auto &S : Streams) {
+    if (S.getLoop() == Loop) {
+      return &S;
+    }
+  }
+  llvm_unreachable("Failed to find the stream at specified loop level.");
+}
+
+const InductionVarStream *
+StreamPass::getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
+                                     const llvm::Loop *Loop) const {
+  auto Iter = this->PHINodeIVStreamMap.find(PHINode);
+  if (Iter == this->PHINodeIVStreamMap.end()) {
+    return nullptr;
+  }
+  const auto &Streams = Iter->second;
+  for (const auto &S : Streams) {
     if (S.getLoop() == Loop) {
       return &S;
     }
