@@ -36,8 +36,8 @@ class Access:
         self.footprint = int(fields[11])
         self.addr_insts = int(fields[12])
         self.alias_insts = int(fields[13])
-        self.qualified = fields[14]
-        self.chosen = fields[15]
+        self.qualified = fields[14] == 'YES'
+        self.chosen = fields[15] == 'YES'
         self.loop_paths = int(fields[16])
 
     @staticmethod
@@ -340,19 +340,23 @@ class StreamStatistics:
             'INDIRECT_CONTINUOUS': 0,
             'INCONTINUOUS': 0,
             'RECURSIVE': 0,
+            'UNQUALIFIED': 0,
             'AFFINE': 0,
-            'RANDOM': 0,
-            'AFFINE_IV': 0,
-            'RANDOM_IV': 0,
-            'MULTI_IV': 0,
-            'AFFINE_BASE': 0,
-            'RANDOM_BASE': 0,
+            'INDIRECT': 0,
             'POINTER_CHASE': 0,
-            'CHAIN_BASE': 0,
-            'MULTI_BASE': 0,
+            'RANDOM': 0,
+            'MULTI_IV': 0,
         }
         for access in filtered:
-            result[access.stream_class] += access.accesses
+            good_classes = {'AFFINE', 'INDIRECT',
+                            'POINTER_CHASE', 'RANDOM', 'MULTI_IV'}
+            if access.stream_class in good_classes:
+                if access.qualified:
+                    result[access.stream_class] += access.accesses
+                else:
+                    result['UNQUALIFIED'] += access.accesses
+            else:
+                result[access.stream_class] += access.accesses
         if self.next is not None:
             next_result = self.next._collect_stream_breakdown(level)
             for field in result:
@@ -366,16 +370,12 @@ class StreamStatistics:
             'Recursive',
             'Incontinuous',
             'IndirectContinuous',
+            'UNQUALIFIED',
             'AFFINE',
-            'RAMDOM',
-            'AFFINE_IV',
-            'RANDOM_IV',
-            'MULTI_IV',
-            'AFFINE_BASE',
-            'RANDOM_BASE',
+            'INDIRECT',
             'POINTER_CHASE',
-            'CHAIN_BASE',
-            'MULTI_BASE',
+            'RAMDOM',
+            'MULTI_IV',
         ]
 
     def get_stream_breakdown_row(self, level):
@@ -390,18 +390,14 @@ class StreamStatistics:
                 result['RECURSIVE'] / total_mem_insts,
                 result['INCONTINUOUS'] / total_mem_insts,
                 result['INDIRECT_CONTINUOUS'] / total_mem_insts,
+                result['UNQUALIFIED'] / total_mem_insts,
             ]
         row += [
             result['AFFINE'] / total_mem_insts,
-            result['RANDOM'] / total_mem_insts,
-            result['AFFINE_IV'] / total_mem_insts,
-            result['RANDOM_IV'] / total_mem_insts,
-            result['MULTI_IV'] / total_mem_insts,
-            result['AFFINE_BASE'] / total_mem_insts,
-            result['RANDOM_BASE'] / total_mem_insts,
+            result['INDIRECT'] / total_mem_insts,
             result['POINTER_CHASE'] / total_mem_insts,
-            result['CHAIN_BASE'] / total_mem_insts,
-            result['MULTI_BASE'] / total_mem_insts,
+            result['RANDOM'] / total_mem_insts,
+            result['MULTI_IV'] / total_mem_insts,
         ]
         return row
 
@@ -498,7 +494,7 @@ class StreamStatistics:
             if len(streams) <= level:
                 continue
             stream = streams[level]
-            if stream.qualified == 'YES':
+            if stream.qualified:
                 result += stream.accesses
         if self.next is not None:
             result += self.next._collect_stream_qualified(level)
@@ -560,7 +556,7 @@ class StreamStatistics:
             streams = self.inst_to_loop_level[inst]
             for i in xrange(min(max_level, len(streams))):
                 stream = streams[i]
-                if stream.chosen == 'YES':
+                if stream.chosen:
                     result[i] += stream.accesses
                     break
         if self.next is not None:
@@ -584,7 +580,7 @@ class StreamStatistics:
             streams = self.inst_to_loop_level[inst]
             for i in xrange(len(streams)):
                 stream = streams[i]
-                if stream.chosen == 'YES':
+                if stream.chosen:
                     result.append(stream)
                     break
         if self.next is not None:

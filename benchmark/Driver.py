@@ -341,14 +341,15 @@ def main(options):
             print('-------------------------- ' + benchmark.get_name())
 
     if benchmark_stream_statistics:
-     #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
-     #        benchmark_stream_statistics)
         # StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
         #     benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
      #        benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
      #        benchmark_stream_statistics)
+        if options.dump_stream_breakdown:
+            StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
+                benchmark_stream_statistics)
         StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
             benchmark_stream_statistics)
         StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
@@ -472,6 +473,9 @@ if __name__ == '__main__':
                       dest='dump_stream_placement', default=False)
     parser.add_option('--dump-cache-hits', action='store_true',
                       dest='dump_cache_hits', default=False)
+
+    parser.add_option('--dump-stream-breakdown', action='store_true',
+                      dest='dump_stream_breakdown', default=False)
     (options, args) = parser.parse_args()
     # Handle special values for the options.
     if options.transform_passes and 'all' in options.transform_passes:
