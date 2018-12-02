@@ -8,12 +8,14 @@ class Gem5ReplayConfig(object):
     ENABLE_COALESCE_DEFAULT = 'single'
     L1_DCACHE_DEFAULT = 'original'
     L1D_MSHRS_DEFAULT = 4
+    L1_5D_MSHRS_DEFAULT = 16
     L2BUS_WIDTH_DEFAULT = 32
 
     def __init__(self, **kwargs):
         self.prefetch = kwargs['prefetch']
         self.stream_engine_prefetch = kwargs['stream_engine_prefetch']
         self.l1d_mshrs = kwargs['l1d_mshrs']
+        self.l1_5d_mshrs = kwargs['l1_5d_mshrs']
         self.l1d_assoc = kwargs['l1d_assoc']
         self.l2bus_width = kwargs['l2bus_width']
         self.l1_5d = kwargs['l1_5d']
@@ -65,6 +67,9 @@ class Gem5ReplayConfig(object):
             options.append(
                 '--l1d_mshrs={l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
             )
+        options.append(
+            '--l1_5d_mshrs={l1_5d_mshrs}'.format(l1_5d_mshrs=self.l1_5d_mshrs)
+        )
         options.append(
             '--l2bus_width={l2bus_width}'.format(l2bus_width=self.l2bus_width)
         )
@@ -145,6 +150,9 @@ class Gem5ReplayConfig(object):
             config += '.l1dassoc{l1d_assoc}'.format(l1d_assoc=self.l1d_assoc)
         if self.l1_5d:
             config += '.l1_5d'
+        if self.l1_5d_mshrs != Gem5ReplayConfig.L1_5D_MSHRS_DEFAULT:
+            config += '.l1_5dmshr{l1_5d_mshrs}'.format(
+                l1_5d_mshrs=self.l1_5d_mshrs)
         if self.l2bus_width != Gem5ReplayConfig.L2BUS_WIDTH_DEFAULT:
             config += '.l2bw{l2bus_width}'.format(l2bus_width=self.l2bus_width)
         if transform == 'replay':
@@ -188,6 +196,7 @@ class Gem5ReplayConfigureManager(object):
                 stream_engine_prefetch=self.options.se_prefetch,
                 l1d_mshrs=self.options.l1d_mshrs,
                 l1d_assoc=self.options.l1d_assoc,
+                l1_5d_mshrs=self.options.l1_5d_mshrs,
                 l2bus_width=self.options.l2bus_width,
                 l1_5d=self.options.l1_5d,
                 stream_engine_is_oracle=False,
@@ -205,6 +214,7 @@ class Gem5ReplayConfigureManager(object):
                         stream_engine_prefetch=self.options.se_prefetch,
                         l1d_mshrs=self.options.l1d_mshrs,
                         l1d_assoc=self.options.l1d_assoc,
+                        l1_5d_mshrs=self.options.l1_5d_mshrs,
                         l2bus_width=self.options.l2bus_width,
                         l1_5d=self.options.l1_5d,
                         stream_engine_is_oracle=self.options.se_oracle,
@@ -222,6 +232,7 @@ class Gem5ReplayConfigureManager(object):
                     stream_engine_prefetch=self.options.se_prefetch,
                     l1d_mshrs=self.options.l1d_mshrs,
                     l1d_assoc=self.options.l1d_assoc,
+                    l1_5d_mshrs=self.options.l1_5d_mshrs,
                     l2bus_width=self.options.l2bus_width,
                     l1_5d=self.options.l1_5d,
                     stream_engine_is_oracle=self.options.se_oracle,

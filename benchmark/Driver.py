@@ -445,6 +445,8 @@ if __name__ == '__main__':
                       dest='l1d_assoc', default=2)
     parser.add_option('--l1_5d', action='store_true',
                       dest='l1_5d', default=False)
+    parser.add_option('--l1_5d-mshrs', action='store',
+                      dest='l1_5d_mshrs', default=16)
     parser.add_option('--l2bus-width', action='store',
                       dest='l2bus_width', default=32)
     parser.add_option('--rp-prefetch', action='store_true',
