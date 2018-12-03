@@ -1,6 +1,8 @@
 import prettytable
 import Util
 
+from Utils import SimpleTable
+
 import os
 
 
@@ -656,15 +658,13 @@ class StreamStatistics:
     @staticmethod
     def print_benchmark_stream_breakdown(benchmark_statistic_map):
         title = StreamStatistics.get_stream_breakdown_title()
-        title.insert(0, 'Benchmark')
-        table = prettytable.PrettyTable(title)
+        table = SimpleTable.SimpleTable('Benchmark', title)
         for benchmark in benchmark_statistic_map:
             stats = benchmark_statistic_map[benchmark]
             row = stats.get_stream_breakdown_row(0)
-            row.insert(0, benchmark)
-            table.add_row(row)
-        table.float_format = '.4'
+            table.add_row(benchmark, row)
         print(table)
+        return table
 
     @staticmethod
     def print_benchmark_stream_breakdown_coarse(benchmark_statistic_map):
