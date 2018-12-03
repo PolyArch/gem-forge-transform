@@ -15,6 +15,7 @@ from Utils import Gem5ConfigureManager
 from Utils import TransformManager
 
 import os
+import pickle
 
 """
 Interface for test suite:
@@ -341,6 +342,11 @@ def main(options):
             print('-------------------------- ' + benchmark.get_name())
 
     if benchmark_stream_statistics:
+        if options.dump_stream_stats:
+            stream_stats_pickle = 'Plots/{suite}.stream_stats.dat'.format(
+                suite=options.suite)
+            with open(stream_stats_pickle, mode='wb') as f:
+                pickle.dump(benchmark_stream_statistics, f)
         # StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
         #     benchmark_stream_statistics)
      #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
@@ -476,6 +482,10 @@ if __name__ == '__main__':
 
     parser.add_option('--dump-stream-breakdown', action='store_true',
                       dest='dump_stream_breakdown', default=False)
+
+    parser.add_option('--dump-stream-stats', action='store_true',
+                      dest='dump_stream_stats', default=False)
+
     (options, args) = parser.parse_args()
     # Handle special values for the options.
     if options.transform_passes and 'all' in options.transform_passes:
