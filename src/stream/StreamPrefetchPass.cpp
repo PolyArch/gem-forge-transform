@@ -36,9 +36,9 @@ void StreamPrefetchPass::transformStream() {
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
       // Debug a certain range of transformed instructions.
-      if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700) {
-        DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
-      }
+      // if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700) {
+      //   DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
+      // }
       this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();
     }
@@ -101,91 +101,168 @@ void StreamPrefetchPass::transformStream() {
       }
     }
 
-    auto PlanIter = this->InstPlanMap.find(NewStaticInst);
-    if (PlanIter == this->InstPlanMap.end()) {
-      continue;
-    }
+    // Update the phi node value for functional stream engine.
+    for (unsigned OperandIdx = 0, NumOperands = NewStaticInst->getNumOperands();
+         OperandIdx != NumOperands; ++OperandIdx) {
+      auto OperandValue = NewStaticInst->getOperand(OperandIdx);
+      if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
 
-    const auto &TransformPlan = PlanIter->second;
-    if (TransformPlan.Plan == StreamTransformPlan::PlanT::DELETE) {
-      /**
-       * No more handling for the deleted instruction.
-       */
-      continue;
-    } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
-
-      // Inform the functional stream engine to step.
-      this->FuncSE->step(TransformPlan.getParamStream(), this->Trace);
-
-      /**
-       * We insert the step instruction after the actual step instruction to
-       * inform the stream engine move forward.
-       */
-      auto NewDynamicId = NewDynamicInst->getId();
-
-      auto StepInst = new StreamStepInst(TransformPlan.getParamStream());
-      auto StepDynamicId = StepInst->getId();
-      // Insert after the actual step inst.
-      auto InsertBefore = NewInstIter;
-      ++InsertBefore;
-      auto StepInstIter =
-          this->Trace->insertDynamicInst(InsertBefore, StepInst);
-
-      /**
-       * Handle the dependence for the step instruction.
-       * It should be dependent on the previous step/config inst of the same
-       * stream, as well as the actual step instruction to make step at the
-       * correct time.
-       */
-      auto &RegDeps = this->Trace->RegDeps.at(StepDynamicId);
-      // Dependent on the original step instruction.
-      RegDeps.emplace_back(nullptr, NewDynamicId);
-
-      /**
-       * Handle the dependence for the step instruction.
-       * Step inst should also be dependent on the dependent streams.
-       */
-      for (const auto &AllChosenDependentStream :
-           TransformPlan.getParamStream()->getAllChosenDependentStreams()) {
-        auto StreamInst = AllChosenDependentStream->getInst();
-        auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
-        // Also register myself as the latest stream inst for the dependent
-        // streams.
-        if (StreamInstIter == ActiveStreamInstMap.end()) {
-          ActiveStreamInstMap.emplace(StreamInst, StepDynamicId);
-        } else {
-          RegDeps.emplace_back(nullptr, StreamInstIter->second);
-          StreamInstIter->second = StepDynamicId;
+        auto ChosenInstStreamIter = this->ChosenInstStreamMap.find(PHINode);
+        if (ChosenInstStreamIter == this->ChosenInstStreamMap.end()) {
+          // This is not a phi node we are about.
+          continue;
         }
+
+        auto S = ChosenInstStreamIter->second;
+        this->FuncSE->updatePHINodeValue(
+            S, this->Trace, *(NewDynamicInst->DynamicOperands[OperandIdx]));
       }
-      // Dependent on the previous step/config instruction.
-      // And also register myself as the latest step instruction for future step
-      // instruction.
-      auto StreamInst = TransformPlan.getParamStream()->getInst();
-      auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
-      if (StreamInstIter == ActiveStreamInstMap.end()) {
-        DEBUG(llvm::errs() << "Missing dependence for step instruction.\n");
-        ActiveStreamInstMap.emplace(StreamInst, StepDynamicId);
-      } else {
-        RegDeps.emplace_back(nullptr, StreamInstIter->second);
-        StreamInstIter->second = StepDynamicId;
+    }
+
+    auto PlanIter = this->InstPlanMap.find(NewStaticInst);
+    if (PlanIter != this->InstPlanMap.end()) {
+      const auto &TransformPlan = PlanIter->second;
+      bool NeedToHandleUseInformation = true;
+      if (TransformPlan.Plan == StreamTransformPlan::PlanT::DELETE) {
+        // Ignore delete instructions.
+      } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
+        // Insert the step instructions.
+        for (auto StepStream : TransformPlan.getStepStreams()) {
+          this->FuncSE->step(StepStream, this->Trace);
+
+          // Create the new StepInst.
+          auto StepInst = new StreamStepInst(StepStream);
+          auto StepInstId = StepInst->getId();
+
+          this->Trace->insertDynamicInst(NewInstIter, StepInst);
+
+          /**
+           * Handle the dependence for the step instruction.
+           * Step inst should also wait for the dependent stream insts.
+           */
+          auto &RegDeps = this->Trace->RegDeps.at(StepInstId);
+          for (const auto &AllChosenDependentStream :
+               StepStream->getAllChosenDependentStreams()) {
+            auto StreamInst = AllChosenDependentStream->getInst();
+            auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+            // Also register myself as the latest stream inst for the dependent
+            // streams.
+            if (StreamInstIter == ActiveStreamInstMap.end()) {
+              ActiveStreamInstMap.emplace(StreamInst, StepInstId);
+            } else {
+              RegDeps.emplace_back(nullptr, StreamInstIter->second);
+              StreamInstIter->second = StepInstId;
+            }
+          }
+          // Add dependence to the previous me and register myself.
+          auto StreamInst = StepStream->getInst();
+          auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+          if (StreamInstIter == ActiveStreamInstMap.end()) {
+            ActiveStreamInstMap.emplace(StreamInst, StepInstId);
+          } else {
+            RegDeps.emplace_back(nullptr, StreamInstIter->second);
+            StreamInstIter->second = StepInstId;
+          }
+
+          this->StepInstCount++;
+
+        }
+
+        // Do not delete the original instruction.
+      } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
+        // No need to handle store instructions. 
       }
 
-      this->StepInstCount++;
-      continue;
-
-    } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
-
-      assert(llvm::isa<llvm::StoreInst>(NewStaticInst) &&
-             "STORE plan for non store instruction.");
       /**
-       * No need to handle stream store in prefetch pass.
+       * No need to handle user information for prefetch.
        */
     }
 
-    /**
-     * Do not handle the use information.
-     */
+    // auto PlanIter = this->InstPlanMap.find(NewStaticInst);
+    // if (PlanIter == this->InstPlanMap.end()) {
+    //   continue;
+    // }
+
+    // const auto &TransformPlan = PlanIter->second;
+    // if (TransformPlan.Plan == StreamTransformPlan::PlanT::DELETE) {
+    //   /**
+    //    * No more handling for the deleted instruction.
+    //    */
+    //   continue;
+    // } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
+
+    //   // Inform the functional stream engine to step.
+    //   this->FuncSE->step(TransformPlan.getParamStream(), this->Trace);
+
+    //   /**
+    //    * We insert the step instruction after the actual step instruction to
+    //    * inform the stream engine move forward.
+    //    */
+    //   auto NewDynamicId = NewDynamicInst->getId();
+
+    //   auto StepInst = new StreamStepInst(TransformPlan.getParamStream());
+    //   auto StepDynamicId = StepInst->getId();
+    //   // Insert after the actual step inst.
+    //   auto InsertBefore = NewInstIter;
+    //   ++InsertBefore;
+    //   auto StepInstIter =
+    //       this->Trace->insertDynamicInst(InsertBefore, StepInst);
+
+    //   /**
+    //    * Handle the dependence for the step instruction.
+    //    * It should be dependent on the previous step/config inst of the same
+    //    * stream, as well as the actual step instruction to make step at the
+    //    * correct time.
+    //    */
+    //   auto &RegDeps = this->Trace->RegDeps.at(StepDynamicId);
+    //   // Dependent on the original step instruction.
+    //   RegDeps.emplace_back(nullptr, NewDynamicId);
+
+    //   /**
+    //    * Handle the dependence for the step instruction.
+    //    * Step inst should also be dependent on the dependent streams.
+    //    */
+    //   for (const auto &AllChosenDependentStream :
+    //        TransformPlan.getParamStream()->getAllChosenDependentStreams()) {
+    //     auto StreamInst = AllChosenDependentStream->getInst();
+    //     auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+    //     // Also register myself as the latest stream inst for the dependent
+    //     // streams.
+    //     if (StreamInstIter == ActiveStreamInstMap.end()) {
+    //       ActiveStreamInstMap.emplace(StreamInst, StepDynamicId);
+    //     } else {
+    //       RegDeps.emplace_back(nullptr, StreamInstIter->second);
+    //       StreamInstIter->second = StepDynamicId;
+    //     }
+    //   }
+    //   // Dependent on the previous step/config instruction.
+    //   // And also register myself as the latest step instruction for future step
+    //   // instruction.
+    //   auto StreamInst = TransformPlan.getParamStream()->getInst();
+    //   auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
+    //   if (StreamInstIter == ActiveStreamInstMap.end()) {
+    //     DEBUG(llvm::errs() << "Missing dependence for step instruction.\n");
+    //     ActiveStreamInstMap.emplace(StreamInst, StepDynamicId);
+    //   } else {
+    //     RegDeps.emplace_back(nullptr, StreamInstIter->second);
+    //     StreamInstIter->second = StepDynamicId;
+    //   }
+
+    //   this->StepInstCount++;
+    //   continue;
+
+    // } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
+
+    //   assert(llvm::isa<llvm::StoreInst>(NewStaticInst) &&
+    //          "STORE plan for non store instruction.");
+    //   /**
+    //    * No need to handle stream store in prefetch pass.
+    //    */
+    // }
+
+    // /**
+    //  * Do not handle the use information.
+    //  */
   }
 
   DEBUG(llvm::errs() << "StreamPrefetch: Transform done.\n");

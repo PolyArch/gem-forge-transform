@@ -49,6 +49,26 @@ class StreamTransformConfig(TransformConfig):
     def get_transform(self):
         return 'stream'
 
+class StreamPrefetchTransformConfig(TransformConfig):
+    def __init__(self, options):
+        self.choose_strategy = options.stream_choose_strategy
+        return
+
+    def get_id(self):
+        if self.choose_strategy == 'inner':
+            return 'stream-prefetch.in'
+        return 'stream-prefetch'
+
+    def get_options(self):
+        if self.choose_strategy == 'inner':
+            return [
+                '-stream-prefetch-pass',
+                '-stream-pass-choose-strategy=inner',
+            ]
+        return ['-stream-prefetch-pass']
+
+    def get_transform(self):
+        return 'stream-prefetch'
 
 class TransformManager(object):
     def __init__(self, options):
@@ -56,6 +76,7 @@ class TransformManager(object):
         self.configs = dict()
         self._init_replay_transform()
         self._init_stream_transform()
+        self._init_stream_prefetch_transform()
 
     def _init_replay_transform(self):
         if 'replay' not in self.options.transform_passes:
@@ -66,6 +87,11 @@ class TransformManager(object):
         if 'stream' not in self.options.transform_passes:
             return
         self.configs['stream'] = [StreamTransformConfig(self.options)]
+
+    def _init_stream_prefetch_transform(self):
+        if 'stream-prefetch' not in self.options.transform_passes:
+            return
+        self.configs['stream-prefetch'] = [StreamPrefetchTransformConfig(self.options)]
 
     def get_configs(self, transform):
         return self.configs[transform]
