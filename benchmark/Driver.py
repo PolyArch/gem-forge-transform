@@ -343,7 +343,7 @@ def main(options):
 
     if benchmark_stream_statistics:
         if options.dump_stream_stats:
-            stream_stats_pickle = 'Plots/{suite}.stream_stats.dat'.format(
+            stream_stats_pickle = 'Plots/data/{suite}.stream_stats.dat'.format(
                 suite=options.suite)
             with open(stream_stats_pickle, mode='wb') as f:
                 pickle.dump(benchmark_stream_statistics, f)
@@ -370,10 +370,15 @@ def main(options):
             benchmark_stream_statistics)
 
     suite_result = BenchmarkResult.SuiteResult(
+        options.suite,
         benchmarks,
         driver.transform_manager,
         driver.gem5_config_manager,
         options.transform_passes)
+
+    if options.dump_suite_results:
+        folder = 'Plots/data'
+        suite_result.pickle(folder)
     energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
     se_energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_se_energy()
     time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
@@ -485,6 +490,9 @@ if __name__ == '__main__':
 
     parser.add_option('--dump-stream-stats', action='store_true',
                       dest='dump_stream_stats', default=False)
+
+    parser.add_option('--dump-suite-results', action='store_true',
+                      dest='dump_suite_results', default=False)
 
     (options, args) = parser.parse_args()
     # Handle special values for the options.
