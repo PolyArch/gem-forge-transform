@@ -753,24 +753,22 @@ class StreamStatistics:
 
     @staticmethod
     def print_benchmark_chosen_stream_length(benchmark_statistic_map):
-        title = [
-            'Benchmark',
+        columns = [
             '<10',
             '<50',
             '<100',
             '<1000',
             'inf'
         ]
-        table = prettytable.PrettyTable(title)
+        table = SimpleTable.SimpleTable('Benchmark', columns)
         for benchmark in benchmark_statistic_map:
             stats = benchmark_statistic_map[benchmark]
             row = stats.get_chosen_stream_length_row()
             # Normalize with ourselves.
             row = StreamStatistics.normalize_row(row)
-            row.insert(0, benchmark)
-            table.add_row(row)
-        table.float_format = '.4'
+            table.add_row(benchmark, row)
         print(table)
+        return table
 
     def get_chosen_stream_percentage_row(self):
         streams = self._collect_chosen_stream()
@@ -848,22 +846,19 @@ class StreamStatistics:
 
     @staticmethod
     def print_benchmark_chosen_stream_loop_path(benchmark_statistic_map):
-        title = [
-            'Benchmark'
-        ]
+        title = list()
         max_paths = 5
         for i in xrange(1, max_paths):
             title.append('{i}'.format(i=i))
         title.append('>={max_paths}'.format(max_paths=max_paths))
-        table = prettytable.PrettyTable(title)
+        table = SimpleTable.SimpleTable('Benchmark', title)
         for benchmark in benchmark_statistic_map:
             stats = benchmark_statistic_map[benchmark]
             row = stats.get_chosen_stream_loop_path(max_paths)
             row = StreamStatistics.normalize_row(row)
-            row.insert(0, benchmark)
-            table.add_row(row)
-        table.float_format = '.4'
+            table.add_row(benchmark, row)
         print(table)
+        return table
 
     def get_chosen_stream_configure_level_row(self, max_level):
         streams = self._collect_chosen_stream()
