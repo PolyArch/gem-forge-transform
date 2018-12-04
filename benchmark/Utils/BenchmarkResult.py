@@ -218,7 +218,8 @@ class BenchmarkResult:
 
 
 class SuiteResult:
-    def __init__(self, benchmarks, transform_manager, gem5_config_manager, transforms):
+    def __init__(self, suite, benchmarks, transform_manager, gem5_config_manager, transforms):
+        self.suite = suite
         self.transforms = transforms
         self.transform_ids = list()
         for transform in self.transforms:
@@ -235,6 +236,29 @@ class SuiteResult:
         for benchmark in benchmarks:
             self.ordered_benchmarks.append(benchmark)
         self.ordered_benchmarks.sort(key=lambda b: b.get_name())
+
+    def pickle(self, folder):
+        # Only pickle myself when I have one transformation and simulation.
+        assert(len(self.transforms) == 1)
+        transform = self.transforms[0]
+        transform_configs = self.transform_manager.get_configs(transform)
+        assert(len(transform_configs) == 1)
+        transform_id = transform_configs[0].get_id()
+        gem5_configs = self.gem5_config_manager.get_configs(transform)
+        assert(len(gem5_configs) == 1)
+        gem5_config_id = gem5_configs[0].get_config_id(transform, prefix='')
+        fn = '{suite}.{transform_id}{gem5_config_id}.results.dat'.format(
+            suite=self.suite,
+            transform_id=transform_id,
+            gem5_config_id=gem5_config_id,
+        )
+        fn = os.path.join(folder, fn)
+        print fn
+        import pickle
+        with open(fn, mode='wb') as f:
+            pickle.dump(self, f)
+
+        
 
     """
     Return a table like this
