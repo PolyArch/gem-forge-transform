@@ -6,6 +6,7 @@ class Gem5ReplayConfig(object):
 
     THROTTLING_DEFAULT = 'static'
     ENABLE_COALESCE_DEFAULT = 'single'
+    ISSUE_WIDTH_DEFAULT = 8
     L1_DCACHE_DEFAULT = 'original'
     L1D_MSHRS_DEFAULT = 4
     L1_5D_MSHRS_DEFAULT = 16
@@ -14,6 +15,7 @@ class Gem5ReplayConfig(object):
     def __init__(self, **kwargs):
         self.prefetch = kwargs['prefetch']
         self.stream_engine_prefetch = kwargs['stream_engine_prefetch']
+        self.issue_width = kwargs['iw']
         self.l1d_mshrs = kwargs['l1d_mshrs']
         self.l1_5d_mshrs = kwargs['l1_5d_mshrs']
         self.l1d_assoc = kwargs['l1d_assoc']
@@ -65,6 +67,10 @@ class Gem5ReplayConfig(object):
         options = list()
         L2Size = '1MB'
         L2TagLat = 20
+        if self.issue_width != Gem5ReplayConfig.ISSUE_WIDTH_DEFAULT:
+            options.append(
+                '--llvm-issue-width={iw}'.format(iw=self.issue_width)
+            )
         if self.l1d_mshrs != Gem5ReplayConfig.L1D_MSHRS_DEFAULT:
             options.append(
                 '--l1d_mshrs={l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
@@ -148,6 +154,8 @@ class Gem5ReplayConfig(object):
     def get_config_id(self, transform, prefix='config'):
         config = prefix
         config += '.{cpu_type}'.format(cpu_type=C.CPU_TYPE)
+        if self.issue_width != Gem5ReplayConfig.ISSUE_WIDTH_DEFAULT:
+            config += '.iw{iw}'.format(iw=self.issue_width)
         if self.l1d_mshrs != Gem5ReplayConfig.L1D_MSHRS_DEFAULT:
             config += '.l1dmshr{l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
         if self.l1d_assoc != 2:
@@ -199,6 +207,7 @@ class Gem5ReplayConfigureManager(object):
             Gem5ReplayConfig(
                 prefetch=self.options.replay_prefetch,
                 stream_engine_prefetch=self.options.se_prefetch,
+                iw=self.options.iw,
                 l1d_mshrs=self.options.l1d_mshrs,
                 l1d_assoc=self.options.l1d_assoc,
                 l1_5d_mshrs=self.options.l1_5d_mshrs,
@@ -214,6 +223,7 @@ class Gem5ReplayConfigureManager(object):
             Gem5ReplayConfig(
                 prefetch=self.options.replay_prefetch,
                 stream_engine_prefetch=self.options.se_prefetch,
+                iw=self.options.iw,
                 l1d_mshrs=self.options.l1d_mshrs,
                 l1d_assoc=self.options.l1d_assoc,
                 l1_5d_mshrs=self.options.l1_5d_mshrs,
@@ -232,6 +242,7 @@ class Gem5ReplayConfigureManager(object):
                     Gem5ReplayConfig(
                         prefetch=self.options.replay_prefetch,
                         stream_engine_prefetch=self.options.se_prefetch,
+                        iw=self.options.iw,
                         l1d_mshrs=self.options.l1d_mshrs,
                         l1d_assoc=self.options.l1d_assoc,
                         l1_5d_mshrs=self.options.l1_5d_mshrs,
@@ -250,6 +261,7 @@ class Gem5ReplayConfigureManager(object):
                 Gem5ReplayConfig(
                     prefetch=self.options.replay_prefetch,
                     stream_engine_prefetch=self.options.se_prefetch,
+                    iw=self.options.iw,
                     l1d_mshrs=self.options.l1d_mshrs,
                     l1d_assoc=self.options.l1d_assoc,
                     l1_5d_mshrs=self.options.l1_5d_mshrs,
