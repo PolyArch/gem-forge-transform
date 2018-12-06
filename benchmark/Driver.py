@@ -451,6 +451,9 @@ if __name__ == '__main__':
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)
+
+    parser.add_option('--iw', action='store', type='int',
+                      dest='iw', default=8)
     parser.add_option('--l1d-mshrs', action='store', type='int',
                       dest='l1d_mshrs', default=4)
     parser.add_option('--l1d-assoc', action='store', type='int',
