@@ -7,7 +7,7 @@
 #include "llvm/IR/Instruction.h"
 
 class Utils {
-public:
+ public:
   static constexpr uint64_t CacheLineSize = 64;
   static constexpr uint64_t CacheLineMask = ~((1ul << 6) - 1);
 
@@ -58,7 +58,6 @@ public:
   }
 
   static llvm::Value *getArgOperand(llvm::Instruction *Inst, unsigned Idx) {
-
     if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
       return CallInst->getArgOperand(Idx);
     } else if (auto InvokeInst = llvm::dyn_cast<llvm::InvokeInst>(Inst)) {
@@ -109,8 +108,8 @@ public:
     }
   }
 
-  static const std::string &
-  getDemangledFunctionName(const llvm::Function *Func);
+  static const std::string &getDemangledFunctionName(
+      const llvm::Function *Func);
 
   static std::unordered_map<const llvm::Function *, std::string>
       MemorizedDemangledFunctionNames;
@@ -134,6 +133,26 @@ public:
     } else {
       return Value->getName();
     }
+  }
+
+  /**
+   * Split a string like a|b|c| into [a, b, c].
+   */
+  static std::vector<std::string> splitByChar(const std::string &source,
+                                              char split) {
+    std::vector<std::string> ret;
+    size_t idx = 0, prev = 0;
+    for (; idx < source.size(); ++idx) {
+      if (source[idx] == split) {
+        ret.push_back(source.substr(prev, idx - prev));
+        prev = idx + 1;
+      }
+    }
+    // Don't miss the possible last field.
+    if (prev < idx) {
+      ret.push_back(source.substr(prev, idx - prev));
+    }
+    return ret;
   }
 };
 

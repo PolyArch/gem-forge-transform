@@ -5,8 +5,8 @@
 
 #include <fstream>
 
-InstructionUIDMap::InstructionUID
-InstructionUIDMap::getOrAllocateUID(llvm::Instruction *Inst, int PosInBB) {
+InstructionUIDMap::InstructionUID InstructionUIDMap::getOrAllocateUID(
+    llvm::Instruction *Inst, int PosInBB) {
   auto UID = reinterpret_cast<InstructionUID>(Inst);
   if (this->Map.count(UID) == 0) {
     // New instruction.
@@ -25,7 +25,8 @@ InstructionUIDMap::getOrAllocateUID(llvm::Instruction *Inst, int PosInBB) {
     // Return value of str is rvalue, will be moved.
     this->Map.emplace(
         std::piecewise_construct, std::forward_as_tuple(UID),
-        std::forward_as_tuple(Inst->getFunction()->getName().str(),
+        std::forward_as_tuple(std::string(Inst->getOpcodeName()),
+                              Inst->getFunction()->getName().str(),
                               BB->getName().str(), PosInBB));
   }
   return UID;
@@ -36,7 +37,8 @@ void InstructionUIDMap::serializeTo(const std::string &FileName) const {
   assert(O.is_open() && "Failed to open InstructionUIDMap serialization file.");
   for (const auto &Record : this->Map) {
     O << Record.first << ' ' << Record.second.FuncName << ' '
-      << Record.second.BBName << ' ' << Record.second.PosInBB << '\n';
+      << Record.second.BBName << ' ' << Record.second.PosInBB << ' '
+      << Record.second.OpName << '\n';
   }
 }
 
@@ -46,14 +48,14 @@ void InstructionUIDMap::parseFrom(const std::string &FileName) {
   std::ifstream I(FileName);
   assert(I.is_open() && "Failed to open InstructionUIDMap parse file.");
   InstructionUID UID;
-  std::string FuncName, BBName;
+  std::string FuncName, BBName, OpName;
   int PosInBB;
-  while (I >> UID >> FuncName >> BBName >> PosInBB) {
+  while (I >> UID >> FuncName >> BBName >> PosInBB >> OpName) {
     // Local variables will be copied.
     auto Inserted =
         this->Map
             .emplace(std::piecewise_construct, std::forward_as_tuple(UID),
-                     std::forward_as_tuple(FuncName, BBName, PosInBB))
+                     std::forward_as_tuple(OpName, FuncName, BBName, PosInBB))
             .second;
     assert(Inserted && "Failed to insert the record.");
   }
