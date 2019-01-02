@@ -11,14 +11,17 @@
  * For now just use the instruction's address.
  */
 class InstructionUIDMap {
-public:
+ public:
   struct InstructionDescriptor {
+    std::string OpName;
     std::string FuncName;
     std::string BBName;
     int PosInBB;
-    InstructionDescriptor(std::string _FuncName, std::string _BBName,
-                          int _PosInBB)
-        : FuncName(std::move(_FuncName)), BBName(std::move(_BBName)),
+    InstructionDescriptor(std::string _OpName, std::string _FuncName,
+                          std::string _BBName, int _PosInBB)
+        : OpName(std::move(_OpName)),
+          FuncName(std::move(_FuncName)),
+          BBName(std::move(_BBName)),
           PosInBB(_PosInBB) {}
   };
 
@@ -36,7 +39,7 @@ public:
 
   const InstructionDescriptor &getDescriptor(const InstructionUID UID) const;
 
-private:
+ private:
   std::unordered_map<InstructionUID, InstructionDescriptor> Map;
 };
 

@@ -8,23 +8,42 @@
 #include <cstdlib>
 #include <fstream>
 
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/io/gzip_stream.h>
+
 void cleanup();
 
 // Single thread singleton.
 static std::ofstream o;
-inline std::ofstream &getTraceFile() {
+static google::protobuf::io::OstreamOutputStream *fStream = nullptr;
+static google::protobuf::io::GzipOutputStream *gzipStream = nullptr;
+static google::protobuf::io::CodedOutputStream *codedStream = nullptr;
+inline google::protobuf::io::CodedOutputStream &getTraceFile() {
   if (!o.is_open()) {
     o.open(getNewTraceFileName(), std::ios::out | std::ios::binary);
     std::atexit(cleanup);
+    fStream = new google::protobuf::io::OstreamOutputStream(&o);
+    gzipStream = new google::protobuf::io::GzipOutputStream(fStream);
+    codedStream = new google::protobuf::io::CodedOutputStream(gzipStream);
   }
   assert(o.is_open());
-  return o;
+  assert(fStream != nullptr);
+  assert(gzipStream != nullptr);
+  assert(codedStream != nullptr);
+  return *codedStream;
 }
 
 static uint64_t count = 0;
 
 void cleanup() {
   if (o.is_open()) {
+    delete codedStream;
+    codedStream = nullptr;
+    gzipStream->Close();
+    delete gzipStream;
+    gzipStream = nullptr;
+    delete fStream;
+    fStream = nullptr;
     o.close();
     std::cout << "Traced #" << count << std::endl;
   }
@@ -67,11 +86,8 @@ void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
   if (UID != 0) {
     protobufTraceEntry.mutable_inst()->set_uid(UID);
   } else {
-    protobufTraceEntry.mutable_inst()->set_func(FunctionName);
-    protobufTraceEntry.mutable_inst()->set_bb(BBName);
-    protobufTraceEntry.mutable_inst()->set_id(Id);
+    assert(false && "Invalid UID.");
   }
-  protobufTraceEntry.mutable_inst()->set_op(OpCodeName);
   protobufTraceEntry.mutable_inst()->clear_params();
   protobufTraceEntry.mutable_inst()->clear_result();
 }
@@ -80,22 +96,22 @@ static const size_t VALUE_BUFFER_SIZE = 1024;
 static char valueBuffer[VALUE_BUFFER_SIZE];
 static void addValueToDynamicInst(const char Tag) {
   switch (Tag) {
-  case PRINT_VALUE_TAG_PARAMETER: {
-    if (protobufTraceEntry.has_inst()) {
-      // std::cout << "Add value to inst " << valueBuffer << std::endl;
-      protobufTraceEntry.mutable_inst()->add_params(valueBuffer);
-    } else {
-      protobufTraceEntry.mutable_func_enter()->add_params(valueBuffer);
+    case PRINT_VALUE_TAG_PARAMETER: {
+      if (protobufTraceEntry.has_inst()) {
+        // std::cout << "Add value to inst " << valueBuffer << std::endl;
+        protobufTraceEntry.mutable_inst()->add_params(valueBuffer);
+      } else {
+        protobufTraceEntry.mutable_func_enter()->add_params(valueBuffer);
+      }
+      break;
     }
-    break;
-  }
-  case PRINT_VALUE_TAG_RESULT: {
-    // Only dynamic inst may have result.
-    assert(protobufTraceEntry.has_inst());
-    protobufTraceEntry.mutable_inst()->set_result(valueBuffer);
-    break;
-  }
-  default: { assert(false); }
+    case PRINT_VALUE_TAG_RESULT: {
+      // Only dynamic inst may have result.
+      assert(protobufTraceEntry.has_inst());
+      protobufTraceEntry.mutable_inst()->set_result(valueBuffer);
+      break;
+    }
+    default: { assert(false); }
   }
 }
 
@@ -138,9 +154,8 @@ void printInstEndImpl() {
   assert(!protobufTraceEntry.has_func_enter() &&
          "Should not contain func enter for inst.");
   auto &trace = getTraceFile();
-  uint64_t bytes = protobufTraceEntry.ByteSizeLong();
-  trace.write(reinterpret_cast<char *>(&bytes), sizeof(bytes));
-  protobufTraceEntry.SerializeToOstream(&trace);
+  trace.WriteVarint32(protobufTraceEntry.ByteSize());
+  protobufTraceEntry.SerializeWithCachedSizes(&trace);
   count++;
   // std::cout << "printInstEnd" << std::endl;
 }
@@ -152,8 +167,7 @@ void printFuncEnterEndImpl() {
     std::cout << "The first one is func enter.\n";
   }
   auto &trace = getTraceFile();
-  uint64_t bytes = protobufTraceEntry.ByteSizeLong();
-  trace.write(reinterpret_cast<char *>(&bytes), sizeof(bytes));
-  protobufTraceEntry.SerializeToOstream(&trace);
+  trace.WriteVarint32(protobufTraceEntry.ByteSize());
+  protobufTraceEntry.SerializeWithCachedSizes(&trace);
   count++;
 }

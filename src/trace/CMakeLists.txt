@@ -20,6 +20,10 @@ set_target_properties(ProtobufTraceMessage PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fPIC -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
 
+set(LIBUNWIND_INC_PATH "$ENV{LIBUNWIND_INC_PATH}")
+if (${LIBUNWIND_INC_PATH} STREQUAL "")
+  message(fatal_error "Please specify where to find libunwind include path")
+endif()
 
 add_library(TracerProtobuf STATIC 
     Tracer.cpp
@@ -28,7 +32,10 @@ add_library(TracerProtobuf STATIC
     TracerProtobuf.cpp
     ${TRACE_PROTOBUF_SRCS}
 )
-target_include_directories(TracerProtobuf PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(TracerProtobuf PUBLIC 
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${LIBUNWIND_INC_PATH}
+)
 
 set_target_properties(TracerProtobuf PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
@@ -41,7 +48,12 @@ add_library(TracerGZip STATIC
     ${PROFILE_PROTOBUF_SRCS}
     TracerGZip.cpp
 )
-target_include_directories(TracerGZip PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+
+target_include_directories(TracerGZip PUBLIC 
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${LIBUNWIND_INC_PATH}
+)
+
 set_target_properties(TracerGZip PROPERTIES
     COMPILE_FLAGS "-std=c++14 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )

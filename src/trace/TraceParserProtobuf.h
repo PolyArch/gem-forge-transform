@@ -6,6 +6,7 @@
 #include "trace/TraceParser.h"
 
 #include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/io/gzip_stream.h>
 
 #include <fstream>
 
@@ -21,6 +22,8 @@ public:
 private:
   std::ifstream TraceFile;
   google::protobuf::io::IstreamInputStream *IStream;
+  google::protobuf::io::GzipInputStream *GzipIStream;
+  google::protobuf::io::CodedInputStream *CodedIStream;
   LLVM::TDG::DynamicLLVMTraceEntry TraceEntry;
 
   InstructionUIDMap InstUIDMap;

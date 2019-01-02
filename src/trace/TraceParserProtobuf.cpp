@@ -10,7 +10,6 @@
 TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName,
                                          const std::string &InstUIDMapFileName)
     : TraceFile(TraceFileName, std::ios::in | std::ios::binary), Count(0) {
-
   if (InstUIDMapFileName != "") {
     this->InstUIDMap.parseFrom(InstUIDMapFileName);
   }
@@ -18,12 +17,17 @@ TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName,
   assert(this->TraceFile.is_open() && "Failed openning trace file.");
   this->IStream =
       new google::protobuf::io::IstreamInputStream(&this->TraceFile);
+  this->GzipIStream = new google::protobuf::io::GzipInputStream(this->IStream);
+  this->CodedIStream =
+      new google::protobuf::io::CodedInputStream(this->GzipIStream);
   this->TraceEntry.Clear();
   this->readNextEntry();
 }
 
 TraceParserProtobuf::~TraceParserProtobuf() {
   std::cerr << "Parsed " << Count << std::endl;
+  delete this->CodedIStream;
+  delete this->GzipIStream;
   delete this->IStream;
   this->TraceFile.close();
 }
@@ -54,13 +58,11 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
     Parsed.Func = InstDescriptor.FuncName;
     Parsed.BB = InstDescriptor.BBName;
     Parsed.Id = InstDescriptor.PosInBB;
+    Parsed.Op = InstDescriptor.OpName;
   } else {
-    Parsed.Func = this->TraceEntry.inst().func();
-    Parsed.BB = this->TraceEntry.inst().bb();
-    Parsed.Id = this->TraceEntry.inst().id();
+    assert(false && "Failed to find instruction uid.");
   }
   Parsed.Result = this->TraceEntry.inst().result();
-  Parsed.Op = this->TraceEntry.inst().op();
 
   for (int i = 0; i < this->TraceEntry.inst().params_size(); ++i) {
     Parsed.Operands.emplace_back(this->TraceEntry.inst().params(i));
@@ -90,34 +92,52 @@ TraceParser::TracedFuncEnter TraceParserProtobuf::parseFunctionEnter() {
 void TraceParserProtobuf::readNextEntry() {
   // TODO: Consider using LimitZeroCopyStream from protobuf.
   this->TraceEntry.Clear();
-  int ReadSize = 0;
-  char Data[sizeof(uint64_t)];
-  const char *Buffer;
-  int Size;
-  while (this->IStream->Next((const void **)&Buffer, &Size)) {
-    // We got something.
-    int Idx = 0;
-    while (ReadSize < sizeof(uint64_t) && Idx < Size) {
-      Data[ReadSize] = Buffer[Idx];
-      ReadSize++;
-      Idx++;
-    }
-    if (Size - Idx > 0) {
-      // Rewind unused data.
-      this->IStream->BackUp(Size - Idx);
-    }
-    if (ReadSize == sizeof(uint64_t)) {
-      // We have read in the size field.
-      bool Success = this->TraceEntry.ParseFromBoundedZeroCopyStream(
-          this->IStream, *(uint64_t *)(Data));
-      if (!Success) {
-        std::cerr << "Failed parsing " << *(uint64_t *)Data << std::endl;
-      }
-      assert(Success && "Failed parsing protobuf.");
-      Count++;
-      break;
+
+  // Read a message from the stream by getting the size, using it as
+  // a limit when parsing the message, then popping the limit again
+  uint32_t Size;
+
+  if (this->CodedIStream->ReadVarint32(&Size)) {
+    auto Limit = this->CodedIStream->PushLimit(Size);
+    if (this->TraceEntry.ParseFromCodedStream(this->CodedIStream)) {
+      this->CodedIStream->PopLimit(Limit);
+      // All went well, the message is parsed and the limit is
+      // popped again
+      this->Count++;
+      return;
+    } else {
+      assert(false && "Failed parsing protobuf.");
     }
   }
+
+  // int ReadSize = 0;
+  // char Data[sizeof(uint64_t)];
+  // const char *Buffer;
+  // int Size;
+  // while (this->IStream->Next((const void **)&Buffer, &Size)) {
+  //   // We got something.
+  //   int Idx = 0;
+  //   while (ReadSize < sizeof(uint64_t) && Idx < Size) {
+  //     Data[ReadSize] = Buffer[Idx];
+  //     ReadSize++;
+  //     Idx++;
+  //   }
+  //   if (Size - Idx > 0) {
+  //     // Rewind unused data.
+  //     this->IStream->BackUp(Size - Idx);
+  //   }
+  //   if (ReadSize == sizeof(uint64_t)) {
+  //     // We have read in the size field.
+  //     bool Success = this->TraceEntry.ParseFromBoundedZeroCopyStream(
+  //         this->IStream, *(uint64_t *)(Data));
+  //     if (!Success) {
+  //       std::cerr << "Failed parsing " << *(uint64_t *)Data << std::endl;
+  //     }
+  //     assert(Success && "Failed parsing protobuf.");
+  //     Count++;
+  //     break;
+  //   }
+  // }
 }
 
 #undef DEBUG_TYPE

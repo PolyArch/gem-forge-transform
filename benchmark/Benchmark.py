@@ -26,6 +26,7 @@ class Benchmark(object):
 
         if trace_lib == 'Protobuf':
             self.trace_links = links + [
+                '-lz',
                 C.PROTOBUF_LIB,
                 C.LIBUNWIND_LIB,
             ]
