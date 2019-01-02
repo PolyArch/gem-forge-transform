@@ -110,34 +110,6 @@ void TraceParserProtobuf::readNextEntry() {
     }
   }
 
-  // int ReadSize = 0;
-  // char Data[sizeof(uint64_t)];
-  // const char *Buffer;
-  // int Size;
-  // while (this->IStream->Next((const void **)&Buffer, &Size)) {
-  //   // We got something.
-  //   int Idx = 0;
-  //   while (ReadSize < sizeof(uint64_t) && Idx < Size) {
-  //     Data[ReadSize] = Buffer[Idx];
-  //     ReadSize++;
-  //     Idx++;
-  //   }
-  //   if (Size - Idx > 0) {
-  //     // Rewind unused data.
-  //     this->IStream->BackUp(Size - Idx);
-  //   }
-  //   if (ReadSize == sizeof(uint64_t)) {
-  //     // We have read in the size field.
-  //     bool Success = this->TraceEntry.ParseFromBoundedZeroCopyStream(
-  //         this->IStream, *(uint64_t *)(Data));
-  //     if (!Success) {
-  //       std::cerr << "Failed parsing " << *(uint64_t *)Data << std::endl;
-  //     }
-  //     assert(Success && "Failed parsing protobuf.");
-  //     Count++;
-  //     break;
-  //   }
-  // }
 }
 
 #undef DEBUG_TYPE
