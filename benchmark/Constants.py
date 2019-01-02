@@ -3,6 +3,7 @@ import os
 
 # Where is llvm-tdg
 LLVM_TDG_DIR = os.getenv('LLVM_TDG_PATH')
+assert(LLVM_TDG_DIR is not None)
 LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'src')
 LLVM_TDG_RESULT_DIR = os.path.join(LLVM_TDG_DIR, 'benchmark', 'result')
 
@@ -12,6 +13,7 @@ LLVM_TDG_REPLAY_C = os.path.join(LLVM_TDG_DIR, 'benchmark', 'replay.c')
 Normal llvm install path.
 """
 LLVM_PATH = os.getenv('LLVM_RELEASE_INSTALL_PATH')
+assert(LLVM_PATH is not None)
 LLVM_BIN_PATH = os.path.join(LLVM_PATH, 'bin')
 LLVM_DEBUG_PATH = os.getenv('LLVM_DEBUG_INSTALL_PATH')
 LLVM_DEBUG_BIN_PATH = os.path.join(LLVM_DEBUG_PATH, 'bin')

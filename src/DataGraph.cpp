@@ -11,8 +11,8 @@
 
 llvm::cl::opt<std::string> TraceFileName("trace-file",
                                          llvm::cl::desc("Trace file."));
-llvm::cl::opt<std::string>
-    TraceFileFormat("trace-format", llvm::cl::desc("Trace file format."));
+llvm::cl::opt<std::string> TraceFileFormat(
+    "trace-format", llvm::cl::desc("Trace file format."));
 
 llvm::cl::opt<std::string> InstUIDFileName(
     "datagraph-inst-uid-file",
@@ -26,8 +26,8 @@ void AddrToMemAccessMap::update(Address Addr, DynamicId Id) {
   this->release();
 }
 
-AddrToMemAccessMap::DynamicId
-AddrToMemAccessMap::getLastAccess(Address Addr) const {
+AddrToMemAccessMap::DynamicId AddrToMemAccessMap::getLastAccess(
+    Address Addr) const {
   auto Iter = this->Map.find(Addr);
   if (Iter != this->Map.end()) {
     return Iter->second;
@@ -85,8 +85,10 @@ void MemoryDependenceComputer::getMemoryDependence(
 DataGraph::DynamicFrame::DynamicFrame(
     llvm::Function *_Function,
     std::unordered_map<const llvm::Value *, DynamicValue> &&_Arguments)
-    : Function(_Function), RunTimeEnv(std::move(_Arguments)),
-      PrevBasicBlock(nullptr), PrevCallInst(nullptr) {
+    : Function(_Function),
+      RunTimeEnv(std::move(_Arguments)),
+      PrevBasicBlock(nullptr),
+      PrevCallInst(nullptr) {
   // Initalize the register dependence look up table to empty list.
   for (auto BBIter = this->Function->begin(), BBEnd = this->Function->end();
        BBIter != BBEnd; ++BBIter) {
@@ -103,16 +105,16 @@ DataGraph::DynamicFrame::~DynamicFrame() {
   // Nothing to release.
 }
 
-const DynamicValue &
-DataGraph::DynamicFrame::getValue(const llvm::Value *Value) const {
+const DynamicValue &DataGraph::DynamicFrame::getValue(
+    const llvm::Value *Value) const {
   const auto Iter = this->RunTimeEnv.find(Value);
   assert(Iter != this->RunTimeEnv.end() &&
          "Failed to find value in the frame.");
   return Iter->second;
 }
 
-const DynamicValue *
-DataGraph::DynamicFrame::getValueNullable(const llvm::Value *Value) const {
+const DynamicValue *DataGraph::DynamicFrame::getValueNullable(
+    const llvm::Value *Value) const {
   const auto Iter = this->RunTimeEnv.find(Value);
   if (Iter == this->RunTimeEnv.end()) {
     return nullptr;
@@ -134,9 +136,9 @@ void DataGraph::DynamicFrame::insertValue(const llvm::Value *Value,
          "Invalid memory offset in run time env.");
 }
 
-const std::list<DataGraph::DynamicId> &
-DataGraph::DynamicFrame::translateRegisterDependence(
-    llvm::Instruction *StaticInst) const {
+const std::list<DataGraph::DynamicId>
+    &DataGraph::DynamicFrame::translateRegisterDependence(
+        llvm::Instruction *StaticInst) const {
   assert(StaticInst->getFunction() == this->Function &&
          "This instruction is not in our function.");
   return this->RegDepLookUpMap.at(StaticInst);
@@ -159,10 +161,12 @@ void DataGraph::DynamicFrame::updateRegisterDependenceLookUpMap(
 }
 
 DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
-    : Module(_Module), DataLayout(nullptr), DetailLevel(_DetailLevel),
-      NumMemDependences(0), Parser(nullptr),
+    : Module(_Module),
+      DataLayout(nullptr),
+      DetailLevel(_DetailLevel),
+      NumMemDependences(0),
+      Parser(nullptr),
       PrevControlInstId(DynamicInstruction::InvalidId) {
-
   DEBUG(llvm::errs() << "Intializing datagraph.\n");
   assert(TraceFileName.getNumOccurrences() == 1 &&
          "Please specify the trace file.");
@@ -205,26 +209,26 @@ DataGraph::DynamicInstIter DataGraph::loadOneDynamicInst() {
       return this->DynamicInstructionList.end();
     }
     switch (NextType) {
-    case TraceParser::INST: {
-      DEBUG(llvm::errs() << "Parse inst.\n");
-      auto Parsed = this->Parser->parseLLVMInstruction();
-      if (this->parseDynamicInstruction(Parsed)) {
-        // We have found something new.
-        // Return a iterator to the back element.
-        return --(this->DynamicInstructionList.end());
+      case TraceParser::INST: {
+        DEBUG(llvm::errs() << "Parse inst.\n");
+        auto Parsed = this->Parser->parseLLVMInstruction();
+        if (this->parseDynamicInstruction(Parsed)) {
+          // We have found something new.
+          // Return a iterator to the back element.
+          return --(this->DynamicInstructionList.end());
+        }
+        break;
       }
-      break;
-    }
-    case TraceParser::FUNC_ENTER: {
-      DEBUG(llvm::errs() << "Parse func enter.\n");
-      auto Parsed = this->Parser->parseFunctionEnter();
-      this->parseFunctionEnter(Parsed);
-      break;
-    }
-    default: {
-      llvm_unreachable("Unknown next type.");
-      break;
-    }
+      case TraceParser::FUNC_ENTER: {
+        DEBUG(llvm::errs() << "Parse func enter.\n");
+        auto Parsed = this->Parser->parseFunctionEnter();
+        this->parseFunctionEnter(Parsed);
+        break;
+      }
+      default: {
+        llvm_unreachable("Unknown next type.");
+        break;
+      }
     }
   }
   return this->DynamicInstructionList.end();
@@ -263,9 +267,8 @@ void DataGraph::commitOneDynamicInst() {
   this->DynamicInstructionList.pop_front();
 }
 
-DataGraph::DynamicInstIter
-DataGraph::insertDynamicInst(DynamicInstIter InsertBefore,
-                             DynamicInstruction *DynamicInst) {
+DataGraph::DynamicInstIter DataGraph::insertDynamicInst(
+    DynamicInstIter InsertBefore, DynamicInstruction *DynamicInst) {
   auto NewInstIter =
       this->DynamicInstructionList.emplace(InsertBefore, DynamicInst);
 
@@ -285,7 +288,6 @@ DataGraph::insertDynamicInst(DynamicInstIter InsertBefore,
 }
 
 bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
-
   DEBUG(llvm::errs() << "Parsed dynamic instruction.\n");
 
   llvm::Instruction *StaticInstruction =
@@ -529,7 +531,6 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
 
 void DataGraph::handlePhiNode(llvm::PHINode *StaticPhi,
                               const TraceParser::TracedInst &Parsed) {
-
   DEBUG(llvm::errs() << "Handle phi node " << Utils::formatLLVMInst(StaticPhi)
                      << '\n');
   // llvm::errs() << "Handle phi node " << Utils::formatLLVMInst(StaticPhi)
@@ -619,7 +620,6 @@ void DataGraph::updateAddrToLastMemoryAccessMap(uint64_t Addr, size_t ByteSize,
 }
 
 void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
-
   DEBUG(llvm::errs() << "Handling memory dependence for ");
   DEBUG(
       this->printStaticInst(llvm::errs(), DynamicInst->getStaticInstruction()));
@@ -635,12 +635,10 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
 
   if (auto LoadStaticInstruction =
           llvm::dyn_cast<llvm::LoadInst>(DynamicInst->getStaticInstruction())) {
-
     // Handle RAW dependence.
     assert(DynamicInst->DynamicOperands.size() == 1 &&
            "Invalid number of dynamic operands for load.");
-    uint64_t BaseAddr =
-        std::stoull(DynamicInst->DynamicOperands[0]->Value, nullptr, 16);
+    uint64_t BaseAddr = DynamicInst->DynamicOperands[0]->getAddr();
     llvm::Type *LoadedType =
         LoadStaticInstruction->getPointerOperandType()->getPointerElementType();
     uint64_t LoadedTypeSizeInByte =
@@ -659,8 +657,7 @@ void DataGraph::handleMemoryDependence(DynamicInstruction *DynamicInst) {
     // Handle WAW and WAR dependence.
     assert(DynamicInst->DynamicOperands.size() == 2 &&
            "Invalid number of dynamic operands for store.");
-    uint64_t BaseAddr =
-        std::stoull(DynamicInst->DynamicOperands[1]->Value, nullptr, 16);
+    uint64_t BaseAddr = DynamicInst->DynamicOperands[1]->getAddr();
     llvm::Type *StoredType = StoreStaticInstruction->getPointerOperandType()
                                  ->getPointerElementType();
     uint64_t StoredTypeSizeInByte =
@@ -742,11 +739,9 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed) {
                                         std::move(DynamicArguments));
 }
 
-llvm::Instruction *
-DataGraph::getLLVMInstruction(const std::string &FunctionName,
-                              const std::string &BasicBlockName,
-                              const int Index) {
-
+llvm::Instruction *DataGraph::getLLVMInstruction(
+    const std::string &FunctionName, const std::string &BasicBlockName,
+    const int Index) {
   llvm::Function *Func = this->Module->getFunction(FunctionName);
   assert(Func && "Failed to look up traced function in module.");
 
@@ -829,15 +824,15 @@ DataGraph::getLLVMInstruction(const std::string &FunctionName,
 
 void DataGraph::updatePrevControlInstId(DynamicInstruction *DynamicInst) {
   switch (DynamicInst->getStaticInstruction()->getOpcode()) {
-  case llvm::Instruction::Switch:
-  case llvm::Instruction::Br:
-  case llvm::Instruction::Ret:
-  case llvm::Instruction::Call: {
-    this->PrevControlInstId = DynamicInst->getId();
-    break;
-  }
-  default:
-    break;
+    case llvm::Instruction::Switch:
+    case llvm::Instruction::Br:
+    case llvm::Instruction::Ret:
+    case llvm::Instruction::Call: {
+      this->PrevControlInstId = DynamicInst->getId();
+      break;
+    }
+    default:
+      break;
   }
 }
 
@@ -848,8 +843,8 @@ DataGraph::DynamicInstIter DataGraph::getDynamicInstFromId(DynamicId Id) const {
   return Iter->second;
 }
 
-const std::string &
-DataGraph::getUniqueNameForStaticInstruction(llvm::Instruction *StaticInst) {
+const std::string &DataGraph::getUniqueNameForStaticInstruction(
+    llvm::Instruction *StaticInst) {
   // This function will be called a lot, cache the results.
   auto Iter = this->StaticInstructionUniqueNameMap.find(StaticInst);
   if (Iter == this->StaticInstructionUniqueNameMap.end()) {
@@ -940,9 +935,8 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
 
     DEBUG(llvm::errs() << "GEP " << BaseValue->Value << '\n');
 
-    uint64_t OperandAddr = stoull(BaseValue->Value, nullptr, 16);
-    uint64_t ResultAddr =
-        stoull(DynamicInst->DynamicResult->Value, nullptr, 16);
+    uint64_t OperandAddr = BaseValue->getAddr();
+    uint64_t ResultAddr = DynamicInst->DynamicResult->getAddr();
     // Compute base/offset from the first operand.
     DynamicInst->DynamicResult->MemBase = BaseValue->MemBase;
     DynamicInst->DynamicResult->MemOffset =
@@ -1017,7 +1011,7 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
                llvm::dyn_cast<llvm::SelectInst>(StaticInstruction)) {
     // Handle the select instruction.
     auto SelectedIndex =
-        (stoull(DynamicInst->DynamicOperands[0]->Value) == 1) ? 1 : 2;
+        (DynamicInst->DynamicOperands[0]->getInt() == 1) ? 1 : 2;
     DynamicInst->DynamicResult->MemBase =
         DynamicInst->DynamicOperands[SelectedIndex]->MemBase;
     DynamicInst->DynamicResult->MemOffset =
