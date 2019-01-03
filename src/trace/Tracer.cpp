@@ -116,7 +116,11 @@ static unsigned tracedFunctionsInStack;
 static const char *currentInstOpName = nullptr;
 
 // Global profile log.
+static std::string allProfileFileName;
 static ProfileLogger allProfile;
+// Traced profile log.
+static std::string tracedProfileFileName;
+static ProfileLogger tracedProfile;
 }  // namespace
 
 // This serves as the guard.
@@ -140,8 +144,8 @@ static bool getBoolEnv(const char *name) {
 }
 
 static void cleanup() {
-  auto profileFileName = getProfileFileName();
-  allProfile.serializeToFile(profileFileName);
+  allProfile.serializeToFile(allProfileFileName);
+  tracedProfile.serializeToFile(tracedProfileFileName);
   /**
    * FIX IT!!
    * We really should deallocate this one, but it will cause
@@ -182,6 +186,15 @@ static void initialize() {
     if (PRINT_INTERVAL == 0) {
       PRINT_INTERVAL = 10000000;
     }
+
+    // Set profile file name.
+
+    const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
+    if (!traceFileName) {
+      traceFileName = DEFAULT_TRACE_FILE_NAME;
+    }
+    allProfileFileName = std::string(traceFileName) + ".profile";
+    tracedProfileFileName = std::string(traceFileName) + ".traced.profile";
 
     isDebug = getBoolEnv("LLVM_TDG_DEBUG");
 
@@ -363,12 +376,11 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     printStack();
     std::exit(1);
   }
-  if (true) {
-    // Profile for every dynamic instruction.
-    std::string FuncStr(FunctionName);
-    std::string BBStr(BBName);
-    allProfile.addBasicBlock(FuncStr, BBStr);
-  }
+  // Profile for every dynamic instruction.
+  std::string FuncStr(FunctionName);
+  std::string BBStr(BBName);
+  allProfile.addBasicBlock(FuncStr, BBStr);
+
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
   // __LINE__, insideMyself, count); Update current inst.
   assert(currentInstOpName == nullptr && "Previous inst has not been closed.");
@@ -390,6 +402,8 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
   }
   if (shouldLog()) {
     printInstImpl(FunctionName, BBName, Id, UID, OpCodeName);
+    // Profile for traced instructions.
+    tracedProfile.addBasicBlock(FuncStr, BBStr);
   }
   insideMyself = false;
   return;
