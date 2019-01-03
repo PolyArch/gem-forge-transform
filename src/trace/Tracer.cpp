@@ -363,8 +363,8 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     printStack();
     std::exit(1);
   }
-  if (Id == 0) {
-    // We are at the header of a basic block. Profile.
+  if (true) {
+    // Profile for every dynamic instruction.
     std::string FuncStr(FunctionName);
     std::string BBStr(BBName);
     allProfile.addBasicBlock(FuncStr, BBStr);
