@@ -20,26 +20,26 @@
 // Definitely not the best way to do thes, but since it barely changes
 // and imitiveTypes - make sure LastPrimitiveTyID stays up to date.
 enum TypeID {
-  VoidTyID = 0,  ///<  0: type with no size
-  HalfTyID,      ///<  1: 16-bit floating point type
-  FloatTyID,     ///<  2: 32-bit floating point type
-  DoubleTyID,    ///<  3: 64-bit floating point type
-  X86_FP80TyID,  ///<  4: 80-bit floating point type (X87)
-  FP128TyID,     ///<  5: 128-bit floating point type (112-bit mantissa)
-  PPC_FP128TyID, ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
-  LabelTyID,     ///<  7: Labels
-  MetadataTyID,  ///<  8: Metadata
-  X86_MMXTyID,   ///<  9: MMX vectors (64 bits, X86 specific)
-  TokenTyID,     ///< 10: Tokens
+  VoidTyID = 0,   ///<  0: type with no size
+  HalfTyID,       ///<  1: 16-bit floating point type
+  FloatTyID,      ///<  2: 32-bit floating point type
+  DoubleTyID,     ///<  3: 64-bit floating point type
+  X86_FP80TyID,   ///<  4: 80-bit floating point type (X87)
+  FP128TyID,      ///<  5: 128-bit floating point type (112-bit mantissa)
+  PPC_FP128TyID,  ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
+  LabelTyID,      ///<  7: Labels
+  MetadataTyID,   ///<  8: Metadata
+  X86_MMXTyID,    ///<  9: MMX vectors (64 bits, X86 specific)
+  TokenTyID,      ///< 10: Tokens
 
   // Derived types... see DerivedTypes.h file.
   // Make sure FirstDerivedTyID stays up to date!
-  IntegerTyID,  ///< 11: Arbitrary bit width integers
-  FunctionTyID, ///< 12: Functions
-  StructTyID,   ///< 13: Structures
-  ArrayTyID,    ///< 14: Arrays
-  PointerTyID,  ///< 15: Pointers
-  VectorTyID    ///< 16: SIMD 'packed' format, or other vector type
+  IntegerTyID,   ///< 11: Arbitrary bit width integers
+  FunctionTyID,  ///< 12: Functions
+  StructTyID,    ///< 13: Structures
+  ArrayTyID,     ///< 14: Arrays
+  PointerTyID,   ///< 15: Pointers
+  VectorTyID     ///< 16: SIMD 'packed' format, or other vector type
 };
 
 // Contain some common definitions
@@ -67,6 +67,8 @@ std::string getProfileFileName() {
   }
   return std::string(traceFileName) + ".profile";
 }
+
+namespace {
 
 // This flag controls if I am already inside myself.
 // This helps to solve the problem when the tracer runtime calls some functions
@@ -113,6 +115,10 @@ static std::vector<const char *> stackName;
 static unsigned tracedFunctionsInStack;
 static const char *currentInstOpName = nullptr;
 
+// Global profile log.
+static ProfileLogger allProfile;
+}  // namespace
+
 // This serves as the guard.
 
 static uint64_t getUint64Env(const char *name) {
@@ -135,7 +141,7 @@ static bool getBoolEnv(const char *name) {
 
 static void cleanup() {
   auto profileFileName = getProfileFileName();
-  ProfileLogger::serializeToFile(profileFileName);
+  allProfile.serializeToFile(profileFileName);
   /**
    * FIX IT!!
    * We really should deallocate this one, but it will cause
@@ -361,7 +367,7 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     // We are at the header of a basic block. Profile.
     std::string FuncStr(FunctionName);
     std::string BBStr(BBName);
-    ProfileLogger::addBasicBlock(FuncStr, BBStr);
+    allProfile.addBasicBlock(FuncStr, BBStr);
   }
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
   // __LINE__, insideMyself, count); Update current inst.
@@ -413,38 +419,38 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
-  case TypeID::LabelTyID: {
-    // For label, log the name again to be compatible with other type.
-    printValueLabelImpl(Tag, Name, TypeId);
-    break;
-  }
-  case TypeID::IntegerTyID: {
-    uint64_t value = va_arg(VAList, uint64_t);
-    printValueIntImpl(Tag, Name, TypeId, value);
-    break;
-  }
-  // Float is promoted to double on x64.
-  case TypeID::FloatTyID:
-  case TypeID::DoubleTyID: {
-    double value = va_arg(VAList, double);
-    printValueFloatImpl(Tag, Name, TypeId, value);
-    break;
-  }
-  case TypeID::PointerTyID: {
-    void *value = va_arg(VAList, void *);
-    printValuePointerImpl(Tag, Name, TypeId, value);
-    break;
-  }
-  case TypeID::VectorTyID: {
-    uint32_t size = va_arg(VAList, uint32_t);
-    uint8_t *buffer = va_arg(VAList, uint8_t *);
-    printValueVectorImpl(Tag, Name, TypeId, size, buffer);
-    break;
-  }
-  default: {
-    printValueUnsupportImpl(Tag, Name, TypeId);
-    break;
-  }
+    case TypeID::LabelTyID: {
+      // For label, log the name again to be compatible with other type.
+      printValueLabelImpl(Tag, Name, TypeId);
+      break;
+    }
+    case TypeID::IntegerTyID: {
+      uint64_t value = va_arg(VAList, uint64_t);
+      printValueIntImpl(Tag, Name, TypeId, value);
+      break;
+    }
+    // Float is promoted to double on x64.
+    case TypeID::FloatTyID:
+    case TypeID::DoubleTyID: {
+      double value = va_arg(VAList, double);
+      printValueFloatImpl(Tag, Name, TypeId, value);
+      break;
+    }
+    case TypeID::PointerTyID: {
+      void *value = va_arg(VAList, void *);
+      printValuePointerImpl(Tag, Name, TypeId, value);
+      break;
+    }
+    case TypeID::VectorTyID: {
+      uint32_t size = va_arg(VAList, uint32_t);
+      uint8_t *buffer = va_arg(VAList, uint8_t *);
+      printValueVectorImpl(Tag, Name, TypeId, size, buffer);
+      break;
+    }
+    default: {
+      printValueUnsupportImpl(Tag, Name, TypeId);
+      break;
+    }
   }
   va_end(VAList);
   insideMyself = false;
