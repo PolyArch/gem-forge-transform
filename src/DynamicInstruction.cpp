@@ -26,7 +26,8 @@ DynamicValue &DynamicValue::operator=(const DynamicValue &Other) {
 }
 
 DynamicValue::DynamicValue(DynamicValue &&Other)
-    : Value(std::move(Other.Value)), MemBase(std::move(Other.MemBase)),
+    : Value(std::move(Other.Value)),
+      MemBase(std::move(Other.MemBase)),
       MemOffset(Other.MemOffset) {}
 
 std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
@@ -36,78 +37,79 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
    * modify the undeflying array and I do not want to copy again.
    */
   switch (Type->getTypeID()) {
-  case llvm::Type::FloatTyID: {
-    Bytes.resize(sizeof(float), 0);
-    *reinterpret_cast<float *>(&Bytes[0]) = std::stof(this->Value);
-    break;
-  }
-  case llvm::Type::DoubleTyID: {
-    Bytes.resize(sizeof(double), 0);
-    *reinterpret_cast<double *>(&Bytes[0]) = std::stod(this->Value);
-    break;
-  }
-  case llvm::Type::IntegerTyID: {
-    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
-    unsigned BitWidth = IntegerType->getBitWidth();
-    if ((BitWidth % 8) != 0) {
-      DEBUG(llvm::errs() << "Bit width of integer " << BitWidth << '\n');
-    }
-    if (BitWidth == 1) {
-      // Sometimes, llvm optimize boolean to i1, but this is at least 1 bytes.
-      BitWidth = 8;
-    }
-    assert((BitWidth % 8) == 0 && "Bit width should be multiple of 8.");
-    size_t ByteWidth = BitWidth / 8;
-    Bytes.resize(ByteWidth);
-    /**
-     * Notice that when trace, we already ingored the sign so here
-     * we just take them as unsigned.
-     */
-    switch (ByteWidth) {
-    case 1: {
-      *reinterpret_cast<char *>(&Bytes[0]) = stoul(this->Value);
+    case llvm::Type::FloatTyID: {
+      Bytes.resize(sizeof(float), 0);
+      *reinterpret_cast<float *>(&Bytes[0]) = this->getFloat();
       break;
     }
-    case 2: {
-      *reinterpret_cast<uint16_t *>(&Bytes[0]) = stoul(this->Value);
+    case llvm::Type::DoubleTyID: {
+      Bytes.resize(sizeof(double), 0);
+      *reinterpret_cast<double *>(&Bytes[0]) = this->getDouble();
       break;
     }
-    case 4: {
-      *reinterpret_cast<uint32_t *>(&Bytes[0]) = stoul(this->Value);
+    case llvm::Type::IntegerTyID: {
+      auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
+      unsigned BitWidth = IntegerType->getBitWidth();
+      if ((BitWidth % 8) != 0) {
+        DEBUG(llvm::errs() << "Bit width of integer " << BitWidth << '\n');
+      }
+      if (BitWidth == 1) {
+        // Sometimes, llvm optimize boolean to i1, but this is at least 1 bytes.
+        BitWidth = 8;
+      }
+      assert((BitWidth % 8) == 0 && "Bit width should be multiple of 8.");
+      size_t ByteWidth = BitWidth / 8;
+      Bytes.resize(ByteWidth);
+      /**
+       * Notice that when trace, we already ingored the sign so here
+       * we just take them as unsigned.
+       */
+      switch (ByteWidth) {
+        case 1: {
+          *reinterpret_cast<char *>(&Bytes[0]) = this->getInt();
+          break;
+        }
+        case 2: {
+          *reinterpret_cast<uint16_t *>(&Bytes[0]) = this->getInt();
+          break;
+        }
+        case 4: {
+          *reinterpret_cast<uint32_t *>(&Bytes[0]) = this->getInt();
+          break;
+        }
+        case 8: {
+          *reinterpret_cast<uint64_t *>(&Bytes[0]) = this->getInt();
+          break;
+        }
+        default: {
+          llvm_unreachable("Unsupported integer width.");
+          break;
+        }
+      }
       break;
     }
-    case 8: {
-      *reinterpret_cast<uint64_t *>(&Bytes[0]) = stoul(this->Value);
+    case llvm::Type::PointerTyID: {
+      // Pointers are treated as uint64_t, base 16.
+      Bytes.resize(sizeof(uint64_t), 0);
+      *reinterpret_cast<uint64_t *>(&Bytes[0]) = this->getAddr();
       break;
     }
-    default: {
-      llvm_unreachable("Unsupported integer width.");
+    case llvm::Type::VectorTyID: {
+      Bytes = this->Value;
+      // auto VectorType = llvm::cast<llvm::VectorType>(Type);
+      // size_t ByteWidth = VectorType->getBitWidth() / 8;
+      // Bytes.resize(ByteWidth);
+      // size_t StartPos = 0;
+      // // Parse the comma separated values (base 16).
+      // for (size_t Pos = 0; Pos < Bytes.size(); ++Pos) {
+      //   size_t NextCommaPos = this->Value.find(',', StartPos);
+      //   Bytes[Pos] = static_cast<char>(std::stoi(
+      //       this->Value.substr(StartPos, NextCommaPos - StartPos), 0, 16));
+      //   StartPos = NextCommaPos + 1;
+      // }
       break;
     }
-    }
-    break;
-  }
-  case llvm::Type::PointerTyID: {
-    // Pointers are treated as uint64_t, base 16.
-    Bytes.resize(sizeof(uint64_t), 0);
-    *reinterpret_cast<double *>(&Bytes[0]) = std::stoul(this->Value, 0, 16);
-    break;
-  }
-  case llvm::Type::VectorTyID: {
-    auto VectorType = llvm::cast<llvm::VectorType>(Type);
-    size_t ByteWidth = VectorType->getBitWidth() / 8;
-    Bytes.resize(ByteWidth);
-    size_t StartPos = 0;
-    // Parse the comma separated values (base 16).
-    for (size_t Pos = 0; Pos < Bytes.size(); ++Pos) {
-      size_t NextCommaPos = this->Value.find(',', StartPos);
-      Bytes[Pos] = static_cast<char>(std::stoi(
-          this->Value.substr(StartPos, NextCommaPos - StartPos), 0, 16));
-      StartPos = NextCommaPos + 1;
-    }
-    break;
-  }
-  default: { llvm_unreachable("Unsupported type.\n"); }
+    default: { llvm_unreachable("Unsupported type.\n"); }
   }
   return Bytes;
 }
@@ -268,7 +270,8 @@ void DynamicInstruction::formatOpCode(llvm::raw_ostream &Out) const {
 LLVMDynamicInstruction::LLVMDynamicInstruction(
     llvm::Instruction *_StaticInstruction, DynamicValue *_Result,
     std::vector<DynamicValue *> _Operands)
-    : DynamicInstruction(), StaticInstruction(_StaticInstruction),
+    : DynamicInstruction(),
+      StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
   this->DynamicResult = _Result;
   this->DynamicOperands = std::move(_Operands);
@@ -291,7 +294,8 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
 
 LLVMDynamicInstruction::LLVMDynamicInstruction(
     llvm::Instruction *_StaticInstruction, TraceParser::TracedInst &_Parsed)
-    : DynamicInstruction(), StaticInstruction(_StaticInstruction),
+    : DynamicInstruction(),
+      StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
   if (_Parsed.Result != "") {
     // We do have result.
@@ -379,7 +383,7 @@ void LLVMDynamicInstruction::formatCustomizedFields(llvm::raw_ostream &Out,
            * Also, make this a giantic vector store.
            */
           DynamicValue *StoredAddr = this->DynamicOperands[0];
-          uint64_t StoredSize = std::stoul(this->DynamicOperands[2]->Value);
+          uint64_t StoredSize = this->DynamicOperands[2]->getInt();
           Out << StoredAddr->MemBase << '|' << StoredAddr->MemOffset << '|'
               << StoredAddr->Value << '|' << StoredSize << '|'
               << this->DynamicOperands[1]->Value << '|';
@@ -455,7 +459,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
         LoadStaticInstruction->getPointerOperandType()
             ->getPointerElementType());
     auto LoadExtra = ProtobufEntry->mutable_load();
-    LoadExtra->set_addr(std::stoul(LoadedAddr->Value, nullptr, 16));
+    LoadExtra->set_addr(LoadedAddr->getAddr());
     LoadExtra->set_size(LoadedSize);
     LoadExtra->set_base(LoadedAddr->MemBase);
     LoadExtra->set_offset(LoadedAddr->MemOffset);
@@ -476,7 +480,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
                                  ->getPointerElementType();
     uint64_t StoredSize = DG->DataLayout->getTypeStoreSize(StoredType);
     auto StoreExtra = ProtobufEntry->mutable_store();
-    StoreExtra->set_addr(std::stoul(StoredAddr->Value, nullptr, 16));
+    StoreExtra->set_addr(StoredAddr->getAddr());
     StoreExtra->set_size(StoredSize);
     StoreExtra->set_value(
         this->DynamicOperands[0]->serializeToBytes(StoredType));
@@ -516,9 +520,9 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
            * memset(addr, value, size)
            */
           DynamicValue *StoredAddr = this->DynamicOperands[0];
-          uint64_t StoredSize = std::stoul(this->DynamicOperands[2]->Value);
+          uint64_t StoredSize = this->DynamicOperands[2]->getInt();
           auto StoreExtra = ProtobufEntry->mutable_store();
-          StoreExtra->set_addr(std::stoul(StoredAddr->Value, nullptr, 16));
+          StoreExtra->set_addr(StoredAddr->getAddr());
           StoreExtra->set_size(StoredSize);
           StoreExtra->set_value(this->DynamicOperands[1]->serializeToBytes(
               CallStaticInstruction->getFunctionType()->getParamType(1)));
@@ -537,7 +541,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     uint64_t AllocatedSize = DG->DataLayout->getTypeStoreSize(
         AllocaStaticInstruction->getAllocatedType());
     auto AllocExtra = ProtobufEntry->mutable_alloc();
-    AllocExtra->set_addr(std::stoul(this->DynamicResult->Value, nullptr, 16));
+    AllocExtra->set_addr(this->DynamicResult->getAddr());
     AllocExtra->set_size(AllocatedSize);
     AllocExtra->set_new_base(this->DynamicResult->MemBase);
     // This alloc inst will produce some new base for future memory access.

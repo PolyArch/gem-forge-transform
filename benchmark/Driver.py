@@ -165,55 +165,6 @@ class Driver:
                     deps
                 )
 
-    # def simulate_hoffman2(self, benchmarks):
-    #     hoffman2_commands = list()
-    #     retrive_commands = list()
-    #     for benchmark in benchmarks:
-    #         for transform_pass in options.transform_passes:
-    #             name = benchmark.get_name()
-    #             tdgs = benchmark.get_tdgs(transform_pass)
-    #             results = benchmark.get_results(transform_pass)
-
-    #             for i in xrange(0, len(tdgs)):
-    #                 if self.options.trace_id:
-    #                     if i not in self.options.trace_id:
-    #                         # Ignore those traces if not specified.
-    #                         continue
-    #                 hoffman2_command = benchmark.simulate_hoffman2(
-    #                     tdgs[i], results[i], False)
-    #                 hoffman2_commands.append(hoffman2_command)
-    #                 retrive_command = benchmark.get_hoffman2_retrive_cmd(
-    #                     tdgs[i], results[i])
-    #                 retrive_commands.append(retrive_command)
-    #     for i in xrange(len(hoffman2_commands)):
-    #         print('{i} {cmd}'.format(i=i, cmd=' '.join(hoffman2_commands[i])))
-    #         # Hoffman2 index starts from 1.
-    #         command_file = 'command.{i}.sh'.format(i=i+1)
-    #         hoffman2_command_file = os.path.join(
-    #             C.HOFFMAN2_SSH_SCRATCH, command_file)
-    #         tmp_command_file = os.path.join('/tmp', command_file)
-    #         with open(tmp_command_file, 'w') as f:
-    #             for j in xrange(len(hoffman2_commands[i])):
-    #                 if ' ' in hoffman2_commands[i][j]:
-    #                     idx = hoffman2_commands[i][j].find('=')
-    #                     hoffman2_commands[i][j] = (
-    #                         hoffman2_commands[i][j][0:idx+1] + '"' +
-    #                         hoffman2_commands[i][j][idx+1:-1] + '"'
-    #                     )
-
-    #             f.write(' '.join(hoffman2_commands[i]))
-    #         print('# SCP command file {i}'.format(i=i+1))
-    #         Util.call_helper([
-    #             'scp',
-    #             tmp_command_file,
-    #             hoffman2_command_file,
-    #         ])
-    #     tmp_retrive_command_file = os.path.join('/tmp', 'retrive_hoffman2.sh')
-    #     with open(tmp_retrive_command_file, 'w') as f:
-    #         for cmd in retrive_commands:
-    #             f.write(' '.join(cmd))
-    #             f.write('\n')
-
 
 build_datagraph_debugs = {
     'inline-stream': [
@@ -429,7 +380,7 @@ if __name__ == '__main__':
     else:
         default_cores = 8
     parser = optparse.OptionParser()
-    parser.add_option('--cores', action='store',
+    parser.add_option('-j', '--cores', action='store',
                       type='int', dest='cores', default=default_cores)
     parser.add_option('-b', '--build', action='store_true',
                       dest='build', default=False)

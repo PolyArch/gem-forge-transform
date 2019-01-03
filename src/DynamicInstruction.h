@@ -20,7 +20,7 @@
 class DataGraph;
 
 class DynamicValue {
-public:
+ public:
   DynamicValue(const std::string &_Value, const std::string &_MemBase = "",
                uint64_t _MemOffset = 0);
   DynamicValue(const DynamicValue &Other);
@@ -29,9 +29,15 @@ public:
   // Serialize to bytes according to the type.
   std::string serializeToBytes(llvm::Type *Type) const;
   // Interpret the value as an address.
-  uint64_t getAddr() const { return std::stoul(this->Value, nullptr, 16); }
+  uint64_t getAddr() const {
+    return *(reinterpret_cast<const uint64_t *>(this->Value.data()));
+  }
   // Interpret the value as an int.
-  uint64_t getInt() const { return std::stoul(this->Value); }
+  uint64_t getInt() const { return this->getAddr(); }
+  double getDouble() const {
+    return *(reinterpret_cast<const double *>(this->Value.data()));
+  }
+  float getFloat() const { return this->getDouble(); }
   std::string Value;
   // Base/Offset of memory address.
   std::string MemBase;
@@ -39,7 +45,7 @@ public:
 };
 
 class DynamicInstruction {
-public:
+ public:
   using DynamicId = uint64_t;
   using DependentMap =
       std::unordered_map<DynamicId, std::unordered_set<DynamicId>>;
@@ -74,7 +80,7 @@ public:
   void serializeToProtobuf(LLVM::TDG::TDGInstruction *ProtobufEntry,
                            DataGraph *DG) const;
 
-protected:
+ protected:
   /**
    * 0 IS RESERVED FOR INVALID DYNAMIC ID.
    */
@@ -93,13 +99,12 @@ protected:
   virtual void formatCustomizedFields(llvm::raw_ostream &Out,
                                       DataGraph *Trace) const {}
 
-  virtual void
-  serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
-                           DataGraph *DG) const {}
+  virtual void serializeToProtobufExtra(
+      LLVM::TDG::TDGInstruction *ProtobufEntry, DataGraph *DG) const {}
 };
 
 class LLVMDynamicInstruction : public DynamicInstruction {
-public:
+ public:
   LLVMDynamicInstruction(llvm::Instruction *_StaticInstruction,
                          TraceParser::TracedInst &_Parsed);
   LLVMDynamicInstruction(llvm::Instruction *_StaticInstruction,
@@ -107,8 +112,8 @@ public:
                          std::vector<DynamicValue *> _Operands);
   // Not copiable.
   LLVMDynamicInstruction(const LLVMDynamicInstruction &other) = delete;
-  LLVMDynamicInstruction &
-  operator=(const LLVMDynamicInstruction &other) = delete;
+  LLVMDynamicInstruction &operator=(const LLVMDynamicInstruction &other) =
+      delete;
   // Not Movable.
   LLVMDynamicInstruction(LLVMDynamicInstruction &&other) = delete;
   LLVMDynamicInstruction &operator=(LLVMDynamicInstruction &&other) = delete;

@@ -46,6 +46,22 @@ TraceParser::Type TraceParserProtobuf::getNextType() {
   return Type::END;
 }
 
+std::string TraceParserProtobuf::parseLLVMDynamicValueToString(
+    const ::LLVM::TDG::DynamicLLVMValue &Value) {
+  switch (Value.value_case()) {
+    case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVInt: {
+      uint64_t v_int = Value.v_int();
+      return std::string(reinterpret_cast<char *>(&v_int), sizeof(v_int));
+      break;
+    }
+    case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVBytes: {
+      return Value.v_bytes();
+      break;
+    }
+    default: { return std::string(""); }
+  }
+}
+
 TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
   assert(this->getNextType() == Type::INST &&
          "The next trace entry is not instruction.");
@@ -62,10 +78,13 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
   } else {
     assert(false && "Failed to find instruction uid.");
   }
-  Parsed.Result = this->TraceEntry.inst().result();
+  Parsed.Result =
+      this->parseLLVMDynamicValueToString(this->TraceEntry.inst().result());
+  // Parsed.Result = this->TraceEntry.inst().result();
 
   for (int i = 0; i < this->TraceEntry.inst().params_size(); ++i) {
-    Parsed.Operands.emplace_back(this->TraceEntry.inst().params(i));
+    Parsed.Operands.emplace_back(
+        this->parseLLVMDynamicValueToString(this->TraceEntry.inst().params(i)));
   }
 
   // Read the next one.
@@ -81,7 +100,8 @@ TraceParser::TracedFuncEnter TraceParserProtobuf::parseFunctionEnter() {
   Parsed.Func = this->TraceEntry.func_enter().func();
 
   for (int i = 0; i < this->TraceEntry.func_enter().params_size(); ++i) {
-    Parsed.Arguments.emplace_back(this->TraceEntry.func_enter().params(i));
+    Parsed.Arguments.emplace_back(this->parseLLVMDynamicValueToString(
+        this->TraceEntry.func_enter().params(i)));
   }
 
   // Read the next one.
@@ -109,7 +129,6 @@ void TraceParserProtobuf::readNextEntry() {
       assert(false && "Failed parsing protobuf.");
     }
   }
-
 }
 
 #undef DEBUG_TYPE

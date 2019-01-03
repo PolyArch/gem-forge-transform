@@ -2,16 +2,23 @@ syntax = "proto3";
 
 package LLVM.TDG;
 
+message DynamicLLVMValue {
+  oneof value {
+    uint64 v_int = 1;
+    bytes v_bytes = 2;
+  }
+}
+
 message DynamicLLVMInstruction {
   uint64 uid = 1;
-  repeated string params = 2;
-  string result = 3;
+  repeated DynamicLLVMValue params = 2;
+  DynamicLLVMValue result = 3;
 }
 
 // Logs information on entering a function.
 message DynamicLLVMFunctionEnter {
   string func = 1;
-  repeated string params = 2;
+  repeated DynamicLLVMValue params = 2;
 }
 
 message DynamicLLVMTraceEntry {

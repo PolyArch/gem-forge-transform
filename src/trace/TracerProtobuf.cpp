@@ -8,8 +8,8 @@
 #include <cstdlib>
 #include <fstream>
 
-#include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/io/gzip_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
 
 void cleanup();
 
@@ -80,9 +80,6 @@ void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
         new LLVM::TDG::DynamicLLVMInstruction());
   }
 
-  // std::cout << "Trace inst " << FunctionName << "::" << BBName
-  //           << "::" << OpCodeName << std::endl;
-
   if (UID != 0) {
     protobufTraceEntry.mutable_inst()->set_uid(UID);
   } else {
@@ -94,59 +91,61 @@ void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
 
 static const size_t VALUE_BUFFER_SIZE = 1024;
 static char valueBuffer[VALUE_BUFFER_SIZE];
-static void addValueToDynamicInst(const char Tag) {
+static void addValueToDynamicInst(const char Tag, const void *valueBuffer,
+                                  size_t valueSize, bool isInt) {
+  ::LLVM::TDG::DynamicLLVMValue *value = nullptr;
   switch (Tag) {
     case PRINT_VALUE_TAG_PARAMETER: {
       if (protobufTraceEntry.has_inst()) {
-        // std::cout << "Add value to inst " << valueBuffer << std::endl;
-        protobufTraceEntry.mutable_inst()->add_params(valueBuffer);
+        value = protobufTraceEntry.mutable_inst()->add_params();
       } else {
-        protobufTraceEntry.mutable_func_enter()->add_params(valueBuffer);
+        value = protobufTraceEntry.mutable_func_enter()->add_params();
       }
       break;
     }
     case PRINT_VALUE_TAG_RESULT: {
       // Only dynamic inst may have result.
       assert(protobufTraceEntry.has_inst());
-      protobufTraceEntry.mutable_inst()->set_result(valueBuffer);
+      value = protobufTraceEntry.mutable_inst()->mutable_result();
       break;
     }
     default: { assert(false); }
   }
+  if (isInt) {
+    value->set_v_int(*(static_cast<const uint64_t *>(valueBuffer)));
+  } else {
+    value->set_v_bytes(valueBuffer, valueSize);
+  }
 }
 
 void printValueLabelImpl(const char Tag, const char *Name, unsigned TypeId) {
-  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%s", Name);
-  addValueToDynamicInst(Tag);
+  // snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%s", Name);
+  addValueToDynamicInst(Tag, Name, strlen(Name), false);
 }
 void printValueIntImpl(const char Tag, const char *Name, unsigned TypeId,
                        uint64_t Value) {
-  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%" PRIu64, Value);
-  addValueToDynamicInst(Tag);
+  // snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%" PRIu64, Value);
+  addValueToDynamicInst(Tag, &Value, sizeof(Value), true);
 }
 void printValueFloatImpl(const char Tag, const char *Name, unsigned TypeId,
                          double Value) {
-  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%f", Value);
-  addValueToDynamicInst(Tag);
+  // snprintf(valueBuffer, VALUE_BUFFER_SIZE, "%f", Value);
+  addValueToDynamicInst(Tag, &Value, sizeof(Value), true);
 }
 void printValuePointerImpl(const char Tag, const char *Name, unsigned TypeId,
                            void *Value) {
-  snprintf(valueBuffer, VALUE_BUFFER_SIZE, "0x%llx", (unsigned long long)Value);
-  addValueToDynamicInst(Tag);
+  // snprintf(valueBuffer, VALUE_BUFFER_SIZE, "0x%llx", (unsigned long
+  // long)Value);
+  addValueToDynamicInst(Tag, &Value, sizeof(Value), true);
 }
 void printValueVectorImpl(const char Tag, const char *Name, unsigned TypeId,
                           uint32_t Size, uint8_t *Value) {
-  for (uint32_t i = 0, pos = 0; i < Size; ++i) {
-    pos +=
-        snprintf(valueBuffer + pos, VALUE_BUFFER_SIZE - pos, "%hhu,", Value[i]);
-  }
-  // std::cout << "Print vector " << Size << std::endl;
-  addValueToDynamicInst(Tag);
+  addValueToDynamicInst(Tag, Value, Size, false);
 }
 void printValueUnsupportImpl(const char Tag, const char *Name,
                              unsigned TypeId) {
   snprintf(valueBuffer, VALUE_BUFFER_SIZE, "UnsupportedType(%u)", TypeId);
-  addValueToDynamicInst(Tag);
+  addValueToDynamicInst(Tag, valueBuffer, strlen(valueBuffer), false);
 }
 
 // Serialize to file.

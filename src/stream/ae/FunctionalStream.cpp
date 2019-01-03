@@ -5,10 +5,14 @@
 
 #define DEBUG_TYPE "FunctionalStream"
 FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
-    : S(_S), SE(_SE), Pattern(S->getPatternPath()),
+    : S(_S),
+      SE(_SE),
+      Pattern(S->getPatternPath()),
       HistorySerializer(_S->getHistoryPath()),
-      HistoryTextFStream(_S->getHistoryTextPath()), CurrentIdx(InvalidIdx),
-      IsAddressValid(false), IsValueValid(false) {
+      HistoryTextFStream(_S->getHistoryTextPath()),
+      CurrentIdx(InvalidIdx),
+      IsAddressValid(false),
+      IsValueValid(false) {
   DEBUG(llvm::errs() << "Initialized FunctionalStream of " << S->formatName()
                      << '\n');
 
@@ -95,7 +99,6 @@ void FunctionalStream::configure(DataGraph *DG) {
 }
 
 void FunctionalStream::step(DataGraph *DG) {
-
   static int StackDepth = 0;
   StackDepth++;
 
@@ -133,8 +136,9 @@ void FunctionalStream::step(DataGraph *DG) {
   if (StackDepth == 100) {
     llvm::errs() << "Step stack depth reaches 100, there should be a circle in "
                     "the stream dependence graph.";
-    assert(false && "Circle detected in the stream dependence graph as the "
-                    "step stack depth is too high.");
+    assert(false &&
+           "Circle detected in the stream dependence graph as the "
+           "step stack depth is too high.");
   }
 
   // Send the step signal to dependent step streams.
@@ -161,33 +165,33 @@ void FunctionalStream::updatePHINodeValue(DataGraph *DG,
 
   auto Type = this->S->getInst()->getType();
   switch (Type->getTypeID()) {
-  case llvm::Type::PointerTyID: {
-    this->CurrentValue = DynamicVal.getAddr();
-    this->IsValueValid = true;
-    this->CurrentAddress = CurrentValue;
-    this->IsAddressValid = true;
-    break;
-  }
-  case llvm::Type::IntegerTyID: {
-    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
-    unsigned BitWidth = IntegerType->getBitWidth();
-    if (BitWidth > sizeof(this->CurrentValue) * 8) {
-      llvm::errs() << "Too wide an integer value " << BitWidth;
-      this->DEBUG_DUMP(llvm::errs());
-      llvm::errs() << '\n';
+    case llvm::Type::PointerTyID: {
+      this->CurrentValue = DynamicVal.getAddr();
+      this->IsValueValid = true;
+      this->CurrentAddress = CurrentValue;
+      this->IsAddressValid = true;
+      break;
     }
-    assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
-           "Too wide an integer value.");
-    this->CurrentValue = DynamicVal.getInt();
-    this->IsValueValid = true;
-    this->CurrentAddress = CurrentValue;
-    this->IsAddressValid = true;
-    break;
-  }
-  default: {
-    llvm_unreachable("Unsupported llvm type for an iv stream.");
-    return;
-  }
+    case llvm::Type::IntegerTyID: {
+      auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
+      unsigned BitWidth = IntegerType->getBitWidth();
+      if (BitWidth > sizeof(this->CurrentValue) * 8) {
+        llvm::errs() << "Too wide an integer value " << BitWidth;
+        this->DEBUG_DUMP(llvm::errs());
+        llvm::errs() << '\n';
+      }
+      assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
+             "Too wide an integer value.");
+      this->CurrentValue = DynamicVal.getInt();
+      this->IsValueValid = true;
+      this->CurrentAddress = CurrentValue;
+      this->IsAddressValid = true;
+      break;
+    }
+    default: {
+      llvm_unreachable("Unsupported llvm type for an iv stream.");
+      return;
+    }
   }
 
   // If we are here, it means we should update the dependent streams.
@@ -206,36 +210,35 @@ void FunctionalStream::updateLoadedValue(DataGraph *DG,
       "Function updatedLoadedValue should never be called for non-mem stream.");
   auto Type = this->S->getInst()->getType();
   switch (Type->getTypeID()) {
-  case llvm::Type::PointerTyID: {
-    this->CurrentValue = DynamicVal.getAddr();
-    this->IsValueValid = true;
-    break;
-  }
-  case llvm::Type::IntegerTyID: {
-    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
-    unsigned BitWidth = IntegerType->getBitWidth();
-    if (BitWidth > sizeof(this->CurrentValue) * 8) {
-      llvm::errs() << "Too wide an integer value " << BitWidth;
-      this->DEBUG_DUMP(llvm::errs());
-      llvm::errs() << '\n';
+    case llvm::Type::PointerTyID: {
+      this->CurrentValue = DynamicVal.getAddr();
+      this->IsValueValid = true;
+      break;
     }
-    assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
-           "Too wide an integer value.");
-    this->CurrentValue = DynamicVal.getInt();
-    this->IsValueValid = true;
-    break;
-  }
-  default: {
-
-    /**
-     * Check if we have dependent stream.
-     */
-    if (!this->DependentStreams.empty()) {
-      llvm_unreachable(
-          "Unsupported llvm type for a load stream with dependent streams.");
+    case llvm::Type::IntegerTyID: {
+      auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
+      unsigned BitWidth = IntegerType->getBitWidth();
+      if (BitWidth > sizeof(this->CurrentValue) * 8) {
+        llvm::errs() << "Too wide an integer value " << BitWidth;
+        this->DEBUG_DUMP(llvm::errs());
+        llvm::errs() << '\n';
+      }
+      assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
+             "Too wide an integer value.");
+      this->CurrentValue = DynamicVal.getInt();
+      this->IsValueValid = true;
+      break;
     }
-    return;
-  }
+    default: {
+      /**
+       * Check if we have dependent stream.
+       */
+      if (!this->DependentStreams.empty()) {
+        llvm_unreachable(
+            "Unsupported llvm type for a load stream with dependent streams.");
+      }
+      return;
+    }
   }
 
   // If we are here, it means we should update the dependent streams.
@@ -248,7 +251,6 @@ void FunctionalStream::updateLoadedValue(DataGraph *DG,
 }
 
 void FunctionalStream::endStream() {
-
   // Add footprint information.
   if (this->S->Type == Stream::TypeT::MEM) {
     this->ProtobufHistoryEntry.set_num_cache_lines(
@@ -330,12 +332,12 @@ void FunctionalStream::update(DataGraph *DG) {
 }
 
 void FunctionalStream::updateRecursively(DataGraph *DG) {
-
   static int StackDepth = 0;
   StackDepth++;
   if (StackDepth == 100) {
-    assert(false && "Stack depth reaches 100 for updateRecursively, there "
-                    "should be a circle in the stream dependence graph.");
+    assert(false &&
+           "Stack depth reaches 100 for updateRecursively, there "
+           "should be a circle in the stream dependence graph.");
   }
 
   this->update(DG);
@@ -349,9 +351,8 @@ void FunctionalStream::updateRecursively(DataGraph *DG) {
   StackDepth--;
 }
 
-std::pair<bool, uint64_t>
-FunctionalStream::computeAddress(DataGraph *DG) const {
-
+std::pair<bool, uint64_t> FunctionalStream::computeAddress(
+    DataGraph *DG) const {
   auto MS = static_cast<MemStream *>(this->S);
   const auto FuncName = MS->getAddressFunctionName();
   const auto &AddrDG = MS->getAddressDataGraph();
@@ -415,22 +416,21 @@ void FunctionalStream::setGenericValueFromDynamicValue(
     llvm::Type *Type, llvm::GenericValue &GenericVal,
     const DynamicValue &DynamicVal) const {
   switch (Type->getTypeID()) {
-  case llvm::Type::PointerTyID: {
-    GenericVal.PointerVal =
-        reinterpret_cast<void *>(std::stoul(DynamicVal.Value, 0, 16));
-    break;
-  }
-  case llvm::Type::IntegerTyID: {
-    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
-    unsigned BitWidth = IntegerType->getBitWidth();
-    uint64_t Val = std::stoul(DynamicVal.Value);
-    GenericVal.IntVal = llvm::APInt(BitWidth, Val);
-    break;
-  }
-  default: {
-    llvm_unreachable(
-        "Unsupported llvm type to be translated into generic value.");
-  }
+    case llvm::Type::PointerTyID: {
+      GenericVal.PointerVal = reinterpret_cast<void *>(DynamicVal.getAddr());
+      break;
+    }
+    case llvm::Type::IntegerTyID: {
+      auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
+      unsigned BitWidth = IntegerType->getBitWidth();
+      uint64_t Val = DynamicVal.getInt();
+      GenericVal.IntVal = llvm::APInt(BitWidth, Val);
+      break;
+    }
+    default: {
+      llvm_unreachable(
+          "Unsupported llvm type to be translated into generic value.");
+    }
   }
 }
 
@@ -438,20 +438,20 @@ void FunctionalStream::setGenericValueFromUInt64(llvm::Type *Type,
                                                  llvm::GenericValue &GenericVal,
                                                  const uint64_t &Val) const {
   switch (Type->getTypeID()) {
-  case llvm::Type::PointerTyID: {
-    GenericVal.PointerVal = reinterpret_cast<void *>(Val);
-    break;
-  }
-  case llvm::Type::IntegerTyID: {
-    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
-    unsigned BitWidth = IntegerType->getBitWidth();
-    GenericVal.IntVal = llvm::APInt(BitWidth, Val);
-    break;
-  }
-  default: {
-    llvm_unreachable(
-        "Unsupported llvm type to be translated into generic value.");
-  }
+    case llvm::Type::PointerTyID: {
+      GenericVal.PointerVal = reinterpret_cast<void *>(Val);
+      break;
+    }
+    case llvm::Type::IntegerTyID: {
+      auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
+      unsigned BitWidth = IntegerType->getBitWidth();
+      GenericVal.IntVal = llvm::APInt(BitWidth, Val);
+      break;
+    }
+    default: {
+      llvm_unreachable(
+          "Unsupported llvm type to be translated into generic value.");
+    }
   }
 }
 
