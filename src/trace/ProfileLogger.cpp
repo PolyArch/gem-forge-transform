@@ -58,7 +58,7 @@ void ProfileLogger::serializeToFile(const std::string &FileName) {
 
     std::ofstream File(FileName + ".txt");
     assert(File.is_open() && "Failed openning profile txt file.");
-    const double Threshold = 0.90;
+    const double Threshold = 0.99999;
     double Accumulated = 0.0;
     for (const auto &Func : SortedFunctions) {
       double Percentage = static_cast<double>(this->FuncProfile.at(Func)) /

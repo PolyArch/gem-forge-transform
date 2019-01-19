@@ -9,7 +9,7 @@ class SDVBSBenchmark(Benchmark):
     FLAGS = {
         'disparity': ['O2'],
         'localization': ['O2'],
-        # 'mser': ['O2'],
+        'mser': ['O2'],
         'multi_ncut': ['O2'],
         'sift': ['O2'],
         'stitch': ['O2'],
@@ -41,7 +41,7 @@ class SDVBSBenchmark(Benchmark):
         'mser': ['mser'],
         'multi_ncut': ['segment_image'],
         'sift': ['sift', 'normalizeImage'],
-        'stitch': ['getANMS', 'extractFeatures'],
+        'stitch': ['getANMS', 'harris', 'extractFeatures'],
         'svm': ['workload'],
         'texture_synthesis': ['create_all_candidates', 'create_candidates', 'compare_neighb', 'compare_rest', 'compare_full_neighb'],
         'tracking': [
@@ -58,7 +58,7 @@ class SDVBSBenchmark(Benchmark):
     }
 
     TRACE_IDS = {
-        # 'disparity': [0],
+        'disparity': [0],
         # 'localization': [4],
         # 'mser': [0],
         # 'multi_ncut': [6],
@@ -67,9 +67,9 @@ class SDVBSBenchmark(Benchmark):
         # 'svm': [0],
         # 'texture_synthesis': [0],
         # 'tracking': [8],
-        'disparity': [0, 1, 2, 3, 5, 6, 7, 8],
+        # 'disparity': [0, 1, 2, 3, 5, 6, 7, 8],
         'localization': [0, 4],
-        # 'mser': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'mser': [0, 1, 2, 3, 4, 5, 6, 7, 8],
         'multi_ncut': [0, 1, 2, 3, 4, 5, 6],
         'sift': [0, 1, 2, 3, 4, 5, 6, 7, 8],
         'stitch': [0, 1, 2, 3, 4, 5, 6, 7, 8],
@@ -92,12 +92,20 @@ class SDVBSBenchmark(Benchmark):
         self.common_src_dir = os.path.join(self.top_folder, 'common', 'c')
 
         self.cwd = os.getcwd()
+
+        # Create the result directory out side of the source tree.
+        self.top_result_dir = os.path.join(
+            self.top_folder, 'gem-forge-results')
+        Util.call_helper(['mkdir', '-p', self.top_result_dir])
+        self.benchmark_result_dir = os.path.join(
+            self.top_result_dir, self.benchmark_name)
+        Util.call_helper(['mkdir', '-p', self.benchmark_result_dir])
         self.work_path = os.path.join(
-            self.benchmark_dir, 'gem-forge-{input_name}'.format(input_name=input_name))
+            self.benchmark_result_dir, input_name)
+        Util.call_helper(['mkdir', '-p', self.work_path])
+
         self.source_bc_dir = os.path.join(self.work_path, 'obj')
         self.common_src_bc_dir = os.path.join(self.work_path, 'common_obj')
-        # Create the workpath.
-        Util.call_helper(['mkdir', '-p', self.work_path])
         Util.call_helper(['mkdir', '-p', self.source_bc_dir])
         Util.call_helper(['mkdir', '-p', self.common_src_bc_dir])
 
@@ -110,10 +118,10 @@ class SDVBSBenchmark(Benchmark):
             SDVBSBenchmark.TRACE_FUNC[self.benchmark_name])
 
         self.trace_ids = SDVBSBenchmark.TRACE_IDS[self.benchmark_name]
-        self.start_inst = 1
+        self.start_inst = 200e8
         self.max_inst = 1e7
         self.skip_inst = 1e8
-        self.end_inst = 10e8
+        self.end_inst = 200e8
 
         # Create the args.
         args = [self.input_dir, self.work_path]
@@ -231,8 +239,8 @@ class SDVBSBenchmark(Benchmark):
 
 
 class SDVBSSuite:
-    # FOLDER = '/home/zhengrong/Documents/CortexSuite/vision'
-    FOLDER = '/media/zhengrong/My Passport/Documents/CortexSuite/vision'
+    FOLDER = '/home/zhengrong/Documents/CortexSuite/vision'
+    # FOLDER = '/media/zhengrong/My Passport/Documents/CortexSuite/vision'
 
     def __init__(self, folder=None):
         if folder is None:
