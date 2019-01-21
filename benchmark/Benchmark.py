@@ -61,6 +61,12 @@ class Benchmark(object):
     def get_name(self):
         assert('get_name is not implemented by derived class')
 
+    def get_profile_bc(self):
+        return '{name}.profiled.bc'.format(name=self.get_name())
+
+    def get_profile_bin(self):
+        return '{name}.profiled.exe'.format(name=self.get_name())
+
     def get_trace_bc(self):
         return '{name}.traced.bc'.format(name=self.get_name())
 
@@ -114,6 +120,86 @@ class Benchmark(object):
             results.append(self.gem5_config.get_result(tdg))
         return results
         # raise ValueError('Not implemented')
+
+    def profile(self):
+        os.chdir(self.work_path)
+        # self.build_profile()
+        self.run_profile()
+        os.chdir(self.cwd)
+
+    """
+    Generate the profile.
+    """
+
+    def run_profile(self):
+        # Remember to set the environment for profile.
+        # Set the start and end instruction to a large number so that we do not generate actual trace.
+        os.putenv('LLVM_TDG_MAX_INST', str(1e7))
+        os.putenv('LLVM_TDG_START_INST', str(5000e8))
+        os.putenv('LLVM_TDG_END_INST', str(1e8))
+        os.putenv('LLVM_TDG_SKIP_INST', str(5000e8))
+        
+        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
+        run_cmd = [
+            './' + self.get_profile_bin(),
+        ]
+        if self.args is not None:
+            run_cmd += self.args
+        print('# Run profiled binary...')
+        Util.call_helper(run_cmd)
+
+    """
+    Construct the profiled binary.
+    """
+
+    def build_profile(self, link_stdlib=False, trace_reachable_only=False, debugs=[]):
+        # Notice that profile does not generate inst uid.
+        bc = self.get_profile_bc()
+        trace_cmd = [
+            C.OPT,
+            '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
+            '-trace-pass',
+            self.raw_bc,
+            '-o',
+            bc,
+            '-trace-inst-only'
+        ]
+        if self.trace_func is not None and len(self.trace_func) > 0:
+            trace_cmd.append('-trace-function=' + self.trace_func)
+        if trace_reachable_only:
+            trace_cmd.append('-trace-reachable-only=1')
+        if debugs:
+            print(debugs)
+            trace_cmd.append(
+                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
+        print('# Instrumenting profiler...')
+        Util.call_helper(trace_cmd)
+        if link_stdlib:
+            link_cmd = [
+                C.CXX,
+                '-O3',
+                '-nostdlib',
+                '-static',
+                bc,
+                self.trace_lib,
+                C.MUSL_LIBC_STATIC_LIB,
+                '-lc++',
+                '-o',
+                self.get_profile_bin(),
+            ]
+        else:
+            link_cmd = [
+                C.CXX,
+                # '-O0',
+                bc,
+                self.trace_lib,
+                '-o',
+                self.get_profile_bin(),
+            ]
+        link_cmd += self.trace_links
+        print('# Link to profiled binary...')
+        Util.call_helper(link_cmd)
 
     """
     Generate the trace.

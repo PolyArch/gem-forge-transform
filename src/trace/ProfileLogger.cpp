@@ -1,12 +1,11 @@
 #include "ProfileLogger.h"
-#include "ProfileMessage.pb.h"
 
 #include <google/protobuf/text_format.h>
 
 #include <fstream>
 #include <iomanip>
 
-ProfileLogger::ProfileLogger() : BBCount(0) {}
+ProfileLogger::ProfileLogger() : IntervalLHS(0), BBCount(0) {}
 
 void ProfileLogger::addBasicBlock(const std::string &Func,
                                   const std::string &BB) {
@@ -21,22 +20,46 @@ void ProfileLogger::addBasicBlock(const std::string &Func,
   // Update the function count.
   this->FuncProfile.emplace(Func, 0).first->second++;
 
+  // Update the Interval.
+  // If we reached the interval limit, store the current interval and create a
+  // new one.
+  const uint64_t INTERVAL_SIZE = 10000000;
+  if (this->BBCount - this->IntervalLHS == INTERVAL_SIZE) {
+    auto ProtobufInterval = this->ProtobufProfile.add_intervals();
+    ProtobufInterval->set_inst_lhs(this->IntervalLHS);
+    ProtobufInterval->set_inst_rhs(this->BBCount);
+    auto &ProtobufFuncs = *(ProtobufInterval->mutable_funcs());
+    this->convertFunctionProfileMapTToProtobufFunctionProfile(
+        this->IntervalProfile, ProtobufFuncs);
+    // Remember to clear counter, etc.
+    this->IntervalLHS = this->BBCount;
+    this->IntervalProfile.clear();
+  }
+
+  // Update the interval.
+  this->IntervalProfile[Func].emplace(BB, 0).first->second++;
+
   BBCount++;
 }
 
-void ProfileLogger::serializeToFile(const std::string &FileName) {
-  LLVM::TDG::Profile ProtobufProfile;
-  ProtobufProfile.set_name("Whatever");
-  auto &ProtobufFuncs = *(ProtobufProfile.mutable_funcs());
-  for (const auto &FuncMap : Profile) {
+void ProfileLogger::convertFunctionProfileMapTToProtobufFunctionProfile(
+    const FunctionProfileMapT &In, ProtobufFunctionProfileMapT &Out) const {
+  for (const auto &FuncMap : In) {
     const auto &FuncName = FuncMap.first;
-    auto &ProtobufFunc = ProtobufFuncs[FuncName];
+    auto &ProtobufFunc = Out[FuncName];
     ProtobufFunc.set_func(FuncName);
     auto &ProtobufBBs = *(ProtobufFunc.mutable_bbs());
     for (const auto &BBMap : FuncMap.second) {
       ProtobufBBs[BBMap.first] = BBMap.second;
     }
   }
+}
+
+void ProfileLogger::serializeToFile(const std::string &FileName) {
+  this->ProtobufProfile.set_name("Whatever");
+  auto &ProtobufFuncs = *(ProtobufProfile.mutable_funcs());
+  this->convertFunctionProfileMapTToProtobufFunctionProfile(Profile,
+                                                            ProtobufFuncs);
 
   std::ofstream File(FileName);
   assert(File.is_open() && "Failed openning serialization profile file.");

@@ -36,6 +36,10 @@ simulate(tdg, result, debugs)
 
 
 # Top level function for scheduler.
+def profile(benchmark):
+    benchmark.profile()
+
+
 def trace(benchmark):
     benchmark.trace()
 
@@ -67,6 +71,12 @@ class Driver:
             Gem5ConfigureManager.Gem5ReplayConfigureManager(options))
         self.transform_manager = (
             TransformManager.TransformManager(options))
+
+    def schedule_profile(self, job_scheduler, benchmark):
+        name = benchmark.get_name()
+        # Not need to track profile jobs.
+        job_scheduler.add_job(name + '.profile', profile,
+                              (benchmark, ), list())
 
     def schedule_trace(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -256,6 +266,8 @@ def main(options):
     for benchmark in benchmarks:
         if options.build:
             benchmark.build_raw_bc()
+        if options.profile:
+            driver.schedule_profile(job_scheduler, benchmark)
         if options.trace:
             driver.schedule_trace(job_scheduler, benchmark)
         if options.build_datagraph:
@@ -384,6 +396,8 @@ if __name__ == '__main__':
                       type='int', dest='cores', default=default_cores)
     parser.add_option('-b', '--build', action='store_true',
                       dest='build', default=False)
+    parser.add_option('--profile', action='store_true',
+                      dest='profile', default=False)
     parser.add_option('-t', '--trace', action='store_true',
                       dest='trace', default=False)
     parser.add_option('--directory', action='store',
