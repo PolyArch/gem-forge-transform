@@ -25,20 +25,19 @@ static llvm::cl::opt<std::string> TraceFunctionNames(
     llvm::cl::desc("Trace function names. For C functions, just the name. For "
                    "C++ Functions, the signature is required. Dot separated."));
 
-static llvm::cl::opt<std::string>
-    InstUIDFileName("trace-inst-uid-file",
-                    llvm::cl::desc("File name to dump the instruction uid map "
-                                   "to compress the trace size."));
+static llvm::cl::opt<std::string> InstUIDFileName(
+    "trace-inst-uid-file",
+    llvm::cl::desc("File name to dump the instruction uid map "
+                   "to compress the trace size."));
 
 namespace {
 // The separator has to be something else than ',()*&:[a-z][A-Z][0-9]_', which
 // will appear in the C++ function signature.
 const char TraceFunctionNameSeparator = '.';
-} // namespace
+}  // namespace
 
-static llvm::cl::opt<bool>
-    TraceInstructionOnly("trace-inst-only",
-                         llvm::cl::desc("Trace instruction only."));
+static llvm::cl::opt<bool> TraceInstructionOnly(
+    "trace-inst-only", llvm::cl::desc("Trace instruction only."));
 
 /**
  * Some times when we try to trace into stdlib, we want to reduce the overhead
@@ -64,9 +63,9 @@ bool isIntrinsicFunctionName(const std::string &FunctionName) {
   }
 }
 
-llvm::Constant *
-getOrCreateStringLiteral(std::map<std::string, llvm::Constant *> &GlobalStrings,
-                         llvm::Module *Module, const std::string &Str) {
+llvm::Constant *getOrCreateStringLiteral(
+    std::map<std::string, llvm::Constant *> &GlobalStrings,
+    llvm::Module *Module, const std::string &Str) {
   if (GlobalStrings.find(Str) == GlobalStrings.end()) {
     // Create the constant array.
     auto Array =
@@ -130,7 +129,7 @@ llvm::Value *getOrCreateVectorStoreBuffer(
 
 // This is a pass to instrument a function and trace it.
 class TracePass : public llvm::FunctionPass {
-public:
+ public:
   static char ID;
   TracePass() : llvm::FunctionPass(ID) {}
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
@@ -200,15 +199,14 @@ public:
   }
 
   bool doFinalization(llvm::Module &Module) override {
-    // Remember to serialize the InstructionUIDMap.
+    // Remember to serialize the InstructionUIDMap only when user specified the
+    // file name.
     if (InstUIDFileName.getNumOccurrences() > 0) {
       this->InstUIDMap.serializeTo(InstUIDFileName.getValue());
-    } else {
-      this->InstUIDMap.serializeTo("tracer.inst.uid.txt");
     }
   }
 
-private:
+ private:
   llvm::Module *Module;
   llvm::Function *CurrentFunction;
   std::map<unsigned int, llvm::Value *> VectorStoreBuffer;
@@ -253,18 +251,18 @@ private:
     auto Int64Ty = llvm::Type::getInt64Ty(Context);
 
     std::vector<llvm::Type *> PrintInstArgs{
-        Int8PtrTy, // char* FunctionName
-        Int8PtrTy, // char* BBName,
-        Int32Ty,   // unsigned Id,
-        Int64Ty,   // uint64_t UID,
-        Int8PtrTy, // char* OpCodeName,
+        Int8PtrTy,  // char* FunctionName
+        Int8PtrTy,  // char* BBName,
+        Int32Ty,    // unsigned Id,
+        Int64Ty,    // uint64_t UID,
+        Int8PtrTy,  // char* OpCodeName,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
     this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
 
     std::vector<llvm::Type *> PrintValueArgs{
         Int8Ty,
-        Int8PtrTy, // char* Name,
+        Int8PtrTy,  // char* Name,
         Int32Ty,
         Int32Ty,
     };
@@ -566,9 +564,8 @@ private:
   // Note that we can not get the run time value for incoming values.
   // Solution: print the incoming basic block and associated incoming
   // value's name.
-  std::vector<llvm::Value *>
-  getPrintValueArgsForPhiParameter(llvm::Value *IncomingValue,
-                                   llvm::BasicBlock *IncomingBlock) {
+  std::vector<llvm::Value *> getPrintValueArgsForPhiParameter(
+      llvm::Value *IncomingValue, llvm::BasicBlock *IncomingBlock) {
     auto TagValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt8Ty(this->Module->getContext()),
         PRINT_VALUE_TAG_PARAMETER, false);
@@ -618,56 +615,56 @@ private:
     unsigned NumAdditionalArgs = 0;
     std::vector<llvm::Value *> AdditionalArgValues;
     switch (TypeId) {
-    case llvm::Type::TypeID::IntegerTyID:
-    case llvm::Type::TypeID::DoubleTyID: {
-      NumAdditionalArgs = 1;
-      AdditionalArgValues.push_back(Parameter);
-      break;
-    }
-    case llvm::Type::TypeID::PointerTyID: {
-      NumAdditionalArgs = 1;
-      if (isIntrinsicFunctionName(Name)) {
-        // For instrinsic function, just use 0 as the address.
-        AdditionalArgValues.push_back(llvm::ConstantInt::get(
-            llvm::IntegerType::getInt32Ty(this->Module->getContext()), 0,
-            false));
-      } else if (llvm::isa<llvm::InlineAsm>(Parameter)) {
-        // For inline asmembly, just use 1 as the address.
-        AdditionalArgValues.push_back(llvm::ConstantInt::get(
-            llvm::IntegerType::getInt32Ty(this->Module->getContext()), 1,
-            false));
-      } else {
+      case llvm::Type::TypeID::IntegerTyID:
+      case llvm::Type::TypeID::DoubleTyID: {
+        NumAdditionalArgs = 1;
         AdditionalArgValues.push_back(Parameter);
+        break;
       }
-      break;
-    }
-    case llvm::Type::TypeID::VectorTyID: {
-      // Cast to VectorType.
-      auto VectorType = llvm::cast<llvm::VectorType>(Type);
-      NumAdditionalArgs = 2;
-      // For vector, we have to allocate a buffer.
-      auto Buffer = getOrCreateVectorStoreBuffer(
-          this->VectorStoreBuffer, this->CurrentFunction, VectorType);
-      // Store the vector into the buffer.
-      auto TypeBytes = VectorType->getBitWidth() / 8;
-      // Since the buffer can be allocated from other vector, do a bitcast.
-      auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
-      // Align with 1 byte is always safe.
-      // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
-      auto AlignBytes = 1;
-      Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
-      // The first additional arguments will be the size of the buffer.
-      AdditionalArgValues.push_back(llvm::ConstantInt::get(
-          llvm::IntegerType::getInt32Ty(this->Module->getContext()), TypeBytes,
-          false));
-      // The second additional argument will be the buffer.
-      AdditionalArgValues.push_back(Buffer);
-      break;
-    }
-    default: {
-      NumAdditionalArgs = 0;
-      break;
-    }
+      case llvm::Type::TypeID::PointerTyID: {
+        NumAdditionalArgs = 1;
+        if (isIntrinsicFunctionName(Name)) {
+          // For instrinsic function, just use 0 as the address.
+          AdditionalArgValues.push_back(llvm::ConstantInt::get(
+              llvm::IntegerType::getInt32Ty(this->Module->getContext()), 0,
+              false));
+        } else if (llvm::isa<llvm::InlineAsm>(Parameter)) {
+          // For inline asmembly, just use 1 as the address.
+          AdditionalArgValues.push_back(llvm::ConstantInt::get(
+              llvm::IntegerType::getInt32Ty(this->Module->getContext()), 1,
+              false));
+        } else {
+          AdditionalArgValues.push_back(Parameter);
+        }
+        break;
+      }
+      case llvm::Type::TypeID::VectorTyID: {
+        // Cast to VectorType.
+        auto VectorType = llvm::cast<llvm::VectorType>(Type);
+        NumAdditionalArgs = 2;
+        // For vector, we have to allocate a buffer.
+        auto Buffer = getOrCreateVectorStoreBuffer(
+            this->VectorStoreBuffer, this->CurrentFunction, VectorType);
+        // Store the vector into the buffer.
+        auto TypeBytes = VectorType->getBitWidth() / 8;
+        // Since the buffer can be allocated from other vector, do a bitcast.
+        auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
+        // Align with 1 byte is always safe.
+        // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
+        auto AlignBytes = 1;
+        Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
+        // The first additional arguments will be the size of the buffer.
+        AdditionalArgValues.push_back(llvm::ConstantInt::get(
+            llvm::IntegerType::getInt32Ty(this->Module->getContext()),
+            TypeBytes, false));
+        // The second additional argument will be the buffer.
+        AdditionalArgValues.push_back(Buffer);
+        break;
+      }
+      default: {
+        NumAdditionalArgs = 0;
+        break;
+      }
     }
 
     assert(NumAdditionalArgs == AdditionalArgValues.size() &&
@@ -688,13 +685,11 @@ private:
 };
 
 void TracePass::parseTraceFunctions(const std::string &Names) {
-
   std::unordered_set<std::string> UnmatchedNames;
 
   size_t Prev = 0;
   for (size_t Curr = 0; Curr <= Names.size(); ++Curr) {
     if (Names[Curr] == TraceFunctionNameSeparator || Curr == Names.size()) {
-
       if (Prev < Curr) {
         auto Name = Names.substr(Prev, Curr - Prev);
 
@@ -740,23 +735,23 @@ void TracePass::parseTraceFunctions(const std::string &Names) {
       DEBUG(llvm::errs() << "Failed demangling name " << MangledName
                          << " due to ");
       switch (DemangleStatus) {
-      case -4: {
-        DEBUG(llvm::errs() << "unknown error.\n");
-        break;
-      }
-      case -3: {
-        DEBUG(llvm::errs() << "invalid args.\n");
-        break;
-      }
-      case -2: {
-        DEBUG(llvm::errs() << "invalid mangled name.\n");
-        break;
-      }
-      case -1: {
-        DEBUG(llvm::errs() << "memory alloc failure.\n");
-        break;
-      }
-      default: { llvm_unreachable("Illegal demangle status."); }
+        case -4: {
+          DEBUG(llvm::errs() << "unknown error.\n");
+          break;
+        }
+        case -3: {
+          DEBUG(llvm::errs() << "invalid args.\n");
+          break;
+        }
+        case -2: {
+          DEBUG(llvm::errs() << "invalid mangled name.\n");
+          break;
+        }
+        case -1: {
+          DEBUG(llvm::errs() << "memory alloc failure.\n");
+          break;
+        }
+        default: { llvm_unreachable("Illegal demangle status."); }
       }
       // When failed, there is no realloc. We can safely go to the next one.
       continue;
@@ -844,7 +839,7 @@ void TracePass::findReachableFunctions() {
         << "==================== Reachable Functions ==================\n");
 }
 
-} // namespace
+}  // namespace
 
 #undef DEBUG_TYPE
 
