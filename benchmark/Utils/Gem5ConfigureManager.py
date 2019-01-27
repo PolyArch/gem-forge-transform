@@ -12,37 +12,27 @@ class Gem5ReplayConfig(object):
     L1_5D_MSHRS_DEFAULT = 16
     L2BUS_WIDTH_DEFAULT = 32
 
-    def __init__(self, **kwargs):
-        self.options = None
-        self.prefetch = kwargs['prefetch']
-        self.stream_engine_prefetch = kwargs['stream_engine_prefetch']
-        self.issue_width = kwargs['iw']
-        self.l1d_mshrs = kwargs['l1d_mshrs']
-        self.l1_5d_mshrs = kwargs['l1_5d_mshrs']
-        self.l1d_assoc = kwargs['l1d_assoc']
-        self.l2bus_width = kwargs['l2bus_width']
-        self.l1_5d = kwargs['l1_5d']
-        self.stream_engine_is_oracle = kwargs['stream_engine_is_oracle']
+    def __init__(self, options, **kwargs):
+        self.options = options
+        self.prefetch = options.replay_prefetch
+        self.stream_engine_prefetch = options.se_prefetch
+        self.issue_width = options.iw
+        self.l1d_mshrs = options.l1d_mshrs
+        self.l1_5d_mshrs = options.l1_5d_mshrs
+        self.l1d_assoc = options.l1d_assoc
+        self.l2bus_width = options.l2bus_width
+        self.l1_5d = options.l1_5d
+        self.stream_engine_is_oracle = options.se_oracle
         if 'stream_engine_max_run_ahead_length' in kwargs:
             self.stream_engine_max_run_ahead_length = kwargs[
                 'stream_engine_max_run_ahead_length'
             ]
         else:
             self.stream_engine_max_run_ahead_length = None
-        if 'stream_engine_throttling' in kwargs:
-            self.stream_engine_throttling = kwargs['stream_engine_throttling']
-        else:
-            self.stream_engine_throttling = Gem5ReplayConfig.THROTTLING_DEFAULT
 
-        if 'stream_engine_enable_coalesce' in kwargs:
-            self.stream_engine_enable_coalesce = kwargs['stream_engine_enable_coalesce']
-        else:
-            self.stream_engine_enable_coalesce = Gem5ReplayConfig.ENABLE_COALESCE_DEFAULT
-
-        if 'stream_engine_l1d' in kwargs:
-            self.stream_engine_l1d = kwargs['stream_engine_l1d']
-        else:
-            self.stream_engine_l1d = Gem5ReplayConfig.L1_DCACHE_DEFAULT
+        self.stream_engine_throttling = options.se_throttling
+        self.stream_engine_enable_coalesce = options.se_coalesce
+        self.stream_engine_l1d = options.se_l1d
 
     def get_gem5_dir(self, tdg):
         dirname, basename = os.path.split(tdg)
@@ -70,14 +60,37 @@ class Gem5ReplayConfig(object):
         options = list()
         L2Size = '1MB'
         L2TagLat = 20
-        if self.issue_width != Gem5ReplayConfig.ISSUE_WIDTH_DEFAULT:
-            options.append(
-                '--llvm-issue-width={iw}'.format(iw=self.issue_width)
-            )
-        if self.l1d_mshrs != Gem5ReplayConfig.L1D_MSHRS_DEFAULT:
-            options.append(
-                '--l1d_mshrs={l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
-            )
+        
+        options.append(
+            '--llvm-issue-width={iw}'.format(iw=self.issue_width)
+        )
+
+        options.append(
+            '--l1d_size={l1d}'.format(l1d=self.options.l1d_size)
+        )
+        options.append(
+            '--l1d_lat={l1d}'.format(l1d=self.options.l1d_latency)
+        )
+        options.append(
+            '--l1d_mshrs={l1d_mshrs}'.format(l1d_mshrs=self.l1d_mshrs)
+        )
+        options.append(
+            '--l1d_assoc={l1d_assoc}'.format(l1d_assoc=self.l1d_assoc),
+        )
+
+        options.append(
+            '--l2_size={l2}'.format(l2=self.options.l2_size)
+        )
+        options.append(
+            '--l2_lat={l2}'.format(l2=self.options.l2_latency)
+        )
+        options.append(
+            '--l2_mshrs={l2}'.format(l2=self.options.l2_mshrs)
+        )
+        options.append(
+            '--l2_assoc={l2}'.format(l2=self.options.l2_assoc)
+        )
+
         options.append(
             '--l1_5d_mshrs={l1_5d_mshrs}'.format(l1_5d_mshrs=self.l1_5d_mshrs)
         )
@@ -145,12 +158,6 @@ class Gem5ReplayConfig(object):
                     '--gem-forge-stream-engine-l1d={l1d}'.format(
                         l1d=self.stream_engine_l1d)
                 )
-        options.append(
-            '--l2_size={l2size}'.format(l2size=L2Size),
-        )
-        options.append(
-            '--l1d_assoc={l1d_assoc}'.format(l1d_assoc=self.l1d_assoc),
-        )
         return options
 
     def get_config(self, tdg_basename):
@@ -231,14 +238,7 @@ class Gem5ReplayConfigureManager(object):
     def _init_replay_configs(self):
         self.configs['replay'] = [
             Gem5ReplayConfig(
-                prefetch=self.options.replay_prefetch,
-                stream_engine_prefetch=self.options.se_prefetch,
-                iw=self.options.iw,
-                l1d_mshrs=self.options.l1d_mshrs,
-                l1d_assoc=self.options.l1d_assoc,
-                l1_5d_mshrs=self.options.l1_5d_mshrs,
-                l2bus_width=self.options.l2bus_width,
-                l1_5d=self.options.l1_5d,
+                self.options,
                 stream_engine_is_oracle=False,
                 stream_engine_max_run_ahead_length=2,
             ),
@@ -247,31 +247,16 @@ class Gem5ReplayConfigureManager(object):
     def _init_adfa_configs(self):
         self.configs['adfa'] = [
             Gem5ReplayConfig(
-                prefetch=self.options.replay_prefetch,
-                stream_engine_prefetch=self.options.se_prefetch,
-                iw=self.options.iw,
-                l1d_mshrs=self.options.l1d_mshrs,
-                l1d_assoc=self.options.l1d_assoc,
-                l1_5d_mshrs=self.options.l1_5d_mshrs,
-                l2bus_width=self.options.l2bus_width,
-                l1_5d=self.options.l1_5d,
+                self.options,
                 stream_engine_is_oracle=False,
                 stream_engine_max_run_ahead_length=2,
             ),
         ]
-        self.configs['adfa'][0].options = self.options
 
     def _init_stream_prefetch_configs(self):
         self.configs['stream-prefetch'] = [
             Gem5ReplayConfig(
-                prefetch=self.options.replay_prefetch,
-                stream_engine_prefetch=self.options.se_prefetch,
-                iw=self.options.iw,
-                l1d_mshrs=self.options.l1d_mshrs,
-                l1d_assoc=self.options.l1d_assoc,
-                l1_5d_mshrs=self.options.l1_5d_mshrs,
-                l2bus_width=self.options.l2bus_width,
-                l1_5d=self.options.l1_5d,
+                self.options,
                 stream_engine_is_oracle=False,
                 stream_engine_max_run_ahead_length=10,
             ),
@@ -283,37 +268,39 @@ class Gem5ReplayConfigureManager(object):
             for run_ahead_length in self.options.se_ahead:
                 self.configs['stream'].append(
                     Gem5ReplayConfig(
-                        prefetch=self.options.replay_prefetch,
-                        stream_engine_prefetch=self.options.se_prefetch,
-                        iw=self.options.iw,
-                        l1d_mshrs=self.options.l1d_mshrs,
-                        l1d_assoc=self.options.l1d_assoc,
-                        l1_5d_mshrs=self.options.l1_5d_mshrs,
-                        l2bus_width=self.options.l2bus_width,
-                        l1_5d=self.options.l1_5d,
-                        stream_engine_is_oracle=self.options.se_oracle,
+                        self.options,
+                        # prefetch=self.options.replay_prefetch,
+                        # stream_engine_prefetch=self.options.se_prefetch,
+                        # iw=self.options.iw,
+                        # l1d_mshrs=self.options.l1d_mshrs,
+                        # l1d_assoc=self.options.l1d_assoc,
+                        # l1_5d_mshrs=self.options.l1_5d_mshrs,
+                        # l2bus_width=self.options.l2bus_width,
+                        # l1_5d=self.options.l1_5d,
+                        # stream_engine_is_oracle=self.options.se_oracle,
                         stream_engine_max_run_ahead_length=run_ahead_length,
-                        stream_engine_throttling=self.options.se_throttling,
-                        stream_engine_enable_coalesce=self.options.se_coalesce,
-                        stream_engine_l1d=self.options.se_l1d,
+                        # stream_engine_throttling=self.options.se_throttling,
+                        # stream_engine_enable_coalesce=self.options.se_coalesce,
+                        # stream_engine_l1d=self.options.se_l1d,
                     )
                 )
         else:
             # Default run ahead by 10
             self.configs['stream'].append(
                 Gem5ReplayConfig(
-                    prefetch=self.options.replay_prefetch,
-                    stream_engine_prefetch=self.options.se_prefetch,
-                    iw=self.options.iw,
-                    l1d_mshrs=self.options.l1d_mshrs,
-                    l1d_assoc=self.options.l1d_assoc,
-                    l1_5d_mshrs=self.options.l1_5d_mshrs,
-                    l2bus_width=self.options.l2bus_width,
-                    l1_5d=self.options.l1_5d,
-                    stream_engine_is_oracle=self.options.se_oracle,
+                    self.options,
+                    # prefetch=self.options.replay_prefetch,
+                    # stream_engine_prefetch=self.options.se_prefetch,
+                    # iw=self.options.iw,
+                    # l1d_mshrs=self.options.l1d_mshrs,
+                    # l1d_assoc=self.options.l1d_assoc,
+                    # l1_5d_mshrs=self.options.l1_5d_mshrs,
+                    # l2bus_width=self.options.l2bus_width,
+                    # l1_5d=self.options.l1_5d,
+                    # stream_engine_is_oracle=self.options.se_oracle,
                     stream_engine_max_run_ahead_length=10,
-                    stream_engine_throttling=self.options.se_throttling,
-                    stream_engine_enable_coalesce=self.options.se_coalesce,
-                    stream_engine_l1d=self.options.se_l1d,
+                    # stream_engine_throttling=self.options.se_throttling,
+                    # stream_engine_enable_coalesce=self.options.se_coalesce,
+                    # stream_engine_l1d=self.options.se_l1d,
                 )
             )

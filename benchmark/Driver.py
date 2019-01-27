@@ -228,7 +228,7 @@ simulate_datagraph_debugs = {
         # 'LLVMTraceCPU',
     ],
     'adfa': [
-        'AbstractDataFlowAccelerator',
+        # 'AbstractDataFlowAccelerator',
     ],
     'simd': [],
 }
@@ -421,16 +421,31 @@ if __name__ == '__main__':
 
     parser.add_option('--iw', action='store', type='int',
                       dest='iw', default=8)
+    parser.add_option('--l1d-size', action='store', type='string',
+                      dest='l1d_size', default='32kB')
     parser.add_option('--l1d-mshrs', action='store', type='int',
                       dest='l1d_mshrs', default=4)
+    parser.add_option('--l1d-latency', action='store',
+                      type='int', dest='l1d_latency', default=2)
     parser.add_option('--l1d-assoc', action='store', type='int',
-                      dest='l1d_assoc', default=2)
+                      dest='l1d_assoc', default=8)
+
     parser.add_option('--l1_5d', action='store_true',
                       dest='l1_5d', default=False)
     parser.add_option('--l1_5d-mshrs', action='store',
                       dest='l1_5d_mshrs', default=16)
+
+    parser.add_option('--l2-size', action='store', type='string',
+                      dest='l2_size', default='1MB')
+    parser.add_option('--l2-mshrs', action='store', type='int',
+                      dest='l2_mshrs', default=20)
+    parser.add_option('--l2-latency', action='store',
+                      type='int', dest='l2_latency', default=20)
+    parser.add_option('--l2-assoc', action='store', type='int',
+                      dest='l2_assoc', default=8)
     parser.add_option('--l2bus-width', action='store',
                       dest='l2bus_width', default=32)
+
     parser.add_option('--rp-prefetch', action='store_true',
                       dest='replay_prefetch', default=False)
     parser.add_option('--stream-choose-strategy', action='store', type='string',
