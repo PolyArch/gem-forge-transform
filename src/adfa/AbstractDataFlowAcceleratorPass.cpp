@@ -110,6 +110,11 @@ void AbstractDataFlowAcceleratorPass::transform() {
       NewStaticInst = (*NewDynamicInst)->getStaticInstruction();
       assert(NewStaticInst != nullptr && "Invalid static llvm instructions.");
 
+      // Handle the cache warmer.
+      if (Utils::isMemAccessInst(NewStaticInst)) {
+        this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*NewDynamicInst));
+      }
+
       auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
       NewLoop = LI->getLoopFor(NewStaticInst->getParent());
 
@@ -531,7 +536,9 @@ void DynamicDataFlow::fixCtrDependence(AbsDataFlowLLVMInst *AbsDFInst) {
   assert(StaticInst != nullptr &&
          "DynamicDataFlow cannot fix dependence for non llvm instructions.");
 
-  // Only worried about control dependence.
+  /**
+   * Notice that we keep the original control dependence.
+   */
   auto &CtrDeps = this->DG->CtrDeps.at(AbsDFInst->getId());
   CtrDeps.clear();
 

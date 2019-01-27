@@ -15,6 +15,7 @@
 #include "LoopUnroller.h"
 #include "PostDominanceFrontier.h"
 #include "Replay.h"
+#include "Utils.h"
 
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
