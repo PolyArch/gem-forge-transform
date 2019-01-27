@@ -26,7 +26,7 @@
 std::string printLoop(const llvm::Loop *Loop);
 
 class LoopUtils {
-public:
+ public:
   /**
    * Returns true if a loop is continuous, i.e. once entered, the execution will
    * never falls out of the loop before the iteration ends.
@@ -65,7 +65,7 @@ public:
 
   static const std::unordered_set<std::string> SupportedMathFunctions;
 
-private:
+ private:
   static int countPossiblePathFromBB(
       const llvm::Loop *Loop,
       std::unordered_set<const llvm::BasicBlock *> &OnPathBBs,
@@ -73,11 +73,11 @@ private:
 };
 
 class LoopIterCounter {
-public:
+ public:
   enum Status {
-    SAME_ITER, // We are still in the previous iteration.
-    NEW_ITER,  // We just entered a new iteration.
-    OUT,       // We just jumped outside the loop.
+    SAME_ITER,  // We are still in the previous iteration.
+    NEW_ITER,   // We just entered a new iteration.
+    OUT,        // We just jumped outside the loop.
   };
 
   LoopIterCounter() : Loop(nullptr) {}
@@ -104,7 +104,7 @@ public:
    */
   Status count(llvm::Instruction *StaticInst, int &Iter);
 
-private:
+ private:
   llvm::Loop *Loop;
   int Iter;
 };
@@ -117,7 +117,7 @@ private:
  * 3. Total number of static instructions.
  */
 class StaticInnerMostLoop {
-public:
+ public:
   explicit StaticInnerMostLoop(llvm::Loop *_Loop);
   StaticInnerMostLoop(const StaticInnerMostLoop &Other) = delete;
   StaticInnerMostLoop(StaticInnerMostLoop &&Other) = delete;
@@ -165,7 +165,7 @@ public:
    */
   llvm::Loop *Loop;
 
-private:
+ private:
   /**
    * Sort all the basic blocks in topological order and store the result in
    * BBList.
@@ -189,26 +189,32 @@ private:
  *
  */
 class CachedLoopInfo {
-public:
+ public:
   using GetTLIFunc = std::function<llvm::TargetLibraryInfo &()>;
   using GetACFunc =
       std::function<llvm::AssumptionCache &(llvm::Function &Func)>;
 
-  CachedLoopInfo(GetTLIFunc _GetTLI, GetACFunc _GetAC)
-      : GetTLI(_GetTLI), GetAC(_GetAC) {}
+  CachedLoopInfo(llvm::Module *Module) : TLI(nullptr) {
+    TLI = new llvm::TargetLibraryInfo(
+        llvm::TargetLibraryInfoImpl(llvm::Triple(Module->getTargetTriple())));
+  }
   ~CachedLoopInfo();
 
+  llvm::AssumptionCache *getAssumptionCache(llvm::Function *Func);
   llvm::LoopInfo *getLoopInfo(llvm::Function *Func);
   llvm::DominatorTree *getDominatorTree(llvm::Function *Func);
   llvm::ScalarEvolution *getScalarEvolution(llvm::Function *Func);
 
-private:
+ private:
+  llvm::TargetLibraryInfo *TLI;
+
+  std::unordered_map<llvm::Function *, llvm::AssumptionCache *> ACCache;
   std::unordered_map<llvm::Function *, llvm::LoopInfo *> LICache;
   std::unordered_map<llvm::Function *, llvm::DominatorTree *> DTCache;
   std::unordered_map<llvm::Function *, llvm::ScalarEvolution *> SECache;
 
-  GetTLIFunc GetTLI;
-  GetACFunc GetAC;
+  // GetTLIFunc GetTLI;
+  // GetACFunc GetAC;
 };
 
 #endif

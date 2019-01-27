@@ -28,6 +28,20 @@ class ReplayTransformConfig(TransformConfig):
         return 'replay'
 
 
+class ADFATransformConfig(TransformConfig):
+    def __init__(self):
+        pass
+
+    def get_id(self):
+        return 'adfa'
+
+    def get_options(self):
+        return ['-abs-data-flow-acc-pass']
+
+    def get_transform(self):
+        return 'adfa'
+
+
 class StreamTransformConfig(TransformConfig):
     def __init__(self, options):
         self.choose_strategy = options.stream_choose_strategy
@@ -48,6 +62,7 @@ class StreamTransformConfig(TransformConfig):
 
     def get_transform(self):
         return 'stream'
+
 
 class StreamPrefetchTransformConfig(TransformConfig):
     def __init__(self, options):
@@ -70,11 +85,13 @@ class StreamPrefetchTransformConfig(TransformConfig):
     def get_transform(self):
         return 'stream-prefetch'
 
+
 class TransformManager(object):
     def __init__(self, options):
         self.options = options
         self.configs = dict()
         self._init_replay_transform()
+        self._init_adfa_transform()
         self._init_stream_transform()
         self._init_stream_prefetch_transform()
 
@@ -82,6 +99,11 @@ class TransformManager(object):
         if 'replay' not in self.options.transform_passes:
             return
         self.configs['replay'] = [ReplayTransformConfig()]
+
+    def _init_adfa_transform(self):
+        if 'adfa' not in self.options.transform_passes:
+            return
+        self.configs['adfa'] = [ADFATransformConfig()]
 
     def _init_stream_transform(self):
         if 'stream' not in self.options.transform_passes:
@@ -91,7 +113,8 @@ class TransformManager(object):
     def _init_stream_prefetch_transform(self):
         if 'stream-prefetch' not in self.options.transform_passes:
             return
-        self.configs['stream-prefetch'] = [StreamPrefetchTransformConfig(self.options)]
+        self.configs['stream-prefetch'] = [
+            StreamPrefetchTransformConfig(self.options)]
 
     def get_configs(self, transform):
         return self.configs[transform]

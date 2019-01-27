@@ -8,8 +8,7 @@
 
 LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
     : Loop(_Loop) {
-
-  assert(this->Loop->empty() && "Can only unroll inner most loop for now.");
+  // assert(this->Loop->empty() && "Can only unroll inner most loop for now.");
 
   for (auto BBIter = this->Loop->block_begin(), BBEnd = this->Loop->block_end();
        BBIter != BBEnd; ++BBIter) {
@@ -20,7 +19,6 @@ LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
       if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         llvm::InductionDescriptor ID;
         if (llvm::InductionDescriptor::isInductionPHI(PHINode, Loop, SE, ID)) {
-
           // // This is an induction variable. We try to find the updating
           // binary
           // // operation.
@@ -29,6 +27,10 @@ LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
           this->InductionVars.emplace(PHINode, ID);
           this->IVToStartDynamicIdMap.emplace(Inst,
                                               DynamicInstruction::InvalidId);
+        }
+        llvm::RecurrenceDescriptor RD;
+        if (llvm::RecurrenceDescriptor::isReductionPHI(PHINode, Loop, RD)) {
+          this->ReductionVars.emplace(PHINode, RD);
         }
       }
     }
@@ -73,9 +75,16 @@ void LoopUnroller::updateIVToStartDynamicIdMap(
   }
 }
 
+bool LoopUnroller::isInductionVariable(llvm::Instruction *Inst) const {
+  return this->InductionVars.count(Inst);
+}
+
+bool LoopUnroller::isReductionVariable(llvm::Instruction *Inst) const {
+  return this->ReductionVars.count(Inst);
+}
+
 void LoopUnroller::fixAndUpdateIVRegDeps(DynamicInstruction *DynamicInst,
                                          DataGraph *DG) {
-
   DEBUG(llvm::errs() << "fixAndUpdateIVRegDeps for inst "
                      << DynamicInst->getOpName() << " at iter "
                      << this->CurrentIter << '\n');
@@ -165,7 +174,6 @@ void LoopUnroller::fixAndUpdateCtrDeps(DynamicInstruction *DynamicInst,
 
 void LoopUnroller::unroll(DataGraph *DG, DataGraph::DynamicInstIter Begin,
                           DataGraph::DynamicInstIter End) {
-
   assert(this->canUnroll() && "This loop can not be unrolled.");
 
   this->CurrentIter = -1;
@@ -186,7 +194,8 @@ void LoopUnroller::unroll(DataGraph *DG, DataGraph::DynamicInstIter Begin,
     // Fix the control dependence.
     this->fixAndUpdateCtrDeps(DynamicInst, DG);
     // Update our data structure.
-    this->DynamicIdToIterationMap.emplace(DynamicInst->getId(), this->CurrentIter);
+    this->DynamicIdToIterationMap.emplace(DynamicInst->getId(),
+                                          this->CurrentIter);
   }
 }
 

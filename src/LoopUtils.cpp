@@ -278,7 +278,6 @@ void StaticInnerMostLoop::computeLiveInOutValues(llvm::Loop *Loop) {
 }
 
 CachedLoopInfo::~CachedLoopInfo() {
-
   for (auto &Entry : this->SECache) {
     delete Entry.second;
   }
@@ -293,6 +292,21 @@ CachedLoopInfo::~CachedLoopInfo() {
     delete Entry.second;
   }
   this->DTCache.clear();
+  for (auto &Entry : this->ACCache) {
+    delete Entry.second;
+  }
+  this->ACCache.clear();
+
+  delete this->TLI;
+}
+
+llvm::AssumptionCache *CachedLoopInfo::getAssumptionCache(
+    llvm::Function *Func) {
+  auto Iter = this->ACCache.find(Func);
+  if (Iter == this->ACCache.end()) {
+    Iter = this->ACCache.emplace(Func, new llvm::AssumptionCache(*Func)).first;
+  }
+  return Iter->second;
 }
 
 llvm::LoopInfo *CachedLoopInfo::getLoopInfo(llvm::Function *Func) {
@@ -315,12 +329,12 @@ llvm::DominatorTree *CachedLoopInfo::getDominatorTree(llvm::Function *Func) {
   return Iter->second;
 }
 
-llvm::ScalarEvolution *
-CachedLoopInfo::getScalarEvolution(llvm::Function *Func) {
+llvm::ScalarEvolution *CachedLoopInfo::getScalarEvolution(
+    llvm::Function *Func) {
   auto Iter = this->SECache.find(Func);
   if (Iter == this->SECache.end()) {
     auto SE = new llvm::ScalarEvolution(
-        *Func, this->GetTLI(), this->GetAC(*Func),
+        *Func, *this->TLI, *this->getAssumptionCache(Func),
         *this->getDominatorTree(Func), *this->getLoopInfo(Func));
     Iter = this->SECache.emplace(Func, SE).first;
   }

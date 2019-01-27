@@ -19,14 +19,19 @@
  *
  */
 class LoopUnroller {
-public:
+ public:
   LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE);
 
   /**
    * If there is no induction variable found, we think this loop can not be
    * unrolled.
    */
-  bool canUnroll() const { return !this->InductionVars.empty(); }
+  bool canUnroll() const {
+    if (!this->Loop->empty()) {
+      return false;
+    }
+    return !this->InductionVars.empty();
+  }
 
   /**
    * Unroll the buffered instructions.
@@ -49,7 +54,13 @@ public:
   void unroll(DataGraph *DG, DataGraph::DynamicInstIter Begin,
               DataGraph::DynamicInstIter End);
 
-private:
+  /**
+   * Hacky way to provide a utility function to check for induction variable.
+   */
+  bool isInductionVariable(llvm::Instruction *Inst) const;
+  bool isReductionVariable(llvm::Instruction *Inst) const;
+
+ private:
   using DynamicId = DynamicInstruction::DynamicId;
 
   llvm::Loop *Loop;
@@ -57,6 +68,9 @@ private:
   // Map from the induction variable to its descriptor.
   std::unordered_map<llvm::Instruction *, llvm::InductionDescriptor>
       InductionVars;
+
+  std::unordered_map<llvm::Instruction *, llvm::RecurrenceDescriptor>
+      ReductionVars;
 
   /**
    * Updating fields when unrolling.
@@ -116,13 +130,13 @@ private:
 };
 
 class CachedLoopUnroller {
-public:
+ public:
   CachedLoopUnroller() = default;
   ~CachedLoopUnroller();
 
   LoopUnroller *getUnroller(llvm::Loop *Loop, llvm::ScalarEvolution *SE);
 
-private:
+ private:
   std::unordered_map<llvm::Loop *, LoopUnroller *> CachedLU;
 };
 
