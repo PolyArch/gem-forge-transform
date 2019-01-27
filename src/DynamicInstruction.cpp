@@ -117,6 +117,9 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
 DynamicInstruction::DynamicInstruction()
     : DynamicResult(nullptr), Id(allocateId()), UsedStreamIds(nullptr) {}
 
+DynamicInstruction::DynamicInstruction(DynamicId _Id)
+    : DynamicResult(nullptr), Id(_Id), UsedStreamIds(nullptr) {}
+
 DynamicInstruction::~DynamicInstruction() {
   if (this->DynamicResult != nullptr) {
     delete this->DynamicResult;
@@ -197,7 +200,9 @@ void DynamicInstruction::serializeToProtobuf(
     if (DepIter != DG->RegDeps.end()) {
       for (const auto &RegDep : DepIter->second) {
         if (RegDepsSeen.find(RegDep.second) == RegDepsSeen.end()) {
-          ProtobufEntry->add_reg_deps(RegDep.second);
+          auto Dep = ProtobufEntry->add_deps();
+          Dep->set_type(::LLVM::TDG::TDGInstructionDependence::REGISTER);
+          Dep->set_dependent_id(RegDep.second);
           RegDepsSeen.insert(RegDep.second);
         }
       }
@@ -207,7 +212,9 @@ void DynamicInstruction::serializeToProtobuf(
     auto DepIter = DG->MemDeps.find(this->getId());
     if (DepIter != DG->MemDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
-        ProtobufEntry->add_mem_deps(DepInstId);
+        auto Dep = ProtobufEntry->add_deps();
+        Dep->set_type(::LLVM::TDG::TDGInstructionDependence::MEMORY);
+        Dep->set_dependent_id(DepInstId);
       }
     }
   }
@@ -215,7 +222,9 @@ void DynamicInstruction::serializeToProtobuf(
     auto DepIter = DG->CtrDeps.find(this->getId());
     if (DepIter != DG->CtrDeps.end()) {
       for (const auto &DepInstId : DepIter->second) {
-        ProtobufEntry->add_ctr_deps(DepInstId);
+        auto Dep = ProtobufEntry->add_deps();
+        Dep->set_type(::LLVM::TDG::TDGInstructionDependence::CONTROL);
+        Dep->set_dependent_id(DepInstId);
       }
     }
   }
@@ -223,7 +232,9 @@ void DynamicInstruction::serializeToProtobuf(
   {
     if (this->UsedStreamIds != nullptr) {
       for (const auto &UsedStreamId : (*this->UsedStreamIds)) {
-        ProtobufEntry->add_used_stream_ids(UsedStreamId);
+        auto Dep = ProtobufEntry->add_deps();
+        Dep->set_type(::LLVM::TDG::TDGInstructionDependence::STREAM);
+        Dep->set_dependent_id(UsedStreamId);
       }
     }
   }
@@ -232,11 +243,6 @@ void DynamicInstruction::serializeToProtobuf(
 
 void DynamicInstruction::formatDeps(llvm::raw_ostream &Out,
                                     DataGraph *DG) const {
-  // if (this->StaticInstruction != nullptr) {
-  //   DEBUG(llvm::errs()
-  //               << "Format dependence for "
-  //               << this->StaticInstruction->getName() << '\n');
-  // }
   {
     auto DepIter = DG->RegDeps.find(this->getId());
     if (DepIter != DG->RegDeps.end()) {

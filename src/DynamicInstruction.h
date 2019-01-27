@@ -82,6 +82,10 @@ class DynamicInstruction {
 
  protected:
   /**
+   * Special constructor to allow take in dynamic id.
+   */
+  DynamicInstruction(DynamicId _Id);
+  /**
    * 0 IS RESERVED FOR INVALID DYNAMIC ID.
    */
   static DynamicId allocateId();

@@ -13,6 +13,7 @@ class Gem5ReplayConfig(object):
     L2BUS_WIDTH_DEFAULT = 32
 
     def __init__(self, **kwargs):
+        self.options = None
         self.prefetch = kwargs['prefetch']
         self.stream_engine_prefetch = kwargs['stream_engine_prefetch']
         self.issue_width = kwargs['iw']
@@ -64,6 +65,8 @@ class Gem5ReplayConfig(object):
             transform = 'stream'
         if '.stream-prefetch.' in tdg_base:
             transform = 'stream-prefetch'
+        if '.adfa.' in tdg_base:
+            transform = 'adfa'
         options = list()
         L2Size = '1MB'
         L2TagLat = 20
@@ -90,6 +93,19 @@ class Gem5ReplayConfig(object):
             if self.prefetch:
                 options.append(
                     '--llvm-prefetch=1'
+                )
+        if transform == 'adfa':
+            if self.options.adfa_enable_speculation:
+                options.append(
+                    '--gem-forge-adfa-enable-speculation=1'
+                )
+            if self.options.adfa_break_iv_dep:
+                options.append(
+                    '--gem-forge-adfa-break-iv-dep=1'
+                )
+            if self.options.adfa_break_rv_dep:
+                options.append(
+                    '--gem-forge-adfa-break-rv-dep=1'
                 )
         if transform == 'stream':
             if self.stream_engine_prefetch:
@@ -144,6 +160,8 @@ class Gem5ReplayConfig(object):
             return self.get_config_id('stream-prefetch', tdg_basename)
         elif '.replay.' in tdg_basename:
             return self.get_config_id('replay', tdg_basename)
+        elif '.adfa.' in tdg_basename:
+            return self.get_config_id('adfa', tdg_basename)
         else:
             print("Unable to extract transform from tdg {tdg}".format(
                 tdg=tdg_basename
@@ -188,6 +206,13 @@ class Gem5ReplayConfig(object):
                 config += '.{l1d}'.format(l1d=self.stream_engine_l1d)
             if self.stream_engine_prefetch:
                 config += '.se_prefetch'
+        if transform == 'adfa':
+            if self.options.adfa_enable_speculation:
+                config += '.adfa_spec'
+            if self.options.adfa_break_iv_dep:
+                config += '.adfa_iv'
+            if self.options.adfa_break_rv_dep:
+                config += '.adfa_rv'
         return config
 
 
@@ -196,6 +221,7 @@ class Gem5ReplayConfigureManager(object):
         self.options = options
         self.configs = dict()
         self._init_replay_configs()
+        self._init_adfa_configs()
         self._init_stream_configs()
         self._init_stream_prefetch_configs()
 
@@ -217,6 +243,23 @@ class Gem5ReplayConfigureManager(object):
                 stream_engine_max_run_ahead_length=2,
             ),
         ]
+
+    def _init_adfa_configs(self):
+        self.configs['adfa'] = [
+            Gem5ReplayConfig(
+                prefetch=self.options.replay_prefetch,
+                stream_engine_prefetch=self.options.se_prefetch,
+                iw=self.options.iw,
+                l1d_mshrs=self.options.l1d_mshrs,
+                l1d_assoc=self.options.l1d_assoc,
+                l1_5d_mshrs=self.options.l1_5d_mshrs,
+                l2bus_width=self.options.l2bus_width,
+                l1_5d=self.options.l1_5d,
+                stream_engine_is_oracle=False,
+                stream_engine_max_run_ahead_length=2,
+            ),
+        ]
+        self.configs['adfa'][0].options = self.options
 
     def _init_stream_prefetch_configs(self):
         self.configs['stream-prefetch'] = [

@@ -44,6 +44,8 @@ add_executable(GemForgeTest
   stream/StreamTransformPlanTest.cpp
   stream/StreamInstDependenceTest.cpp
   stream/StreamCoalesceTest.cpp
+  loop_unroller/UnrollDependenceTest.cpp
+  adfa/ADFADependenceTest.cpp
 )
 
 # target_compile_definitions(GemForgeTest

@@ -123,7 +123,7 @@ class Benchmark(object):
 
     def profile(self):
         os.chdir(self.work_path)
-        # self.build_profile()
+        self.build_profile()
         self.run_profile()
         os.chdir(self.cwd)
 

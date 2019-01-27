@@ -36,6 +36,7 @@ inline google::protobuf::io::CodedOutputStream &getTraceFile() {
 static uint64_t count = 0;
 
 void cleanup() {
+  std::cout << "Clean up." << std::endl;
   if (o.is_open()) {
     delete codedStream;
     codedStream = nullptr;

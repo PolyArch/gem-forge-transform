@@ -118,10 +118,10 @@ class SDVBSBenchmark(Benchmark):
             SDVBSBenchmark.TRACE_FUNC[self.benchmark_name])
 
         self.trace_ids = SDVBSBenchmark.TRACE_IDS[self.benchmark_name]
-        self.start_inst = 200e8
+        self.start_inst = 1
         self.max_inst = 1e7
         self.skip_inst = 1e8
-        self.end_inst = 200e8
+        self.end_inst = 10e8
 
         # Create the args.
         args = [self.input_dir, self.work_path]

@@ -227,7 +227,9 @@ simulate_datagraph_debugs = {
         # 'TDGLoadStoreQueue',
         # 'LLVMTraceCPU',
     ],
-    'adfa': [],
+    'adfa': [
+        'AbstractDataFlowAccelerator',
+    ],
     'simd': [],
 }
 
@@ -446,6 +448,14 @@ if __name__ == '__main__':
     # Enable stream aware cache.
     parser.add_option('--se-l1d', action='store',
                       type='string', dest='se_l1d', default='original')
+
+    # ADFA options.
+    parser.add_option('--adfa-enable-speculation', action='store_true',
+                      dest='adfa_enable_speculation', default=False)
+    parser.add_option('--adfa-break-iv-dep', action='store_true',
+                      dest='adfa_break_iv_dep', default=False)
+    parser.add_option('--adfa-break-rv-dep', action='store_true',
+                      dest='adfa_break_rv_dep', default=False)
 
     # Dump infos.
     parser.add_option('--dump-stream-placement', action='store_true',

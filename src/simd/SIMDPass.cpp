@@ -133,16 +133,6 @@ protected:
     // Clear the stats.
     this->Stats.clear();
 
-    // Reset memorization.
-    this->CachedLI = new CachedLoopInfo(
-        [this]() -> llvm::TargetLibraryInfo & {
-          return this->getAnalysis<llvm::TargetLibraryInfoWrapperPass>()
-              .getTLI();
-        },
-        [this](llvm::Function &Func) -> llvm::AssumptionCache & {
-          return this->getAnalysis<llvm::AssumptionCacheTracker>()
-              .getAssumptionCache(Func);
-        });
     // Reset other variables.
     this->State = SEARCHING;
     // Reset the StaticInnerMostLoop cache.
@@ -172,11 +162,6 @@ protected:
 
   uint8_t VectorizeWidth;
   float VectorizeEfficiencyThreshold;
-
-  /**
-   * This class contains the cached loop info.
-   */
-  CachedLoopInfo *CachedLI;
 
   /**
    * Contains caches StaticInnerMostLoop.

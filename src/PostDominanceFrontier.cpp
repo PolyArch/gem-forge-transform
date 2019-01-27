@@ -20,9 +20,8 @@ PostDominanceFrontier::PostDominanceFrontier(
   DEBUG(this->print(llvm::errs()));
 }
 
-const PostDominanceFrontier::SetT &
-PostDominanceFrontier::calculate(const llvm::PostDominatorTree &Tree,
-                                 const NodeT *Node) {
+const PostDominanceFrontier::SetT &PostDominanceFrontier::calculate(
+    const llvm::PostDominatorTree &Tree, const NodeT *Node) {
   auto BB = Node->getBlock();
   auto Iter = this->BBFrontierMap.find(BB);
   if (Iter == this->BBFrontierMap.end()) {
@@ -66,8 +65,8 @@ void PostDominanceFrontier::print(llvm::raw_ostream &O) const {
   }
 }
 
-const PostDominanceFrontier::SetT &
-PostDominanceFrontier::getFrontier(llvm::BasicBlock *BB) const {
+const PostDominanceFrontier::SetT &PostDominanceFrontier::getFrontier(
+    llvm::BasicBlock *BB) const {
   auto Iter = this->BBFrontierMap.find(BB);
   if (Iter == this->BBFrontierMap.end()) {
     DEBUG(llvm::errs() << "Missing frontier set for basic block "
@@ -91,7 +90,9 @@ const PostDominanceFrontier *
 CachedPostDominanceFrontier::getPostDominanceFrontier(llvm::Function *Func) {
   auto Iter = this->FuncToFrontierMap.find(Func);
   if (Iter == this->FuncToFrontierMap.end()) {
-    auto Frontier = new PostDominanceFrontier(this->GetTree(*Func));
+    llvm::PostDominatorTree PDT;
+    PDT.recalculate(*Func);
+    auto Frontier = new PostDominanceFrontier(PDT);
     this->FuncToFrontierMap.emplace(Func, Frontier);
     return Frontier;
   }
