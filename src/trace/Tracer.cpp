@@ -83,6 +83,7 @@ static uint64_t tracedCount = 0;
 
 // Use this flag to ingore all the initialization phase.
 static bool hasSeenMain = false;
+static bool isProfileMode = false;
 
 static bool isDebug = false;
 

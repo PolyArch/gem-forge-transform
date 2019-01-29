@@ -770,6 +770,60 @@ class StreamStatistics:
         print(table)
         return table
 
+    def get_chosen_stream_alive_streams_dict(self):
+        streams = self._collect_chosen_stream()
+        result = dict()
+        for stream in streams:
+            accesses = stream.accesses
+            loop = stream.loop
+            # Iterate through all traces to find the loop.
+            trace = self
+            while trace is not None:
+                if loop in trace.loop_info:
+                    loop_info = trace.loop_info[loop]
+                    break
+                trace = trace.next
+            assert(loop_info is not None)
+            alive_streams = loop_info.get_static_max_n_alive_streams()[1]
+            if alive_streams not in result:
+                result[alive_streams] = 0 
+            result[alive_streams] += accesses 
+        return result
+
+    @staticmethod
+    def print_benchmark_chosen_stream_alive_streams(benchmark_statistic_map):
+        columns = [
+            '<=8',
+            '<=16',
+            '<=24',
+            '<=32',
+            '>32',
+        ]
+        table = SimpleTable.SimpleTable('Benchmark', columns)
+        sep = xrange(0, 33, 8)
+        for benchmark in benchmark_statistic_map:
+            row = [0] * len(columns)
+            stats = benchmark_statistic_map[benchmark]
+            result = stats.get_chosen_stream_alive_streams_dict()
+            for k in result:
+                found = False
+                for i in xrange(len(sep) - 1):
+                    lhs = sep[i] + 1
+                    rhs = sep[i + 1]
+                    if k >= lhs and k <= rhs:
+                        found = True
+                        row[i] += result[k]
+                if not found:
+                    row[-1] += result[k]
+            print row
+            row = StreamStatistics.normalize_row(row)
+            print row
+            table.add_row(benchmark, row)
+        print(table)
+        return table
+
+
+
     def get_chosen_stream_percentage_row(self):
         streams = self._collect_chosen_stream()
         row = [0]

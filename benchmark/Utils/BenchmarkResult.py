@@ -1,6 +1,7 @@
 import Gem5RegionStats
 import Gem5Stats
 import StreamEngineEnergy
+import HWPrefetchEnergy
 import McPAT
 import SimpleTable
 
@@ -54,6 +55,13 @@ class TransformResult:
         if idx == -1:
             return sum([self.compute_se_energy(i) for i in xrange(len(self.folders))])
         return self.ses[idx].get_se_energy()
+
+    def compute_hw_prefetch_energy(self, idx=-1):
+        # Initialize the hw prefetcher energy.
+        if not hasattr(self, 'hw_prefetches'):
+            self.hw_prefetches = [
+                HWPrefetchEnergy.HWPrefetchEnergy(s) for s in self.stats]
+        return sum([h.get_hw_prefetch_energy() for h in self.hw_prefetches])
 
     def compute_time(self, idx=-1):
         if idx == -1:
