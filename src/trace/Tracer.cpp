@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <list>
+#include <sstream>
 #include <string>
 #include <vector>
 #define UNW_LOCAL_ONLY
@@ -83,6 +86,20 @@ static bool hasSeenMain = false;
 
 static bool isDebug = false;
 
+enum WorkMode {
+  Profile = 0,
+  TraceAll = 1,
+  TraceTraced = 2,
+  TraceUniformSampled = 3,
+  TraceSpecifiedInterval = 4,
+};
+
+static WorkMode workMode = WorkMode::Profile;
+
+/********************************************************************
+ * Parameters for TraceUniformSampled mode.
+ *******************************************************************/
+
 /**
  * If START_INST is set (>0), the tracer will ignore the dynamic stack and
  * trace in a pattern of
@@ -97,6 +114,16 @@ static uint64_t START_INST = 0;
 static uint64_t MAX_INST = 1;
 static uint64_t SKIP_INST = 0;
 static uint64_t END_INST = 0;
+
+/********************************************************************
+ * Parameters for TraceSpecifiedInterval mode.
+ *******************************************************************/
+
+/**
+ * Intervals, which contains lines like lhs rhs.
+ * Each line represent an interval of [lhs, rhs)
+ */
+static std::list<std::pair<uint64_t, uint64_t>> intervals;
 
 /**
  * Determins how to interpret the START_INST and so on.
@@ -143,9 +170,34 @@ static bool getBoolEnv(const char *name) {
   }
 }
 
+static void initializeIntervals() {
+  const char *fn = std::getenv("LLVM_TDG_INTERVALS_FILE");
+  assert(fn != nullptr &&
+         "Failed to find environment LLVM_TDG_INTERVALS_FILE.");
+  std::ifstream in(fn);
+  assert(in.is_open() && "Failed to open interval file.");
+  std::string line;
+  while (std::getline(in, line)) {
+    std::istringstream iss(line);
+    uint64_t lhs, rhs;
+    if (!(iss >> lhs >> rhs)) {
+      continue;
+    }
+    printf("Found interval [%lu, %lu).\n", lhs, rhs);
+    assert(lhs < rhs && "Invalid interval.");
+    if (!intervals.empty()) {
+      assert(lhs >= intervals.back().second &&
+             "Intervals should be specifid in increasing order.");
+    }
+    intervals.emplace_back(lhs, rhs);
+  }
+}
+
 static void cleanup() {
-  allProfile.serializeToFile(allProfileFileName);
-  tracedProfile.serializeToFile(tracedProfileFileName);
+  if (workMode == WorkMode::Profile) {
+    allProfile.serializeToFile(allProfileFileName);
+    tracedProfile.serializeToFile(tracedProfileFileName);
+  }
   /**
    * FIX IT!!
    * We really should deallocate this one, but it will cause
@@ -168,10 +220,23 @@ static void initialize() {
       isSimpleMode = false;
     }
 
-    START_INST = getUint64Env("LLVM_TDG_START_INST");
-    SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
-    MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
-    END_INST = getUint64Env("LLVM_TDG_END_INST");
+    const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
+    if (!traceFileName) {
+      traceFileName = DEFAULT_TRACE_FILE_NAME;
+    }
+    allProfileFileName = std::string(traceFileName) + ".profile";
+    tracedProfileFileName = std::string(traceFileName) + ".traced.profile";
+
+    workMode = static_cast<WorkMode>(getUint64Env("LLVM_TDG_WORK_MODE"));
+
+    if (workMode == WorkMode::TraceUniformSampled) {
+      START_INST = getUint64Env("LLVM_TDG_START_INST");
+      SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
+      MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
+      END_INST = getUint64Env("LLVM_TDG_END_INST");
+    } else if (workMode == WorkMode::TraceSpecifiedInterval) {
+      initializeIntervals();
+    }
 
     const char *meaureInTraceFunc =
         std::getenv("LLVM_TDG_MEASURE_IN_TRACE_FUNC");
@@ -189,17 +254,12 @@ static void initialize() {
 
     // Set profile file name.
 
-    const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
-    if (!traceFileName) {
-      traceFileName = DEFAULT_TRACE_FILE_NAME;
-    }
-    allProfileFileName = std::string(traceFileName) + ".profile";
-    tracedProfileFileName = std::string(traceFileName) + ".traced.profile";
-
     isDebug = getBoolEnv("LLVM_TDG_DEBUG");
 
     std::atexit(cleanup);
 
+    printf("initializing workMode to %lu...\n",
+           static_cast<uint64_t>(workMode));
     printf("initializing SKIP_INST to %lu...\n", SKIP_INST);
     printf("initializing MAX_INST to %lu...\n", MAX_INST);
     printf("initializing START_INST to %lu...\n", START_INST);
@@ -216,18 +276,97 @@ static void initialize() {
  * 2. Otherwise, we trace all the IsTraced function and their callees.
  */
 static bool shouldLog() {
-  if (START_INST > 0) {
-    auto c = count;
-    if (MEASURE_IN_TRACE_FUNC) {
-      c = countInTraceFunc;
-    }
-    if (c >= START_INST) {
-      return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
-    } else {
+  auto c = count;
+  if (MEASURE_IN_TRACE_FUNC) {
+    c = countInTraceFunc;
+  }
+  switch (workMode) {
+    case WorkMode::Profile: {
       return false;
     }
-  } else {
-    return tracedFunctionsInStack > 0;
+    case WorkMode::TraceAll: {
+      return true;
+    }
+    case WorkMode::TraceTraced: {
+      return tracedFunctionsInStack > 0;
+    }
+    case WorkMode::TraceUniformSampled: {
+      if (c >= START_INST) {
+        return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
+      } else {
+        return false;
+      }
+    }
+    case WorkMode::TraceSpecifiedInterval: {
+      if (intervals.empty()) return false;
+      const auto &interval = intervals.front();
+      if (c < interval.first) {
+        return false;
+      }
+      return c < interval.second;
+    }
+    default: { assert(false && "Unknown work mode."); }
+  }
+}
+
+static bool shouldSwitchTraceFile() {
+  auto c = count;
+  if (MEASURE_IN_TRACE_FUNC) {
+    c = countInTraceFunc;
+  }
+  switch (workMode) {
+    case WorkMode::Profile:
+    case WorkMode::TraceAll:
+    case WorkMode::TraceTraced: {
+      return false;
+    }
+    case WorkMode::TraceUniformSampled: {
+      if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
+        // We are the last one of every MAX_INST. Switch file.
+        return true;
+      } else {
+        return false;
+      }
+    }
+    case WorkMode::TraceSpecifiedInterval: {
+      if (intervals.empty()) {
+        return false;
+      }
+      if (c == intervals.front().second - 1) {
+        printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
+               intervals.front().second);
+        intervals.pop_front();
+        return true;
+      }
+      return false;
+    }
+    default: { assert(false && "Unknown work mode."); }
+  }
+}
+
+static bool shouldExit() {
+  auto c = count;
+  // Hard exit condition when we hit 1e11
+  if (c == 1e11) {
+    std::exit(0);
+  }
+
+  switch (workMode) {
+    case WorkMode::Profile:
+    case WorkMode::TraceAll:
+    case WorkMode::TraceTraced: {
+      return false;
+    }
+    case WorkMode::TraceUniformSampled: {
+      if (MEASURE_IN_TRACE_FUNC) {
+        c = countInTraceFunc;
+      }
+      return c == END_INST;
+    }
+    case WorkMode::TraceSpecifiedInterval: {
+      return intervals.empty();
+    }
+    default: { assert(false && "Unknown work mode."); };
   }
 }
 
@@ -238,7 +377,8 @@ static void printStack() {
   printf("\n");
 }
 
-// Try to use libunwind to unwind the stack to some point. Return if succeed.
+// Try to use libunwind to unwind the stack to some point. Return if
+// succeed.
 static void unwind() {
   unw_cursor_t cursor;
   unw_context_t context;
@@ -269,8 +409,8 @@ static void unwind() {
   }
 
   // Matching algorithm:
-  // For every frame in our stack, search in the unwinded stack, if there is no
-  // match, then we assume this is the boundary.
+  // For every frame in our stack, search in the unwinded stack, if there
+  // is no match, then we assume this is the boundary.
   assert(unwinded.size() > 0 && "There should be at least one frame.");
   int boundary = 0;
   int unwindedIdx = unwinded.size() - 1;
@@ -376,10 +516,13 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     printStack();
     std::exit(1);
   }
-  // Profile for every dynamic instruction.
+
   std::string FuncStr(FunctionName);
   std::string BBStr(BBName);
-  allProfile.addBasicBlock(FuncStr, BBStr);
+  if (workMode == WorkMode::Profile) {
+    // Profile for every dynamic instruction.
+    allProfile.addBasicBlock(FuncStr, BBStr);
+  }
 
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
   // __LINE__, insideMyself, count); Update current inst.
@@ -485,15 +628,8 @@ void printInstEnd() {
     tracedCount++;
     printInstEndImpl();
     // Check if we are about to switch file.
-    auto c = count;
-    if (MEASURE_IN_TRACE_FUNC) {
-      c = countInTraceFunc;
-    }
-    if (START_INST > 0) {
-      if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
-        // We are the last one of every MAX_INST. Switch file.
-        switchFileImpl();
-      }
+    if (shouldSwitchTraceFile()) {
+      switchFileImpl();
     }
   }
 
@@ -519,22 +655,8 @@ void printInstEnd() {
   currentInstOpName = nullptr;
 
   // Check if we are about to exit.
-  auto c = count;
-  if (MEASURE_IN_TRACE_FUNC) {
-    c = countInTraceFunc;
-  }
-  if (START_INST > 0) {
-    if (END_INST > 0 && c == END_INST) {
-      std::exit(0);
-    }
-  } else if (END_INST > 0) {
-    if (c == END_INST) {
-      std::exit(0);
-    }
-  } else if (MAX_INST > 0) {
-    if (tracedCount == MAX_INST) {
-      std::exit(0);
-    }
+  if (shouldExit()) {
+    std::exit(0);
   }
 
   insideMyself = false;
