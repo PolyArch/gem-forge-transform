@@ -3,7 +3,7 @@ import subprocess
 
 import Constants as C
 import Util
-import Utils.Gem5ConfigureManager
+from Utils import SimPoint
 
 
 class Benchmark(object):
@@ -127,18 +127,19 @@ class Benchmark(object):
         self.run_profile()
         os.chdir(self.cwd)
 
+    def simpoint(self):
+        os.chdir(self.work_path)
+        print('Doing simpoints')
+        SimPoint.SimPoint(self.get_profile()) 
+        os.chdir(self.cwd)
+
     """
     Generate the profile.
     """
 
     def run_profile(self):
         # Remember to set the environment for profile.
-        # Set the start and end instruction to a large number so that we do not generate actual trace.
-        os.putenv('LLVM_TDG_MAX_INST', str(1e7))
-        os.putenv('LLVM_TDG_START_INST', str(5000e8))
-        os.putenv('LLVM_TDG_END_INST', str(1e8))
-        os.putenv('LLVM_TDG_SKIP_INST', str(5000e8))
-        
+        os.putenv('LLVM_TDG_WORK_MODE', '0')
         os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
         run_cmd = [
@@ -215,6 +216,7 @@ class Benchmark(object):
             run_cmd += self.args
         print('# Run traced binary...')
         Util.call_helper(run_cmd)
+
 
     """
     Construct the traced binary.

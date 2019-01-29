@@ -40,6 +40,10 @@ def profile(benchmark):
     benchmark.profile()
 
 
+def simpoint(benchmark):
+    benchmark.simpoint()
+
+
 def trace(benchmark):
     benchmark.trace()
 
@@ -64,6 +68,8 @@ class Driver:
     }
 
     def __init__(self, options):
+        self.profile_jobs = dict()
+        self.simpoint_jobs = dict()
         self.trace_jobs = dict()
         self.transform_jobs = dict()
         self.options = options
@@ -74,17 +80,27 @@ class Driver:
 
     def schedule_profile(self, job_scheduler, benchmark):
         name = benchmark.get_name()
-        # Not need to track profile jobs.
-        job_scheduler.add_job(name + '.profile', profile,
-                              (benchmark, ), list())
+        self.profile_jobs[name] = job_scheduler.add_job(name + '.profile', profile,
+                                                        (benchmark, ), list())
+
+    def schedule_simpoint(self, job_scheduler, benchmark):
+        name = benchmark.get_name()
+        # Simpoint job is dependent on profile job.
+        deps = list()
+        if name in self.profile_jobs:
+            deps.append(self.profile_jobs[name])
+        self.simpoint_jobs[name] = job_scheduler.add_job(name + '.simpoint', simpoint,
+                                                         (benchmark, ), deps)
 
     def schedule_trace(self, job_scheduler, benchmark):
         name = benchmark.get_name()
         assert(name not in self.trace_jobs)
-        # No dependence for the trace job.
+        deps = list()
+        if name in self.simpoint_jobs:
+            deps.append(self.simpoint_jobs[name])
         self.trace_jobs[name] = (
             job_scheduler.add_job(name + '.trace', trace,
-                                  (benchmark, ), list())
+                                  (benchmark, ), deps)
         )
 
     def schedule_transform(self, job_scheduler, benchmark, transform_pass, debugs):
@@ -270,6 +286,8 @@ def main(options):
             benchmark.build_raw_bc()
         if options.profile:
             driver.schedule_profile(job_scheduler, benchmark)
+        if options.simpoint:
+            driver.schedule_simpoint(job_scheduler, benchmark)
         if options.trace:
             driver.schedule_trace(job_scheduler, benchmark)
         if options.build_datagraph:
@@ -400,6 +418,8 @@ if __name__ == '__main__':
                       dest='build', default=False)
     parser.add_option('--profile', action='store_true',
                       dest='profile', default=False)
+    parser.add_option('--simpoint', action='store_true',
+                      dest='simpoint', default=False)
     parser.add_option('-t', '--trace', action='store_true',
                       dest='trace', default=False)
     parser.add_option('--directory', action='store',
