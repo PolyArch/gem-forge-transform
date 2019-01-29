@@ -208,6 +208,16 @@ class CortexBenchmark(Benchmark):
             self.benchmark_result_dir, input_size)
         Util.call_helper(['mkdir', '-p', self.work_path])
 
+        # Create a symbolic link for everything in the source dir.
+        for f in os.listdir(self.src_dir):
+            print(os.path.join(self.src_dir, f))
+            Util.call_helper([
+                'ln',
+                '-s',
+                os.path.join(self.src_dir, f),
+                os.path.join(self.work_path, f)
+            ])
+
         self.cwd = os.getcwd()
         self.flags = CortexBenchmark.FLAGS[self.benchmark_name]
         self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_size]
