@@ -193,7 +193,21 @@ class CortexBenchmark(Benchmark):
     def __init__(self, folder, benchmark_name, input_size):
         self.benchmark_name = benchmark_name
         self.input_size = input_size
-        self.work_path = os.path.join(folder, self.benchmark_name)
+        self.top_folder = folder
+
+        self.src_dir = os.path.join(self.top_folder, benchmark_name)
+
+        self.top_result_dir = os.path.join(
+            self.top_folder, 'gem-forge-results'
+        )
+        Util.call_helper(['mkdir', '-p', self.top_result_dir])
+        self.benchmark_result_dir = os.path.join(
+            self.top_result_dir, self.benchmark_name)
+        Util.call_helper(['mkdir', '-p', self.benchmark_result_dir])
+        self.work_path = os.path.join(
+            self.benchmark_result_dir, input_size)
+        Util.call_helper(['mkdir', '-p', self.work_path])
+
         self.cwd = os.getcwd()
         self.flags = CortexBenchmark.FLAGS[self.benchmark_name]
         self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_size]
@@ -207,11 +221,19 @@ class CortexBenchmark(Benchmark):
         self.skip_inst = 1e8
         self.end_inst = 11e8
 
+        args = list()
+        for x in CortexBenchmark.ARGS[self.benchmark_name][self.input_size]:
+            xx = os.path.join(self.src_dir, x)
+            if os.path.isfile(xx):
+                args.append(xx)
+            else:
+                args.append(x)
+
         super(CortexBenchmark, self).__init__(
             name=self.get_name(),
             raw_bc=self.get_raw_bc(),
             links=['-lm'],
-            args=CortexBenchmark.ARGS[self.benchmark_name][self.input_size],
+            args=args,
             trace_func=self.trace_functions,
             lang='C',
         )
@@ -274,7 +296,7 @@ class CortexBenchmark(Benchmark):
         self.debug('Build raw bitcode.')
         os.chdir(self.work_path)
 
-        sources = self.find_all_sources(self.work_path)
+        sources = self.find_all_sources(self.src_dir)
         bcs = [self.compile(s, self.flags, self.defines,
                             self.includes) for s in sources]
 
