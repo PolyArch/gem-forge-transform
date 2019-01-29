@@ -43,34 +43,42 @@ class McPAT:
         self.components = dict()
         for c in McPAT.COMPONENTS:
             self.components[c] = list()
-        with open(fn) as f:
-            current_component = None
-            for line in f:
-                for c in McPAT.COMPONENTS:
-                    name = McPAT.COMPONENTS[c]
-                    if name not in line:
+        try:
+            with open(fn) as f:
+                current_component = None
+                for line in f:
+                    for c in McPAT.COMPONENTS:
+                        name = McPAT.COMPONENTS[c]
+                        if name not in line:
+                            continue
+                        current_component = McPATPower(c, len(self.components[c]))
+                        self.components[c].append(current_component)
+                        break
+                    if current_component is None:
                         continue
-                    current_component = McPATPower(c, len(self.components[c]))
-                    self.components[c].append(current_component)
-                    break
-                if current_component is None:
-                    continue
-                fields = line.split()
-                if 'Runtime Dynamic =' in line:
-                    current_component.dynamic_power = float(fields[3])
-                    # print(current_component)
-                    # Runtime Dynamic is always the last field.
-                    current_component = None
-                elif 'Gate Leakage =' in line:
-                    current_component.gate_leakage_power = float(fields[3])
-                elif 'Subthreshold Leakage =' in line:
-                    current_component.subthreshold_leakage_power = float(
-                        fields[3])
+                    fields = line.split()
+                    if 'Runtime Dynamic =' in line:
+                        current_component.dynamic_power = float(fields[3])
+                        # print(current_component)
+                        # Runtime Dynamic is always the last field.
+                        current_component = None
+                    elif 'Gate Leakage =' in line:
+                        current_component.gate_leakage_power = float(fields[3])
+                    elif 'Subthreshold Leakage =' in line:
+                        current_component.subthreshold_leakage_power = float(
+                            fields[3])
+        except IOError:
+            print('Failed to open McPAT file {fn}.'.format(fn=fn))
+            self.components = None
 
     def get_system_dynamic_power(self):
+        if self.components is None:
+            return float('nan')
         return self.components['processor'][0].dynamic_power
 
     def get_system_static_power(self):
+        if self.components is None:
+            return float('nan')
         system = self.components['processor'][0]
         return system.gate_leakage_power + system.subthreshold_leakage_power
 
