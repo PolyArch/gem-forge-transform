@@ -58,7 +58,7 @@ class SDVBSBenchmark(Benchmark):
     }
 
     TRACE_IDS = {
-        'disparity': [0],
+        # 'disparity': [0],
         # 'localization': [4],
         # 'mser': [0],
         # 'multi_ncut': [6],
@@ -67,15 +67,15 @@ class SDVBSBenchmark(Benchmark):
         # 'svm': [0],
         # 'texture_synthesis': [0],
         # 'tracking': [8],
-        # 'disparity': [0, 1, 2, 3, 5, 6, 7, 8],
-        'localization': [0, 4],
-        'mser': [0, 1, 2, 3, 4, 5, 6, 7, 8],
-        'multi_ncut': [0, 1, 2, 3, 4, 5, 6],
-        'sift': [0, 1, 2, 3, 4, 5, 6, 7, 8],
-        'stitch': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'disparity': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        'localization': [0, 1, 2, 3, 4, 5],
+        'mser': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        'multi_ncut': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        'sift': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'stitch': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'svm': [0, 1, 2, 3, 4, 5, 6, 7, 8],
-        'texture_synthesis': [0, 1, 2, 3, 4, 5, 6, 7, 8],
-        'tracking': [0, 1, 5, 6, 7, 8]
+        'texture_synthesis': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'tracking': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     }
 
     def __init__(self, folder, benchmark_name, input_name):
