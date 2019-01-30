@@ -347,8 +347,8 @@ static bool shouldSwitchTraceFile() {
 
 static bool shouldExit() {
   auto c = count;
-  // Hard exit condition when we hit 1e11
-  if (c == 1e11) {
+  // Hard exit condition when we hit 1e10
+  if (c == 1e10) {
     std::exit(0);
   }
 
