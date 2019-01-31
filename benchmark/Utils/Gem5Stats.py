@@ -1,21 +1,34 @@
 
 class Gem5Stats:
-    def __init__(self, benchmark, fn):
+    def __init__(self, benchmark, fn, lines=None):
         self.benchmark = benchmark
         self.fn = fn
         self.stats = dict()
-        with open(self.fn, 'r') as stats:
-            for line in stats:
-                if len(line) == 0:
-                    continue
-                if line[0] == '-':
-                    continue
-                fields = line.split()
-                try:
-                    self.stats[fields[0]] = float(fields[1])
-                except Exception as e:
-                    pass
-                    # print('ignore line {line}'.format(line=line))
+        if lines is None:
+            stats = open(self.fn, 'r')
+        else:
+            stats = lines
+        for line in stats:
+            if len(line) == 0:
+                continue
+            if line[0] == '-':
+                continue
+            fields = line.split()
+            try:
+                self.stats[fields[0]] = float(fields[1])
+            except Exception as e:
+                pass
+                # print('ignore line {line}'.format(line=line))
+        if lines is None:
+            # This is a file.
+            stats.close()
+
+    def merge(self, other):
+        for stat_id in other.stats:
+            if stat_id in self.stats:
+                self.stats[stat_id] += other.stats[stat_id]
+            else:
+                self.stats[stat_id] = other.stats[stat_id]
 
     def get_default(self, key, default):
         if key in self.stats:
@@ -26,6 +39,24 @@ class Gem5Stats:
     def get_sim_seconds(self):
         return self['sim_seconds']
 
+    def get_cpu_insts(self):
+        return self['system.cpu.commit.committedInsts']
+
+    def get_mem_access(self):
+        return self.get_default('system.cpu.dcache.overall_accesses::total', 0)
+
+    def get_l1_misses(self):
+        return self.get_default('system.cpu.dcache.overall_misses::total', 0)
+
+    def get_l2_misses(self):
+        return self.get_default('system.l2.overall_misses::total', 0)
+
+    def get_branches(self):
+        return self.get_default('system.cpu.fetch.branchInsts', 0)
+
+    def get_branch_misses(self):
+        return self.get_default('system.cpu.fetch.branchPredMisses', 0)
+
     def __getitem__(self, key):
         try:
             return self.stats[key]
@@ -35,5 +66,3 @@ class Gem5Stats:
                 file=self.fn
             ))
             raise e
-
-    

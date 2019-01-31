@@ -20,9 +20,10 @@ class Attribute:
 
 
 class TransformResult:
-    def __init__(self, benchmark, folders):
+    def __init__(self, benchmark, folders, config_id):
         self.benchmark = benchmark
         self.folders = folders
+        self.config_id = config_id
         self.region_stats = list()
         self.stats = list()
         self.mcpats = list()
@@ -41,6 +42,8 @@ class TransformResult:
                 Gem5RegionStats.Gem5RegionStats(benchmark, region_stats))
             mcpat = os.path.join(folder, 'mcpat.txt')
             self.mcpats.append(McPAT.McPAT(mcpat))
+        self.merged_region_stats = Gem5RegionStats.Gem5RegionStats(
+            benchmark, [os.path.join(folder, 'region.stats.txt') for folder in folders])
 
     def compute_energy(self, idx=-1):
         if idx == -1:
@@ -151,8 +154,9 @@ class BenchmarkResult:
                 for gem5_config in gem5_configs:
                     folders = [gem5_config.get_gem5_dir(
                         tdg) for tdg in tdgs]
+                    config_id = gem5_config.get_config_id(transform, '')
                     self.transform_results[transform_id].append(
-                        TransformResult(benchmark, folders)
+                        TransformResult(benchmark, folders, config_id)
                     )
 
     def compute(self, func, transform_ids):
@@ -266,8 +270,6 @@ class SuiteResult:
         with open(fn, mode='wb') as f:
             pickle.dump(self, f)
 
-        
-
     """
     Return a table like this
     ---------------------------------------------------------
@@ -355,6 +357,76 @@ class SuiteResult:
             table.add_row(benchmark.get_name(), speedups)
         print(table)
         return table
+
+    def show_region_stats(self):
+        regions_aggregated = dict()
+        for benchmark in self.ordered_benchmarks:
+            result = self.benchmark_results[benchmark]
+            assert('replay' in result.transform_results)
+            replay_result = result.transform_results['replay'][0]
+            region_stats = replay_result.merged_region_stats
+            for region in region_stats.regions:
+                uid = '{b}.{r}'.format(b=benchmark.get_name(), r=region)
+                regions_aggregated[uid] = dict()
+                stats = region_stats.regions[region]
+                aggr_stats = regions_aggregated[uid]
+                aggr_stats['benchmark'] = benchmark.get_name()
+                aggr_stats['region'] = region
+                aggr_stats['enter'] = stats.get_default('region.entered', 1)
+                aggr_stats['insts'] = stats.get_cpu_insts()
+                aggr_stats['time'] = stats.get_sim_seconds()
+                aggr_stats['mem_acc'] = \
+                    stats.get_default('system.cpu.dcache.overall_accesses', 0) / \
+                    aggr_stats['insts'] * 1e6
+                aggr_stats['l1_m'] = stats.get_default('system.cpu.dcache.overall_misses', 0) / \
+                    aggr_stats['insts'] * 1e6
+                aggr_stats['l2_m'] = stats.get_default('system.l2.overall_misses', 0) / \
+                    aggr_stats['insts'] * 1e6
+                aggr_stats['br'] = stats.get_branches() / \
+                    aggr_stats['insts'] * 1e6
+                aggr_stats['br_m'] = stats.get_branch_misses() / \
+                    aggr_stats['insts'] * 1e6
+        title = [
+            'benchmark',
+            'region',
+            'enter',
+            'insts',
+            'time',
+            'mem_acc',
+            'l1_m',
+            'l2_m',
+            'br',
+            'br_m',
+        ]
+
+        special_id = 'haha'
+        for benchmark in self.ordered_benchmarks:
+            result = self.benchmark_results[benchmark]
+            for transform in result.transform_results:
+                if transform == 'replay':
+                    continue
+                for transform_result in result.transform_results[transform]:
+                    transform_time = '{t}_time'.format(
+                        t=transform_result.config_id)
+                    special_id = transform_result.config_id
+                    title.append(transform_time)
+                    merged_region_stats = transform_result.merged_region_stats
+                    for region in merged_region_stats.regions:
+                        region_stats = merged_region_stats.regions[region]
+                        uid = '{b}.{r}'.format(
+                            b=benchmark.get_name(), r=region)
+                        aggr_stats = regions_aggregated[uid]
+                        aggr_stats[transform_time] = region_stats.get_sim_seconds()
+
+        dump_fn = '{s}.{sp}.regions.csv'.format(s=self.suite, sp=special_id)
+        with open(dump_fn, 'w') as f:
+            f.write(','.join(title))
+            f.write('\n')
+            for uid in regions_aggregated:
+                aggr_stats = regions_aggregated[uid]
+                for t in title:
+                    f.write('{v},'.format(v=aggr_stats[t]))
+                f.write('\n')
 
     def show_hit_lower(self, transform_config):
         transform = transform_config.get_transform()

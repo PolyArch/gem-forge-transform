@@ -13,7 +13,7 @@ class CactiCacheEnergy:
             fields = line0.split(', ')
             line1 = f.readline()
             values = line1.split(', ')
-            print(values)
+            # print(values)
             self.banks = float(values[2])
             self.readNJ = float(values[8])
             self.writeNJ = float(values[9])
