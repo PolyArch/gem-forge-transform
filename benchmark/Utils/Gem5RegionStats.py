@@ -1,4 +1,7 @@
 
+import Gem5Stats
+
+
 class Gem5RegionStats:
     def __init__(self, benchmark, fn):
         self.benchmark = benchmark
@@ -30,14 +33,18 @@ class Gem5RegionStats:
 
     def parse(self, fn):
         with open(fn, 'r') as stats:
-            region = None
             region_id = None
+            stat_lines = list()
             for line in stats:
                 fields = line.split()
                 if fields[0] == '----':
+                    # Handle the previous region.
+                    if region_id is not None:
+                        assert(len(stat_lines) > 0)
+                        self.regions[region_id] = Gem5Stats.Gem5Stats(
+                            self.benchmark, self.fn, stat_lines)
+                        stat_lines = list()
                     region_id = fields[1]
-                    self.regions[region_id] = dict()
-                    region = self.regions[region_id]
                 elif fields[0] == '-parent':
                     if len(fields) == 2:
                         # This region has a parent.
@@ -46,9 +53,12 @@ class Gem5RegionStats:
                         # This region has no parent.
                         pass
                 else:
-                    stat_id = fields[0]
-                    value = float(fields[1])
-                    region[stat_id] = value
+                    stat_lines.append(line)
+            # Remember to process the last region.
+            if region_id is not None:
+                assert(len(stat_lines) > 0)
+                self.regions[region_id] = Gem5Stats.Gem5Stats(
+                    self.benchmark, self.fn, stat_lines)
 
     def merge(self, other):
         assert(self.benchmark == other.benchmark)
@@ -64,13 +74,7 @@ class Gem5RegionStats:
             stats = other.regions[region]
             if region in self.regions:
                 # Add the stats together.
-                my_stats = self.regions[region]
-                for stat_id in stats:
-                    # assert(stat_id in my_stats)
-                    if stat_id in my_stats:
-                        my_stats[stat_id] += stats[stat_id]
-                    else:
-                        my_stats[stat_id] = stats[stat_id]
+                self.regions[region].merge(stats)
             else:
                 # Copy other's stats.
                 self.regions[region] = stats

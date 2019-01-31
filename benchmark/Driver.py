@@ -359,6 +359,8 @@ def main(options):
         driver.gem5_config_manager,
         options.transform_passes)
 
+    suite_result.show_region_stats()
+
     if options.dump_suite_results:
         folder = 'Plots/data'
         suite_result.pickle(folder)
