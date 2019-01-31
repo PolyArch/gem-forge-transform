@@ -44,6 +44,18 @@ class SPEC2017Benchmark(Benchmark):
         if not (os.path.isdir(self.get_build_path()) and os.path.isdir(self.get_run_path())):
             self.build_raw_bc()
 
+        # Special case for x264_s: we have to create a symbolic link to the input.
+        if self.work_load == '625.x264_s':
+            input_file = os.path.join(self.get_run_path(), 'BuckBunny.yuv')
+            original_input_file = os.path.join(self.get_run_path(), '../../BuckBunny.yuv')
+            if not os.path.exists(input_file):
+                Util.call_helper([
+                    'ln',
+                    '-s',
+                    original_input_file,
+                    input_file,
+                ])
+
         # Finally use specinvoke to get the arguments.
         os.chdir(self.get_run_path())
         args = self.get_args(subprocess.check_output([
@@ -53,6 +65,8 @@ class SPEC2017Benchmark(Benchmark):
         print('{name} has arguments {args}'.format(
             name=self.get_name(), args=args))
         os.chdir(self.cwd)
+
+        self.work_path = self.get_run_path()
 
         # Initialize the benchmark.
         super(SPEC2017Benchmark, self).__init__(
@@ -257,17 +271,16 @@ class SPEC2017Benchmark(Benchmark):
             debugs=debugs,
         )
         # set the maximum number of insts.
-        if self.max_inst != -1:
-            print(self.max_inst)
-            print(self.start_inst)
-            print(self.end_inst)
-            print(self.skip_inst)
-            os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-            os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-            os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-            os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
-        else:
-            os.unsetenv('LLVM_TDG_MAX_INST')
+        # if self.max_inst != -1:
+        #     os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+        #     os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+        #     os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+        #     os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
+        # else:
+        #     os.unsetenv('LLVM_TDG_MAX_INST')
+        os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
@@ -295,7 +308,7 @@ class SPEC2017Benchmarks:
             'max_inst': 2e7,
             'skip_inst': 9e8,
             'end_inst': 34e8,
-            'n_traces': 1,
+            'n_traces': 7,
             'trace_func': 'LBM_performStreamCollideTRT',
             'lang': 'C',
         },
@@ -306,7 +319,7 @@ class SPEC2017Benchmarks:
             'max_inst': 1e7,
             'skip_inst': 9e8,
             'end_inst': 200e8,
-            'n_traces': 20,
+            'n_traces': 8, 
             # 'trace_func': 'MagickCommandGenesis',
             'trace_func': '',
             'lang': 'C',
@@ -468,17 +481,17 @@ class SPEC2017Benchmarks:
         # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
         # Does not throw.
         # Haven't tested with ellcc.
-        'blender_r': {
-            'name': '526.blender_r',
-            'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 110e8,
-            'n_traces': 10,
-            'trace_func': '',
-            'lang': 'CPP',
-        },
+        # 'blender_r': {
+        #     'name': '526.blender_r',
+        #     'links': [],
+        #     'start_inst': 10e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 110e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        #     'lang': 'CPP',
+        # },
 
 
         # # Not working so far due to setjmp/longjmp.
