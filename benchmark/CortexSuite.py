@@ -180,14 +180,14 @@ class CortexBenchmark(Benchmark):
         # 'pca': [1],
         # 'motion-estimation': [0,1,3,8],
         # 'liblinear': [0],
-        'rbm': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'rbm': [0, 1, 2, 3, 4, 5, 6, 7],
         'sphinx': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-        'srr': [1, 2, 3, 4, 5, 6, 8, 9],
-        'lda': [0, 5, 6, 8],
-        'svd3': [0, 1, 2, 4, 5, 6, 7, 8, 9],
-        'pca': [1, 2, 3, 4, 5, 6, 7, 9],
-        'motion-estimation': [0, 1, 3, 8],
-        'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'srr': [0, 1, 2, 3, 4, 5, 6, 7],
+        'lda': [0, 1, 2, 3, 4],
+        'svd3': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'pca': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'motion-estimation': [0, 1, 2, 3, 4, 5, 6, 7],
+        'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     }
 
     def __init__(self, folder, benchmark_name, input_size):
@@ -211,11 +211,14 @@ class CortexBenchmark(Benchmark):
         # Create a symbolic link for everything in the source dir.
         for f in os.listdir(self.src_dir):
             print(os.path.join(self.src_dir, f))
+            dest = os.path.join(self.work_path, f)
+            if os.path.exists(dest):
+                continue
             Util.call_helper([
                 'ln',
                 '-s',
                 os.path.join(self.src_dir, f),
-                os.path.join(self.work_path, f)
+                dest,
             ])
 
         self.cwd = os.getcwd()
@@ -331,6 +334,7 @@ class CortexBenchmark(Benchmark):
         # os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         os.putenv('LLVM_TDG_WORK_MODE', str(4))
         os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 

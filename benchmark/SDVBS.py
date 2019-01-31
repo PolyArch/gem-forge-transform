@@ -221,6 +221,7 @@ class SDVBSBenchmark(Benchmark):
         # os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         os.putenv('LLVM_TDG_WORK_MODE', str(4))
         os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
