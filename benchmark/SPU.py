@@ -183,7 +183,7 @@ class SPUBenchmark(Benchmark):
 
 
 class SPUBenchmarks:
-    def __init__(self, folder):
+    def __init__(self):
         self.benchmarks = list()
         for test_name in SPUBenchmark.TESTS:
             benchmark = SPUBenchmark(folder, test_name)

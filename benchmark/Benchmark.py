@@ -7,6 +7,17 @@ from Utils import SimPoint
 
 
 class Benchmark(object):
+    """
+    The base Benchmark class does not know how to compile the program, 
+    i.e. it is the derived class's responsibility to provide the llvm bc file.
+
+    The directory tree structure.
+    run_path/                               -- bc, exe, profile, traces.
+    run_path/transform_id/                  -- transformed data graphs.
+    run_path/transform_id/simulation_id/    -- simulation results.
+
+
+    """
 
     def __init__(self, name, raw_bc, links, args=None, trace_func=None,
                  trace_lib='Protobuf', lang='C', standalone=1):
@@ -89,37 +100,30 @@ class Benchmark(object):
         traces = list()
         name = self.get_name()
         for i in self.get_trace_ids():
-            if name.endswith('gcc_s') and i == 7:
-                # So far there is a bug causing tdg #7 not transformable.
-                continue
             traces.append('{run}/{name}.{i}.trace'.format(
                 run=self.get_run_path(),
                 name=name,
                 i=i))
         return traces
 
+    def get_transform_path(self, transform_id):
+        return os.path.join(self.work_path, transform_id)
+
     def get_tdgs(self, transform_config):
         tdgs = list()
         name = self.get_name()
+        transform_id = transform_config.get_transform_id()
         for i in self.get_trace_ids():
-            if name.endswith('gcc_s') and i == 7:
-                # So far there is a but causing tdg #7 not transformable.
-                continue
-            tdgs.append('{run}/{name}.{transform_id}.{i}.tdg'.format(
-                run=self.get_run_path(),
+            tdgs.append('{transform_path}/{name}.{transform_id}.{i}.tdg'.format(
+                transform_path=self.get_transform_path(transform_id),
                 name=name,
-                transform_id=transform_config.get_id(),
+                transform_id=transform_id,
                 i=i))
         return tdgs
 
-    def get_results(self, transform_config):
-        results = list()
-        name = self.get_name()
-        tdgs = self.get_tdgs(transform_config)
-        for tdg in tdgs:
-            results.append(self.gem5_config.get_result(tdg))
-        return results
-        # raise ValueError('Not implemented')
+    def init_transform_path(self, transform_id):
+        transform_path = self.get_transform_path(transform_id)
+        Util.mkdir_p(transform_path)
 
     def profile(self):
         os.chdir(self.work_path)
@@ -130,7 +134,7 @@ class Benchmark(object):
     def simpoint(self):
         os.chdir(self.work_path)
         print('Doing simpoints')
-        SimPoint.SimPoint(self.get_profile()) 
+        SimPoint.SimPoint(self.get_profile())
         os.chdir(self.cwd)
 
     """
@@ -216,7 +220,6 @@ class Benchmark(object):
             run_cmd += self.args
         print('# Run traced binary...')
         Util.call_helper(run_cmd)
-
 
     """
     Construct the traced binary.
@@ -407,42 +410,17 @@ class Benchmark(object):
         return gem5_args
 
     """
-    Replay the binary with gem5.
-
-    Returns
-    -------
-    The gem5 output directory (abs path).
-    """
-
-    def gem5_replay(self, tdg, gem5_config, debugs=[]):
-        print gem5_config
-        print tdg
-        gem5_out_dir = gem5_config.get_gem5_dir(tdg)
-        print gem5_out_dir
-        Util.call_helper(['mkdir', '-p', gem5_out_dir])
-        print 'what?'
-        gem5_args = self.get_gem5_simulate_command(
-            tdg, gem5_config, self.get_replay_bin(), gem5_out_dir, debugs, False)
-        print('# Replaying the datagraph...')
-        Util.call_helper(gem5_args)
-        return gem5_out_dir
-
-    """
     Simulate the datagraph with gem5.
     """
 
-    def simulate(self, tdg, gem5_config, debugs):
+    def simulate(self, tdg, simulation_config, debugs):
         print('# Simulating the datagraph')
-        gem5_outdir = self.gem5_replay(
-            tdg=tdg,
-            gem5_config=gem5_config,
-            debugs=debugs,
-        )
-        # Util.call_helper([
-        #     'cp',
-        #     os.path.join(gem5_outdir, 'region.stats.txt'),
-        #     result,
-        # ])
+        gem5_out_dir = simulation_config.get_gem5_dir(tdg)
+        Util.call_helper(['mkdir', '-p', gem5_out_dir])
+        gem5_args = self.get_gem5_simulate_command(
+            tdg, simulation_config, self.get_replay_bin(), gem5_out_dir, debugs, False)
+        print('# Replaying the datagraph...')
+        Util.call_helper(gem5_args)
 
     def simulate_hoffman2(self, tdg, gem5_config, result, scp=True, debugs=[]):
         _, tdg_name = os.path.split(tdg)
