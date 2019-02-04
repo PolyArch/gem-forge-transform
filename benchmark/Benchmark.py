@@ -126,7 +126,10 @@ class Benchmark(object):
         Util.mkdir_p(transform_path)
 
     def profile(self):
+        print('hahah')
+        print(self.work_path)
         os.chdir(self.work_path)
+        print('hahah')
         self.build_profile()
         self.run_profile()
         os.chdir(self.cwd)

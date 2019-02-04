@@ -362,6 +362,8 @@ class SuiteResult:
         regions_aggregated = dict()
         for benchmark in self.ordered_benchmarks:
             result = self.benchmark_results[benchmark]
+            if not 'replay' in result.transform_results:
+                continue
             assert('replay' in result.transform_results)
             replay_result = result.transform_results['replay'][0]
             region_stats = replay_result.merged_region_stats
@@ -409,13 +411,18 @@ class SuiteResult:
                     transform_time = '{t}_time'.format(
                         t=transform_result.config_id)
                     special_id = transform_result.config_id
-                    title.append(transform_time)
+                    if transform_time not in title:
+                        title.append(transform_time)
                     merged_region_stats = transform_result.merged_region_stats
                     for region in merged_region_stats.regions:
                         region_stats = merged_region_stats.regions[region]
                         uid = '{b}.{r}'.format(
                             b=benchmark.get_name(), r=region)
+                        if uid not in regions_aggregated:
+                            regions_aggregated[uid] = dict()
                         aggr_stats = regions_aggregated[uid]
+                        aggr_stats['benchmark'] = benchmark.get_name()
+                        aggr_stats['region'] = region
                         aggr_stats[transform_time] = region_stats.get_sim_seconds()
 
         dump_fn = '{s}.{sp}.regions.csv'.format(s=self.suite, sp=special_id)
@@ -425,6 +432,8 @@ class SuiteResult:
             for uid in regions_aggregated:
                 aggr_stats = regions_aggregated[uid]
                 for t in title:
+                    if not t in aggr_stats:
+                        aggr_stats[t] = -1 
                     f.write('{v},'.format(v=aggr_stats[t]))
                 f.write('\n')
 
