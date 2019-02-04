@@ -1,0 +1,6 @@
+{
+    "id": "adfa",
+    "options": [
+        "-abs-data-flow-acc-pass"
+    ]
+}

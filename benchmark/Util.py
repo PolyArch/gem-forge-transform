@@ -18,6 +18,9 @@ def call_helper(cmd):
         print('Error when executing {cmd}'.format(cmd=' '.join(cmd)))
         raise e
 
+def mkdir_p(path):
+    call_helper(['mkdir', '-p', path])
+
 
 def error(msg, *args):
     return multiprocessing.get_logger().error(msg, *args)

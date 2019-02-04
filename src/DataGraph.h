@@ -52,7 +52,7 @@ private:
   using LogEntry = std::pair<Address, DynamicId>;
   std::list<LogEntry> Log;
   std::unordered_map<Address, DynamicId> Map;
-  static const size_t LOG_THRESHOLD = 10000000;
+  static const size_t LOG_THRESHOLD = 1000000;
 
   void release();
 };

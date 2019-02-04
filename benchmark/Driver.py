@@ -16,6 +16,7 @@ from Utils import TransformManager
 
 import os
 import pickle
+import glob
 
 """
 Interface for test suite:
@@ -52,8 +53,8 @@ def transform(benchmark, transform_config, trace, profile_file, tdg, debugs):
     benchmark.transform(transform_config, trace, profile_file, tdg, debugs)
 
 
-def simulate(benchmark, tdg, gem5_config, debugs):
-    benchmark.simulate(tdg, gem5_config, debugs)
+def simulate(benchmark, tdg, simulation_config, debugs):
+    benchmark.simulate(tdg, simulation_config, debugs)
 
 
 class Driver:
@@ -67,16 +68,23 @@ class Driver:
         'simd': 'simd-pass',
     }
 
-    def __init__(self, options):
+    def __init__(self, options, benchmarks):
+        self.options = options
+        self.benchmarks = benchmarks
         self.profile_jobs = dict()
         self.simpoint_jobs = dict()
         self.trace_jobs = dict()
         self.transform_jobs = dict()
-        self.options = options
-        self.gem5_config_manager = (
-            Gem5ConfigureManager.Gem5ReplayConfigureManager(options))
         self.transform_manager = (
             TransformManager.TransformManager(options))
+        self.simulation_manager = (
+            Gem5ConfigureManager.Gem5ReplayConfigureManager(options, self.transform_manager))
+
+        # Remember to initialize the transform_path
+        for benchmark in self.benchmarks:
+            for transform_config in self.transform_manager.get_all_configs():
+                transform_id = transform_config.get_transform_id()
+                benchmark.init_transform_path(transform_id)
 
     def schedule_profile(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -103,24 +111,21 @@ class Driver:
                                   (benchmark, ), deps)
         )
 
-    def schedule_transform(self, job_scheduler, benchmark, transform_pass, debugs):
+    def schedule_transform(self, job_scheduler, benchmark):
         name = benchmark.get_name()
-        assert(transform_pass in Driver.PASS_NAME)
-        pass_name = Driver.PASS_NAME[transform_pass]
 
         profile_file = benchmark.get_profile()
         traces = benchmark.get_traces()
 
-        transform_configs = self.transform_manager.get_configs(transform_pass)
-        for transform_config in transform_configs:
-            transform_config_id = transform_config.get_id()
+        for transform_config in self.transform_manager.get_all_configs():
+            transform_id = transform_config.get_transform_id()
             tdgs = benchmark.get_tdgs(transform_config)
 
             assert(len(traces) == len(tdgs))
             if name not in self.transform_jobs:
                 self.transform_jobs[name] = dict()
-            assert(transform_config_id not in self.transform_jobs[name])
-            self.transform_jobs[name][transform_config_id] = dict()
+            assert(transform_id not in self.transform_jobs[name])
+            self.transform_jobs[name][transform_id] = dict()
 
             for i in xrange(0, len(traces)):
                 if self.options.trace_id:
@@ -132,11 +137,11 @@ class Driver:
                     deps.append(self.trace_jobs[name])
 
                 # Schedule the job.
-                self.transform_jobs[name][transform_config_id][i] = (
+                self.transform_jobs[name][transform_id][i] = (
                     job_scheduler.add_job(
                         '{name}.{transform_id}.transform'.format(
                             name=name,
-                            transform_id=transform_config_id
+                            transform_id=transform_id
                         ),
                         transform,
                         (
@@ -145,22 +150,21 @@ class Driver:
                             traces[i],
                             profile_file,
                             tdgs[i],
-                            debugs,
+                            transform_config.get_debugs(),
                         ),
                         deps
                     )
                 )
 
-    def schedule_simulate(self, job_scheduler, benchmark, transform, debugs):
-        for transform_config in self.transform_manager.get_configs(transform):
+    def schedule_simulate(self, job_scheduler, benchmark):
+        for transform_config in self.transform_manager.get_all_configs():
             self.schedule_simulate_for_transform_config(
-                job_scheduler, benchmark, transform_config, debugs)
+                job_scheduler, benchmark, transform_config)
 
-    def schedule_simulate_for_transform_config(self, job_scheduler, benchmark, transform_config, debugs):
+    def schedule_simulate_for_transform_config(self, job_scheduler, benchmark, transform_config):
         name = benchmark.get_name()
         tdgs = benchmark.get_tdgs(transform_config)
-        transform_id = transform_config.get_id()
-        transform = transform_config.get_transform()
+        transform_id = transform_config.get_transform_id()
 
         for i in xrange(0, len(tdgs)):
             if self.options.trace_id:
@@ -172,91 +176,34 @@ class Driver:
                 if transform_id in self.transform_jobs[name]:
                     deps.append(self.transform_jobs[name][transform_id][i])
 
-            gem5_configs = self.gem5_config_manager.get_configs(
-                transform
+            simulation_configs = self.simulation_manager.get_configs(
+                transform_id
             )
-            for gem5_config in gem5_configs:
+            for simulation_config in simulation_configs:
                 job_scheduler.add_job(
-                    '{name}.{transform_id}.simulate'.format(
+                    '{name}.{transform_id}.{simulation_id}'.format(
                         name=name,
                         transform_id=transform_id,
+                        simulation_id=simulation_config.get_simulation_id()
                     ),
                     simulate,
                     (
                         benchmark,
                         tdgs[i],
-                        gem5_config,
-                        debugs,
+                        simulation_config,
+                        simulation_config.get_debugs(),
                     ),
                     deps
                 )
-
-
-build_datagraph_debugs = {
-    'inline-stream': [
-        'ReplayPass',
-        'InlineContextStreamPass',
-        # 'DataGraph',
-        'LoopUtils',
-        # 'MemoryAccessPattern',
-    ],
-    'stream': [
-        'ReplayPass',
-        'StreamPass',
-        # 'FunctionalStream',
-        # 'DataGraph',
-        'LoopUtils',
-        # 'StreamPattern',
-        # 'InductionVarStream',
-        # 'TDGSerializer',
-    ],
-    'stream-prefetch': [
-        'ReplayPass',
-        'StreamPass',
-        'StreamPrefetchPass',
-        # 'DataGraph',
-        'LoopUtils',
-        # 'StreamPattern',
-        # 'InductionVarStream',
-        # 'TDGSerializer',
-    ],
-    'replay': [],
-    'adfa': [],
-    'simd': [],
-}
-
-
-simulate_datagraph_debugs = {
-    'stream': [
-        'McPATManager',
-        # 'StreamEngine',
-        # 'LLVMTraceCPU',
-        # 'LLVMTraceCPUFetch',
-        # 'LLVMTraceCPUCommit',
-    ],
-    'stream-prefetch': [
-        # 'StreamEngine',
-        # 'LLVMTraceCPU',
-    ],
-    'inline-stream': [],
-    'replay': [
-        # 'TDGLoadStoreQueue',
-        # 'LLVMTraceCPU',
-    ],
-    'adfa': [
-        # 'AbstractDataFlowAccelerator',
-    ],
-    'simd': [],
-}
 
 
 def choose_suite(options):
     if options.suite == 'spec':
         return SPEC2017.SPEC2017Benchmarks()
     elif options.suite == 'spu':
-        return SPU.SPUBenchmarks(options.directory)
+        return SPU.SPUBenchmarks()
     elif options.suite == 'mach':
-        return MachSuite.MachSuiteBenchmarks(options.directory)
+        return MachSuite.MachSuiteBenchmarks()
     elif options.suite == 'hello':
         return TestHelloWorld.TestHelloWorldBenchmarks()
     elif options.suite == 'graph500':
@@ -280,7 +227,7 @@ def main(options):
         benchmarks = [b for b in benchmarks if b.get_name()
                       in options.benchmark]
 
-    driver = Driver(options)
+    driver = Driver(options, benchmarks)
     for benchmark in benchmarks:
         if options.build:
             benchmark.build_raw_bc()
@@ -291,19 +238,9 @@ def main(options):
         if options.trace:
             driver.schedule_trace(job_scheduler, benchmark)
         if options.build_datagraph:
-            for transform_pass in options.transform_passes:
-                driver.schedule_transform(
-                    job_scheduler,
-                    benchmark,
-                    transform_pass,
-                    build_datagraph_debugs[transform_pass])
+            driver.schedule_transform(job_scheduler, benchmark)
         if options.simulate and (not options.hoffman2):
-            for transform in options.transform_passes:
-                driver.schedule_simulate(
-                    job_scheduler,
-                    benchmark,
-                    transform,
-                    simulate_datagraph_debugs[transform])
+            driver.schedule_simulate(job_scheduler, benchmark)
     job_scheduler.run()
 
     # If use hoffman2, prepare the cluster.
@@ -356,7 +293,7 @@ def main(options):
         options.suite,
         benchmarks,
         driver.transform_manager,
-        driver.gem5_config_manager,
+        driver.simulation_manager,
         options.transform_passes)
 
     suite_result.show_region_stats()
@@ -406,6 +343,37 @@ def parse_stream_engine_maximum_run_ahead_length(option, opt, value, parser):
     setattr(parser.values, option.dest, [int(x) for x in vs])
 
 
+def parse_transform_configurations(option, opt, value, parser):
+    vs = value.split(',')
+    full_paths = [os.path.join(
+        C.LLVM_TDG_DRIVER_DIR, 'Configurations', v) for v in vs]
+    for full_path in full_paths:
+        if not os.path.isfile(full_path):
+            print('Transform configuration does not exist: {path}.'.format(
+                path=full_path))
+            assert(False)
+    setattr(parser.values, option.dest, full_paths)
+
+
+def parse_simulate_configurations(option, opt, value, parser):
+    vs = value.split(',')
+    # full_paths = [os.path.join(
+    #     C.LLVM_TDG_DRIVER_DIR, 'Configurations/Simulation', v) for v in vs]
+    full_paths = list()
+    for v in vs:
+        s = os.path.join(C.LLVM_TDG_DRIVER_DIR, 'Configurations/Simulation', v)
+        ss = glob.glob(s)
+        for full_path in ss:
+            full_paths.append(full_path)
+    print(full_paths)
+    for full_path in full_paths:
+        if not os.path.isfile(full_path):
+            print('Simulation configuration does not exist: {path}.'.format(
+                path=full_path))
+            assert(False)
+    setattr(parser.values, option.dest, full_paths)
+
+
 if __name__ == '__main__':
     import optparse
     default_cores = os.getenv('LLVM_TDG_CPUS')
@@ -424,75 +392,24 @@ if __name__ == '__main__':
                       dest='simpoint', default=False)
     parser.add_option('-t', '--trace', action='store_true',
                       dest='trace', default=False)
-    parser.add_option('--directory', action='store',
-                      type='string', dest='directory')
-    parser.add_option('-p', '--pass', action='append',
-                      type='string', dest='transform_passes')
-    parser.add_option('--trace-id', type='string', action='callback',
-                      dest='trace_id', callback=parse_trace_ids)
-    parser.add_option('--benchmark', type='string', action='callback',
-                      callback=parse_benchmarks, dest='benchmark')
     parser.add_option('-d', '--build-datagraph', action='store_true',
                       dest='build_datagraph', default=False)
     parser.add_option('-s', '--simulate', action='store_true',
                       dest='simulate', default=False)
+
+    parser.add_option('--trans-configs', type='string', action='callback', default='',
+                      dest='transforms', callback=parse_transform_configurations)
+    parser.add_option('--sim-configs', type='string', action='callback', default='',
+                      dest='simulations', callback=parse_simulate_configurations)
+
+    parser.add_option('--trace-id', type='string', action='callback',
+                      dest='trace_id', callback=parse_trace_ids)
+    parser.add_option('--benchmark', type='string', action='callback',
+                      callback=parse_benchmarks, dest='benchmark')
     parser.add_option('--suite', action='store', type='string', dest='suite')
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)
-
-    parser.add_option('--iw', action='store', type='int',
-                      dest='iw', default=8)
-    parser.add_option('--l1d-size', action='store', type='string',
-                      dest='l1d_size', default='32kB')
-    parser.add_option('--l1d-mshrs', action='store', type='int',
-                      dest='l1d_mshrs', default=4)
-    parser.add_option('--l1d-latency', action='store',
-                      type='int', dest='l1d_latency', default=2)
-    parser.add_option('--l1d-assoc', action='store', type='int',
-                      dest='l1d_assoc', default=8)
-
-    parser.add_option('--l1_5d', action='store_true',
-                      dest='l1_5d', default=False)
-    parser.add_option('--l1_5d-mshrs', action='store',
-                      dest='l1_5d_mshrs', default=16)
-
-    parser.add_option('--l2-size', action='store', type='string',
-                      dest='l2_size', default='1MB')
-    parser.add_option('--l2-mshrs', action='store', type='int',
-                      dest='l2_mshrs', default=20)
-    parser.add_option('--l2-latency', action='store',
-                      type='int', dest='l2_latency', default=20)
-    parser.add_option('--l2-assoc', action='store', type='int',
-                      dest='l2_assoc', default=8)
-    parser.add_option('--l2bus-width', action='store',
-                      dest='l2bus_width', default=32)
-
-    parser.add_option('--rp-prefetch', action='store_true',
-                      dest='replay_prefetch', default=False)
-    parser.add_option('--stream-choose-strategy', action='store', type='string',
-                      dest='stream_choose_strategy', default='outer')
-    parser.add_option('--se-prefetch', action='store_true',
-                      dest='se_prefetch', default=False)
-    parser.add_option('--se-oracle', action='store_true',
-                      dest='se_oracle', default=False)
-    parser.add_option('--se-ahead', action='callback', type='string',
-                      callback=parse_stream_engine_maximum_run_ahead_length, dest='se_ahead')
-    parser.add_option('--se-throttling', action='store',
-                      type='string', dest='se_throttling', default='static')
-    parser.add_option('--se-coalesce', action='store',
-                      type='string', dest='se_coalesce', default='single')
-    # Enable stream aware cache.
-    parser.add_option('--se-l1d', action='store',
-                      type='string', dest='se_l1d', default='original')
-
-    # ADFA options.
-    parser.add_option('--adfa-enable-speculation', action='store_true',
-                      dest='adfa_enable_speculation', default=False)
-    parser.add_option('--adfa-break-iv-dep', action='store_true',
-                      dest='adfa_break_iv_dep', default=False)
-    parser.add_option('--adfa-break-rv-dep', action='store_true',
-                      dest='adfa_break_rv_dep', default=False)
 
     # Dump infos.
     parser.add_option('--dump-stream-placement', action='store_true',
@@ -510,12 +427,4 @@ if __name__ == '__main__':
                       dest='dump_suite_results', default=False)
 
     (options, args) = parser.parse_args()
-    # Handle special values for the options.
-    if options.transform_passes and 'all' in options.transform_passes:
-        options.transform_passes = [
-            'replay',
-            'simd',
-            'adfa',
-            'stream',
-        ]
     main(options)

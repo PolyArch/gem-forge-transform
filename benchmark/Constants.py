@@ -5,6 +5,7 @@ import os
 LLVM_TDG_DIR = os.getenv('LLVM_TDG_PATH')
 assert(LLVM_TDG_DIR is not None)
 LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'src')
+LLVM_TDG_DRIVER_DIR = os.path.join(LLVM_TDG_DIR, 'benchmark')
 LLVM_TDG_RESULT_DIR = os.path.join(LLVM_TDG_DIR, 'benchmark', 'result')
 
 LLVM_TDG_REPLAY_C = os.path.join(LLVM_TDG_DIR, 'benchmark', 'replay.c')

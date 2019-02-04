@@ -1,120 +1,44 @@
 import Constants as C
+
 import os
+import json
 
 
 class TransformConfig(object):
 
-    def get_id(self):
-        pass
+    def __init__(self, fn):
+        self.fn = fn
+        with open(fn, 'r') as f:
+            self.json = json.load(f)
+            assert('id' in self.json)
+            assert('options' in self.json)
+
+    def get_transform_id(self):
+        return self.json['id']
 
     def get_options(self):
-        pass
+        return self.json['options']
 
     def get_transform(self):
-        pass
+        return self.json['transform']
 
-
-class ReplayTransformConfig(TransformConfig):
-    def __init__(self):
-        pass
-
-    def get_id(self):
-        return 'replay'
-
-    def get_options(self):
-        return ['-replay']
-
-    def get_transform(self):
-        return 'replay'
-
-
-class ADFATransformConfig(TransformConfig):
-    def __init__(self):
-        pass
-
-    def get_id(self):
-        return 'adfa'
-
-    def get_options(self):
-        return ['-abs-data-flow-acc-pass']
-
-    def get_transform(self):
-        return 'adfa'
-
-
-class StreamTransformConfig(TransformConfig):
-    def __init__(self, options):
-        self.choose_strategy = options.stream_choose_strategy
-        return
-
-    def get_id(self):
-        if self.choose_strategy == 'inner':
-            return 'stream.in'
-        return 'stream'
-
-    def get_options(self):
-        if self.choose_strategy == 'inner':
-            return [
-                '-stream-pass',
-                '-stream-pass-choose-strategy=inner',
-            ]
-        return ['-stream-pass']
-
-    def get_transform(self):
-        return 'stream'
-
-
-class StreamPrefetchTransformConfig(TransformConfig):
-    def __init__(self, options):
-        self.choose_strategy = options.stream_choose_strategy
-        return
-
-    def get_id(self):
-        if self.choose_strategy == 'inner':
-            return 'stream-prefetch.in'
-        return 'stream-prefetch'
-
-    def get_options(self):
-        if self.choose_strategy == 'inner':
-            return [
-                '-stream-prefetch-pass',
-                '-stream-pass-choose-strategy=inner',
-            ]
-        return ['-stream-prefetch-pass']
-
-    def get_transform(self):
-        return 'stream-prefetch'
+    def get_debugs(self):
+        return []
 
 
 class TransformManager(object):
     def __init__(self, options):
         self.options = options
         self.configs = dict()
-        self._init_replay_transform()
-        self._init_adfa_transform()
-        self._init_stream_transform()
-        self._init_stream_prefetch_transform()
+        for fn in options.transforms:
+            config = TransformConfig(fn)
+            self.configs[config.get_transform_id()] = config
 
-    def _init_replay_transform(self):
-        if 'replay' not in self.options.transform_passes:
-            return
-        self.configs['replay'] = [ReplayTransformConfig()]
+    def get_config(self, transform_id):
+        return self.configs[transform_id]
 
-    def _init_adfa_transform(self):
-        if 'adfa' not in self.options.transform_passes:
-            return
-        self.configs['adfa'] = [ADFATransformConfig()]
+    def get_all_configs(self):
+        return self.configs.values()
 
-    def _init_stream_transform(self):
-        if 'stream' not in self.options.transform_passes:
-            return
-        self.configs['stream'] = [StreamTransformConfig(self.options)]
-
-    def _init_stream_prefetch_transform(self):
-        if 'stream-prefetch' not in self.options.transform_passes:
-            return
-        self.configs['stream-prefetch'] = [
-            StreamPrefetchTransformConfig(self.options)]
-
-    def get_configs(self, transform):
-        return self.configs[transform]
+    def get_transforms(self):
+        return self.configs.keys()

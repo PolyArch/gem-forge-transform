@@ -1,0 +1,6 @@
+{
+    "id": "stream",
+    "options": [
+        "-stream-pass"
+    ]
+}

@@ -138,18 +138,18 @@ class TransformResult:
 
 
 class BenchmarkResult:
-    def __init__(self, benchmark, transform_manager, gem5_config_manager, transforms):
+    def __init__(self, benchmark, transform_manager, simulation_manager, transforms):
         self.benchmark = benchmark
         self.transform_manager = transform_manager
-        self.gem5_config_manager = gem5_config_manager
+        self.simulation_manager = simulation_manager
         self.transform_results = dict()
         for transform in transforms:
             for transform_config in self.transform_manager.get_configs(transform):
-                transform_id = transform_config.get_id()
+                transform_id = transform_config.get_transform_id()
                 self.transform_results[transform_id] = list()
 
                 tdgs = self.benchmark.get_tdgs(transform_config)
-                gem5_configs = self.gem5_config_manager.get_configs(transform)
+                gem5_configs = self.simulation_manager.get_configs(transform)
 
                 for gem5_config in gem5_configs:
                     folders = [gem5_config.get_gem5_dir(
@@ -230,19 +230,19 @@ class BenchmarkResult:
 
 
 class SuiteResult:
-    def __init__(self, suite, benchmarks, transform_manager, gem5_config_manager, transforms):
+    def __init__(self, suite, benchmarks, transform_manager, simulation_manager, transforms):
         self.suite = suite
         self.transforms = transforms
         self.transform_ids = list()
         for transform in self.transforms:
             for config in transform_manager.get_configs(transform):
-                self.transform_ids.append(config.get_id())
+                self.transform_ids.append(config.get_transform_id())
         self.benchmark_results = dict()
         self.transform_manager = transform_manager
-        self.gem5_config_manager = gem5_config_manager
+        self.simulation_manager = simulation_manager
         for benchmark in benchmarks:
             result = BenchmarkResult(
-                benchmark, transform_manager, gem5_config_manager, transforms)
+                benchmark, transform_manager, simulation_manager, transforms)
             self.benchmark_results[benchmark] = result
         self.ordered_benchmarks = list()
         for benchmark in benchmarks:
@@ -255,8 +255,8 @@ class SuiteResult:
         transform = self.transforms[0]
         transform_configs = self.transform_manager.get_configs(transform)
         assert(len(transform_configs) == 1)
-        transform_id = transform_configs[0].get_id()
-        gem5_configs = self.gem5_config_manager.get_configs(transform)
+        transform_id = transform_configs[0].get_transform_id()
+        gem5_configs = self.simulation_manager.get_configs(transform)
         assert(len(gem5_configs) == 1)
         gem5_config_id = gem5_configs[0].get_config_id(transform, prefix='')
         fn = '{suite}.{transform_id}{gem5_config_id}.results.dat'.format(
@@ -322,8 +322,8 @@ class SuiteResult:
 
     def compare_transform_speedup(self, transform_config):
         transform = transform_config.get_transform()
-        transform_id = transform_config.get_id()
-        configs = self.gem5_config_manager.get_configs(transform)
+        transform_id = transform_config.get_transform_id()
+        configs = self.simulation_manager.get_configs(transform)
         config_ids = [config.get_config_id(transform_id) for config in configs]
         table = SimpleTable.SimpleTable(
             'benchmark', config_ids
@@ -344,8 +344,8 @@ class SuiteResult:
 
     def compare_transform_energy(self, transform_config):
         transform = transform_config.get_transform()
-        transform_id = transform_config.get_id()
-        configs = self.gem5_config_manager.get_configs(transform)
+        transform_id = transform_config.get_transform_id()
+        configs = self.simulation_manager.get_configs(transform)
         config_ids = [config.get_config_id(transform_id) for config in configs]
         table = SimpleTable.SimpleTable(
             'benchmark', config_ids
@@ -430,8 +430,8 @@ class SuiteResult:
 
     def show_hit_lower(self, transform_config):
         transform = transform_config.get_transform()
-        transform_id = transform_config.get_id()
-        config = self.gem5_config_manager.get_configs(transform)[0]
+        transform_id = transform_config.get_transform_id()
+        config = self.simulation_manager.get_configs(transform)[0]
         table = SimpleTable.SimpleTable(
             'benchmark', [str(x) for x in xrange(5)])
         for benchmark in self.ordered_benchmarks:
@@ -443,8 +443,8 @@ class SuiteResult:
 
     def show_hit_higher(self, transform_config):
         transform = transform_config.get_transform()
-        transform_id = transform_config.get_id()
-        config = self.gem5_config_manager.get_configs(transform)[0]
+        transform_id = transform_config.get_transform_id()
+        config = self.simulation_manager.get_configs(transform)[0]
         table = SimpleTable.SimpleTable(
             'benchmark', [str(x) for x in xrange(5)])
         for benchmark in self.ordered_benchmarks:
@@ -456,8 +456,8 @@ class SuiteResult:
 
     def show_stream_placement(self, transform_config):
         transform = transform_config.get_transform()
-        transform_id = transform_config.get_id()
-        config = self.gem5_config_manager.get_configs(transform)[0]
+        transform_id = transform_config.get_transform_id()
+        config = self.simulation_manager.get_configs(transform)[0]
         table = SimpleTable.SimpleTable(
             'benchmark', [str(x) for x in xrange(5)])
         for benchmark in self.ordered_benchmarks:
@@ -469,8 +469,8 @@ class SuiteResult:
 
     def show_cache_hits(self, transform_config):
         transform = transform_config.get_transform()
-        transform_id = transform_config.get_id()
-        config = self.gem5_config_manager.get_configs(transform)[0]
+        transform_id = transform_config.get_transform_id()
+        config = self.simulation_manager.get_configs(transform)[0]
         table = SimpleTable.SimpleTable('benchmark', ['l1d_hit', 'l1_5d_hit'])
         for benchmark in self.ordered_benchmarks:
             result = self.benchmark_results[benchmark]
@@ -481,8 +481,8 @@ class SuiteResult:
 
     def show_cache_coalesce_hits(self, transform_config):
         transform = transform_config.get_transform()
-        transform_id = transform_config.get_id()
-        config = self.gem5_config_manager.get_configs(transform)[0]
+        transform_id = transform_config.get_transform_id()
+        config = self.simulation_manager.get_configs(transform)[0]
         table = SimpleTable.SimpleTable('benchmark', ['l1d_hit'])
         for benchmark in self.ordered_benchmarks:
             result = self.benchmark_results[benchmark]
