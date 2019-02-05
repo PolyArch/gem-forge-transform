@@ -1,9 +1,57 @@
 import os
 import subprocess
+import glob
+import abc
 
 import Constants as C
 import Util
 from Utils import SimPoint
+
+
+class BenchmarkArgs(object):
+    def __init__(self, transform_manager, simulation_manager):
+        self.transform_manager = transform_manager
+        self.simulation_manager = simulation_manager
+
+
+class TraceObj(object):
+    def __init__(self, fn, trace_id):
+        self.fn = fn
+        self.trace_id = trace_id
+        self.lhs = 0
+        self.rhs = 0
+        self.weight = 1
+        self._init_simpoints_info()
+        print('Find trace {weight}: {fn}'.format(
+            weight=self.weight, fn=self.fn))
+
+    def get_trace_id(self):
+        return self.trace_id
+
+    def get_trace_fn(self):
+        return self.fn
+
+    def _init_simpoints_info(self):
+        """
+        Read through the simpoints file to find information for myself.
+        """
+        folder = os.path.dirname(self.fn)
+        simpoint_fn = os.path.join(folder, 'simpoints.txt')
+        if os.path.isfile(simpoint_fn):
+            with open(simpoint_fn, 'r') as f:
+                trace_id = 0
+                for line in f:
+                    if line.startswith('#'):
+                        continue
+                    if trace_id == self.trace_id:
+                        # Found myself.
+                        fields = line.split(' ')
+                        assert(len(fields) == 3)
+                        self.lhs = int(fields[0])
+                        self.rhs = int(fields[1])
+                        self.weight = float(fields[2])
+                        break
+                    trace_id += 1
 
 
 class Benchmark(object):
@@ -16,44 +64,66 @@ class Benchmark(object):
     run_path/transform_id/                  -- transformed data graphs.
     run_path/transform_id/simulation_id/    -- simulation results.
 
+    Derived classes should implement the following methods:
+    get_raw_bc()
+
 
     """
 
-    def __init__(self, name, raw_bc, links, args=None, trace_func=None,
-                 trace_lib='Protobuf', lang='C', standalone=1):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def get_name(self):
+        return
+
+    @abc.abstractmethod
+    def get_links(self):
+        return
+
+    @abc.abstractmethod
+    def get_args(self):
+        return
+
+    @abc.abstractmethod
+    def get_trace_func(self):
+        return
+
+    @abc.abstractmethod
+    def get_lang(self):
+        return
+
+    @abc.abstractmethod
+    def get_run_path(self):
+        return
+
+    @abc.abstractmethod
+    def get_raw_bc(self):
+        return
+
+    def __init__(self, benchmark_args, standalone=1):
+
+        self.transform_manager = benchmark_args.transform_manager
+        self.simulation_manager = benchmark_args.simulation_manager
+
         # Initialize the result directory.
         Util.call_helper(
             ['mkdir', '-p', C.LLVM_TDG_RESULT_DIR])
-        self.name = name
-        self.raw_bc = raw_bc
-        self.links = links
-        self.args = args
-        self.trace_func = trace_func
-        self.lang = lang
         self.standalone = standalone
 
         self.pass_so = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
 
-        if trace_lib == 'Protobuf':
-            self.trace_links = links + [
-                '-lz',
-                C.PROTOBUF_LIB,
-                C.LIBUNWIND_LIB,
-            ]
-            self.trace_lib = os.path.join(
-                C.LLVM_TDG_BUILD_DIR, 'trace/libTracerProtobuf.a'
-            )
-            self.trace_format = 'protobuf'
-        else:
-            self.trace_links = links + [
-                '-lz',
-                C.LIBUNWIND_LIB,
-            ]
-            self.trace_lib = os.path.join(
-                C.LLVM_TDG_BUILD_DIR, 'trace/libTracerGZip.a'
-            )
-            self.trace_format = 'gzip'
+        self.trace_links = self.get_links() + [
+            '-lz',
+            C.PROTOBUF_LIB,
+            C.LIBUNWIND_LIB,
+        ]
+        self.trace_lib = os.path.join(
+            C.LLVM_TDG_BUILD_DIR, 'trace/libTracerProtobuf.a'
+        )
+        self.trace_format = 'protobuf'
+
+        self.init_traces()
 
     def clean(self):
         clean_cmd = [
@@ -97,14 +167,21 @@ class Benchmark(object):
         return '{name}.profile'.format(name=self.get_name())
 
     def get_traces(self):
-        traces = list()
-        name = self.get_name()
-        for i in self.get_trace_ids():
-            traces.append('{run}/{name}.{i}.trace'.format(
-                run=self.get_run_path(),
-                name=name,
-                i=i))
-        return traces
+        return self.traces
+
+    def init_traces(self):
+        self.traces = list()
+        trace_id = 0
+        while True:
+            trace_fn = '{run_path}/{name}.{i}.trace'.format(
+                run_path=self.get_run_path(),
+                name=self.get_name(),
+                i=trace_id)
+            if os.path.isfile(trace_fn):
+                self.traces.append(TraceObj(trace_fn, trace_id))
+                trace_id += 1
+            else:
+                break
 
     def get_transform_path(self, transform_id):
         return os.path.join(self.work_path, transform_id)
@@ -113,7 +190,7 @@ class Benchmark(object):
         tdgs = list()
         name = self.get_name()
         transform_id = transform_config.get_transform_id()
-        for i in self.get_trace_ids():
+        for i in xrange(len(self.traces)):
             tdgs.append('{transform_path}/{name}.{transform_id}.{i}.tdg'.format(
                 transform_path=self.get_transform_path(transform_id),
                 name=name,
@@ -126,10 +203,7 @@ class Benchmark(object):
         Util.mkdir_p(transform_path)
 
     def profile(self):
-        print('hahah')
-        print(self.work_path)
-        os.chdir(self.work_path)
-        print('hahah')
+        os.chdir(self.get_run_path())
         self.build_profile()
         self.run_profile()
         os.chdir(self.cwd)
@@ -152,8 +226,8 @@ class Benchmark(object):
         run_cmd = [
             './' + self.get_profile_bin(),
         ]
-        if self.args is not None:
-            run_cmd += self.args
+        if self.get_args() is not None:
+            run_cmd += self.get_args()
         print('# Run profiled binary...')
         Util.call_helper(run_cmd)
 
@@ -168,13 +242,13 @@ class Benchmark(object):
             C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-trace-pass',
-            self.raw_bc,
+            self.get_raw_bc(),
             '-o',
             bc,
             '-trace-inst-only'
         ]
-        if self.trace_func is not None and len(self.trace_func) > 0:
-            trace_cmd.append('-trace-function=' + self.trace_func)
+        if self.get_trace_func() is not None and len(self.get_trace_func()) > 0:
+            trace_cmd.append('-trace-function=' + self.get_trace_func())
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
         if debugs:
@@ -219,8 +293,8 @@ class Benchmark(object):
         run_cmd = [
             './' + self.get_trace_bin(),
         ]
-        if self.args is not None:
-            run_cmd += self.args
+        if self.get_args() is not None:
+            run_cmd += self.get_args()
         print('# Run traced binary...')
         Util.call_helper(run_cmd)
 
@@ -233,14 +307,14 @@ class Benchmark(object):
             C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-trace-pass',
-            self.raw_bc,
+            self.get_raw_bc(),
             '-o',
             self.get_trace_bc(),
             '-trace-inst-uid-file',
             self.get_inst_uid(),
         ]
-        if self.trace_func is not None and len(self.trace_func) > 0:
-            trace_cmd.append('-trace-function=' + self.trace_func)
+        if self.get_trace_func() is not None and len(self.get_trace_func()) > 0:
+            trace_cmd.append('-trace-function=' + self.get_trace_func())
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
         if debugs:
@@ -301,7 +375,7 @@ class Benchmark(object):
                 profile_file=profile_file),
             '-trace-format={format}'.format(format=self.trace_format),
             '-datagraph-detail={detail}'.format(detail=tdg_detail),
-            self.raw_bc,
+            self.get_raw_bc(),
             '-o',
             self.get_replay_bc(),
         ]
@@ -326,7 +400,7 @@ class Benchmark(object):
         Util.call_helper(opt_cmd)
         if tdg_detail == 'integrated':
             build_cmd = [
-                C.CC if self.lang == 'C' else C.CXX,
+                C.CC if self.get_lang() == 'C' else C.CXX,
                 '-static',
                 '-o',
                 self.get_replay_bin(),
@@ -335,7 +409,7 @@ class Benchmark(object):
                 C.LLVM_TDG_REPLAY_C,
                 self.get_replay_bc(),
             ]
-            build_cmd += self.links
+            build_cmd += self.get_links()
             print('# Building replay binary...')
             Util.call_helper(build_cmd)
 
@@ -358,7 +432,7 @@ class Benchmark(object):
                 profile_file=profile_file),
             # For statistics, simple is enough.
             '-datagraph-detail=simple',
-            self.raw_bc,
+            self.get_raw_bc(),
             '-analyze',
         ]
         if debugs:
@@ -407,9 +481,9 @@ class Benchmark(object):
         if debugs:
             gem5_args.insert(
                 1, '--debug-flags={flags}'.format(flags=','.join(debugs)))
-        if self.args is not None:
+        if self.get_args() is not None:
             gem5_args.append(
-                '--options={binary_args}'.format(binary_args=' '.join(self.args)))
+                '--options={binary_args}'.format(binary_args=' '.join(self.get_args())))
         return gem5_args
 
     """

@@ -143,6 +143,7 @@ class SimPoint:
         y = self.ys[self.chosen_k]
         centers = self.centers[self.chosen_k]
         min_distances = [float('inf')] * (self.chosen_k + 1)
+
         self.simpoints = [-1] * (self.chosen_k + 1)
         for interval in xrange(len(self.profile.intervals)):
             k = y[interval]
@@ -153,25 +154,38 @@ class SimPoint:
                 self.simpoints[k] = interval
         for p in self.simpoints:
             assert(p != -1)
+        self.simpoints_label = numpy.argsort(self.simpoints)
         self.simpoints.sort()
+
+        unique, counts = numpy.unique(y, return_counts=True)
+        self.weights = dict(
+            zip(unique, [v / float(sum(counts)) for v in counts]))
 
     def _dumpSimPoints(self):
         print('dumpSimPoints')
         points = open(os.path.join(self.directory, 'simpoints.txt'), 'w')
-        for i in self.simpoints:
-            BBV = self.BBVs[i]
-            sorted_idx = numpy.argsort(-BBV)
-            summed = 0.0
-            interval = self.profile.intervals[i]
-            points.write('{lhs} {rhs}\n'.format(
-                lhs=interval.inst_lhs, rhs=interval.inst_rhs))
+
+        for i in xrange(len(self.simpoints)):
+            simpoint = self.simpoints[i]
+            simpoint_label = self.simpoints_label[i]
+            simpoint_weight = self.weights[simpoint_label]
+
+            interval = self.profile.intervals[simpoint]
+
+            # Raw file for program to read.
+            points.write('{lhs} {rhs} {weight}\n'.format(
+                lhs=interval.inst_lhs, rhs=interval.inst_rhs, weight=simpoint_weight))
             points.write('# ============SimPoint #{i} [{lhs} {rhs}]============ \n'.format(
                 i=i, lhs=interval.inst_lhs, rhs=interval.inst_rhs))
-            for idx in sorted_idx:
-                f, bb = self.id_to_static_bb_map[idx]
-                summed += BBV[idx]
+
+            BBV = self.BBVs[simpoint]
+            sorted_bb_idx = numpy.argsort(-BBV)
+            summed = 0.0
+            for bb_idx in sorted_bb_idx:
+                f, bb = self.id_to_static_bb_map[bb_idx]
+                summed += BBV[bb_idx]
                 points.write('# {f} {bb} {acc} {v}.\n'.format(
-                    f=f, bb=bb, acc=summed, v=BBV[idx]))
+                    f=f, bb=bb, acc=summed, v=BBV[bb_idx]))
                 if summed > 0.99:
                     break
         points.close()

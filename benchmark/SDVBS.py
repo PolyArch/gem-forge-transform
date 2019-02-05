@@ -71,14 +71,16 @@ class SDVBSBenchmark(Benchmark):
         'localization': [0, 1, 2, 3, 4, 5],
         'mser': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         'multi_ncut': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-        'sift': [0, 1, 2, ], #3, 4, 5, 6, 7, 8, 9],
-        'stitch': [0, 1, 2, 3, 4, ], #5, 6, 7, 8, 9],
-        'svm': [0, 1, 2, 3, 4, 5, ], #6, 7, 8],
-        'texture_synthesis': [0, 1, 2, 3, 4, 5, 6, 7, 8, ], #9],
-        'tracking': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ], #10, 11]
+        'sift': [0, 1, 2, ],  # 3, 4, 5, 6, 7, 8, 9],
+        'stitch': [0, 1, 2, 3, 4, ],  # 5, 6, 7, 8, 9],
+        'svm': [0, 1, 2, 3, 4, 5, ],  # 6, 7, 8],
+        'texture_synthesis': [0, 1, 2, 3, 4, 5, 6, 7, 8, ],  # 9],
+        'tracking': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ],  # 10, 11]
     }
 
-    def __init__(self, folder, benchmark_name, input_name):
+    def __init__(self,
+                 benchmark_args,
+                 folder, benchmark_name, input_name):
         self.top_folder = folder
         self.benchmark_name = benchmark_name
         self.input_name = input_name
@@ -124,15 +126,10 @@ class SDVBSBenchmark(Benchmark):
         self.end_inst = 10e8
 
         # Create the args.
-        args = [self.input_dir, self.work_path]
+        self.args = [self.input_dir, self.work_path]
 
         super(SDVBSBenchmark, self).__init__(
-            name=self.get_name(),
-            raw_bc=self.get_raw_bc(),
-            links=['-lm'],
-            args=args,
-            trace_func=self.trace_functions,
-            lang='C',
+            benchmark_args
         )
 
     def get_name(self):
@@ -140,6 +137,18 @@ class SDVBSBenchmark(Benchmark):
             benchmark_name=self.benchmark_name,
             input_name=self.input_name,
         )
+
+    def get_links(self):
+        return ['-lm']
+
+    def get_args(self):
+        return self.args
+
+    def get_trace_func(self):
+        return self.trace_functions
+
+    def get_lang(self):
+        return 'C'
 
     def get_run_path(self):
         return self.work_path
@@ -242,14 +251,9 @@ class SDVBSBenchmark(Benchmark):
 
 
 class SDVBSSuite:
-    FOLDER = '/home/zhengrong/Documents/CortexSuite/vision'
-    # FOLDER = '/media/zhengrong/My Passport/Documents/CortexSuite/vision'
 
-    def __init__(self, folder=None):
-        if folder is None:
-            self.folder = os.getenv('SDVBS_SUITE_PATH')
-        else:
-            self.folder = folder
+    def __init__(self, benchmark_args):
+        self.folder = os.getenv('SDVBS_SUITE_PATH')
         self.benchmarks = list()
         input_names = [
             # 'sqcif',
@@ -261,6 +265,7 @@ class SDVBSSuite:
         for input_name in input_names:
             for benchmark_name in SDVBSBenchmark.FLAGS:
                 benchmark = SDVBSBenchmark(
+                    benchmark_args,
                     self.folder, benchmark_name, input_name)
                 self.benchmarks.append(benchmark)
 

@@ -190,7 +190,7 @@ class CortexBenchmark(Benchmark):
         'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     }
 
-    def __init__(self, folder, benchmark_name, input_size):
+    def __init__(self, benchmark_args, folder, benchmark_name, input_size):
         self.benchmark_name = benchmark_name
         self.input_size = input_size
         self.top_folder = folder
@@ -234,28 +234,27 @@ class CortexBenchmark(Benchmark):
         self.skip_inst = 1e8
         self.end_inst = 11e8
 
-        args = list()
-        for x in CortexBenchmark.ARGS[self.benchmark_name][self.input_size]:
-            xx = os.path.join(self.src_dir, x)
-            if os.path.isfile(xx):
-                args.append(xx)
-            else:
-                args.append(x)
+        self.args = CortexBenchmark.ARGS[self.benchmark_name][self.input_size]
 
-        super(CortexBenchmark, self).__init__(
-            name=self.get_name(),
-            raw_bc=self.get_raw_bc(),
-            links=['-lm'],
-            args=args,
-            trace_func=self.trace_functions,
-            lang='C',
-        )
+        super(CortexBenchmark, self).__init__(benchmark_args)
 
     def get_name(self):
         return 'cortex.{benchmark_name}.{input_size}'.format(
             benchmark_name=self.benchmark_name,
             input_size=self.input_size,
         )
+
+    def get_links(self):
+        return ['-lm']
+
+    def get_args(self):
+        return self.args
+
+    def get_trace_func(self):
+        return self.trace_functions
+
+    def get_lang(self):
+        return 'C'
 
     def get_run_path(self):
         return self.work_path
@@ -358,7 +357,7 @@ class CortexSuite:
     # FOLDER = '/home/zhengrong/Documents/CortexSuite/cortex'
     FOLDER = '/media/zhengrong/My Passport/Documents/CortexSuite/cortex'
 
-    def __init__(self, folder=None):
+    def __init__(self, benchmark_args):
         folder = os.getenv('CORTEX_SUITE_PATH')
         assert(folder is not None)
         self.benchmarks = list()
@@ -369,7 +368,8 @@ class CortexSuite:
         ]
         for input_size in input_sizes:
             for benchmark_name in CortexBenchmark.INCLUDES:
-                benchmark = CortexBenchmark(folder, benchmark_name, input_size)
+                benchmark = CortexBenchmark(
+                    benchmark_args, folder, benchmark_name, input_size)
                 self.benchmarks.append(benchmark)
 
     def get_benchmarks(self):
