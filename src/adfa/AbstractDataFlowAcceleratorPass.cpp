@@ -120,20 +120,8 @@ void AbstractDataFlowAcceleratorPass::transform() {
 
       if (NewLoop != nullptr) {
         if (this->isLoopDataFlow(NewLoop)) {
-          // This loop is possible for dataflow.
-          // DEBUG(llvm::errs()
-          //       << "Check if we are at header of " << printLoop(NewLoop)
-          //       << " header " << NewLoop->getHeader()->getName() << " inst "
-          //       << NewStaticInst->getName() << " bb "
-          //       << NewStaticInst->getParent()->getName() << ".\n");
-          // DEBUG(llvm::errs()
-          //       << "First non-phi "
-          //       << NewStaticInst->getParent()->getFirstNonPHI()->getName()
-          //       << ".\n");
-
           IsAtHeaderOfCandidate =
               LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst);
-          // DEBUG(llvm::errs() << "Check if we are at header: Done.\n");
 
           // Allocate and update the stats.
           {
@@ -358,8 +346,8 @@ class AbsDataFlowEndToken : public DynamicInstruction {
  */
 class AbsDataFlowConfigInst : public DynamicInstruction {
  public:
-  AbsDataFlowConfigInst(const std::string &_DataFlowFileName)
-      : DataFlowFileName(_DataFlowFileName) {}
+  AbsDataFlowConfigInst(const std::string &_DataFlowFileName, uint64_t _StartPC)
+      : DataFlowFileName(_DataFlowFileName), StartPC(_StartPC) {}
   std::string getOpName() const override { return "df-config"; }
   // There should be some customized fields in the future.
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
@@ -369,10 +357,12 @@ class AbsDataFlowConfigInst : public DynamicInstruction {
     assert(ProtobufEntry->has_adfa_config() &&
            "The protobuf entry should have adfa config extra struct.");
     ConfigExtra->set_data_flow(this->DataFlowFileName);
+    ConfigExtra->set_start_pc(this->StartPC);
   }
 
  private:
   std::string DataFlowFileName;
+  uint64_t StartPC;
 };
 
 /**
@@ -425,7 +415,16 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
      */
     // Check if we need to configure the accelerator.
     if (Loop != this->CurrentConfiguredDataFlow.Loop) {
-      AbsDataFlowConfigInst ConfigInst(this->DataFlowFileName);
+      // Get the start pc of this loop (use the pointer directly as the pc).
+      auto StartInst =
+          this->Trace->DynamicInstructionList.front()->getStaticInstruction();
+      assert(StartInst != nullptr &&
+             "Failed to get the start instruction for this loop.");
+      assert(Loop->contains(StartInst->getParent()) &&
+             "The start instruction should be in the loop.");
+
+      AbsDataFlowConfigInst ConfigInst(this->DataFlowFileName,
+                                       reinterpret_cast<uint64_t>(StartInst));
       this->serializeInstStream(&ConfigInst);
       DEBUG(llvm::errs() << "ADFA: configure the accelerator to loop "
                          << printLoop(Loop) << '\n');

@@ -82,6 +82,7 @@ message TDGInstruction {
   // ADFA instructions.
   message ADFAConfigExtra {
     string data_flow = 1;
+    uint64 start_pc = 2;
   }
 
   message StreamConfigExtra {
@@ -90,19 +91,11 @@ message TDGInstruction {
     string info_path = 3;
   }
 
-  message StreamStepExtra {
-    uint64 stream_id = 1;
-  }
+  message StreamStepExtra { uint64 stream_id = 1; }
 
-  message StreamStoreExtra {
-    uint64 stream_id = 1;
-  }
+  message StreamStoreExtra { uint64 stream_id = 1; }
 
-  message StreamEndExtra {
-    uint64 stream_id = 1;
-  }
+  message StreamEndExtra { uint64 stream_id = 1; }
 }
 
-message TDG {
-  repeated TDGInstruction instructions = 1;
-}
+message TDG { repeated TDGInstruction instructions = 1; }

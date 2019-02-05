@@ -36,22 +36,25 @@ class TraceObj(object):
         Read through the simpoints file to find information for myself.
         """
         folder = os.path.dirname(self.fn)
-        simpoint_fn = os.path.join(folder, 'simpoints.txt')
-        if os.path.isfile(simpoint_fn):
-            with open(simpoint_fn, 'r') as f:
-                trace_id = 0
-                for line in f:
-                    if line.startswith('#'):
-                        continue
-                    if trace_id == self.trace_id:
-                        # Found myself.
-                        fields = line.split(' ')
-                        assert(len(fields) == 3)
-                        self.lhs = int(fields[0])
-                        self.rhs = int(fields[1])
-                        self.weight = float(fields[2])
-                        break
-                    trace_id += 1
+        try:
+            simpoint_fn = os.path.join(folder, 'simpoints.txt')
+            if os.path.isfile(simpoint_fn):
+                with open(simpoint_fn, 'r') as f:
+                    trace_id = 0
+                    for line in f:
+                        if line.startswith('#'):
+                            continue
+                        if trace_id == self.trace_id:
+                            # Found myself.
+                            fields = line.split(' ')
+                            assert(len(fields) == 3)
+                            self.lhs = int(fields[0])
+                            self.rhs = int(fields[1])
+                            self.weight = float(fields[2])
+                            break
+                        trace_id += 1
+        except Exception:
+            return
 
 
 class Benchmark(object):

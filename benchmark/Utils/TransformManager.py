@@ -27,10 +27,9 @@ class TransformConfig(object):
 
 
 class TransformManager(object):
-    def __init__(self, options):
-        self.options = options
+    def __init__(self, transform_fns):
         self.configs = dict()
-        for fn in options.transforms:
+        for fn in transform_fns:
             config = TransformConfig(fn)
             self.configs[config.get_transform_id()] = config
 

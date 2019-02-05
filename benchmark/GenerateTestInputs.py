@@ -1,5 +1,10 @@
 
 from Benchmark import Benchmark
+from Benchmark import BenchmarkArgs
+
+from Utils import TransformManager
+from Utils import Gem5ConfigureManager
+
 import Constants as C
 import Util
 
@@ -7,25 +12,33 @@ import os
 
 
 class TestInputBenchmark(Benchmark):
-    def __init__(self, file):
+    def __init__(self, benchmark_args, file):
         self.cwd = os.getcwd()
         self.work_path, self.source = os.path.split(file)
         self.benchmark_name = self.source[0:-2]
 
-        super(TestInputBenchmark, self).__init__(
-            name=self.get_name(),
-            raw_bc=self.get_raw_bc(),
-            links=[],
-            args=[],
-            trace_func='foo',
-            lang='C',
-        )
+        super(TestInputBenchmark, self).__init__(benchmark_args)
 
     def get_name(self):
         return '{benchmark_name}'.format(benchmark_name=self.benchmark_name)
 
+    def get_links(self):
+        return []
+
+    def get_args(self):
+        return []
+
+    def get_trace_func(self):
+        return 'foo'
+
+    def get_lang(self):
+        return 'lang'
+
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
+
+    def get_run_path(self):
+        return self.work_path
 
     def compile(self, source, flags, defines, includes):
         compiler = C.CC if source.endswith('.c') else C.CXX
@@ -79,7 +92,7 @@ class TestInputBenchmark(Benchmark):
         )
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
-    
+
     def clean(self):
         os.chdir(self.work_path)
         Util.call_helper([
@@ -89,9 +102,11 @@ class TestInputBenchmark(Benchmark):
         ])
         os.chdir(self.cwd)
 
+
 class TestInputSuite:
-    
-    def __init__(self):
+
+    def __init__(self, benchmark_args):
+
         # Find all the test input c files.
         myself = os.path.dirname(os.path.realpath(__file__))
         test_folder = os.path.relpath('../test', myself)
@@ -99,30 +114,40 @@ class TestInputSuite:
         for root, dirs, files in os.walk(test_folder):
             for f in files:
                 if f.endswith('.c'):
-                    test_inputs.append(os.path.join(root, f))  
-        self.benchmarks = [TestInputBenchmark(f) for f in test_inputs]
-        
+                    test_inputs.append(os.path.join(root, f))
+        self.benchmarks = [TestInputBenchmark(
+            benchmark_args, f) for f in test_inputs]
+
     def get_benchmarks(self):
         return self.benchmarks
+
 
 def build(benchmark):
     benchmark.build_raw_bc()
 
+
 def trace(benchmark):
     benchmark.trace()
+
 
 def clean(benchmark):
     benchmark.clean()
 
+
 if __name__ == '__main__':
-    # Generate all the test inputs.
-    suite = TestInputSuite()
+
+    # Create a fake BenchmarkArgs
+    transform_manager = TransformManager.TransformManager([])
+    benchmark_args = BenchmarkArgs(
+        transform_manager,
+        Gem5ConfigureManager.Gem5ReplayConfigureManager([], transform_manager))
+    suite = TestInputSuite(benchmark_args)
     benchmarks = suite.get_benchmarks()
     job_scheduler = Util.JobScheduler(8, 1)
     for b in benchmarks:
         benchmark_name = b.get_name()
         build_job_id = job_scheduler.add_job(
-            benchmark_name + '.build', 
+            benchmark_name + '.build',
             build,
             (b, ),
             list(),
@@ -140,4 +165,3 @@ if __name__ == '__main__':
             [trace_job_id]
         )
     job_scheduler.run()
-
