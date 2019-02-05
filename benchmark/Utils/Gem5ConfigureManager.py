@@ -78,8 +78,7 @@ class Gem5ReplayConfig(object):
 
 
 class Gem5ReplayConfigureManager(object):
-    def __init__(self, options, transform_manager):
-        self.options = options
+    def __init__(self, simulation_fns, transform_manager):
         self.transform_manager = transform_manager
         self.configs = dict()
 
@@ -87,7 +86,7 @@ class Gem5ReplayConfigureManager(object):
         for t in self.transform_manager.get_transforms():
             self.configs[t] = list()
 
-        for fn in options.simulations:
+        for fn in simulation_fns:
             config = Gem5ReplayConfig(fn)
             support_transforms = config.get_support_transform_ids()
             for t in support_transforms:

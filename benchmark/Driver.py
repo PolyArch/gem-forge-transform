@@ -73,9 +73,9 @@ class Driver:
         self.options = options
 
         self.transform_manager = (
-            TransformManager.TransformManager(options))
+            TransformManager.TransformManager(options.transforms))
         self.simulation_manager = (
-            Gem5ConfigureManager.Gem5ReplayConfigureManager(options, self.transform_manager))
+            Gem5ConfigureManager.Gem5ReplayConfigureManager(options.simulations, self.transform_manager))
 
         self.benchmarks = self._choose_suite().get_benchmarks()
         # Filter out other benchmarks not specified by the user.
