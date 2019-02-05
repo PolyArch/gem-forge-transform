@@ -1,3 +1,4 @@
+import Benchmark
 import SPEC2017
 import MachSuite
 import TestHelloWorld
@@ -68,23 +69,70 @@ class Driver:
         'simd': 'simd-pass',
     }
 
-    def __init__(self, options, benchmarks):
+    def __init__(self, options):
         self.options = options
-        self.benchmarks = benchmarks
-        self.profile_jobs = dict()
-        self.simpoint_jobs = dict()
-        self.trace_jobs = dict()
-        self.transform_jobs = dict()
+
         self.transform_manager = (
             TransformManager.TransformManager(options))
         self.simulation_manager = (
             Gem5ConfigureManager.Gem5ReplayConfigureManager(options, self.transform_manager))
+
+        self.benchmarks = self._choose_suite().get_benchmarks()
+        # Filter out other benchmarks not specified by the user.
+        if self.options.benchmark is not None:
+            self.benchmarks = [b for b in self.benchmarks if b.get_name()
+                               in self.options.benchmark]
+        self.profile_jobs = dict()
+        self.simpoint_jobs = dict()
+        self.trace_jobs = dict()
+        self.transform_jobs = dict()
 
         # Remember to initialize the transform_path
         for benchmark in self.benchmarks:
             for transform_config in self.transform_manager.get_all_configs():
                 transform_id = transform_config.get_transform_id()
                 benchmark.init_transform_path(transform_id)
+
+        self._schedule_and_run()
+
+    def _choose_suite(self):
+        benchmark_args = Benchmark.BenchmarkArgs(
+            self.transform_manager, self.simulation_manager
+        )
+        if self.options.suite == 'spec':
+            return SPEC2017.SPEC2017Benchmarks(benchmark_args)
+        elif self.options.suite == 'spu':
+            return SPU.SPUBenchmarks(benchmark_args)
+        elif self.options.suite == 'mach':
+            return MachSuite.MachSuiteBenchmarks(benchmark_args)
+        elif self.options.suite == 'hello':
+            return TestHelloWorld.TestHelloWorldBenchmarks(benchmark_args)
+        elif self.options.suite == 'graph500':
+            return Graph500.Graph500Benchmarks(benchmark_args)
+        elif self.options.suite == 'cortex':
+            return CortexSuite.CortexSuite(benchmark_args)
+        elif self.options.suite == 'sdvbs':
+            return SDVBS.SDVBSSuite(benchmark_args)
+        else:
+            print('Unknown suite ' + self.options.suite)
+            assert(False)
+
+    def _schedule_and_run(self):
+        job_scheduler = Util.JobScheduler(self.options.cores, 1)
+        for benchmark in self.benchmarks:
+            if self.options.build:
+                benchmark.build_raw_bc()
+            if self.options.profile:
+                self.schedule_profile(job_scheduler, benchmark)
+            if self.options.simpoint:
+                self.schedule_simpoint(job_scheduler, benchmark)
+            if self.options.trace:
+                self.schedule_trace(job_scheduler, benchmark)
+            if self.options.build_datagraph:
+                self.schedule_transform(job_scheduler, benchmark)
+            if self.options.simulate and (not self.options.hoffman2):
+                self.schedule_simulate(job_scheduler, benchmark)
+        job_scheduler.run()
 
     def schedule_profile(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -127,9 +175,10 @@ class Driver:
             assert(transform_id not in self.transform_jobs[name])
             self.transform_jobs[name][transform_id] = dict()
 
-            for i in xrange(0, len(traces)):
+            for trace in traces:
+                trace_id = trace.get_trace_id()
                 if self.options.trace_id:
-                    if i not in self.options.trace_id:
+                    if trace_id not in self.options.trace_id:
                         # Ignore those traces if not specified
                         continue
                 deps = list()
@@ -137,7 +186,7 @@ class Driver:
                     deps.append(self.trace_jobs[name])
 
                 # Schedule the job.
-                self.transform_jobs[name][transform_id][i] = (
+                self.transform_jobs[name][transform_id][trace_id] = (
                     job_scheduler.add_job(
                         '{name}.{transform_id}.transform'.format(
                             name=name,
@@ -147,9 +196,9 @@ class Driver:
                         (
                             benchmark,
                             transform_config,
-                            traces[i],
+                            trace.get_trace_fn(),
                             profile_file,
-                            tdgs[i],
+                            tdgs[trace_id],
                             transform_config.get_debugs(),
                         ),
                         deps
@@ -197,55 +246,9 @@ class Driver:
                 )
 
 
-def choose_suite(options):
-    if options.suite == 'spec':
-        return SPEC2017.SPEC2017Benchmarks()
-    elif options.suite == 'spu':
-        return SPU.SPUBenchmarks()
-    elif options.suite == 'mach':
-        return MachSuite.MachSuiteBenchmarks()
-    elif options.suite == 'hello':
-        return TestHelloWorld.TestHelloWorldBenchmarks()
-    elif options.suite == 'graph500':
-        return Graph500.Graph500Benchmarks()
-    elif options.suite == 'cortex':
-        return CortexSuite.CortexSuite()
-    elif options.suite == 'sdvbs':
-        return SDVBS.SDVBSSuite()
-    else:
-        print('Unknown suite ' + options.suite)
-        assert(False)
-
-
 def main(options):
-    job_scheduler = Util.JobScheduler(options.cores, 1)
-    test_suite = choose_suite(options)
-    benchmarks = test_suite.get_benchmarks()
 
-    # Filter out other benchmarks not specified by the user.
-    if options.benchmark is not None:
-        benchmarks = [b for b in benchmarks if b.get_name()
-                      in options.benchmark]
-
-    driver = Driver(options, benchmarks)
-    for benchmark in benchmarks:
-        if options.build:
-            benchmark.build_raw_bc()
-        if options.profile:
-            driver.schedule_profile(job_scheduler, benchmark)
-        if options.simpoint:
-            driver.schedule_simpoint(job_scheduler, benchmark)
-        if options.trace:
-            driver.schedule_trace(job_scheduler, benchmark)
-        if options.build_datagraph:
-            driver.schedule_transform(job_scheduler, benchmark)
-        if options.simulate and (not options.hoffman2):
-            driver.schedule_simulate(job_scheduler, benchmark)
-    job_scheduler.run()
-
-    # If use hoffman2, prepare the cluster.
-    if options.simulate and options.hoffman2:
-        driver.simulate_hoffman2(benchmarks)
+    driver = Driver(options)
 
     benchmark_stream_statistics = dict()
 

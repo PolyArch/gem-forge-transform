@@ -11,7 +11,7 @@ from Benchmark import Benchmark
 
 class SPEC2017Benchmark(Benchmark):
 
-    def __init__(self, **params):
+    def __init__(self, benchmark_args, **params):
 
         # Job ids.
         self.trace_job_id = None
@@ -47,7 +47,8 @@ class SPEC2017Benchmark(Benchmark):
         # Special case for x264_s: we have to create a symbolic link to the input.
         if self.work_load == '625.x264_s':
             input_file = os.path.join(self.get_run_path(), 'BuckBunny.yuv')
-            original_input_file = os.path.join(self.get_run_path(), '../../BuckBunny.yuv')
+            original_input_file = os.path.join(
+                self.get_run_path(), '../../BuckBunny.yuv')
             if not os.path.exists(input_file):
                 Util.call_helper([
                     'ln',
@@ -58,7 +59,7 @@ class SPEC2017Benchmark(Benchmark):
 
         # Finally use specinvoke to get the arguments.
         os.chdir(self.get_run_path())
-        args = self.get_args(subprocess.check_output([
+        self.args = self.get_args(subprocess.check_output([
             'specinvoke',
             '-n'
         ]))
@@ -69,17 +70,26 @@ class SPEC2017Benchmark(Benchmark):
         self.work_path = self.get_run_path()
 
         # Initialize the benchmark.
+        self.links = params['links']
+        self.lang = params['lang']
         super(SPEC2017Benchmark, self).__init__(
-            name=self.get_name(),
-            raw_bc=self.get_raw_bc(),
-            links=params['links'],
-            args=args,
-            trace_func=self.trace_func,
-            lang=params['lang'],
+            benchmark_args,
         )
 
     def get_name(self):
         return 'spec.' + self.work_load
+
+    def get_links(self):
+        return self.links
+
+    def get_args(self):
+        return self.args
+
+    def get_trace_func(self):
+        return self.trace_func
+
+    def get_lang(self):
+        return self.lang
 
     def get_build_label(self):
         return 'LLVM_TDG_{build_system}'.format(
@@ -319,7 +329,7 @@ class SPEC2017Benchmarks:
             'max_inst': 1e7,
             'skip_inst': 9e8,
             'end_inst': 200e8,
-            'n_traces': 8, 
+            'n_traces': 8,
             # 'trace_func': 'MagickCommandGenesis',
             'trace_func': '',
             'lang': 'C',
@@ -444,7 +454,7 @@ class SPEC2017Benchmarks:
             'max_inst': 1e7,
             'skip_inst': 10e8,
             'end_inst': 100e8,
-            'n_traces': 9, 
+            'n_traces': 9,
             'trace_func': '',
             'lang': 'CPP',
         },
@@ -509,7 +519,7 @@ class SPEC2017Benchmarks:
 
     }
 
-    def __init__(self):
+    def __init__(self, benchmark_args):
         self.spec = os.environ.get('SPEC2017_SUITE_PATH')
         if self.spec is None:
             print(
@@ -552,6 +562,7 @@ class SPEC2017Benchmarks:
 
             self.benchmarks.append(
                 SPEC2017Benchmark(
+                    benchmark_args=benchmark_args,
                     name=name,
                     target=target,
                     links=links,
