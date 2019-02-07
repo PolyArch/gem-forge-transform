@@ -11,6 +11,7 @@
         "--l2_mshrs=32",
         "--l2_assoc=8",
         "--l2bus_width=32",
+        "--gem-forge-adfa-core-issue-width=16",
         "--gem-forge-cache-load-ports=4",
         "--gem-forge-cache-store-ports=4",
         "--gem-forge-adfa-num-ports-per-bank=8",
