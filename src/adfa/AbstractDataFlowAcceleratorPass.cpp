@@ -346,8 +346,11 @@ class AbsDataFlowEndToken : public DynamicInstruction {
  */
 class AbsDataFlowConfigInst : public DynamicInstruction {
  public:
-  AbsDataFlowConfigInst(const std::string &_DataFlowFileName, uint64_t _StartPC)
-      : DataFlowFileName(_DataFlowFileName), StartPC(_StartPC) {}
+  AbsDataFlowConfigInst(const std::string &_DataFlowFileName, uint64_t _StartPC,
+                        const std::string &_RegionName)
+      : DataFlowFileName(_DataFlowFileName),
+        StartPC(_StartPC),
+        RegionName(_RegionName) {}
   std::string getOpName() const override { return "df-config"; }
   // There should be some customized fields in the future.
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
@@ -358,11 +361,13 @@ class AbsDataFlowConfigInst : public DynamicInstruction {
            "The protobuf entry should have adfa config extra struct.");
     ConfigExtra->set_data_flow(this->DataFlowFileName);
     ConfigExtra->set_start_pc(this->StartPC);
+    ConfigExtra->set_region(this->RegionName);
   }
 
  private:
   std::string DataFlowFileName;
   uint64_t StartPC;
+  std::string RegionName;
 };
 
 /**
@@ -424,7 +429,8 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
              "The start instruction should be in the loop.");
 
       AbsDataFlowConfigInst ConfigInst(this->DataFlowFileName,
-                                       reinterpret_cast<uint64_t>(StartInst));
+                                       reinterpret_cast<uint64_t>(StartInst),
+                                       LoopUtils::getLoopId(Loop));
       this->serializeInstStream(&ConfigInst);
       DEBUG(llvm::errs() << "ADFA: configure the accelerator to loop "
                          << printLoop(Loop) << '\n');
