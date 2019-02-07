@@ -7,15 +7,15 @@ import os
 
 class SDVBSBenchmark(Benchmark):
     FLAGS = {
-        'disparity': ['O2'],
-        'localization': ['O2'],
-        'mser': ['O2'],
-        'multi_ncut': ['O2'],
-        'sift': ['O2'],
-        'stitch': ['O2'],
-        'svm': ['O2'],
-        'texture_synthesis': ['O2'],
-        'tracking': ['O2'],
+        'disparity': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'localization': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'mser': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'sift': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'stitch': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'svm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'texture_synthesis': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
     }
 
     DEFINES = {

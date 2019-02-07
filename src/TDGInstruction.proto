@@ -83,6 +83,7 @@ message TDGInstruction {
   message ADFAConfigExtra {
     string data_flow = 1;
     uint64 start_pc = 2;
+    string region = 3;
   }
 
   message StreamConfigExtra {
