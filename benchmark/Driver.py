@@ -15,6 +15,8 @@ from Utils import BenchmarkResult
 from Utils import Gem5ConfigureManager
 from Utils import TransformManager
 
+from ProcessingScripts import ADFAExperiments
+
 import os
 import pickle
 import glob
@@ -245,10 +247,36 @@ class Driver:
                     deps
                 )
 
+    def load_simulation_results(self):
+        self.simulation_results = list()
+        for benchmark in self.benchmarks:
+            for transform_config in self.transform_manager.get_all_configs():
+                transform_id = transform_config.get_transform_id()
+                for simulation_config in self.simulation_manager.get_configs(transform_id):
+                    for trace in benchmark.get_traces():
+                        self.simulation_results.append(BenchmarkResult.SimulationResult(
+                            benchmark, trace, transform_config, simulation_config))
+
+    def get_simulation_result(self, benchmark, trace, transform_config, simulation_config):
+        for simulation_result in self.simulation_results:
+            if simulation_result.benchmark != benchmark:
+                continue
+            if simulation_result.trace != trace:
+                continue
+            if simulation_result.transform_config != transform_config:
+                continue
+            if simulation_result.simulation_config != simulation_config:
+                continue
+            return simulation_result
+        assert(False)
+
 
 def main(options):
 
     driver = Driver(options)
+    if options.analyze:
+        driver.load_simulation_results()
+        ADFAExperiments.analyze(driver)
 
     benchmark_stream_statistics = dict()
 
@@ -349,7 +377,7 @@ def parse_stream_engine_maximum_run_ahead_length(option, opt, value, parser):
 def parse_transform_configurations(option, opt, value, parser):
     vs = value.split(',')
     full_paths = [os.path.join(
-        C.LLVM_TDG_DRIVER_DIR, 'Configurations', v) for v in vs]
+        C.LLVM_TDG_DRIVER_DIR, 'Configurations', v + '.json') for v in vs]
     for full_path in full_paths:
         if not os.path.isfile(full_path):
             print('Transform configuration does not exist: {path}.'.format(
@@ -364,7 +392,8 @@ def parse_simulate_configurations(option, opt, value, parser):
     #     C.LLVM_TDG_DRIVER_DIR, 'Configurations/Simulation', v) for v in vs]
     full_paths = list()
     for v in vs:
-        s = os.path.join(C.LLVM_TDG_DRIVER_DIR, 'Configurations/Simulation', v)
+        s = os.path.join(C.LLVM_TDG_DRIVER_DIR,
+                         'Configurations/Simulation', v + '.json')
         ss = glob.glob(s)
         for full_path in ss:
             full_paths.append(full_path)
@@ -399,6 +428,8 @@ if __name__ == '__main__':
                       dest='build_datagraph', default=False)
     parser.add_option('-s', '--simulate', action='store_true',
                       dest='simulate', default=False)
+    parser.add_option('--analyze', action='store_true',
+                      dest='analyze', default=False)
 
     parser.add_option('--trans-configs', type='string', action='callback', default='',
                       dest='transforms', callback=parse_transform_configurations)
