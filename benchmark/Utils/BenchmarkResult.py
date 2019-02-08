@@ -10,6 +10,38 @@ import json
 import itertools
 
 
+class SimulationResult:
+    def __init__(self, benchmark, trace, transform_config, simulation_config):
+        self.benchmark = benchmark
+        self.trace = trace
+        self.transform_config = transform_config
+        self.simulation_config = simulation_config
+
+        self.tdg = self.benchmark.get_tdg(self.transform_config, self.trace)
+        self.result_folder = self.simulation_config.get_gem5_dir(self.tdg)
+
+        # Load config.json.
+        config_fn = os.path.join(self.result_folder, 'config.json')
+        with open(config_fn, 'r') as f:
+            self.config = json.load(f)
+
+        # Load stats.
+        stats_fn = os.path.join(self.result_folder, 'stats.txt')
+        self.stats = Gem5Stats.Gem5Stats(self.benchmark, stats_fn)
+
+        # Load region stats.
+        region_stats_fn = os.path.join(self.result_folder, 'region.stats.txt')
+        self.region_stats = Gem5RegionStats.Gem5RegionStats(
+            self.benchmark, region_stats_fn)
+
+        # Load mcpat.
+        mcpat_fn = os.path.join(self.result_folder, 'mcpat.txt')
+        self.mcpat = McPAT.McPAT(mcpat_fn)
+
+        # Load stream engine energy.
+        self.se_energy = StreamEngineEnergy.StreamEngineEnergy(self.stats)
+
+
 class Attribute:
     def __init__(self, name, func):
         self.name = name
@@ -433,7 +465,7 @@ class SuiteResult:
                 aggr_stats = regions_aggregated[uid]
                 for t in title:
                     if not t in aggr_stats:
-                        aggr_stats[t] = -1 
+                        aggr_stats[t] = -1
                     f.write('{v},'.format(v=aggr_stats[t]))
                 f.write('\n')
 

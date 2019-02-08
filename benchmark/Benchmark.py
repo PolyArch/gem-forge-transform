@@ -25,6 +25,9 @@ class TraceObj(object):
         print('Find trace {weight}: {fn}'.format(
             weight=self.weight, fn=self.fn))
 
+    def get_weight(self):
+        return self.weight
+
     def get_trace_id(self):
         return self.trace_id
 
@@ -190,16 +193,16 @@ class Benchmark(object):
         return os.path.join(self.work_path, transform_id)
 
     def get_tdgs(self, transform_config):
-        tdgs = list()
-        name = self.get_name()
-        transform_id = transform_config.get_transform_id()
-        for i in xrange(len(self.traces)):
-            tdgs.append('{transform_path}/{name}.{transform_id}.{i}.tdg'.format(
-                transform_path=self.get_transform_path(transform_id),
-                name=name,
-                transform_id=transform_id,
-                i=i))
-        return tdgs
+        return [self.get_tdg(transform_config, trace) for trace in self.traces]
+
+    def get_tdg(self, transform_config, trace):
+        return '{transform_path}/{name}.{transform_id}.{trace_id}.tdg'.format(
+            transform_path=self.get_transform_path(
+                transform_config.get_transform_id()),
+            name=self.get_name(),
+            transform_id=transform_config.get_transform_id(),
+            trace_id=trace.get_trace_id()
+        )
 
     def init_transform_path(self, transform_id):
         transform_path = self.get_transform_path(transform_id)
