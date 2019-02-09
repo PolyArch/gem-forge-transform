@@ -1,5 +1,6 @@
 #include "LoopUnroller.h"
 #include "LoopUtils.h"
+#include "Utils.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -13,11 +14,22 @@ LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
   for (auto BBIter = this->Loop->block_begin(), BBEnd = this->Loop->block_end();
        BBIter != BBEnd; ++BBIter) {
     auto BB = *BBIter;
+    if (BB != this->Loop->getHeader()) {
+      continue;
+    }
     for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
          ++InstIter) {
       auto Inst = &*InstIter;
       if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         llvm::InductionDescriptor ID;
+        // llvm::errs() << "Checking IVPhi for " << Utils::formatLLVMInst(Inst) << '\n';
+        // {
+        //   auto scev = SE->getSCEV(PHINode);
+        //   if (scev != nullptr) {
+        //     scev->print(llvm::errs());
+        //   }
+        // }
+
         if (llvm::InductionDescriptor::isInductionPHI(PHINode, Loop, SE, ID)) {
           // // This is an induction variable. We try to find the updating
           // binary

@@ -11,13 +11,13 @@ class CortexBenchmark(Benchmark):
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
         'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sphinx': ['O2'],
-        'srr': ['O2'],
-        'lda': ['O2'],
-        'svd3': ['O2'],
-        'pca': ['O2'],
-        'motion-estimation': ['O2'],
-        'liblinear': ['O2'],
+        'sphinx': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'srr': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'lda': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'svd3': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'pca': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'motion-estimation': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'liblinear': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
     }
 
     DEFINES = {

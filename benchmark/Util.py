@@ -3,6 +3,7 @@ import multiprocessing
 import subprocess
 import sys
 import unittest
+import tempfile
 import time
 import traceback
 
@@ -17,6 +18,7 @@ def call_helper(cmd):
     except subprocess.CalledProcessError as e:
         print('Error when executing {cmd}'.format(cmd=' '.join(cmd)))
         raise e
+
 
 def mkdir_p(path):
     call_helper(['mkdir', '-p', path])
@@ -160,16 +162,16 @@ class JobScheduler:
             return 'FINISHED'
         return 'UNKNOWN'
 
-    def dump(self):
+    def dump(self, f):
         stack = list()
         for job_id in self.jobs:
             if len(self.job_deps[job_id]) == 0:
                 stack.append((job_id, 0))
-        print('=================== Job Scheduler =====================')
+        f.write('=================== Job Scheduler =====================\n')
         while stack:
             job_id, level = stack.pop()
             job = self.jobs[job_id]
-            print('{tab}{job_id} {job_name} {status}'.format(
+            f.write('{tab}{job_id} {job_name} {status}\n'.format(
                 tab='  '*level,
                 job_id=job_id,
                 job_name=job.name,
@@ -177,10 +179,16 @@ class JobScheduler:
             ))
             for child_id in self.job_children[job_id]:
                 stack.append((child_id, level + 1))
-        print('=================== Job Scheduler =====================')
+        f.write('=================== Job Scheduler =====================\n')
+        f.flush()
 
     def run(self):
         assert(self.state == JobScheduler.STATE_INIT)
+        log_f = tempfile.NamedTemporaryFile(
+            prefix='job_scheduler.', delete=False)
+        print(log_f.name)
+        seconds = 0
+
         self.state = JobScheduler.STATE_STARTED
         self.lock.acquire()
         for job_id in self.job_deps:
@@ -189,6 +197,13 @@ class JobScheduler:
         # Poll every n seconds.
         while True:
             time.sleep(self.poll_seconds)
+
+            seconds += self.poll_seconds
+            if seconds > 600:
+                seconds = 0
+                log_f.truncate()
+                self.dump(log_f)
+
             finished = True
             # Try to get the res.
             for job_id in self.jobs:
@@ -209,8 +224,10 @@ class JobScheduler:
             if finished:
                 self.state = JobScheduler.STATE_FINISHED
                 break
-        self.dump()
+        self.dump(sys.stdout)
+        self.dump(log_f)
         self.pool.close()
+        log_f.close()
         self.pool.join()
 
 
@@ -298,474 +315,3 @@ class TestJobScheduler(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-
-class Variable:
-    def __init__(self, name, baseline_key, test_key, color):
-        self.name = name
-        self.baseline_key = baseline_key
-        self.test_key = test_key
-        self.color = color
-
-
-class Results:
-    def __init__(self):
-        self.results = dict()
-
-    """
-    Add a result.
-
-    Parameters
-    ----------
-    group: which group does this result belongs to, e.g. baseline, replay.
-    benchmark: the benchmark name, e.g. fft.strided.
-    fn: the name of gem5's output stats file.
-    """
-
-    def addResult(self, group, benchmark, fn):
-        if group not in self.results:
-            self.results[group] = dict()
-        self.results[group][benchmark] = Gem5Stats(benchmark, fn)
-
-    """
-    Draw the comparison with baseline group and dump to a pdf file.
-
-    Parameters
-    ----------
-    pdf_fn: the output pdf file name.
-    baseline: the baseline group.
-    test: the test group.
-    variables: a list of Variables.
-    """
-
-    def draw(self, pdf_fn, baseline, test, variables):
-        import matplotlib
-        import matplotlib.pyplot as plt
-        import numpy
-
-        assert(baseline in self.results)
-        assert(test in self.results)
-        assert(len(self.results[baseline]) == len(self.results[test]))
-
-        num_benchmarks = len(self.results[baseline])
-        benchmarks = self.results[baseline].keys()
-        benchmarks.sort()
-
-        total_spacing = 1.5
-        index = numpy.arange(num_benchmarks) * total_spacing
-        total_bar_spacing = 0.8 * total_spacing
-        bar_width = total_bar_spacing / len(variables)
-        pos = 0.0
-
-        ax = plt.subplot(111)
-        for v in variables:
-            ys = [(self.results[test][b][v.test_key] / self.results[baseline][b][v.baseline_key])
-                  for b in benchmarks]
-            ax.bar(index + pos, ys, bar_width,
-                   color=numpy.array(v.color, ndmin=2) / 256.0, label=v.name)
-            pos += bar_width
-
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0 + box.height * 0.2,
-                         box.width, box.height * 0.8])
-        plt.grid()
-        plt.xticks(index + total_bar_spacing / 2.0, benchmarks)
-        plt.ylabel('Ratio')
-
-        ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05),
-                  fancybox=True, shadow=True, ncol=4)
-        ax.set_ylim([0.0, 1.2])
-        plt.xticks(rotation=90)
-        plt.savefig(pdf_fn)
-        # plt.show()
-        plt.gcf().clear()
-
-
-class TDGTransformStats:
-    def __init__(self, files):
-        if isinstance(files, list):
-            self.parse(files[0])
-            if len(files) > 1:
-                self.merge(TDGTransformStats(files[1:]))
-        else:
-            self.parse(files)
-
-    def parse(self, file):
-        self.stats = dict()
-        with open(file) as f:
-            for line in f:
-                fields = line.split(': ')
-                if len(fields) != 2:
-                    continue
-                try:
-                    self.stats[fields[0]] = float(fields[1])
-                except Exception as e:
-                    # Ignore the non float fields.
-                    pass
-
-    def merge(self, other):
-        for stat in self.stats:
-            if stat in other.stats:
-                self.stats[stat] += other.stats[stat]
-
-    def print_stats(self):
-        for stat in self.stats:
-            print('{stat} {value}'.format(stat=stat, value=self.stats[stat]))
-
-
-class RegionAggStats:
-
-    def __init__(self, prefix, region, name):
-        self.prefix = prefix
-        self.region = region
-        self.name = name
-        # Baseline stats.
-        self.base_insts = -1.0
-        self.base_ratio = -1.0
-        self.base_cycles = -1.0
-        self.base_issue = -1.0
-        self.base_br = -1.0
-        self.base_bm = -1.0
-        self.base_cm = -1.0
-
-        # ADFA stats.
-        self.adfa_analyzed = False
-        self.adfa_speedup = -1.0
-        self.adfa_ratio = -1.0
-        self.adfa_cfgs = -1.0
-        self.adfa_dfs = -1.0
-        self.adfa_insts = -1.0
-        self.adfa_cycles = -1.0
-        self.adfa_df_len = -1.0
-        self.adfa_issue = -1.0
-
-        # SIMD stats.
-        self.simd_analyzed = False
-        self.simd_speedup = -1.0
-        self.simd_insts = -1.0
-        self.simd_cycles = -1.0
-        self.simd_issue = -1.0
-        self.simd_br = -1.0
-        self.simd_bm = -1.0
-        self.simd_cm = -1.0
-
-        # Stream stats.
-        self.stream_analyzed = False
-        self.stream_speedup = -1.0
-
-    def compute_baseline(self, baseline):
-
-        n_branch = baseline[self.region][self.prefix + 'fetch.branchInsts']
-        n_branch_misses = baseline[self.region][self.prefix +
-                                                'fetch.branchPredMisses']
-        n_cache_misses = baseline[self.region][self.prefix +
-                                               'dcache.demand_misses']
-
-        self.base_insts = baseline[self.region][self.prefix +
-                                                'commit.committedInsts']
-        base_all_insts = baseline['all'][self.prefix +
-                                         'commit.committedInsts']
-        self.base_cycles = baseline[self.region][self.prefix + 'numCycles']
-
-        if base_all_insts > 0.0:
-            self.base_ratio = self.base_insts / base_all_insts
-
-        if self.base_cycles > 0.0:
-            self.base_issue = self.base_insts / self.base_cycles
-
-        if self.base_insts > 0.0:
-            self.base_br = n_branch / self.base_insts * 1000.0
-            self.base_bm = n_branch_misses / self.base_insts * 1000.0
-            self.base_cm = n_cache_misses / self.base_insts * 1000.0
-
-    def compute_adfa(self, adfa):
-        assert(not self.adfa_analyzed)
-        self.adfa_analyzed = True
-        self.adfa_cfgs = adfa.get_default(
-            self.region, 'tdg.accs.adfa.numConfigured', 0.0)
-        self.adfa_dfs = adfa.get_default(
-            self.region, 'tdg.accs.adfa.numExecution', 0.0)
-        self.adfa_insts = adfa.get_default(
-            self.region, 'tdg.accs.adfa.numCommittedInst', 0.0)
-        self.adfa_cycles = adfa.get_default(
-            self.region, 'tdg.accs.adfa.numCycles', 0.0)
-
-        cpu_cycles = adfa[self.region][self.prefix + 'numCycles']
-
-        if cpu_cycles > 0.0:
-            print("Warning cpu cycles is 0 for " + self.region)
-            self.adfa_speedup = self.base_cycles / cpu_cycles
-            self.adfa_ratio = self.adfa_cycles / cpu_cycles
-
-        if self.adfa_insts > 0.0:
-            if self.adfa_dfs > 0.0:
-                self.adfa_df_len = self.adfa_insts / self.adfa_dfs
-            self.adfa_issue = self.adfa_insts / self.adfa_cycles
-
-    def compute_simd(self, simd):
-        assert(not self.simd_analyzed)
-        self.simd_analyzed = True
-        n_branch = simd[self.region][self.prefix + 'fetch.branchInsts']
-        n_branch_misses = simd[self.region][self.prefix +
-                                            'fetch.branchPredMisses']
-        n_cache_misses = simd[self.region][self.prefix +
-                                           'dcache.demand_misses']
-
-        self.simd_insts = simd[self.region][self.prefix +
-                                            'commit.committedInsts']
-        self.simd_cycles = simd[self.region][self.prefix + 'numCycles']
-
-        if self.simd_cycles > 0.0:
-            self.simd_issue = self.simd_insts / self.simd_cycles
-            self.simd_speedup = self.base_cycles / self.simd_cycles
-
-        if self.simd_insts > 0.0:
-            self.simd_br = n_branch / self.simd_insts * 1000.0
-            self.simd_bm = n_branch_misses / self.simd_insts * 1000.0
-            self.simd_cm = n_cache_misses / self.simd_insts * 1000.0
-
-    def compute_stream(self, stream):
-        assert(not self.stream_analyzed)
-        self.stream_analyzed = True
-        try:
-            stream_cycles = stream[self.region][self.prefix + 'numCycles']
-            self.stream_speedup = self.base_cycles / stream_cycles
-        except Exception as e:
-            print('warn: {region} found in stream'.format(region=self.region))
-
-    @staticmethod
-    def print_table(selves):
-        import prettytable
-        title = [
-            'REGION',
-            'INSTS',
-            'ISSUE',
-            'RATIO',
-            'BPKI',
-            'BMPKI',
-            'CMPKI',
-        ]
-        assert(selves)
-        if selves[0].stream_analyzed:
-            title += [
-                'STM_SPD',
-            ]
-        table = prettytable.PrettyTable(
-            field_names=title,
-        )
-        table.float_format = '.3'
-        table.align = 'r'
-        for s in selves:
-            values = [
-                s.name,
-                int(s.base_insts),
-                s.base_issue,
-                s.base_ratio*100.0,
-                s.base_br,
-                s.base_bm,
-                s.base_cm,
-            ]
-            if s.stream_analyzed:
-                values += [
-                    s.stream_speedup,
-                ]
-            table.add_row(values)
-        print(table)
-
-    def print_title(self):
-        title = (
-            '{name:>50}| '
-            '{base_insts:>10} '
-            '{base_issue:>10} '
-            '{base_ratio:>5} '
-            '{bpki:>7} '
-            '{bmpki:>7} '
-            '{cmpki:>5}| '
-        )
-        sys.stdout.write(title.format(
-            name='name',
-            base_insts='base_insts',
-            base_issue='base_issue',
-            base_ratio='ratio',
-            bpki='BPKI',
-            bmpki='BMPKI',
-            cmpki='CMPKI',
-
-        ))
-        if self.adfa_analyzed:
-            title = (
-                '{adfa_spd:>10} '
-                '{adfa_cfgs:>10} '
-                '{adfa_dfs:>10} '
-                '{adfa_ratio:>10} '
-                '{adfa_df_len:>10} '
-                '{adfa_issue:>10}| '
-                '{simd_spd:>10} '
-            )
-
-            sys.stdout.write(title.format(
-                adfa_spd='adfa_spd',
-                adfa_cfgs='adfa_cfgs',
-                adfa_dfs='adfa_dfs',
-                adfa_ratio='adfa_ratio',
-                adfa_df_len='adfa_dflen',
-                adfa_issue='adfa_issue',
-            ))
-
-        if self.simd_analyzed:
-            title = (
-                '{simd_spd:>10} '
-                '{simd_insts:>10} '
-                '{simd_issue:>10} '
-                '{simd_bpki:>7} '
-                '{simd_bmpki:>7} '
-                '{simd_cmpki:>5}| '
-            )
-
-            sys.stdout.write(title.format(
-                simd_spd='simd_spd',
-                simd_insts='simd_insts',
-                simd_issue='simd_issue',
-                simd_bpki='BPKI',
-                simd_bmpki='BMPKI',
-                simd_cmpki='CMPKI',
-            ))
-
-        if self.stream_analyzed:
-            title = (
-                '{stream_spd:>10} '
-            )
-
-            sys.stdout.write(title.format(
-                stream_spd='stm_spd',
-            ))
-        sys.stdout.write('\n')
-
-    def print_line(self):
-        line = (
-            '{name:>50}| '
-            '{base_insts:>10} '
-            '{base_issue:>10.4f} '
-            '{base_ratio:>5.2f} '
-            '{bpki:>7.1f} '
-            '{bmpki:>7.1f} '
-            '{cmpki:>5.1f}| '
-        )
-        sys.stdout.write(line.format(
-            name=self.name,
-            base_insts=self.base_insts,
-            base_issue=self.base_issue,
-            base_ratio=self.base_ratio*100.0,
-            bpki=self.base_br,
-            bmpki=self.base_bm,
-            cmpki=self.base_cm,
-        ))
-
-        if self.adfa_analyzed:
-            line = (
-                '{adfa_spd:>10.2f} '
-                '{adfa_cfgs:>10} '
-                '{adfa_dfs:>10} '
-                '{adfa_ratio:>10.4f} '
-                '{adfa_df_len:>10.1f} '
-                '{adfa_issue:>10.4f}| '
-            )
-            sys.stdout.write(line.format(
-                adfa_spd=self.adfa_speedup,
-                adfa_cfgs=self.adfa_cfgs,
-                adfa_dfs=self.adfa_dfs,
-                adfa_ratio=self.adfa_ratio,
-                adfa_df_len=self.adfa_df_len,
-                adfa_issue=self.adfa_issue,
-            ))
-
-        if self.simd_analyzed:
-            line = (
-                '{simd_spd:>10.2f} '
-                '{simd_insts:>10} '
-                '{simd_issue:>10.4f} '
-                '{simd_bpki:>7.1f} '
-                '{simd_bmpki:>7.1f} '
-                '{simd_cmpki:>5.1f}| '
-            )
-            sys.stdout.write(line.format(
-                simd_spd=self.simd_speedup,
-                simd_insts=self.simd_insts,
-                simd_issue=self.simd_issue,
-                simd_bpki=self.simd_br,
-                simd_bmpki=self.simd_bm,
-                simd_cmpki=self.simd_cm,
-            ))
-
-        if self.stream_analyzed:
-            line = (
-                '{stream_spd:>10.1f} '
-            )
-            sys.stdout.write(line.format(
-                stream_spd=self.stream_speedup,
-            ))
-        sys.stdout.write('\n')
-
-
-class ADFAAnalyzer:
-
-    SYS_CPU_PREFIX = 'system.cpu1.'
-
-    @staticmethod
-    def compute_speedup(baseline, adfa, region):
-        baseline_cycles = baseline[region][ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        adfa_cycles = adfa[region][ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        if adfa_cycles == 0.0:
-            print("Warning ADFA cycles is 0 for " + region)
-            return 1.0
-        return baseline_cycles / adfa_cycles
-
-    @staticmethod
-    def compute_runtime_ratio(adfa, region):
-        cpu_cycles = adfa[region][ADFAAnalyzer.SYS_CPU_PREFIX + 'numCycles']
-        adfa_cycles = ADFAAnalyzer.get_with_default(
-            adfa, region, 'tdg.accs.adfa.numCycles', 0.0)
-        if cpu_cycles == 0.0:
-            print("Warning cpu cycles is 0 for " + region)
-            return 1.0
-        return adfa_cycles / cpu_cycles
-
-    @staticmethod
-    def analyze_adfa(name, replay_results, stream_results):
-        regions = dict()
-        baseline = Gem5RegionStats(name, replay_results)
-        # adfa = Gem5RegionStats(name, b.get_result('adfa'))
-        # simd = Gem5RegionStats(name, b.get_result('simd'))
-        stream = Gem5RegionStats(name, stream_results)
-
-        regions[name] = list()
-
-        print(name)
-
-        for region in baseline.regions:
-            print('  ' + region)
-
-            region_name = name + '::' + region
-
-            region_agg_stats = RegionAggStats(
-                ADFAAnalyzer.SYS_CPU_PREFIX, region, region_name)
-            region_agg_stats.compute_baseline(baseline)
-            # region_agg_stats.compute_adfa(adfa)
-            # region_agg_stats.compute_simd(simd)
-            region_agg_stats.compute_stream(stream)
-
-            regions[name].append(region_agg_stats)
-
-        # Sort all the regions by their number of dynamic insts.
-        regions[name] = sorted(
-            regions[name], key=lambda x: x.base_insts, reverse=True)
-
-        baseline.print_regions()
-        title_printed = False
-        for benchmark_name in regions:
-            RegionAggStats.print_table(regions[benchmark_name])
-            # for region in regions[benchmark_name]:
-            #     if not title_printed:
-            #         region.print_title()
-            #         title_printed = True
-            #     region.print_line()
