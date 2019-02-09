@@ -294,6 +294,8 @@ class Benchmark(object):
     """
 
     def run_trace(self, trace_file='llvm_trace'):
+        # Remeber to remove all the old traces.
+        Util.call_helper(['rm', '{name}.*.trace'.format(name=self.get_name())])
         # Remember to set the environment for trace.
         os.putenv('LLVM_TDG_TRACE_FILE', trace_file)
         run_cmd = [
