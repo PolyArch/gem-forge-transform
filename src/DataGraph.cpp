@@ -350,8 +350,10 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
       // Comment this out as for some call inst, if the callee is traced,
       // then we donot log the result.
       if (!Utils::isCallOrInvokeInst(StaticInstruction)) {
-        assert(StaticInstruction->getName() == "" &&
-               "Missing DynamicResult for non-call instruction.");
+        if (StaticInstruction->getName() != "") {
+          llvm::errs() << "Missing DynamicResult for inst " << Utils::formatLLVMInst(StaticInstruction) << '\n';
+          assert(false);
+        }
       }
     }
   }
