@@ -211,9 +211,12 @@ class CortexBenchmark(Benchmark):
         # Create a symbolic link for everything in the source dir.
         for f in os.listdir(self.src_dir):
             print(os.path.join(self.src_dir, f))
+            source = os.path.join(self.src_dir, f)
             dest = os.path.join(self.work_path, f)
             if os.path.exists(dest):
                 continue
+            if os.path.realpath(dest) != source:
+                Util.call_helper(['rm', '-f', dest])
             Util.call_helper([
                 'ln',
                 '-s',

@@ -50,6 +50,8 @@ class SPEC2017Benchmark(Benchmark):
             original_input_file = os.path.join(
                 self.get_run_path(), '../../BuckBunny.yuv')
             if not os.path.exists(input_file):
+                if os.path.realpath(input_file) != original_input_file:
+                    Util.call_helper(['rm', '-f', input_file])
                 Util.call_helper([
                     'ln',
                     '-s',
