@@ -16,6 +16,12 @@ cd ../runtimes
 svn co http://llvm.org/svn/llvm-project/libunwind/tags/RELEASE_601/final/ libunwind
 ```
 
+In order to use the golden linker plugin we have download the include file.
+
+```bash
+git clone --depth 1 git://sourceware.org/git/binutils-gdb.git binutils
+```
+
 Build it. Build type must be "Debug", otherwise we can not use `-debug-only` flag. Notice that we also build shared library to avoid redefinition. We also specify the include directory of binutils to build the golden linker plugin.
 
 ```bash
