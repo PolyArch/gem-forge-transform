@@ -1,5 +1,6 @@
 
 import multiprocessing
+import logging
 import subprocess
 import sys
 import unittest
@@ -25,7 +26,10 @@ def mkdir_p(path):
 
 
 def error(msg, *args):
-    return multiprocessing.get_logger().error(msg, *args)
+    print(msg)
+    logger = multiprocessing.get_logger()
+    logger.setLevel(logging.WARNING)
+    logger.error(msg, *args)
 
 
 class LogExceptions(object):
