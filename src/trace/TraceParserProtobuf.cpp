@@ -80,6 +80,18 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
   }
   Parsed.Result =
       this->parseLLVMDynamicValueToString(this->TraceEntry.inst().result());
+  // if (Parsed.Result == "") {
+  //   if (Parsed.Func == "x264_pixel_sad_8x8" && Parsed.BB == "bb" && Parsed.Op == "icmp") {
+  //     std::cerr << "Something is wrong for uid " << this->TraceEntry.inst().uid() << '\n';
+  //     switch (this->TraceEntry.inst().result().value_case()) {
+  //       case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVInt: {
+  //         std::cerr << "kVInt\n";
+  //         break;
+  //       }
+  //       default: { std::cerr << "default\n"; }
+  //     }
+  //   }
+  // }
   // Parsed.Result = this->TraceEntry.inst().result();
 
   for (int i = 0; i < this->TraceEntry.inst().params_size(); ++i) {
