@@ -59,12 +59,12 @@ class SPEC2017Benchmark(Benchmark):
 
         # Finally use specinvoke to get the arguments.
         os.chdir(self.get_run_path())
-        self.args = self.get_args(subprocess.check_output([
+        self.args = self.find_args(subprocess.check_output([
             'specinvoke',
             '-n'
         ]))
         print('{name} has arguments {args}'.format(
-            name=self.get_name(), args=args))
+            name=self.get_name(), args=self.args))
         os.chdir(self.cwd)
 
         self.work_path = self.get_run_path()
@@ -227,7 +227,7 @@ class SPEC2017Benchmark(Benchmark):
         ])
         os.chdir(self.cwd)
 
-    def get_args(self, specinvoke):
+    def find_args(self, specinvoke):
         """
         Parse the result of 'specinvoke' command and get the command line arguments.
         """
