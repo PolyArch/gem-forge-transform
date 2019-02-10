@@ -5,6 +5,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -139,6 +140,7 @@ class TracePass : public llvm::FunctionPass {
   }
   bool doInitialization(llvm::Module &Module) override {
     this->Module = &Module;
+    this->DataLayout = new llvm::DataLayout(this->Module);
 
     DEBUG(llvm::errs() << "Initialize TracePass\n");
 
@@ -204,10 +206,14 @@ class TracePass : public llvm::FunctionPass {
     if (InstUIDFileName.getNumOccurrences() > 0) {
       this->InstUIDMap.serializeTo(InstUIDFileName.getValue());
     }
+
+    delete this->DataLayout;
+    this->DataLayout = nullptr;
   }
 
  private:
   llvm::Module *Module;
+  llvm::DataLayout* DataLayout;
   llvm::Function *CurrentFunction;
   std::map<unsigned int, llvm::Value *> VectorStoreBuffer;
 
@@ -653,10 +659,15 @@ class TracePass : public llvm::FunctionPass {
         // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
         auto AlignBytes = 1;
         Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
-        // The first additional arguments will be the size of the buffer.
+        /**
+         * For some corner case, the bit width will be less than 8!
+         * For example, vector<4 x i1> for boolean types.
+         * In this case, we have to use datalayout for storage bytes.
+         */
+        auto TypeStorageBytes = this->DataLayout->getTypeStoreSize(VectorType);
         AdditionalArgValues.push_back(llvm::ConstantInt::get(
             llvm::IntegerType::getInt32Ty(this->Module->getContext()),
-            TypeBytes, false));
+            TypeStorageBytes, false));
         // The second additional argument will be the buffer.
         AdditionalArgValues.push_back(Buffer);
         break;
