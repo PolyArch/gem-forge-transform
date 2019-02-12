@@ -282,14 +282,7 @@ class SPEC2017Benchmark(Benchmark):
         self.build_trace(
             debugs=debugs,
         )
-        # set the maximum number of insts.
-        # if self.max_inst != -1:
-        #     os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-        #     os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-        #     os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-        #     os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
-        # else:
-        #     os.unsetenv('LLVM_TDG_MAX_INST')
+        # Set the tracer mode.
         os.putenv('LLVM_TDG_WORK_MODE', str(4))
         os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
         os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
@@ -307,6 +300,13 @@ class SPEC2017Benchmark(Benchmark):
             debugs=debugs,
         )
         os.chdir(self.cwd)
+
+    def get_additional_gem5_simulate_command(self):
+        if self.get_name() == 'spec.657.xz_s':
+            # This benchmark requires significantly large memory.
+            return ['--mem-size=2GB']
+        else:
+            return []
 
 
 class SPEC2017Benchmarks:

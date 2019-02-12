@@ -294,7 +294,8 @@ class Benchmark(object):
 
     def run_trace(self, trace_file='llvm_trace'):
         # Remeber to remove all the old traces.
-        Util.call_helper(['rm', '-f', '{name}.*.trace'.format(name=self.get_name())])
+        Util.call_helper(
+            ['rm', '-f', '{name}.*.trace'.format(name=self.get_name())])
         # Remember to set the environment for trace.
         os.putenv('LLVM_TDG_TRACE_FILE', trace_file)
         run_cmd = [
@@ -448,6 +449,9 @@ class Benchmark(object):
         print('# Collecting statistics trace...')
         Util.call_helper(opt_cmd)
 
+    def get_additional_gem5_simulate_command(self):
+        return []
+
     """
     Prepare the gem5 simulate command.
     """
@@ -458,7 +462,6 @@ class Benchmark(object):
             gem5_config,
             replay_bin,
             gem5_out_dir,
-            debugs=[],
             hoffman2=False):
         gem5_args = [
             C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
@@ -478,17 +481,15 @@ class Benchmark(object):
             '--cpu-type={cpu_type}'.format(cpu_type=C.CPU_TYPE),
             '--num-cpus=1',
             '--l1d_size={l1d_size}'.format(l1d_size=C.GEM5_L1D_SIZE),
-            # '--l1d_mshrs={l1d_mshrs}'.format(l1d_mshrs=C.GEM5_L1D_MSHR),
             '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
-            # '--l2_size={l2_size}'.format(l2_size=C.GEM5_L2_SIZE),
         ]
 
         additional_options = gem5_config.get_options(tdg)
         gem5_args += additional_options
 
-        if debugs:
-            gem5_args.insert(
-                1, '--debug-flags={flags}'.format(flags=','.join(debugs)))
+        # Add any options from derived classes.
+        gem5_args += self.get_additional_gem5_simulate_command()
+
         if self.get_args() is not None:
             gem5_args.append(
                 '--options={binary_args}'.format(binary_args=' '.join(self.get_args())))
@@ -498,16 +499,16 @@ class Benchmark(object):
     Simulate the datagraph with gem5.
     """
 
-    def simulate(self, tdg, simulation_config, debugs):
+    def simulate(self, tdg, simulation_config):
         print('# Simulating the datagraph')
         gem5_out_dir = simulation_config.get_gem5_dir(tdg)
         Util.call_helper(['mkdir', '-p', gem5_out_dir])
         gem5_args = self.get_gem5_simulate_command(
-            tdg, simulation_config, self.get_replay_bin(), gem5_out_dir, debugs, False)
+            tdg, simulation_config, self.get_replay_bin(), gem5_out_dir, False)
         print('# Replaying the datagraph...')
         Util.call_helper(gem5_args)
 
-    def simulate_hoffman2(self, tdg, gem5_config, result, scp=True, debugs=[]):
+    def simulate_hoffman2(self, tdg, gem5_config, result, scp=True):
         _, tdg_name = os.path.split(tdg)
         hoffman2_ssh_tdg = os.path.join(C.HOFFMAN2_SSH_SCRATCH, tdg_name)
         hoffman2_tdg = os.path.join(C.HOFFMAN2_SCRATCH, tdg_name)
@@ -557,7 +558,7 @@ class Benchmark(object):
         # Create the command.
         gem5_out_dir = self.gem5_config.get_config(tdg_name)
         gem5_command = self.get_gem5_simulate_command(
-            hoffman2_tdg, gem5_config, hoffman2_replay_bin, gem5_out_dir, debugs, True)
+            hoffman2_tdg, gem5_config, hoffman2_replay_bin, gem5_out_dir, True)
         return gem5_command
 
     def get_hoffman2_retrive_cmd(self, tdg, gem5_config, result):
