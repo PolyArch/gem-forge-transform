@@ -463,7 +463,7 @@ class Benchmark(object):
         gem5_args = [
             C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
             '--outdir={outdir}'.format(outdir=gem5_out_dir),
-            # "--debug-flags=AbstractDataFlowAccelerator",
+            # "--debug-flags=AbstractDataFlowAccelerator,LLVMTraceCPU",
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=replay_bin),
             '--llvm-standalone={standlone}'.format(standlone=self.standalone),
