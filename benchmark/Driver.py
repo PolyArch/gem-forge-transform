@@ -6,6 +6,7 @@ import SPU
 import Graph500
 import CortexSuite
 import SDVBS
+import GenerateTestInputs
 
 import Util
 import StreamStatistics
@@ -115,6 +116,8 @@ class Driver:
             return CortexSuite.CortexSuite(benchmark_args)
         elif self.options.suite == 'sdvbs':
             return SDVBS.SDVBSSuite(benchmark_args)
+        elif self.options.suite == 'test':
+            return GenerateTestInputs.TestInputSuite(benchmark_args)
         else:
             print('Unknown suite ' + self.options.suite)
             assert(False)

@@ -20,7 +20,7 @@ class TestInputBenchmark(Benchmark):
         super(TestInputBenchmark, self).__init__(benchmark_args)
 
     def get_name(self):
-        return '{benchmark_name}'.format(benchmark_name=self.benchmark_name)
+        return self.benchmark_name
 
     def get_links(self):
         return []
@@ -90,7 +90,23 @@ class TestInputBenchmark(Benchmark):
             trace_reachable_only=False,
             # debugs=['TracePass']
         )
+        # Remember to set the flag to trace traced function.
+        os.putenv('LLVM_TDG_WORK_MODE', str(2))
         self.run_trace(self.get_name())
+        os.chdir(self.cwd)
+
+    def transform(self, transform_config, trace, profile_file, tdg, debugs):
+        os.chdir(self.work_path)
+
+        self.build_replay(
+            transform_config=transform_config,
+            trace_file=trace,
+            profile_file=profile_file,
+            tdg_detail='standalone',
+            output_tdg=tdg,
+            debugs=debugs,
+        )
+
         os.chdir(self.cwd)
 
     def clean(self):
@@ -109,7 +125,7 @@ class TestInputSuite:
 
         # Find all the test input c files.
         myself = os.path.dirname(os.path.realpath(__file__))
-        test_folder = os.path.relpath('../test', myself)
+        test_folder = os.path.abspath(os.path.join(myself, '../build/test'))
         test_inputs = list()
         for root, dirs, files in os.walk(test_folder):
             for f in files:
