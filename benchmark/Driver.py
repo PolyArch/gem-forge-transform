@@ -57,8 +57,8 @@ def transform(benchmark, transform_config, trace, profile_file, tdg, debugs):
     benchmark.transform(transform_config, trace, profile_file, tdg, debugs)
 
 
-def simulate(benchmark, tdg, simulation_config, debugs):
-    benchmark.simulate(tdg, simulation_config, debugs)
+def simulate(benchmark, tdg, simulation_config):
+    benchmark.simulate(tdg, simulation_config)
 
 
 class Driver:
@@ -80,7 +80,7 @@ class Driver:
         self.simulation_manager = (
             Gem5ConfigureManager.Gem5ReplayConfigureManager(options.simulations, self.transform_manager))
 
-        self.benchmarks = self._choose_suite().get_benchmarks()
+        self.benchmarks = self._init_benchmarks()
         # Filter out other benchmarks not specified by the user.
         if self.options.benchmark is not None:
             self.benchmarks = [b for b in self.benchmarks if b.get_name()
@@ -98,29 +98,34 @@ class Driver:
 
         self._schedule_and_run()
 
-    def _choose_suite(self):
+    def _init_benchmarks(self):
         benchmark_args = Benchmark.BenchmarkArgs(
             self.transform_manager, self.simulation_manager
         )
-        if self.options.suite == 'spec':
-            return SPEC2017.SPEC2017Benchmarks(benchmark_args)
-        elif self.options.suite == 'spu':
-            return SPU.SPUBenchmarks(benchmark_args)
-        elif self.options.suite == 'mach':
-            return MachSuite.MachSuiteBenchmarks(benchmark_args)
-        elif self.options.suite == 'hello':
-            return TestHelloWorld.TestHelloWorldBenchmarks(benchmark_args)
-        elif self.options.suite == 'graph500':
-            return Graph500.Graph500Benchmarks(benchmark_args)
-        elif self.options.suite == 'cortex':
-            return CortexSuite.CortexSuite(benchmark_args)
-        elif self.options.suite == 'sdvbs':
-            return SDVBS.SDVBSSuite(benchmark_args)
-        elif self.options.suite == 'test':
-            return GenerateTestInputs.TestInputSuite(benchmark_args)
-        else:
-            print('Unknown suite ' + self.options.suite)
-            assert(False)
+        benchmarks = list()
+        for suite_name in self.option.suite:
+            suite = None
+            if suite_name == 'spec':
+                suite = SPEC2017.SPEC2017Benchmarks(benchmark_args)
+            elif suite_name == 'spu':
+                suite = SPU.SPUBenchmarks(benchmark_args)
+            elif suite_name == 'mach':
+                suite = MachSuite.MachSuiteBenchmarks(benchmark_args)
+            elif suite_name == 'hello':
+                suite = TestHelloWorld.TestHelloWorldBenchmarks(benchmark_args)
+            elif suite_name == 'graph500':
+                suite = Graph500.Graph500Benchmarks(benchmark_args)
+            elif suite_name == 'cortex':
+                suite = CortexSuite.CortexSuite(benchmark_args)
+            elif suite_name == 'sdvbs':
+                suite = SDVBS.SDVBSSuite(benchmark_args)
+            elif suite_name == 'test':
+                suite = GenerateTestInputs.TestInputSuite(benchmark_args)
+            else:
+                print('Unknown suite ' + self.options.suite)
+                assert(False)
+            benchmarks += suite.get_benchmarks()
+        return benchmarks
 
     def _schedule_and_run(self):
         job_scheduler = Util.JobScheduler(self.options.cores, 1)
@@ -245,7 +250,6 @@ class Driver:
                         benchmark,
                         tdgs[i],
                         simulation_config,
-                        simulation_config.get_debugs(),
                     ),
                     deps
                 )
@@ -363,6 +367,10 @@ def main(options):
                 # suite_result.show_cache_coalesce_hits(transform_config)
 
 
+def parse_suites(option, opt, value, parser):
+    setattr(parser.values, option.dest, value.split(','))
+
+
 def parse_benchmarks(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
 
@@ -411,14 +419,9 @@ def parse_simulate_configurations(option, opt, value, parser):
 
 if __name__ == '__main__':
     import optparse
-    default_cores = os.getenv('LLVM_TDG_CPUS')
-    if default_cores is not None:
-        default_cores = int(default_cores)
-    else:
-        default_cores = 8
     parser = optparse.OptionParser()
     parser.add_option('-j', '--cores', action='store',
-                      type='int', dest='cores', default=default_cores)
+                      type='int', dest='cores', default=8)
     parser.add_option('-b', '--build', action='store_true',
                       dest='build', default=False)
     parser.add_option('--profile', action='store_true',
@@ -439,11 +442,12 @@ if __name__ == '__main__':
     parser.add_option('--sim-configs', type='string', action='callback', default='',
                       dest='simulations', callback=parse_simulate_configurations)
 
+    parser.add_option('--suite', type='string', action='callback',
+                      dest='suite', callback=parse_suites)
+    parser.add_option('--benchmark', type='string', action='callback',
+                      dest='benchmark', callback=parse_benchmarks)
     parser.add_option('--trace-id', type='string', action='callback',
                       dest='trace_id', callback=parse_trace_ids)
-    parser.add_option('--benchmark', type='string', action='callback',
-                      callback=parse_benchmarks, dest='benchmark')
-    parser.add_option('--suite', action='store', type='string', dest='suite')
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)
