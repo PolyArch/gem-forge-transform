@@ -18,9 +18,6 @@ class Gem5ReplayConfig(object):
     def get_support_transform_ids(self):
         return self.json['support-transform-ids']
 
-    def get_debugs(self):
-        return []
-
     def get_gem5_dir(self, tdg):
         dirname, basename = os.path.split(tdg)
         gem5_dir = os.path.join(dirname, self.get_config(basename))
