@@ -98,12 +98,20 @@ class Driver:
 
         self._schedule_and_run()
 
+    def get_unique_id(self):
+        # Get a uid for this run.
+        # Use the suites and transforms
+        return '{ss}.{ts}'.format(
+            ss='.'.join(self.options.suite),
+            ts='.'.join(self.transform_manager.get_transforms())
+        )
+
     def _init_benchmarks(self):
         benchmark_args = Benchmark.BenchmarkArgs(
             self.transform_manager, self.simulation_manager
         )
         benchmarks = list()
-        for suite_name in self.option.suite:
+        for suite_name in self.options.suite:
             suite = None
             if suite_name == 'spec':
                 suite = SPEC2017.SPEC2017Benchmarks(benchmark_args)
@@ -122,13 +130,14 @@ class Driver:
             elif suite_name == 'test':
                 suite = GenerateTestInputs.TestInputSuite(benchmark_args)
             else:
-                print('Unknown suite ' + self.options.suite)
+                print('Unknown suite ' + ','.join(self.options.suite))
                 assert(False)
             benchmarks += suite.get_benchmarks()
         return benchmarks
 
     def _schedule_and_run(self):
-        job_scheduler = Util.JobScheduler(self.options.cores, 1)
+        job_scheduler = Util.JobScheduler(
+            self.get_unique_id(), self.options.cores, 1)
         for benchmark in self.benchmarks:
             if self.options.build:
                 benchmark.build_raw_bc()

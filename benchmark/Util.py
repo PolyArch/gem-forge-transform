@@ -70,8 +70,9 @@ class JobScheduler:
             self.args = args
             self.status = JobScheduler.STATE_INIT
 
-    def __init__(self, cores, poll_seconds):
+    def __init__(self, name, cores, poll_seconds):
         self.state = JobScheduler.STATE_INIT
+        self.name = name
         self.cores = cores
         self.poll_seconds = poll_seconds
         self.current_job_id = 1
@@ -189,7 +190,7 @@ class JobScheduler:
     def run(self):
         assert(self.state == JobScheduler.STATE_INIT)
         log_f = tempfile.NamedTemporaryFile(
-            prefix='job_scheduler.', delete=False)
+            prefix='job_scheduler.{n}.'.format(n=self.name), delete=False)
         print(log_f.name)
         seconds = 0
 
