@@ -159,7 +159,7 @@ if __name__ == '__main__':
         Gem5ConfigureManager.Gem5ReplayConfigureManager([], transform_manager))
     suite = TestInputSuite(benchmark_args)
     benchmarks = suite.get_benchmarks()
-    job_scheduler = Util.JobScheduler(8, 1)
+    job_scheduler = Util.JobScheduler('test', 8, 1)
     for b in benchmarks:
         benchmark_name = b.get_name()
         build_job_id = job_scheduler.add_job(

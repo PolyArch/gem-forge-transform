@@ -39,8 +39,24 @@ class Gem5Stats:
     def get_sim_seconds(self):
         return self['sim_seconds']
 
+    def get_cpu_cycles(self):
+        return self['system.cpu.numCycles']
+
     def get_cpu_insts(self):
         return self['system.cpu.commit.committedInsts']
+
+    """
+    Region stats has not total.
+    """
+
+    def get_region_mem_access(self):
+        return self.get_default('system.cpu.dcache.overall_accesses', 0)
+
+    def get_region_l1_misses(self):
+        return self.get_default('system.cpu.dcache.overall_misses', 0)
+
+    def get_region_l2_misses(self):
+        return self.get_default('system.l2.overall_misses', 0)
 
     def get_mem_access(self):
         return self.get_default('system.cpu.dcache.overall_accesses::total', 0)
