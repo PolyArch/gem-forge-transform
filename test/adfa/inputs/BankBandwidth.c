@@ -2,7 +2,8 @@
  * A very simple loop body with no loop-carry dependence.
  */
 
-#define N 64
+// Make this L2 workset 256kB.
+#define N (1024 * 32)
 
 typedef long long T;
 
