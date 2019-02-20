@@ -135,8 +135,6 @@ protected:
 
     // Reset other variables.
     this->State = SEARCHING;
-    // Reset the StaticInnerMostLoop cache.
-    this->CachedStaticInnerMostLoop.clear();
     // Call the base initialization.
     return ReplayTrace::initialize(Module);
   }
@@ -147,9 +145,6 @@ protected:
       delete Entry.second;
     }
     this->CachedStaticInnerMostLoop.clear();
-    // Release the cached static loops.
-    delete this->CachedLI;
-    this->CachedLI = nullptr;
     return ReplayTrace::finalize(Module);
   }
 
@@ -375,6 +370,11 @@ void SIMDPass::transform() {
                               LoopStats(LoopUtils::getLoopId(NewLoop),
                                         NewStaticLoop->StaticInstCount));
         }
+        auto &Stat = this->Stats.at(NewLoop);
+        Stat.DynamicInsts++;
+        if (IsAtHeaderOfVectorizable) {
+          Stat.Iter++;
+        }
       }
 
       if (IsAtHeaderOfVectorizable) {
@@ -436,15 +436,8 @@ void SIMDPass::transform() {
       if (NewStaticLoop != CurrentStaticLoop) {
         // We are out of the current loop.
         LoopIter++;
-        this->Stats.at(CurrentStaticLoop->Loop).Iter++;
       } else if (IsAtHeaderOfVectorizable) {
         LoopIter++;
-        this->Stats.at(CurrentStaticLoop->Loop).Iter++;
-      }
-
-      if (NewStaticLoop == CurrentStaticLoop) {
-        // We are still in the same loop.
-        this->Stats.at(CurrentStaticLoop->Loop).DynamicInsts++;
       }
 
       /**
@@ -1428,6 +1421,7 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
   auto Begin = this->Trace->DynamicInstructionList.begin();
   auto End = this->Trace->DynamicInstructionList.end();
   --End;
+  auto VectorizedDynamicInsts = this->Trace->DynamicInstructionList.size() - 1;
   DynamicInnerMostLoop DynamicLoop(StaticLoop, LoopIter, this->Trace, Begin,
                                    End);
 
@@ -1447,8 +1441,7 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
     // Update the stats of vectorized insts.
     auto &Stat = this->Stats.at(StaticLoop->Loop);
     Stat.VectorizedIter += LoopIter;
-    Stat.VectorizedDynamicInsts +=
-        this->Trace->DynamicInstructionList.size() - 1;
+    Stat.VectorizedDynamicInsts += VectorizedDynamicInsts;
   }
 
   DEBUG(llvm::errs() << DynamicLoop.StaticLoop->print() << '\n');
