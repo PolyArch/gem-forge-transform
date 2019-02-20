@@ -1,0 +1,6 @@
+{
+    "id": "simd",
+    "options": [
+        "-simd-pass"
+    ]
+}
