@@ -9,6 +9,9 @@
 
 LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
     : Loop(_Loop) {
+
+  this->UnrollableTerminator = LoopUtils::getUnrollableTerminator(this->Loop);
+
   // assert(this->Loop->empty() && "Can only unroll inner most loop for now.");
 
   for (auto BBIter = this->Loop->block_begin(), BBEnd = this->Loop->block_end();
@@ -22,7 +25,8 @@ LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
       auto Inst = &*InstIter;
       if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         llvm::InductionDescriptor ID;
-        // llvm::errs() << "Checking IVPhi for " << Utils::formatLLVMInst(Inst) << '\n';
+        // llvm::errs() << "Checking IVPhi for " << Utils::formatLLVMInst(Inst)
+        // << '\n';
         // {
         //   auto scev = SE->getSCEV(PHINode);
         //   if (scev != nullptr) {

@@ -19,6 +19,7 @@
         "--gem-forge-adfa-enable-speculation=1",
         "--gem-forge-adfa-break-iv-dep=1",
         "--gem-forge-adfa-break-rv-dep=1",
+        "--gem-forge-adfa-break-unrollable-ctr-dep=1",
         "--gem-forge-adfa-ideal-mem=1"
     ],
     "support-transform-ids": ["adfa"]

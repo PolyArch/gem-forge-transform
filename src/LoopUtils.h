@@ -26,7 +26,7 @@
 std::string printLoop(const llvm::Loop *Loop);
 
 class LoopUtils {
- public:
+public:
   /**
    * Returns true if a loop is continuous, i.e. once entered, the execution will
    * never falls out of the loop before the iteration ends.
@@ -65,7 +65,9 @@ class LoopUtils {
 
   static const std::unordered_set<std::string> SupportedMathFunctions;
 
- private:
+  static llvm::Instruction *getUnrollableTerminator(llvm::Loop *Loop);
+
+private:
   static int countPossiblePathFromBB(
       const llvm::Loop *Loop,
       std::unordered_set<const llvm::BasicBlock *> &OnPathBBs,
@@ -73,11 +75,11 @@ class LoopUtils {
 };
 
 class LoopIterCounter {
- public:
+public:
   enum Status {
-    SAME_ITER,  // We are still in the previous iteration.
-    NEW_ITER,   // We just entered a new iteration.
-    OUT,        // We just jumped outside the loop.
+    SAME_ITER, // We are still in the previous iteration.
+    NEW_ITER,  // We just entered a new iteration.
+    OUT,       // We just jumped outside the loop.
   };
 
   LoopIterCounter() : Loop(nullptr) {}
@@ -104,7 +106,7 @@ class LoopIterCounter {
    */
   Status count(llvm::Instruction *StaticInst, int &Iter);
 
- private:
+private:
   llvm::Loop *Loop;
   int Iter;
 };
@@ -117,7 +119,7 @@ class LoopIterCounter {
  * 3. Total number of static instructions.
  */
 class StaticInnerMostLoop {
- public:
+public:
   explicit StaticInnerMostLoop(llvm::Loop *_Loop);
   StaticInnerMostLoop(const StaticInnerMostLoop &Other) = delete;
   StaticInnerMostLoop(StaticInnerMostLoop &&Other) = delete;
@@ -165,7 +167,7 @@ class StaticInnerMostLoop {
    */
   llvm::Loop *Loop;
 
- private:
+private:
   /**
    * Sort all the basic blocks in topological order and store the result in
    * BBList.
@@ -182,18 +184,13 @@ class StaticInnerMostLoop {
  * This class represent a cached loop info.
  * This is useful as our transformation pass is module pass while loop info
  * is function pass. We have to cache the information to avoid recalculation.
- * This maintains a map from basic block to its inner most loop, if any.
  *
  * Since LoopInfo is based on dominator tree, it also caches the dominator
  * tree.
  *
  */
 class CachedLoopInfo {
- public:
-  using GetTLIFunc = std::function<llvm::TargetLibraryInfo &()>;
-  using GetACFunc =
-      std::function<llvm::AssumptionCache &(llvm::Function &Func)>;
-
+public:
   CachedLoopInfo(llvm::Module *Module) : TLI(nullptr) {
     TLI = new llvm::TargetLibraryInfo(
         llvm::TargetLibraryInfoImpl(llvm::Triple(Module->getTargetTriple())));
@@ -204,17 +201,17 @@ class CachedLoopInfo {
   llvm::LoopInfo *getLoopInfo(llvm::Function *Func);
   llvm::DominatorTree *getDominatorTree(llvm::Function *Func);
   llvm::ScalarEvolution *getScalarEvolution(llvm::Function *Func);
+  llvm::Instruction *getUnrollableTerminator(llvm::Loop *Loop);
 
- private:
+private:
   llvm::TargetLibraryInfo *TLI;
 
   std::unordered_map<llvm::Function *, llvm::AssumptionCache *> ACCache;
   std::unordered_map<llvm::Function *, llvm::LoopInfo *> LICache;
   std::unordered_map<llvm::Function *, llvm::DominatorTree *> DTCache;
   std::unordered_map<llvm::Function *, llvm::ScalarEvolution *> SECache;
-
-  // GetTLIFunc GetTLI;
-  // GetACFunc GetAC;
+  std::unordered_map<llvm::Loop *, llvm::Instruction *>
+      UnrollableTerminatorCache;
 };
 
 #endif
