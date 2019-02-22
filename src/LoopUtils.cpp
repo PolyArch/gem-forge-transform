@@ -144,6 +144,41 @@ std::string LoopUtils::formatLLVMValue(const llvm::Value *Value) {
   }
 }
 
+llvm::Instruction *LoopUtils::getUnrollableTerminator(llvm::Loop *Loop) {
+
+  // Basically copies from LoopUnroll.cpp
+
+  auto Header = Loop->getHeader();
+  if (Header == nullptr) {
+    return nullptr;
+  }
+
+  auto LatchBlock = Loop->getLoopLatch();
+  if (LatchBlock == nullptr) {
+    return nullptr;
+  }
+
+  if (!Loop->isSafeToClone()) {
+    return nullptr;
+  }
+
+  auto BI = llvm::dyn_cast<llvm::BranchInst>(LatchBlock->getTerminator());
+  if (!BI || BI->isUnconditional()) {
+    return nullptr;
+  }
+
+  auto CheckSuccessors = [&](unsigned S1, unsigned S2) {
+    return BI->getSuccessor(S1) == Header &&
+           !Loop->contains(BI->getSuccessor(S2));
+  };
+
+  if (!CheckSuccessors(0, 1) && !CheckSuccessors(1, 0)) {
+    return nullptr;
+  }
+
+  return BI;
+}
+
 void LoopIterCounter::configure(llvm::Loop *_Loop) {
   this->Loop = _Loop;
   this->Iter = -1;
@@ -300,8 +335,8 @@ CachedLoopInfo::~CachedLoopInfo() {
   delete this->TLI;
 }
 
-llvm::AssumptionCache *CachedLoopInfo::getAssumptionCache(
-    llvm::Function *Func) {
+llvm::AssumptionCache *
+CachedLoopInfo::getAssumptionCache(llvm::Function *Func) {
   auto Iter = this->ACCache.find(Func);
   if (Iter == this->ACCache.end()) {
     Iter = this->ACCache.emplace(Func, new llvm::AssumptionCache(*Func)).first;
@@ -329,14 +364,24 @@ llvm::DominatorTree *CachedLoopInfo::getDominatorTree(llvm::Function *Func) {
   return Iter->second;
 }
 
-llvm::ScalarEvolution *CachedLoopInfo::getScalarEvolution(
-    llvm::Function *Func) {
+llvm::ScalarEvolution *
+CachedLoopInfo::getScalarEvolution(llvm::Function *Func) {
   auto Iter = this->SECache.find(Func);
   if (Iter == this->SECache.end()) {
     auto SE = new llvm::ScalarEvolution(
         *Func, *this->TLI, *this->getAssumptionCache(Func),
         *this->getDominatorTree(Func), *this->getLoopInfo(Func));
     Iter = this->SECache.emplace(Func, SE).first;
+  }
+  return Iter->second;
+}
+
+llvm::Instruction *CachedLoopInfo::getUnrollableTerminator(llvm::Loop *Loop) {
+  auto Iter = this->UnrollableTerminatorCache.find(Loop);
+  if (Iter == this->UnrollableTerminatorCache.end()) {
+    Iter = this->UnrollableTerminatorCache
+               .emplace(Loop, LoopUtils::getUnrollableTerminator(Loop))
+               .first;
   }
   return Iter->second;
 }

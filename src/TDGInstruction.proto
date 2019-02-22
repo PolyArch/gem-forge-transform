@@ -25,6 +25,8 @@ message TDGInstructionDependence {
     REDUCTION_VARIABLE = 5;
     // Stream dependence type.
     STREAM = 6;
+    // Unrollable control dependence type.
+    UNROLLABLE_CONTROL = 7;
   }
   DependenceType type = 1;
   uint64 dependent_id = 2;
@@ -36,10 +38,6 @@ message TDGInstruction {
   uint64 bb = 3;
   uint64 pc = 4;
   repeated TDGInstructionDependence deps = 8;
-  // repeated uint64 reg_deps = 8;
-  // repeated uint64 used_stream_ids = 9;
-  // repeated uint64 mem_deps = 10;
-  // repeated uint64 ctr_deps = 11;
   oneof extra {
     StoreExtra store = 32;
     LoadExtra load = 33;

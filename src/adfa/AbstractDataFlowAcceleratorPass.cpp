@@ -162,157 +162,154 @@ void AbstractDataFlowAcceleratorPass::transform() {
     }
     // State machine.
     switch (this->State) {
-      case SEARCHING: {
-        assert(this->Trace->DynamicInstructionList.size() <= 2 &&
-               "For searching state, there should be at most 2 dynamic "
-               "instructions in the buffer.");
+    case SEARCHING: {
+      assert(this->Trace->DynamicInstructionList.size() <= 2 &&
+             "For searching state, there should be at most 2 dynamic "
+             "instructions in the buffer.");
 
-        if (this->Trace->DynamicInstructionList.size() == 2) {
-          // We can commit the previous one.
-          // DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize.\n");
-          this->serializeInstStream(
-              this->Trace->DynamicInstructionList.front());
-          this->Trace->commitOneDynamicInst();
+      if (this->Trace->DynamicInstructionList.size() == 2) {
+        // We can commit the previous one.
+        // DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize.\n");
+        this->serializeInstStream(this->Trace->DynamicInstructionList.front());
+        this->Trace->commitOneDynamicInst();
 
-          // DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize: Done.\n");
-        }
+        // DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize: Done.\n");
+      }
 
-        // If we are at the head of some candidate loop, switch to BUFFERING.
+      // If we are at the head of some candidate loop, switch to BUFFERING.
+      if (IsAtHeaderOfCandidate) {
+        this->State = BUFFERING;
+        LoopIter = 0;
+        CurrentLoop = NewLoop;
+        // DEBUG(llvm::errs() << "ADFA: SEARCHING -> BUFFERING.\n");
+      }
+
+      break;
+    }
+    case DATAFLOW: {
+      assert(this->Trace->DynamicInstructionList.size() >= 2 &&
+             "For dataflow state, there should be at least 2 dynamic "
+             "instructions in the buffer.");
+
+      // Add the previous inst to data flow.
+      if (this->Trace->DynamicInstructionList.size() >= 2) {
+        auto Iter = this->Trace->DynamicInstructionList.end();
+        --Iter;
+        --Iter;
+        this->CurrentConfiguredDataFlow.addDynamicInst(Iter);
+        this->Stats.at(CurrentConfiguredDataFlow.Loop).DataFlowDynamicInst++;
+      }
+
+      if (!CurrentLoop->contains(NewLoop)) {
+        // We are outside of the current loop.
+        this->CurrentConfiguredDataFlow.end();
         if (IsAtHeaderOfCandidate) {
-          this->State = BUFFERING;
+          // We are at the header of some new candidate loop, switch to
+          // BUFFERING.
           LoopIter = 0;
           CurrentLoop = NewLoop;
-          // DEBUG(llvm::errs() << "ADFA: SEARCHING -> BUFFERING.\n");
+          this->State = BUFFERING;
+          // DEBUG(llvm::errs() << "ADFA: DATAFLOW -> BUFFERING.\n");
+        } else {
+          // We are back to search state.
+          this->State = SEARCHING;
+          // DEBUG(llvm::errs() << "ADFA: DATAFLOW -> SEARCHING.\n");
         }
-
-        break;
       }
-      case DATAFLOW: {
-        assert(this->Trace->DynamicInstructionList.size() >= 2 &&
-               "For dataflow state, there should be at least 2 dynamic "
-               "instructions in the buffer.");
 
-        // Add the previous inst to data flow.
-        if (this->Trace->DynamicInstructionList.size() >= 2) {
-          auto Iter = this->Trace->DynamicInstructionList.end();
-          --Iter;
-          --Iter;
-          this->CurrentConfiguredDataFlow.addDynamicInst(Iter);
-          this->Stats.at(CurrentConfiguredDataFlow.Loop).DataFlowDynamicInst++;
-        }
-
-        if (!CurrentLoop->contains(NewLoop)) {
-          // We are outside of the current loop.
-          this->CurrentConfiguredDataFlow.end();
-          if (IsAtHeaderOfCandidate) {
-            // We are at the header of some new candidate loop, switch to
-            // BUFFERING.
-            LoopIter = 0;
-            CurrentLoop = NewLoop;
-            this->State = BUFFERING;
-            // DEBUG(llvm::errs() << "ADFA: DATAFLOW -> BUFFERING.\n");
-          } else {
-            // We are back to search state.
-            this->State = SEARCHING;
-            // DEBUG(llvm::errs() << "ADFA: DATAFLOW -> SEARCHING.\n");
-          }
-        }
-
-        break;
-      }
-      case BUFFERING: {
-        /**
-         * Update the LoopIter.
-         * 1. If we are inside other loops, increase iter count.
-         * 2. If we are in the same loop, but hitting header, increase iter
-         * count.
-         */
-        bool IsAtBoundary = false;
-        if (!CurrentLoop->contains(NewLoop)) {
-          // We are out of the current loop.
+      break;
+    }
+    case BUFFERING: {
+      /**
+       * Update the LoopIter.
+       * 1. If we are inside other loops, increase iter count.
+       * 2. If we are in the same loop, but hitting header, increase iter
+       * count.
+       */
+      bool IsAtBoundary = false;
+      if (!CurrentLoop->contains(NewLoop)) {
+        // We are out of the current loop.
+        LoopIter++;
+        IsAtBoundary = true;
+      } else {
+        // We are still in the same loop.
+        if (CurrentLoop == NewLoop && IsAtHeaderOfCandidate) {
+          // We are back at the header of the current loop.
           LoopIter++;
           IsAtBoundary = true;
-        } else {
-          // We are still in the same loop.
-          if (CurrentLoop == NewLoop && IsAtHeaderOfCandidate) {
-            // We are back at the header of the current loop.
-            LoopIter++;
-            IsAtBoundary = true;
-          }
         }
+      }
 
-        if (!IsAtBoundary) {
-          // Keep buffering if we are not at boundary.
-          break;
-        }
+      if (!IsAtBoundary) {
+        // Keep buffering if we are not at boundary.
+        break;
+      }
 
-        /**
-         * Process the buffer if we buffered enough number of instructions.
-         * Be careful to only process the buffer at boundary (one iter ends).
-         * This will commit the buffer EXCEPT THE LAST INSTRUCTION.
-         */
-        bool DataFlowStarted = false;
-        if (this->Trace->DynamicInstructionList.size() >
-            this->BufferThreshold) {
-          // DEBUG(llvm::errs() << "ADFA: Processing buffer.\n");
-          DataFlowStarted = this->processBuffer(CurrentLoop, LoopIter);
-          // Clear the loop iter.
+      /**
+       * Process the buffer if we buffered enough number of instructions.
+       * Be careful to only process the buffer at boundary (one iter ends).
+       * This will commit the buffer EXCEPT THE LAST INSTRUCTION.
+       */
+      bool DataFlowStarted = false;
+      if (this->Trace->DynamicInstructionList.size() > this->BufferThreshold) {
+        // DEBUG(llvm::errs() << "ADFA: Processing buffer.\n");
+        DataFlowStarted = this->processBuffer(CurrentLoop, LoopIter);
+        // Clear the loop iter.
+        LoopIter = 0;
+      }
+
+      /**
+       * Determine next state.
+       * 1. If we are staying in the same loop,
+       *  1.1 If the data flow has already started, then switch to DATAFLOW.
+       *  2.2 Otherwise, keep buffering. (Not sure about this).
+       * 2. If we are outside the current loop,
+       *  2.1 If we are at the header of a new candidate, keep buffering the
+       * new loop. 2.2. Otherwise, go back to search. In case 2, we should
+       * also commit remaining buffered iters in case the buffered number of
+       * instructions is not big enough.
+       */
+      if (!CurrentLoop->contains(NewLoop)) {
+        // Case 2
+        if (IsAtHeaderOfCandidate) {
+          // Case 2.1.
+          // Update the loop and loop iter.
           LoopIter = 0;
-        }
-
-        /**
-         * Determine next state.
-         * 1. If we are staying in the same loop,
-         *  1.1 If the data flow has already started, then switch to DATAFLOW.
-         *  2.2 Otherwise, keep buffering. (Not sure about this).
-         * 2. If we are outside the current loop,
-         *  2.1 If we are at the header of a new candidate, keep buffering the
-         * new loop. 2.2. Otherwise, go back to search. In case 2, we should
-         * also commit remaining buffered iters in case the buffered number of
-         * instructions is not big enough.
-         */
-        if (!CurrentLoop->contains(NewLoop)) {
-          // Case 2
-          if (IsAtHeaderOfCandidate) {
-            // Case 2.1.
-            // Update the loop and loop iter.
-            LoopIter = 0;
-            CurrentLoop = NewLoop;
-          } else {
-            // Case 2.2.
-            // DEBUG(llvm::errs() << "ADFA: BUFFERING -> SEARCHING.\n");
-            this->State = SEARCHING;
-          }
-
-          if (DataFlowStarted) {
-            // We are out of the current loop, end the dataflow.
-            this->CurrentConfiguredDataFlow.end();
-            assert(
-                this->Trace->DynamicInstructionList.size() == 1 &&
-                "Data flow ended with remaining instructions in the buffer.");
-          } else {
-            // Commit remaining insts if we haven't start the dataflow.
-            while (this->Trace->DynamicInstructionList.size() > 1) {
-              this->serializeInstStream(
-                  this->Trace->DynamicInstructionList.front());
-              this->Trace->commitOneDynamicInst();
-            }
-          }
-
+          CurrentLoop = NewLoop;
         } else {
-          // Case 1.
-          if (DataFlowStarted) {
-            // DEBUG(llvm::errs() << "ADFA: BUFFERING -> DATAFLOW.\n");
-            this->State = DATAFLOW;
+          // Case 2.2.
+          // DEBUG(llvm::errs() << "ADFA: BUFFERING -> SEARCHING.\n");
+          this->State = SEARCHING;
+        }
+
+        if (DataFlowStarted) {
+          // We are out of the current loop, end the dataflow.
+          this->CurrentConfiguredDataFlow.end();
+          assert(this->Trace->DynamicInstructionList.size() == 1 &&
+                 "Data flow ended with remaining instructions in the buffer.");
+        } else {
+          // Commit remaining insts if we haven't start the dataflow.
+          while (this->Trace->DynamicInstructionList.size() > 1) {
+            this->serializeInstStream(
+                this->Trace->DynamicInstructionList.front());
+            this->Trace->commitOneDynamicInst();
           }
         }
 
-        break;
+      } else {
+        // Case 1.
+        if (DataFlowStarted) {
+          // DEBUG(llvm::errs() << "ADFA: BUFFERING -> DATAFLOW.\n");
+          this->State = DATAFLOW;
+        }
       }
-      default: {
-        llvm_unreachable("ADFA: Invalid machine state.");
-        break;
-      }
+
+      break;
+    }
+    default: {
+      llvm_unreachable("ADFA: Invalid machine state.");
+      break;
+    }
     }
   }
 
@@ -334,7 +331,7 @@ void AbstractDataFlowAcceleratorPass::serializeDataFlow(
  * tell the accelerator that it has reached the end of this invoke.
  */
 class AbsDataFlowEndToken : public DynamicInstruction {
- public:
+public:
   AbsDataFlowEndToken() {}
   std::string getOpName() const override { return "df-end"; }
   // No customized fields for AbsDataFlowEndToken.
@@ -345,11 +342,10 @@ class AbsDataFlowEndToken : public DynamicInstruction {
  * Involves some overhead.
  */
 class AbsDataFlowConfigInst : public DynamicInstruction {
- public:
+public:
   AbsDataFlowConfigInst(const std::string &_DataFlowFileName, uint64_t _StartPC,
                         const std::string &_RegionName)
-      : DataFlowFileName(_DataFlowFileName),
-        StartPC(_StartPC),
+      : DataFlowFileName(_DataFlowFileName), StartPC(_StartPC),
         RegionName(_RegionName) {}
   std::string getOpName() const override { return "df-config"; }
   // There should be some customized fields in the future.
@@ -364,7 +360,7 @@ class AbsDataFlowConfigInst : public DynamicInstruction {
     ConfigExtra->set_region(this->RegionName);
   }
 
- private:
+private:
   std::string DataFlowFileName;
   uint64_t StartPC;
   std::string RegionName;
@@ -374,7 +370,7 @@ class AbsDataFlowConfigInst : public DynamicInstruction {
  * This instruction will kick the accelerator to start working.
  */
 class AbsDataFlowStartInst : public DynamicInstruction {
- public:
+public:
   AbsDataFlowStartInst() {}
   std::string getOpName() const override { return "df-start"; }
 };
@@ -389,6 +385,11 @@ void AbsDataFlowLLVMInst::serializeToProtobufExtra(
   /**
    * Serialize our extra dependence information.
    */
+  for (const auto &Id : this->UnrollableCtrDeps) {
+    auto Dep = ProtobufEntry->add_deps();
+    Dep->set_type(::LLVM::TDG::TDGInstructionDependence::UNROLLABLE_CONTROL);
+    Dep->set_dependent_id(Id);
+  }
   for (const auto &Id : this->PDFCtrDeps) {
     auto Dep = ProtobufEntry->add_deps();
     Dep->set_type(
@@ -542,12 +543,13 @@ void DynamicDataFlow::fixCtrDependence(AbsDataFlowLLVMInst *AbsDFInst) {
          "DynamicDataFlow cannot fix dependence for non llvm instructions.");
 
   /**
-   * Notice that we keep the original control dependence.
+   * Notice that we remove the original control dependence.
    */
   auto &CtrDeps = this->DG->CtrDeps.at(AbsDFInst->getId());
   CtrDeps.clear();
 
   auto CtrDepId = DynamicInstruction::InvalidId;
+  llvm::Instruction *CtrDepStaticInst = nullptr;
   uint64_t CtrDepAge;
   for (auto CtrBB : this->PDF->getFrontier(StaticInst->getParent())) {
     // Get the terminator of the CtrBB.
@@ -560,15 +562,27 @@ void DynamicDataFlow::fixCtrDependence(AbsDataFlowLLVMInst *AbsDFInst) {
       // The first control dependence we have met.
       CtrDepAge = Iter->second.second;
       CtrDepId = Iter->second.first;
+      CtrDepStaticInst = CtrInst;
     } else if (CtrDepAge < Iter->second.second) {
       // Later control dependence.
       CtrDepAge = Iter->second.second;
       CtrDepId = Iter->second.first;
+      CtrDepStaticInst = CtrInst;
     }
   }
   // Update the ctr dep.
   if (CtrDepId != DynamicInstruction::InvalidId) {
-    AbsDFInst->PDFCtrDeps.insert(CtrDepId);
+
+    // Check if this is an unrollable back deps.
+    auto LU = this->CachedLU->getUnroller(
+        this->LI->getLoopFor(StaticInst->getParent()), this->SE);
+    if (CtrDepStaticInst == LU->getUnrollableTerminator()) {
+      // This is an unrollable terminator dependence.
+      AbsDFInst->UnrollableCtrDeps.insert(CtrDepId);
+    } else {
+      // Normal PDF dependence.
+      AbsDFInst->PDFCtrDeps.insert(CtrDepId);
+    }
   }
 }
 
@@ -671,6 +685,6 @@ void DynamicDataFlow::end() {
 #undef DEBUG_TYPE
 
 char AbstractDataFlowAcceleratorPass::ID = 0;
-static llvm::RegisterPass<AbstractDataFlowAcceleratorPass> X(
-    "abs-data-flow-acc-pass", "Abstract datagraph accelerator transform pass",
-    false, false);
+static llvm::RegisterPass<AbstractDataFlowAcceleratorPass>
+    X("abs-data-flow-acc-pass", "Abstract datagraph accelerator transform pass",
+      false, false);

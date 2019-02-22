@@ -17,7 +17,8 @@
         "--gem-forge-adfa-num-ports-per-bank=2",
         "--gem-forge-adfa-num-banks=4",
         "--gem-forge-adfa-break-iv-dep=1",
-        "--gem-forge-adfa-break-rv-dep=1"
+        "--gem-forge-adfa-break-rv-dep=1",
+        "--gem-forge-adfa-break-unrollable-ctr-dep=1"
     ],
     "support-transform-ids": ["adfa"]
 }

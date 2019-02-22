@@ -37,7 +37,7 @@
  * LLVMDynamicInstuction.
  */
 class AbsDataFlowLLVMInst : public DynamicInstruction {
- public:
+public:
   AbsDataFlowLLVMInst(LLVMDynamicInstruction *_LLVMDynInst)
       : DynamicInstruction(_LLVMDynInst->getId()), LLVMDynInst(_LLVMDynInst) {}
 
@@ -59,6 +59,7 @@ class AbsDataFlowLLVMInst : public DynamicInstruction {
   /**
    * Extra dependence information.
    */
+  std::unordered_set<DynamicId> UnrollableCtrDeps;
   std::unordered_set<DynamicId> PDFCtrDeps;
   std::unordered_set<DynamicId> IVDeps;
   std::unordered_set<DynamicId> RVDeps;
@@ -71,7 +72,7 @@ class AbsDataFlowLLVMInst : public DynamicInstruction {
  * simulator explicitly ignores those dependent instructions from outside.
  */
 class DynamicDataFlow {
- public:
+public:
   DynamicDataFlow();
 
   /**
@@ -97,7 +98,7 @@ class DynamicDataFlow {
   CachedLoopUnroller *CachedLU;
   llvm::ScalarEvolution *SE;
 
- private:
+private:
   /**
    * An entry contains the dynamic id and the age.
    * This is used to find the oldest real control dependence.
@@ -113,8 +114,8 @@ class DynamicDataFlow {
    * Wrap the newly added dynamic llvm instruction with a AbsDataFlowLLVMInst,
    * and takes the place in the list.
    */
-  AbsDataFlowLLVMInst *wrapWithAbsDataFlowLLVMInst(
-      DataGraph::DynamicInstIter &DynInstIter) const;
+  AbsDataFlowLLVMInst *
+  wrapWithAbsDataFlowLLVMInst(DataGraph::DynamicInstIter &DynInstIter) const;
 
   /**
    * Replace the control dependence with PDF control dependence.
@@ -133,13 +134,13 @@ class DynamicDataFlow {
 };
 
 class AbstractDataFlowAcceleratorPass : public ReplayTrace {
- public:
+public:
   static char ID;
   AbstractDataFlowAcceleratorPass() : ReplayTrace(ID) {}
 
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override;
 
- protected:
+protected:
   bool initialize(llvm::Module &Module) override;
 
   bool finalize(llvm::Module &Module) override;
@@ -174,12 +175,8 @@ class AbstractDataFlowAcceleratorPass : public ReplayTrace {
     uint64_t DataFlow;
 
     DataFlowStats(const std::string &_RegionId, uint64_t _StaticInst)
-        : RegionId(_RegionId),
-          StaticInst(_StaticInst),
-          DynamicInst(0),
-          DataFlowDynamicInst(0),
-          Config(0),
-          DataFlow(0) {}
+        : RegionId(_RegionId), StaticInst(_StaticInst), DynamicInst(0),
+          DataFlowDynamicInst(0), Config(0), DataFlow(0) {}
 
     static void dumpStatsTitle(std::ostream &O) {
       O << std::setw(50) << "RegionId" << std::setw(20) << "StaticInsts"
@@ -233,6 +230,6 @@ class AbstractDataFlowAcceleratorPass : public ReplayTrace {
    * functions).
    */
   bool isLoopDataFlow(llvm::Loop *Loop);
-};  // namespace
+}; // namespace
 
 #endif

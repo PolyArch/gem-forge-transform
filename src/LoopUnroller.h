@@ -19,7 +19,7 @@
  *
  */
 class LoopUnroller {
- public:
+public:
   LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE);
 
   /**
@@ -60,7 +60,11 @@ class LoopUnroller {
   bool isInductionVariable(llvm::Instruction *Inst) const;
   bool isReductionVariable(llvm::Instruction *Inst) const;
 
- private:
+  llvm::Instruction *getUnrollableTerminator() const {
+    return this->UnrollableTerminator;
+  }
+
+private:
   using DynamicId = DynamicInstruction::DynamicId;
 
   llvm::Loop *Loop;
@@ -71,6 +75,8 @@ class LoopUnroller {
 
   std::unordered_map<llvm::Instruction *, llvm::RecurrenceDescriptor>
       ReductionVars;
+
+  llvm::Instruction *UnrollableTerminator;
 
   /**
    * Updating fields when unrolling.
@@ -130,13 +136,13 @@ class LoopUnroller {
 };
 
 class CachedLoopUnroller {
- public:
+public:
   CachedLoopUnroller() = default;
   ~CachedLoopUnroller();
 
   LoopUnroller *getUnroller(llvm::Loop *Loop, llvm::ScalarEvolution *SE);
 
- private:
+private:
   std::unordered_map<llvm::Loop *, LoopUnroller *> CachedLU;
 };
 
