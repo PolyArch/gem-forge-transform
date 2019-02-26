@@ -28,6 +28,12 @@ bool AbstractDataFlowAcceleratorPass::initialize(llvm::Module &Module) {
   this->Stats.clear();
 
   this->DataFlowFileName = this->OutTraceName + ".adfa";
+  auto SlashPos = this->DataFlowFileName.rfind('/');
+  if (SlashPos == std::string::npos) {
+    this->RelativeDataFlowFileName = this->DataFlowFileName;
+  } else {
+    this->RelativeDataFlowFileName = this->DataFlowFileName.substr(SlashPos);
+  }
 
   // If the main datagraph use text mode, we also use text mode for ours.
   this->DataFlowSerializer = new TDGSerializer(this->DataFlowFileName,
@@ -429,7 +435,7 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
       assert(Loop->contains(StartInst->getParent()) &&
              "The start instruction should be in the loop.");
 
-      AbsDataFlowConfigInst ConfigInst(this->DataFlowFileName,
+      AbsDataFlowConfigInst ConfigInst(this->RelativeDataFlowFileName,
                                        reinterpret_cast<uint64_t>(StartInst),
                                        LoopUtils::getLoopId(Loop));
       this->serializeInstStream(&ConfigInst);
