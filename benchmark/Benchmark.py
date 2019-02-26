@@ -66,13 +66,23 @@ class Benchmark(object):
     i.e. it is the derived class's responsibility to provide the llvm bc file.
 
     The directory tree structure.
-    run_path/                               -- bc, exe, profile, traces.
+
+    exe_path/
+    This is where to instrument the bc, profiling and tracing happens.
+    The traces will be moved to run_path
+
+    run_path/                               -- bc, profile, traces.
     run_path/transform_id/                  -- transformed data graphs.
     run_path/transform_id/simulation_id/    -- simulation results.
 
     Derived classes should implement the following methods:
-    get_raw_bc()
-
+    get_name()
+    get_links()
+    get_args()
+    get_trace_func()
+    get_lang()
+    get_run_path()
+    get_raw_bc() 
 
     """
 
@@ -99,6 +109,10 @@ class Benchmark(object):
         return
 
     @abc.abstractmethod
+    def get_exe_path(self):
+        return
+
+    @abc.abstractmethod
     def get_run_path(self):
         return
 
@@ -112,8 +126,6 @@ class Benchmark(object):
         self.simulation_manager = benchmark_args.simulation_manager
 
         # Initialize the result directory.
-        Util.call_helper(
-            ['mkdir', '-p', C.LLVM_TDG_RESULT_DIR])
         self.standalone = standalone
 
         self.pass_so = os.path.join(
@@ -190,7 +202,7 @@ class Benchmark(object):
                 break
 
     def get_transform_path(self, transform_id):
-        return os.path.join(self.work_path, transform_id)
+        return os.path.join(self.get_run_path(), transform_id)
 
     def get_tdgs(self, transform_config):
         return [self.get_tdg(transform_config, trace) for trace in self.traces]
@@ -209,15 +221,22 @@ class Benchmark(object):
         Util.mkdir_p(transform_path)
 
     def profile(self):
-        os.chdir(self.get_run_path())
+        os.chdir(self.get_exe_path())
         self.build_profile()
         self.run_profile()
         os.chdir(self.cwd)
 
     def simpoint(self):
-        os.chdir(self.work_path)
+        os.chdir(self.get_exe_path())
         print('Doing simpoints')
         SimPoint.SimPoint(self.get_profile())
+        # Copy the result to run_path.
+        simpont_fn = 'simpoints.txt'
+        Util.call_helper([
+            'cp',
+            simpont_fn,
+            self.get_run_path()
+        ])
         os.chdir(self.cwd)
 
     """
@@ -236,6 +255,17 @@ class Benchmark(object):
             run_cmd += self.get_args()
         print('# Run profiled binary...')
         Util.call_helper(run_cmd)
+        # Clean the profile bin.
+        os.remove(self.get_profile_bc())
+        os.remove(self.get_profile_bin())
+        # Move profile result to run_path.
+        if self.get_exe_path() == self.get_run_path():
+            return
+        Util.call_helper([
+            'cp',
+            self.get_profile(),
+            self.get_run_path()
+        ])
 
     """
     Construct the profiled binary.
@@ -305,6 +335,27 @@ class Benchmark(object):
             run_cmd += self.get_args()
         print('# Run traced binary...')
         Util.call_helper(run_cmd)
+        # Clean the trace bc and bin.
+        os.remove(self.get_trace_bc())
+        os.remove(self.get_trace_bin())
+        # Move all the traces to run_path.
+        if self.get_exe_path() == self.get_run_path():
+            return
+        trace_id = 0
+        while True:
+            trace_fn = '{name}.{i}.trace'.format(
+                name=self.get_name(),
+                i=trace_id)
+            if os.path.isfile(trace_fn):
+                Util.call_helper(['mv', trace_fn, self.get_run_path()])
+                trace_id += 1
+            else:
+                break
+        Util.call_helper([
+            'mv',
+            '{name}.inst.uid.txt'.format(name=self.get_name()),
+            self.get_run_path()
+        ])
 
     """
     Construct the traced binary.
@@ -507,68 +558,3 @@ class Benchmark(object):
             tdg, simulation_config, self.get_replay_bin(), gem5_out_dir, False)
         print('# Replaying the datagraph...')
         Util.call_helper(gem5_args)
-
-    def simulate_hoffman2(self, tdg, gem5_config, result, scp=True):
-        _, tdg_name = os.path.split(tdg)
-        hoffman2_ssh_tdg = os.path.join(C.HOFFMAN2_SSH_SCRATCH, tdg_name)
-        hoffman2_tdg = os.path.join(C.HOFFMAN2_SCRATCH, tdg_name)
-        print('# SCP tdg {tdg}.'.format(tdg=tdg_name))
-        if scp:
-            Util.call_helper([
-                'scp',
-                tdg,
-                hoffman2_ssh_tdg
-            ])
-        tdg_cache = tdg + '.cache'
-        tdg_cache_name = tdg_name + '.cache'
-        hoffman2_ssh_tdg_cache = os.path.join(
-            C.HOFFMAN2_SSH_SCRATCH, tdg_cache_name)
-        print('# SCP tdg cache {tdg}.'.format(tdg=tdg_cache_name))
-        if scp:
-            Util.call_helper([
-                'scp',
-                tdg_cache,
-                hoffman2_ssh_tdg_cache
-            ])
-        tdg_extra = tdg + '.extra'
-        tdg_extra_name = tdg_name + '.extra'
-        hoffman2_ssh_tdg_extra = os.path.join(
-            C.HOFFMAN2_SSH_SCRATCH, tdg_extra_name)
-        print('# SCP tdg extra {tdg}.'.format(tdg=tdg_extra_name))
-        if scp:
-            Util.call_helper([
-                'scp',
-                '-r',
-                tdg_extra,
-                hoffman2_ssh_tdg_extra
-            ])
-        replay_bin_name = self.get_replay_bin()
-        replay_bin = os.path.join(self.get_run_path(), replay_bin_name)
-        hoffman2_ssh_replay_bin = os.path.join(
-            C.HOFFMAN2_SSH_SCRATCH, replay_bin_name)
-        hoffman2_replay_bin = os.path.join(C.HOFFMAN2_SCRATCH, replay_bin_name)
-        if self.standalone != 1:
-            if scp:
-                Util.call_helper([
-                    'scp',
-                    '-r',
-                    replay_bin,
-                    hoffman2_ssh_replay_bin,
-                ])
-        # Create the command.
-        gem5_out_dir = self.gem5_config.get_config(tdg_name)
-        gem5_command = self.get_gem5_simulate_command(
-            hoffman2_tdg, gem5_config, hoffman2_replay_bin, gem5_out_dir, True)
-        return gem5_command
-
-    def get_hoffman2_retrive_cmd(self, tdg, gem5_config, result):
-        # Create the retrive command.
-        _, tdg_name = os.path.split(tdg)
-        gem5_out_dir = gem5_config.get_config(tdg_name)
-        retrive_cmd = [
-            'scp',
-            '-r',
-            os.path.join(C.HOFFMAN2_SSH_SCRATCH, gem5_out_dir, '*'),
-            gem5_config.get_gem5_dir(tdg),
-        ]
-        return retrive_cmd

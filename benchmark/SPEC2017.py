@@ -40,27 +40,24 @@ class SPEC2017Benchmark(Benchmark):
         self.build_system = 'gclang'
         self.build_system = 'clang'
 
-        # Check if build dir and run dir exists.
-        if not (os.path.isdir(self.get_build_path()) and os.path.isdir(self.get_run_path())):
+        # Create the run_path.
+        self.run_path = os.path.join(
+            C.LLVM_TDG_RESULT_DIR, 'spec2017', self.work_load)
+        Util.mkdir_chain(self.run_path)
+
+        # Check if build dir and exe dir exists.
+        if not (os.path.isdir(self.get_build_path()) and os.path.isdir(self.get_exe_path())):
             self.build_raw_bc()
 
         # Special case for x264_s: we have to create a symbolic link to the input.
         if self.work_load == '625.x264_s':
-            input_file = os.path.join(self.get_run_path(), 'BuckBunny.yuv')
+            input_file = os.path.join(self.get_exe_path(), 'BuckBunny.yuv')
             original_input_file = os.path.join(
-                self.get_run_path(), '../../BuckBunny.yuv')
-            if not os.path.exists(input_file):
-                if os.path.realpath(input_file) != original_input_file:
-                    Util.call_helper(['rm', '-f', input_file])
-                Util.call_helper([
-                    'ln',
-                    '-s',
-                    original_input_file,
-                    input_file,
-                ])
+                self.get_exe_path(), '../../BuckBunny.yuv')
+            Util.create_symbolic_link(original_input_file, input_file)
 
         # Finally use specinvoke to get the arguments.
-        os.chdir(self.get_run_path())
+        os.chdir(self.get_exe_path())
         self.args = self.find_args(subprocess.check_output([
             'specinvoke',
             '-n'
@@ -68,8 +65,6 @@ class SPEC2017Benchmark(Benchmark):
         print('{name} has arguments {args}'.format(
             name=self.get_name(), args=self.args))
         os.chdir(self.cwd)
-
-        self.work_path = self.get_run_path()
 
         # Initialize the benchmark.
         self.links = params['links']
@@ -114,7 +109,7 @@ class SPEC2017Benchmark(Benchmark):
                 label=self.get_build_label())
         )
 
-    def get_run_path(self):
+    def get_exe_path(self):
         if self.work_load.endswith('_s'):
             run_dirname = 'run_base_refspeed_{label}-m64.0000'.format(
                 label=self.get_build_label()
@@ -131,6 +126,9 @@ class SPEC2017Benchmark(Benchmark):
             'run',
             run_dirname
         )
+
+    def get_run_path(self):
+        return self.run_path
 
     def get_raw_bc(self):
         return self.target + '.bc'
@@ -149,7 +147,7 @@ class SPEC2017Benchmark(Benchmark):
         clear_cmd = [
             'rm',
             '-rf',
-            self.get_run_path()
+            self.get_exe_path()
         ]
         Util.call_helper(clear_cmd)
         # Fake the runcpu.
@@ -221,7 +219,13 @@ class SPEC2017Benchmark(Benchmark):
         # Name everything in the bitcode.
         print('# Naming everything in the llvm bitcode...')
         Util.call_helper([C.OPT, '-instnamer', raw_bc, '-o', raw_bc])
-        # Copy it to run directory.
+        # Copy it to exe directory.
+        Util.call_helper([
+            'cp',
+            raw_bc,
+            self.get_exe_path()
+        ])
+        # Also copy it to run directory.
         Util.call_helper([
             'cp',
             raw_bc,
@@ -275,7 +279,7 @@ class SPEC2017Benchmark(Benchmark):
             return fields[1:-5]
 
     def trace(self):
-        os.chdir(self.get_run_path())
+        os.chdir(self.get_exe_path())
         debugs = [
             # 'TracePass',
         ]
@@ -283,9 +287,19 @@ class SPEC2017Benchmark(Benchmark):
             debugs=debugs,
         )
         # Set the tracer mode.
-        os.putenv('LLVM_TDG_WORK_MODE', str(4))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+
+        # Stream project.
+        os.putenv('LLVM_TDG_WORK_MODE', str(3))
+        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
+
+        # Fractal project.
+        # os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        # os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        # os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 

@@ -8,16 +8,27 @@ import os
 class CortexBenchmark(Benchmark):
 
     FLAGS = {
+        # Stream experiments.
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
         'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sphinx': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'srr': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'lda': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'svd3': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'pca': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'motion-estimation': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'liblinear': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'sphinx': ['O2'],
+        'srr': ['O2'],
+        'lda': ['O2'],
+        'svd3': ['O2'],
+        'pca': ['O2'],
+        'motion-estimation': ['O2'],
+        'liblinear': ['O2'],
+
+        # Fractal experiments.
+        # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'sphinx': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'srr': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'lda': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'svd3': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'pca': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'motion-estimation': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'liblinear': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
     }
 
     DEFINES = {
@@ -197,32 +208,16 @@ class CortexBenchmark(Benchmark):
 
         self.src_dir = os.path.join(self.top_folder, benchmark_name)
 
-        self.top_result_dir = os.path.join(
-            self.top_folder, 'gem-forge-results'
-        )
-        Util.call_helper(['mkdir', '-p', self.top_result_dir])
-        self.benchmark_result_dir = os.path.join(
-            self.top_result_dir, self.benchmark_name)
-        Util.call_helper(['mkdir', '-p', self.benchmark_result_dir])
         self.work_path = os.path.join(
-            self.benchmark_result_dir, input_size)
-        Util.call_helper(['mkdir', '-p', self.work_path])
+            C.LLVM_TDG_RESULT_DIR, 'cortex', self.benchmark_name, input_size)
+        Util.mkdir_chain(self.work_path)
 
         # Create a symbolic link for everything in the source dir.
         for f in os.listdir(self.src_dir):
             print(os.path.join(self.src_dir, f))
             source = os.path.join(self.src_dir, f)
             dest = os.path.join(self.work_path, f)
-            if os.path.exists(dest):
-                continue
-            if os.path.realpath(dest) != source:
-                Util.call_helper(['rm', '-f', dest])
-            Util.call_helper([
-                'ln',
-                '-s',
-                os.path.join(self.src_dir, f),
-                dest,
-            ])
+            Util.create_symbolic_link(source, dest)
 
         self.cwd = os.getcwd()
         self.flags = CortexBenchmark.FLAGS[self.benchmark_name]
@@ -258,6 +253,9 @@ class CortexBenchmark(Benchmark):
 
     def get_lang(self):
         return 'C'
+
+    def get_exe_path(self):
+        return self.work_path
 
     def get_run_path(self):
         return self.work_path
@@ -329,14 +327,19 @@ class CortexBenchmark(Benchmark):
             trace_reachable_only=False,
             # debugs=['TracePass']
         )
-        # os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-        # os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-        # os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-        # os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
-        # os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
-        os.putenv('LLVM_TDG_WORK_MODE', str(4))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+        # Stream experiments.
+        os.putenv('LLVM_TDG_WORK_MODE', str(3))
+        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
+
+        # Fractal experiments.
+        # os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        # os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        # os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
