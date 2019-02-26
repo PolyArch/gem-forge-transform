@@ -162,6 +162,7 @@ protected:
   CachedLoopUnroller *CachedLU;
 
   std::string DataFlowFileName;
+  std::string RelativeDataFlowFileName;
 
   // Memorize the result of isDataflow.
   std::unordered_map<llvm::Loop *, bool> MemorizedLoopDataflow;
