@@ -6,16 +6,30 @@ import os
 
 
 class SDVBSBenchmark(Benchmark):
+    # Fractal experiments.
+    # FLAGS = {
+    #     'disparity': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'localization': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'mser': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'sift': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'stitch': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'svm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'texture_synthesis': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    #     'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    # }
+
+    # Stream experiments.
     FLAGS = {
-        'disparity': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'localization': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'mser': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sift': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'stitch': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'svm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'texture_synthesis': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'disparity': ['O2'],
+        'localization': ['O2'],
+        'mser': ['O2'],
+        'multi_ncut': ['O2'],
+        'sift': ['O2'],
+        'stitch': ['O2'],
+        'svm': ['O2'],
+        'texture_synthesis': ['O2'],
+        'tracking': ['O2'],
     }
 
     DEFINES = {
@@ -96,20 +110,14 @@ class SDVBSBenchmark(Benchmark):
         self.cwd = os.getcwd()
 
         # Create the result directory out side of the source tree.
-        self.top_result_dir = os.path.join(
-            self.top_folder, 'gem-forge-results')
-        Util.call_helper(['mkdir', '-p', self.top_result_dir])
-        self.benchmark_result_dir = os.path.join(
-            self.top_result_dir, self.benchmark_name)
-        Util.call_helper(['mkdir', '-p', self.benchmark_result_dir])
         self.work_path = os.path.join(
-            self.benchmark_result_dir, input_name)
-        Util.call_helper(['mkdir', '-p', self.work_path])
+            C.LLVM_TDG_RESULT_DIR, 'sdvbs', self.benchmark_name, input_name)
+        Util.mkdir_chain(self.work_path)
 
         self.source_bc_dir = os.path.join(self.work_path, 'obj')
         self.common_src_bc_dir = os.path.join(self.work_path, 'common_obj')
-        Util.call_helper(['mkdir', '-p', self.source_bc_dir])
-        Util.call_helper(['mkdir', '-p', self.common_src_bc_dir])
+        Util.mkdir_chain(self.source_bc_dir)
+        Util.mkdir_chain(self.common_src_bc_dir)
 
         self.flags = SDVBSBenchmark.FLAGS[self.benchmark_name]
         self.defines = SDVBSBenchmark.DEFINES[self.benchmark_name]
@@ -149,6 +157,9 @@ class SDVBSBenchmark(Benchmark):
 
     def get_lang(self):
         return 'C'
+
+    def get_exe_path(self):
+        return self.work_path
 
     def get_run_path(self):
         return self.work_path
@@ -217,25 +228,30 @@ class SDVBSBenchmark(Benchmark):
         os.chdir(self.cwd)
 
     def trace(self):
-        os.chdir(self.work_path)
+        os.chdir(self.get_exe_path())
         self.build_trace(
             link_stdlib=False,
             trace_reachable_only=False,
             # debugs=['TracePass']
         )
-        # os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-        # os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-        # os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-        # os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
-        # os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
-        os.putenv('LLVM_TDG_WORK_MODE', str(4))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+        # Stream experiments.
+        os.putenv('LLVM_TDG_WORK_MODE', str(3))
+        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
+
+        # Fractal experiments.
+        # os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        # os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        # os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
     def transform(self, transform_config, trace, profile_file, tdg, debugs):
-        os.chdir(self.work_path)
+        os.chdir(self.get_run_path())
 
         self.build_replay(
             transform_config=transform_config,

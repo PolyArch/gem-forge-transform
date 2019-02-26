@@ -1,6 +1,7 @@
 
 import multiprocessing
 import logging
+import os
 import subprocess
 import sys
 import unittest
@@ -23,6 +24,27 @@ def call_helper(cmd):
 
 def mkdir_p(path):
     call_helper(['mkdir', '-p', path])
+
+
+def mkdir_chain(path):
+    if os.path.isdir(path):
+        return
+    parent, child = os.path.split(path)
+    mkdir_chain(parent)
+    mkdir_p(path)
+
+
+def create_symbolic_link(src, dest):
+    if os.path.exists(dest):
+        return
+    if os.path.realpath(dest) != src:
+        call_helper(['rm', '-f', dest])
+    call_helper([
+        'ln',
+        '-s',
+        src,
+        dest,
+    ])
 
 
 def error(msg, *args):

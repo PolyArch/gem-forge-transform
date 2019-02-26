@@ -49,7 +49,6 @@ class Gem5ReplayConfig(object):
                     '--gem-forge-adfa-enable-speculation=1'
                     '--gem-forge-adfa-break-iv-dep=1'
                     '--gem-forge-adfa-break-rv-dep=1'
-                    '--llvm-prefetch=1'
                     '--gem-forge-stream-engine-is-oracle=1'
                     '--gem-forge-stream-engine-max-run-ahead-length={x}'.format(
                         x=self.stream_engine_max_run_ahead_length
