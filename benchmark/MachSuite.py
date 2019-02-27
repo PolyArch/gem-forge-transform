@@ -202,18 +202,6 @@ class MachSuiteBenchmark(Benchmark):
 
         os.chdir(self.cwd)
 
-    def statistics(self):
-        os.chdir(self.work_path)
-        debugs = [
-            'TraceStatisticPass',
-        ]
-        self.get_trace_statistics(
-            trace_file=self.get_trace_result(),
-            profile_file=self.get_profile(),
-            debugs=debugs,
-        )
-        os.chdir(self.cwd)
-
 
 class MachSuiteBenchmarks:
 

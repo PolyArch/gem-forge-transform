@@ -131,11 +131,6 @@ class Benchmark(object):
         self.pass_so = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
 
-        self.trace_links = self.get_links() + [
-            '-lz',
-            C.PROTOBUF_LIB,
-            C.LIBUNWIND_LIB,
-        ]
         self.trace_lib = os.path.join(
             C.LLVM_TDG_BUILD_DIR, 'trace/libTracerProtobuf.a'
         )
@@ -187,19 +182,34 @@ class Benchmark(object):
     def get_traces(self):
         return self.traces
 
-    def init_traces(self):
-        self.traces = list()
+    def get_trace_fn(self, trace_id):
+        trace_fn = '{run_path}/{name}.{i}.trace'.format(
+            run_path=self.get_run_path(),
+            name=self.get_name(),
+            i=trace_id)
+        return trace_fn
+
+    """
+    Find the trace ids. The default implementation will search
+    in the run_path. Derived class can override this behavior.
+    """
+
+    def init_trace_ids(self):
+        trace_ids = list()
         trace_id = 0
         while True:
-            trace_fn = '{run_path}/{name}.{i}.trace'.format(
-                run_path=self.get_run_path(),
-                name=self.get_name(),
-                i=trace_id)
+            trace_fn = self.get_trace_fn(trace_id)
             if os.path.isfile(trace_fn):
-                self.traces.append(TraceObj(trace_fn, trace_id))
+                trace_ids.append(trace_id)
                 trace_id += 1
             else:
                 break
+        return trace_ids
+
+    def init_traces(self):
+        trace_ids = self.init_trace_ids()
+        self.traces = [TraceObj(self.get_trace_fn(trace_id), trace_id)
+                       for trace_id in trace_ids]
 
     def get_transform_path(self, transform_id):
         return os.path.join(self.get_run_path(), transform_id)
@@ -315,7 +325,12 @@ class Benchmark(object):
                 '-o',
                 self.get_profile_bin(),
             ]
-        link_cmd += self.trace_links
+        trace_links = self.get_links() + [
+            '-lz',
+            C.PROTOBUF_LIB,
+            C.LIBUNWIND_LIB,
+        ]
+        link_cmd += trace_links
         Util.call_helper(link_cmd)
 
     """
@@ -404,7 +419,12 @@ class Benchmark(object):
                 '-o',
                 self.get_trace_bin(),
             ]
-        link_cmd += self.trace_links
+        trace_links = self.get_links() + [
+            '-lz',
+            C.PROTOBUF_LIB,
+            C.LIBUNWIND_LIB,
+        ]
+        link_cmd += trace_links
         print('# Link to traced binary...')
         Util.call_helper(link_cmd)
 
@@ -472,44 +492,15 @@ class Benchmark(object):
             print('# Building replay binary...')
             Util.call_helper(build_cmd)
 
-    """
-    Get trace statistics.
-    """
-
-    def get_trace_statistics(self,
-                             trace_file,
-                             profile_file,
-                             debugs=[]
-                             ):
-        opt_cmd = [
-            C.OPT,
-            '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
-            '-trace-statistic-pass',
-            '-trace-file={trace_file}'.format(trace_file=trace_file),
-            '-trace-format={format}'.format(format=self.trace_format),
-            '-tdg-profile-file={profile_file}'.format(
-                profile_file=profile_file),
-            # For statistics, simple is enough.
-            '-datagraph-detail=simple',
-            self.get_raw_bc(),
-            '-analyze',
-        ]
-        if debugs:
-            opt_cmd.append(
-                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
-        print('# Collecting statistics trace...')
-        Util.call_helper(opt_cmd)
-
     def get_additional_gem5_simulate_command(self):
         return []
 
     """
-    Prepare the gem5 simulate command.
+    Prepare the gem5 simulate command without the trace file.
     """
 
     def get_gem5_simulate_command(
             self,
-            tdg,
             gem5_config,
             replay_bin,
             gem5_out_dir,
@@ -521,7 +512,6 @@ class Benchmark(object):
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=replay_bin),
             '--llvm-standalone={standlone}'.format(standlone=self.standalone),
-            '--llvm-trace-file={trace_file}'.format(trace_file=tdg),
             '--llvm-issue-width={ISSUE_WIDTH}'.format(
                 ISSUE_WIDTH=C.ISSUE_WIDTH),
             '--llvm-store-queue-size={STORE_QUEUE_SIZE}'.format(
@@ -535,19 +525,20 @@ class Benchmark(object):
             '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
         ]
 
-        additional_options = gem5_config.get_options(tdg)
+        additional_options = gem5_config.get_options()
         gem5_args += additional_options
 
         # Add any options from derived classes.
         gem5_args += self.get_additional_gem5_simulate_command()
 
-        if self.get_args() is not None:
-            gem5_args.append(
-                '--options={binary_args}'.format(binary_args=' '.join(self.get_args())))
+        if self.standalone != 1:
+            if self.get_args() is not None:
+                gem5_args.append(
+                    '--options={binary_args}'.format(binary_args=' '.join(self.get_args())))
         return gem5_args
 
     """
-    Simulate the datagraph with gem5.
+    Simulate a single datagraph with gem5.
     """
 
     def simulate(self, tdg, simulation_config):
@@ -555,6 +546,10 @@ class Benchmark(object):
         gem5_out_dir = simulation_config.get_gem5_dir(tdg)
         Util.call_helper(['mkdir', '-p', gem5_out_dir])
         gem5_args = self.get_gem5_simulate_command(
-            tdg, simulation_config, self.get_replay_bin(), gem5_out_dir, False)
+            simulation_config, self.get_replay_bin(), gem5_out_dir, False)
+        # Remember to add back the trace file options.
+        gem5_args.append(
+            '--llvm-trace-file={trace_file}'.format(trace_file=tdg)
+        )
         print('# Replaying the datagraph...')
         Util.call_helper(gem5_args)
