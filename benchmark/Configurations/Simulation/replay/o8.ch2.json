@@ -1,5 +1,5 @@
 {
-    "id": "o8",
+    "id": "o8.ch2",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
