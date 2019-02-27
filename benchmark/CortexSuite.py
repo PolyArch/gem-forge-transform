@@ -191,14 +191,14 @@ class CortexBenchmark(Benchmark):
         # 'pca': [1],
         # 'motion-estimation': [0,1,3,8],
         # 'liblinear': [0],
-        'rbm': [0, 1, 2, 3, 4, 5, 6, 7],
+        'rbm': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'sphinx': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-        'srr': [0, 1, 2, 3, 4, 5, 6, 7],
-        'lda': [1, 2, 3, 4],
-        'svd3': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        'srr': [0, 1, 2, 3, 4, 5, 6, 8, 9],
+        'lda': [0, 3],
+        'svd3': [0, 1, 2, 4, 5, 6, 7, 8, 9],
         'pca': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-        'motion-estimation': [0, 1, 2, 3, 4, 5, 6, 7],
-        'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        'motion-estimation': [0, 1, 3, 8],
+        'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     }
 
     def __init__(self, benchmark_args, folder, benchmark_name, input_size):
@@ -263,7 +263,7 @@ class CortexBenchmark(Benchmark):
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
 
-    def get_trace_ids(self):
+    def init_trace_ids(self):
         return self.trace_ids
 
     def find_all_sources(self, folder):

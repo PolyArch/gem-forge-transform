@@ -23,6 +23,8 @@ def call_helper(cmd):
 
 
 def mkdir_p(path):
+    if os.path.isdir(path):
+        return
     call_helper(['mkdir', '-p', path])
 
 

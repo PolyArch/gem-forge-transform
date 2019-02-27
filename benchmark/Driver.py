@@ -1,4 +1,5 @@
 import Benchmark
+import MultiProgramBenchmark
 import SPEC2017
 import MachSuite
 import TestHelloWorld
@@ -17,8 +18,10 @@ from Utils import Gem5ConfigureManager
 from Utils import TransformManager
 
 from ProcessingScripts import ADFAExperiments
+from ProcessingScripts import StreamExperiments
 
 import os
+import random
 import pickle
 import glob
 
@@ -29,7 +32,6 @@ get_benchmarks() returns a list of benchmarks.
 Interface for benchmark:
 get_name() returns a unique name.
 get_run_path() returns the path to run.
-get_trace_ids() returns the trace ids.
 build_raw_bc() build the raw bitcode.
 trace() generates the trace.
 transform(pass_name, trace, profile_file, tdg, debugs)
@@ -133,6 +135,30 @@ class Driver:
                 print('Unknown suite ' + ','.join(self.options.suite))
                 assert(False)
             benchmarks += suite.get_benchmarks()
+
+        """
+        If multi-program is greater than 1, then we group benchmarks into
+        MultiProgramBenchmarks. Extra benchmarks will be ignored!
+        """
+        if self.options.multi_programs > 1:
+            # Get a fixed suffle.
+            benchmark_idx_shuffled = range(len(benchmarks))
+            random.Random(1).shuffle(benchmark_idx_shuffled)
+            multi_program_benchmarks = list()
+            current_idx = 0
+            while current_idx + self.options.multi_programs <= len(benchmarks):
+                benchmark_list = [
+                    benchmarks[benchmark_idx_shuffled[current_idx + i]]
+                    for i in range(self.options.multi_programs)
+                ]
+                multi_program_benchmarks.append(
+                    MultiProgramBenchmark.MultiProgramBenchmark(
+                        benchmark_args, benchmark_list)
+                )
+                current_idx += self.options.multi_programs
+            # Replace our benchmark list.
+            benchmarks = multi_program_benchmarks
+
         return benchmarks
 
     def _schedule_and_run(self):
@@ -194,7 +220,8 @@ class Driver:
             assert(transform_id not in self.transform_jobs[name])
             self.transform_jobs[name][transform_id] = dict()
 
-            for trace in traces:
+            for i in xrange(len(traces)):
+                trace = traces[i]
                 trace_id = trace.get_trace_id()
                 if self.options.trace_id:
                     if trace_id not in self.options.trace_id:
@@ -217,7 +244,7 @@ class Driver:
                             transform_config,
                             trace.get_trace_fn(),
                             profile_file,
-                            tdgs[trace_id],
+                            tdgs[i],
                             transform_config.get_debugs(),
                         ),
                         deps
@@ -292,7 +319,8 @@ def main(options):
     driver = Driver(options)
     if options.analyze:
         driver.load_simulation_results()
-        ADFAExperiments.analyze(driver)
+        # ADFAExperiments.analyze(driver)
+        StreamExperiments.analyze(driver)
 
     benchmark_stream_statistics = dict()
 
@@ -457,6 +485,10 @@ if __name__ == '__main__':
                       dest='benchmark', callback=parse_benchmarks)
     parser.add_option('--trace-id', type='string', action='callback',
                       dest='trace_id', callback=parse_trace_ids)
+
+    parser.add_option('--multi-program', type='int',
+                      action='store', dest='multi_programs', default=1)
+
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)

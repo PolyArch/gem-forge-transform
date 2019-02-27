@@ -63,7 +63,7 @@ class Gem5ReplayConfig(object):
                         l1d=self.stream_engine_l1d)
     """
 
-    def get_options(self, tdg):
+    def get_options(self):
         return self.json['options']
 
     def get_config(self, tdg_basename):
