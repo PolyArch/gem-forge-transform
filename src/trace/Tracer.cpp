@@ -23,26 +23,26 @@
 // Definitely not the best way to do thes, but since it barely changes
 // and imitiveTypes - make sure LastPrimitiveTyID stays up to date.
 enum TypeID {
-  VoidTyID = 0,   ///<  0: type with no size
-  HalfTyID,       ///<  1: 16-bit floating point type
-  FloatTyID,      ///<  2: 32-bit floating point type
-  DoubleTyID,     ///<  3: 64-bit floating point type
-  X86_FP80TyID,   ///<  4: 80-bit floating point type (X87)
-  FP128TyID,      ///<  5: 128-bit floating point type (112-bit mantissa)
-  PPC_FP128TyID,  ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
-  LabelTyID,      ///<  7: Labels
-  MetadataTyID,   ///<  8: Metadata
-  X86_MMXTyID,    ///<  9: MMX vectors (64 bits, X86 specific)
-  TokenTyID,      ///< 10: Tokens
+  VoidTyID = 0,  ///<  0: type with no size
+  HalfTyID,      ///<  1: 16-bit floating point type
+  FloatTyID,     ///<  2: 32-bit floating point type
+  DoubleTyID,    ///<  3: 64-bit floating point type
+  X86_FP80TyID,  ///<  4: 80-bit floating point type (X87)
+  FP128TyID,     ///<  5: 128-bit floating point type (112-bit mantissa)
+  PPC_FP128TyID, ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
+  LabelTyID,     ///<  7: Labels
+  MetadataTyID,  ///<  8: Metadata
+  X86_MMXTyID,   ///<  9: MMX vectors (64 bits, X86 specific)
+  TokenTyID,     ///< 10: Tokens
 
   // Derived types... see DerivedTypes.h file.
   // Make sure FirstDerivedTyID stays up to date!
-  IntegerTyID,   ///< 11: Arbitrary bit width integers
-  FunctionTyID,  ///< 12: Functions
-  StructTyID,    ///< 13: Structures
-  ArrayTyID,     ///< 14: Arrays
-  PointerTyID,   ///< 15: Pointers
-  VectorTyID     ///< 16: SIMD 'packed' format, or other vector type
+  IntegerTyID,  ///< 11: Arbitrary bit width integers
+  FunctionTyID, ///< 12: Functions
+  StructTyID,   ///< 13: Structures
+  ArrayTyID,    ///< 14: Arrays
+  PointerTyID,  ///< 15: Pointers
+  VectorTyID    ///< 16: SIMD 'packed' format, or other vector type
 };
 
 // Contain some common definitions
@@ -133,9 +133,6 @@ static bool MEASURE_IN_TRACE_FUNC = false;
 
 static uint64_t PRINT_INTERVAL = 10000000;
 
-// In simple mode, it will not log the dynamic value of operands.
-static bool isSimpleMode = false;
-
 // The tracer will maintain a stack at run time to determine if the
 // inst should be traced.
 static std::vector<unsigned> stack;
@@ -149,7 +146,7 @@ static ProfileLogger allProfile;
 // Traced profile log.
 static std::string tracedProfileFileName;
 static ProfileLogger tracedProfile;
-}  // namespace
+} // namespace
 
 // This serves as the guard.
 
@@ -212,14 +209,6 @@ static void initialize() {
   static bool initialized = false;
   if (!initialized) {
     printf("initializing tracer...\n");
-    // Set the trace mode.
-    const char *TraceMode = std::getenv("LLVM_TDG_TRACE_MODE");
-    std::string SIMPLE = "SIMPLE";
-    if (TraceMode) {
-      isSimpleMode = SIMPLE == TraceMode;
-    } else {
-      isSimpleMode = false;
-    }
 
     const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
     if (!traceFileName) {
@@ -282,31 +271,32 @@ static bool shouldLog() {
     c = countInTraceFunc;
   }
   switch (workMode) {
-    case WorkMode::Profile: {
+  case WorkMode::Profile: {
+    return false;
+  }
+  case WorkMode::TraceAll: {
+    return true;
+  }
+  case WorkMode::TraceTraced: {
+    return tracedFunctionsInStack > 0;
+  }
+  case WorkMode::TraceUniformSampled: {
+    if (c >= START_INST) {
+      return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
+    } else {
       return false;
     }
-    case WorkMode::TraceAll: {
-      return true;
+  }
+  case WorkMode::TraceSpecifiedInterval: {
+    if (intervals.empty())
+      return false;
+    const auto &interval = intervals.front();
+    if (c < interval.first) {
+      return false;
     }
-    case WorkMode::TraceTraced: {
-      return tracedFunctionsInStack > 0;
-    }
-    case WorkMode::TraceUniformSampled: {
-      if (c >= START_INST) {
-        return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
-      } else {
-        return false;
-      }
-    }
-    case WorkMode::TraceSpecifiedInterval: {
-      if (intervals.empty()) return false;
-      const auto &interval = intervals.front();
-      if (c < interval.first) {
-        return false;
-      }
-      return c < interval.second;
-    }
-    default: { assert(false && "Unknown work mode."); }
+    return c < interval.second;
+  }
+  default: { assert(false && "Unknown work mode."); }
   }
 }
 
@@ -316,32 +306,32 @@ static bool shouldSwitchTraceFile() {
     c = countInTraceFunc;
   }
   switch (workMode) {
-    case WorkMode::Profile:
-    case WorkMode::TraceAll:
-    case WorkMode::TraceTraced: {
+  case WorkMode::Profile:
+  case WorkMode::TraceAll:
+  case WorkMode::TraceTraced: {
+    return false;
+  }
+  case WorkMode::TraceUniformSampled: {
+    if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
+      // We are the last one of every MAX_INST. Switch file.
+      return true;
+    } else {
       return false;
     }
-    case WorkMode::TraceUniformSampled: {
-      if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
-        // We are the last one of every MAX_INST. Switch file.
-        return true;
-      } else {
-        return false;
-      }
-    }
-    case WorkMode::TraceSpecifiedInterval: {
-      if (intervals.empty()) {
-        return false;
-      }
-      if (c == intervals.front().second - 1) {
-        printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
-               intervals.front().second);
-        intervals.pop_front();
-        return true;
-      }
+  }
+  case WorkMode::TraceSpecifiedInterval: {
+    if (intervals.empty()) {
       return false;
     }
-    default: { assert(false && "Unknown work mode."); }
+    if (c == intervals.front().second - 1) {
+      printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
+             intervals.front().second);
+      intervals.pop_front();
+      return true;
+    }
+    return false;
+  }
+  default: { assert(false && "Unknown work mode."); }
   }
 }
 
@@ -353,21 +343,21 @@ static bool shouldExit() {
   }
 
   switch (workMode) {
-    case WorkMode::Profile:
-    case WorkMode::TraceAll:
-    case WorkMode::TraceTraced: {
-      return false;
+  case WorkMode::Profile:
+  case WorkMode::TraceAll:
+  case WorkMode::TraceTraced: {
+    return false;
+  }
+  case WorkMode::TraceUniformSampled: {
+    if (MEASURE_IN_TRACE_FUNC) {
+      c = countInTraceFunc;
     }
-    case WorkMode::TraceUniformSampled: {
-      if (MEASURE_IN_TRACE_FUNC) {
-        c = countInTraceFunc;
-      }
-      return c == END_INST;
-    }
-    case WorkMode::TraceSpecifiedInterval: {
-      return intervals.empty();
-    }
-    default: { assert(false && "Unknown work mode."); };
+    return c == END_INST;
+  }
+  case WorkMode::TraceSpecifiedInterval: {
+    return intervals.empty();
+  }
+  default: { assert(false && "Unknown work mode."); };
   }
 }
 
@@ -376,6 +366,26 @@ static void printStack() {
     printf("%s (%u) -> ", stackName[i], stack[i]);
   }
   printf("\n");
+}
+
+static void pushStack(const char *funcName, bool isTraced) {
+  stack.push_back(isTraced);
+  stackName.push_back(funcName);
+  if (isTraced) {
+    tracedFunctionsInStack++;
+  }
+}
+
+static void popStack() {
+  if (stack.size() == 0) {
+    printf("Empty stack when we found ret?\n");
+  }
+  assert(stack.size() > 0);
+  if (stack.back()) {
+    tracedFunctionsInStack--;
+  }
+  stack.pop_back();
+  stackName.pop_back();
 }
 
 // Try to use libunwind to unwind the stack to some point. Return if
@@ -436,6 +446,17 @@ static void unwind() {
   stack.resize(boundary);
 }
 
+uint8_t *getOrAllocateDataBuffer(uint64_t size) {
+  /**
+   * So far we take a simple approach: a statically allocated 1 page.
+   */
+  const size_t maximumSize = 4096;
+  static uint8_t buffer[maximumSize];
+  assert(size <= maximumSize &&
+         "Exceed the maximum allowed size for data buffer.");
+  return buffer;
+}
+
 void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
   // printf("%s %s:%d, inside? %d\n", FunctionName, __FILE__, __LINE__,
   // insideMyself);
@@ -456,11 +477,9 @@ void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
   }
   // printf("%s:%d, inside? %d\n", __FILE__, __LINE__, insideMyself);
   initialize();
-  // Update the stack.
-  stack.push_back(IsTraced);
-  stackName.push_back(FunctionName);
-  if (stack.back()) {
-    tracedFunctionsInStack++;
+  // Update the stack only if we measure in trace function.
+  if (MEASURE_IN_TRACE_FUNC) {
+    pushStack(FunctionName, IsTraced);
   }
   // printf("Entering %s, stack depth %lu\n", FunctionName, stack.size());
   if (shouldLog()) {
@@ -489,33 +508,30 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     }
   }
   initialize();
-  if (stackName.empty()) {
-    printf("Empty stack when we in printInst?.");
-    std::exit(1);
-  }
 
-  // Check if this is a landingpad instruction.
-  if (std::strcmp(OpCodeName, "landingpad") == 0) {
-    // This is a landingpad instruction.
-    // Use libunwind to adjust our stack.
-    if (isDebug) {
-      printf("Before unwind the stack: \n");
-      printStack();
+  // Check if this is a landingpad instruction if we want to have the stack.
+  if (MEASURE_IN_TRACE_FUNC) {
+    if (std::strcmp(OpCodeName, "landingpad") == 0) {
+      // This is a landingpad instruction.
+      // Use libunwind to adjust our stack.
+      if (isDebug) {
+        printf("Before unwind the stack: \n");
+        printStack();
+      }
+      unwind();
+      assert(!stackName.empty() && "After unwind the stack is empty.");
+
+      if (isDebug) {
+        printf("After unwind the stack: \n");
+        printStack();
+      }
     }
-    unwind();
-    assert(!stackName.empty() && "After unwind the stack is empty.");
-
-    if (isDebug) {
-      printf("After unwind the stack: \n");
+    if (stackName.back() != FunctionName) {
+      printf("Unmatched FunctionName %s %s %u with stack: \n", FunctionName,
+             BBName, Id);
       printStack();
+      std::exit(1);
     }
-  }
-
-  if (stackName.back() != FunctionName) {
-    printf("Unmatched FunctionName %s %s %u with stack: \n", FunctionName,
-           BBName, Id);
-    printStack();
-    std::exit(1);
   }
 
   std::string FuncStr(FunctionName);
@@ -530,7 +546,7 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
   assert(currentInstOpName == nullptr && "Previous inst has not been closed.");
   currentInstOpName = OpCodeName;
   count++;
-  if (tracedFunctionsInStack > 0) {
+  if (MEASURE_IN_TRACE_FUNC && tracedFunctionsInStack > 0) {
     countInTraceFunc++;
   }
   if (count % PRINT_INTERVAL < 5) {
@@ -568,47 +584,42 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
     insideMyself = false;
     return;
   }
-  // In simplified mode, we ingore printValue call.
-  if (isSimpleMode) {
-    insideMyself = false;
-    return;
-  }
 
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
-    case TypeID::LabelTyID: {
-      // For label, log the name again to be compatible with other type.
-      printValueLabelImpl(Tag, Name, TypeId);
-      break;
-    }
-    case TypeID::IntegerTyID: {
-      uint64_t value = va_arg(VAList, uint64_t);
-      printValueIntImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    // Float is promoted to double on x64.
-    case TypeID::FloatTyID:
-    case TypeID::DoubleTyID: {
-      double value = va_arg(VAList, double);
-      printValueFloatImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    case TypeID::PointerTyID: {
-      void *value = va_arg(VAList, void *);
-      printValuePointerImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    case TypeID::VectorTyID: {
-      uint32_t size = va_arg(VAList, uint32_t);
-      uint8_t *buffer = va_arg(VAList, uint8_t *);
-      printValueVectorImpl(Tag, Name, TypeId, size, buffer);
-      break;
-    }
-    default: {
-      printValueUnsupportImpl(Tag, Name, TypeId);
-      break;
-    }
+  case TypeID::LabelTyID: {
+    // For label, log the name again to be compatible with other type.
+    printValueLabelImpl(Tag, Name, TypeId);
+    break;
+  }
+  case TypeID::IntegerTyID: {
+    uint64_t value = va_arg(VAList, uint64_t);
+    printValueIntImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  // Float is promoted to double on x64.
+  case TypeID::FloatTyID:
+  case TypeID::DoubleTyID: {
+    double value = va_arg(VAList, double);
+    printValueFloatImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  case TypeID::PointerTyID: {
+    void *value = va_arg(VAList, void *);
+    printValuePointerImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  case TypeID::VectorTyID: {
+    uint32_t size = va_arg(VAList, uint32_t);
+    uint8_t *buffer = va_arg(VAList, uint8_t *);
+    printValueVectorImpl(Tag, Name, TypeId, size, buffer);
+    break;
+  }
+  default: {
+    printValueUnsupportImpl(Tag, Name, TypeId);
+    break;
+  }
   }
   va_end(VAList);
   insideMyself = false;
@@ -634,25 +645,20 @@ void printInstEnd() {
     }
   }
 
-  // Update the stack
-  assert(currentInstOpName != nullptr &&
-         "Missing currentInstOpName in printInstEnd.");
-  if (std::strcmp(currentInstOpName, "ret") == 0) {
-    // printf("%s\n", currentInstOpName.c_str());
-    if (isDebug) {
-      printf("Return from: ");
-      printStack();
+  // Update the stack only when we try to measure in traced functions.
+  if (MEASURE_IN_TRACE_FUNC) {
+    assert(currentInstOpName != nullptr &&
+           "Missing currentInstOpName in printInstEnd.");
+    if (std::strcmp(currentInstOpName, "ret") == 0) {
+      // printf("%s\n", currentInstOpName.c_str());
+      if (isDebug) {
+        printf("Return from: ");
+        printStack();
+      }
+      popStack();
     }
-    if (stack.size() == 0) {
-      printf("Empty stack when we found ret?\n");
-    }
-    assert(stack.size() > 0);
-    if (stack.back()) {
-      tracedFunctionsInStack--;
-    }
-    stack.pop_back();
-    stackName.pop_back();
   }
+
   currentInstOpName = nullptr;
 
   // Check if we are about to exit.

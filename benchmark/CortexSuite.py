@@ -11,12 +11,24 @@ class CortexBenchmark(Benchmark):
         # Stream experiments.
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
-        'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sphinx': ['O2'],
-        'srr': ['O2'],
-        'lda': ['O2'],
+        # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'sphinx': ['O2'],
+        # 'srr': ['O2'],
+        # 'lda': ['O2'],
+        # 'svd3': ['O2'],
+        # 'pca': ['O2'],
+        # 'motion-estimation': ['O2'],
+        # 'liblinear': ['O2'],
+
+        # Advanced stream experiments.
+        # RBM has vectorized loop with extra iterations.
+        # So far we can not handle it.
+        # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'sphinx': ['O2'],
+        # 'srr': ['O2'],
+        # 'lda': ['O2'],
         'svd3': ['O2'],
-        'pca': ['O2'],
+        # 'pca': ['O2'],
         'motion-estimation': ['O2'],
         'liblinear': ['O2'],
 
@@ -194,7 +206,7 @@ class CortexBenchmark(Benchmark):
         'rbm': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'sphinx': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'srr': [0, 1, 2, 3, 4, 5, 6, 8, 9],
-        'lda': [0, 3],
+        'lda': [0],
         'svd3': [0, 1, 2, 4, 5, 6, 7, 8, 9],
         'pca': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'motion-estimation': [0, 1, 3, 8],
@@ -373,7 +385,7 @@ class CortexSuite:
             'large',
         ]
         for input_size in input_sizes:
-            for benchmark_name in CortexBenchmark.INCLUDES:
+            for benchmark_name in CortexBenchmark.FLAGS:
                 benchmark = CortexBenchmark(
                     benchmark_args, folder, benchmark_name, input_size)
                 self.benchmarks.append(benchmark)

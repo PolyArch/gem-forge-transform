@@ -114,7 +114,7 @@ class MultiProgramBenchmark(Benchmark):
             tdgs.append(multi_program_tdg.get_name())
 
         # Hack: for now only one job.
-        tdgs = tdgs[0:1]
+        # tdgs = tdgs[0:1]
         self.transform_config_to_tdgs[transform_config] = tdgs
         return tdgs
 

@@ -17,6 +17,15 @@ const char *getNewTraceFileName();
 
 /************************************************************************/
 // Interface for the traced binary.
+
+/**
+ * Allocate data buffer, mainly used for data types that can't be passed in
+ * through register, e.g. vector. Originally we allocate stack space for this,
+ * but it results in stack overflow on deeply recursive benchmarks, e.g. gcc. So
+ * we introduce this runtime helper.
+ */
+uint8_t *getOrAllocateDataBuffer(uint64_t size);
+
 void printFuncEnter(const char *FunctionName, unsigned IsTraced);
 
 void printInst(const char *FunctionName, const char *BBName, unsigned Id,

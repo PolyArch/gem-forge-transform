@@ -256,7 +256,6 @@ class Benchmark(object):
     def run_profile(self):
         # Remember to set the environment for profile.
         os.putenv('LLVM_TDG_WORK_MODE', '0')
-        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
         run_cmd = [
             './' + self.get_profile_bin(),
@@ -413,7 +412,7 @@ class Benchmark(object):
         else:
             link_cmd = [
                 C.CXX,
-                # '-O0',
+                # '-O3',
                 self.get_trace_bc(),
                 self.trace_lib,
                 '-o',

@@ -47,7 +47,7 @@ class SPEC2017Benchmark(Benchmark):
 
         # Check if build dir and exe dir exists.
         if not (os.path.isdir(self.get_build_path()) and os.path.isdir(self.get_exe_path())):
-            self.build_raw_bc()
+            self.runcpu_fake()
 
         # Special case for x264_s: we have to create a symbolic link to the input.
         if self.work_load == '625.x264_s':
@@ -136,7 +136,7 @@ class SPEC2017Benchmark(Benchmark):
     def get_trace_ids(self):
         return self.trace_ids
 
-    def build_raw_bc(self):
+    def runcpu_fake(self):
         # Clear the existing build.
         clear_cmd = [
             'rm',
@@ -161,6 +161,9 @@ class SPEC2017Benchmark(Benchmark):
             self.work_load
         ]
         Util.call_helper(fake_cmd)
+
+    def build_raw_bc(self):
+        self.runcpu_fake()
         # Actually build it.
         os.chdir(self.get_build_path())
         try:
@@ -289,17 +292,17 @@ class SPEC2017Benchmark(Benchmark):
         # Set the tracer mode.
 
         # Stream project.
-        os.putenv('LLVM_TDG_WORK_MODE', str(3))
-        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
-        os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
+        # os.putenv('LLVM_TDG_WORK_MODE', str(3))
+        # os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        # os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
+        # os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
+        # os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
+        # os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
 
         # Fractal project.
-        # os.putenv('LLVM_TDG_WORK_MODE', str(4))
-        # os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        # os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+        os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
@@ -414,18 +417,17 @@ class SPEC2017Benchmarks:
             'trace_func': '',
             'lang': 'C',
         },
-        # 'perlbench_s': {
-        #     # Does not work with ellcc as it uses posix io function.
-        #     'name': '600.perlbench_s',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'C',
-        # },
+        'perlbench_s': {
+            'name': '600.perlbench_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'C',
+        },
         # C++ Benchmark
         'deepsjeng_s': {
             'name': '631.deepsjeng_s',
@@ -475,7 +477,6 @@ class SPEC2017Benchmarks:
             'lang': 'CPP',
         },
         # Throws exception.
-        # Does not work with ellcc as RE.
         # Need to fix a comparison between integer and pointer error.
         # Only been able to trace the first one.
         'parest_r': {
@@ -507,20 +508,20 @@ class SPEC2017Benchmarks:
         # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
         # Does not throw.
         # Haven't tested with ellcc.
-        # 'blender_r': {
-        #     'name': '526.blender_r',
-        #     'links': [],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 110e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'blender_r': {
+            'name': '526.blender_r',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 110e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
 
-        # # Not working so far due to setjmp/longjmp.
+        # Not working so far due to setjmp/longjmp.
         # 'omnetpp_s': {
         #     'name': '620.omnetpp_s',
         #     'links': [],
