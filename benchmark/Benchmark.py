@@ -164,6 +164,9 @@ class Benchmark(object):
     def get_trace_bc(self):
         return '{name}.traced.bc'.format(name=self.get_name())
 
+    def get_profile_inst_uid(self):
+        return '{name}.profile.inst.uid.txt'.format(name=self.get_name())
+
     def get_inst_uid(self):
         return '{name}.inst.uid.txt'.format(name=self.get_name())
 
@@ -290,7 +293,9 @@ class Benchmark(object):
             self.get_raw_bc(),
             '-o',
             bc,
-            '-trace-inst-only'
+            '-trace-inst-only',
+            '-trace-inst-uid-file',
+            self.get_profile_inst_uid(),
         ]
         if self.get_trace_func() is not None and len(self.get_trace_func()) > 0:
             trace_cmd.append('-trace-function=' + self.get_trace_func())
