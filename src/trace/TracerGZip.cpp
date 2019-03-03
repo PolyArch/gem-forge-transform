@@ -34,7 +34,7 @@ void printFuncEnterImpl(const char *FunctionName) {
 }
 
 void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
-                   uint64_t UID, char *OpCodeName) {
+                   uint64_t UID, const char *OpCodeName) {
   log("i|%s|%s|%d|%s|\n", FunctionName, BBName, Id, OpCodeName);
 }
 

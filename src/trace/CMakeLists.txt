@@ -28,6 +28,7 @@ endif()
 add_library(TracerProtobuf STATIC 
     Tracer.cpp
     ProfileLogger.cpp
+    InstructionUIDMapReader.cpp
     ${PROFILE_PROTOBUF_SRCS}
     TracerProtobuf.cpp
     ${TRACE_PROTOBUF_SRCS}
@@ -45,6 +46,7 @@ set_target_properties(TracerProtobuf PROPERTIES
 add_library(TracerGZip STATIC
     Tracer.cpp
     ProfileLogger.cpp
+    InstructionUIDMapReader.cpp
     ${PROFILE_PROTOBUF_SRCS}
     TracerGZip.cpp
 )

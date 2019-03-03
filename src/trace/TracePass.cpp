@@ -240,10 +240,10 @@ private:
 
     std::vector<llvm::Type *> PrintInstArgs{
         Int8PtrTy, // char* FunctionName
-        Int8PtrTy, // char* BBName,
-        Int32Ty,   // unsigned Id,
+        // Int8PtrTy, // char* BBName,
+        // Int32Ty,   // unsigned Id,
         Int64Ty,   // uint64_t UID,
-        Int8PtrTy, // char* OpCodeName,
+        // Int8PtrTy, // char* OpCodeName,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
     this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
@@ -524,15 +524,15 @@ private:
                                               llvm::Constant *FunctionNameValue,
                                               llvm::Constant *BBNameValue,
                                               unsigned InstId) {
-    std::string OpCodeName = Inst->getOpcodeName();
+    // std::string OpCodeName = Inst->getOpcodeName();
 
-    // Create the string literal.
-    auto OpCodeNameValue =
-        getOrCreateStringLiteral(this->GlobalStrings, this->Module, OpCodeName);
+    // // Create the string literal.
+    // auto OpCodeNameValue =
+    //     getOrCreateStringLiteral(this->GlobalStrings, this->Module, OpCodeName);
 
-    auto InstIdValue = llvm::ConstantInt::get(
-        llvm::IntegerType::getInt32Ty(this->Module->getContext()), InstId,
-        false);
+    // auto InstIdValue = llvm::ConstantInt::get(
+    //     llvm::IntegerType::getInt32Ty(this->Module->getContext()), InstId,
+    //     false);
 
     // Allocate the UID for this instruction.
     auto InstUID = this->InstUIDMap.getOrAllocateUID(Inst, InstId);
@@ -542,10 +542,10 @@ private:
 
     std::vector<llvm::Value *> PrintInstArgs;
     PrintInstArgs.push_back(FunctionNameValue);
-    PrintInstArgs.push_back(BBNameValue);
-    PrintInstArgs.push_back(InstIdValue);
+    // PrintInstArgs.push_back(BBNameValue);
+    // PrintInstArgs.push_back(InstIdValue);
     PrintInstArgs.push_back(InstUIDValue);
-    PrintInstArgs.push_back(OpCodeNameValue);
+    // PrintInstArgs.push_back(OpCodeNameValue);
     return PrintInstArgs;
   }
 

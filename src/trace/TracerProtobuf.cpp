@@ -70,7 +70,7 @@ void printFuncEnterImpl(const char *FunctionName) {
 }
 
 void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
-                   uint64_t UID, char *OpCodeName) {
+                   uint64_t UID, const char *OpCodeName) {
   if (protobufTraceEntry.has_func_enter()) {
     // The previous one is func enter.
     // Clear it and allocate a new func enter.
