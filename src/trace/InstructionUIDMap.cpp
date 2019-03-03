@@ -2,6 +2,7 @@
 
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 
 #include <fstream>
 
@@ -22,12 +23,43 @@ InstructionUIDMap::InstructionUID InstructionUIDMap::getOrAllocateUID(
     }
     assert(PosInBB >= 0 && "Negative PosInBB.");
 
+    // Create the value vector.
+    std::vector<InstructionValueDescriptor> Values;
+
+    if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(Inst)) {
+      for (unsigned IncomingValueId = 0,
+                    NumIncomingValues = PHIInst->getNumIncomingValues();
+           IncomingValueId < NumIncomingValues; IncomingValueId++) {
+        auto IncomingValue = PHIInst->getIncomingValue(IncomingValueId);
+        auto IncomingBlock = PHIInst->getIncomingBlock(IncomingValueId);
+        bool IsParam = true;
+        auto TypeID = IncomingBlock->getType()->getTypeID();
+        Values.emplace_back(IsParam, TypeID);
+      }
+    } else {
+      for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
+           OperandId < NumOperands; OperandId++) {
+        auto Operand = Inst->getOperand(OperandId);
+        bool IsParam = true;
+        auto TypeID = Operand->getType()->getTypeID();
+
+        Values.emplace_back(IsParam, TypeID);
+      }
+    }
+
+    if (Inst->getName() != "") {
+      bool IsParam = false;
+      auto TypeID = Inst->getType()->getTypeID();
+
+      Values.emplace_back(IsParam, TypeID);
+    }
+
     // Return value of str is rvalue, will be moved.
     this->Map.emplace(
         std::piecewise_construct, std::forward_as_tuple(UID),
         std::forward_as_tuple(std::string(Inst->getOpcodeName()),
                               Inst->getFunction()->getName().str(),
-                              BB->getName().str(), PosInBB));
+                              BB->getName().str(), PosInBB, std::move(Values)));
   }
   return UID;
 }
@@ -38,7 +70,11 @@ void InstructionUIDMap::serializeTo(const std::string &FileName) const {
   for (const auto &Record : this->Map) {
     O << Record.first << ' ' << Record.second.FuncName << ' '
       << Record.second.BBName << ' ' << Record.second.PosInBB << ' '
-      << Record.second.OpName << '\n';
+      << Record.second.OpName << ' ' << Record.second.Values.size();
+    for (const auto &Value : Record.second.Values) {
+      O << ' ' << Value.IsParam << ' ' << Value.TypeID;
+    }
+    O << '\n';
   }
 }
 
@@ -49,13 +85,25 @@ void InstructionUIDMap::parseFrom(const std::string &FileName) {
   assert(I.is_open() && "Failed to open InstructionUIDMap parse file.");
   InstructionUID UID;
   std::string FuncName, BBName, OpName;
-  int PosInBB;
-  while (I >> UID >> FuncName >> BBName >> PosInBB >> OpName) {
+  int PosInBB, NumValues;
+
+  bool IsParam;
+  unsigned TypeID;
+
+  while (I >> UID >> FuncName >> BBName >> PosInBB >> OpName >> NumValues) {
+    std::vector<InstructionValueDescriptor> Values;
+    Values.reserve(NumValues);
+    for (int Idx = 0; Idx < NumValues; ++Idx) {
+      I >> IsParam >> TypeID;
+      Values.emplace_back(IsParam, static_cast<llvm::Type::TypeID>(TypeID));
+    }
+
     // Local variables will be copied.
     auto Inserted =
         this->Map
             .emplace(std::piecewise_construct, std::forward_as_tuple(UID),
-                     std::forward_as_tuple(OpName, FuncName, BBName, PosInBB))
+                     std::forward_as_tuple(OpName, FuncName, BBName, PosInBB,
+                                           Values))
             .second;
     assert(Inserted && "Failed to insert the record.");
   }

@@ -26,20 +26,19 @@ static llvm::cl::opt<std::string> TraceFunctionNames(
     llvm::cl::desc("Trace function names. For C functions, just the name. For "
                    "C++ Functions, the signature is required. Dot separated."));
 
-static llvm::cl::opt<std::string>
-    InstUIDFileName("trace-inst-uid-file",
-                    llvm::cl::desc("File name to dump the instruction uid map "
-                                   "to compress the trace size."));
+static llvm::cl::opt<std::string> InstUIDFileName(
+    "trace-inst-uid-file",
+    llvm::cl::desc("File name to dump the instruction uid map "
+                   "to compress the trace size."));
 
 namespace {
 // The separator has to be something else than ',()*&:[a-z][A-Z][0-9]_', which
 // will appear in the C++ function signature.
 const char TraceFunctionNameSeparator = '.';
-} // namespace
+}  // namespace
 
-static llvm::cl::opt<bool>
-    TraceInstructionOnly("trace-inst-only",
-                         llvm::cl::desc("Trace instruction only."));
+static llvm::cl::opt<bool> TraceInstructionOnly(
+    "trace-inst-only", llvm::cl::desc("Trace instruction only."));
 
 /**
  * Some times when we try to trace into stdlib, we want to reduce the overhead
@@ -65,9 +64,9 @@ bool isIntrinsicFunctionName(const std::string &FunctionName) {
   }
 }
 
-llvm::Constant *
-getOrCreateStringLiteral(std::map<std::string, llvm::Constant *> &GlobalStrings,
-                         llvm::Module *Module, const std::string &Str) {
+llvm::Constant *getOrCreateStringLiteral(
+    std::map<std::string, llvm::Constant *> &GlobalStrings,
+    llvm::Module *Module, const std::string &Str) {
   if (GlobalStrings.find(Str) == GlobalStrings.end()) {
     // Create the constant array.
     auto Array =
@@ -100,7 +99,7 @@ getOrCreateStringLiteral(std::map<std::string, llvm::Constant *> &GlobalStrings,
 
 // This is a pass to instrument a function and trace it.
 class TracePass : public llvm::FunctionPass {
-public:
+ public:
   static char ID;
   TracePass() : llvm::FunctionPass(ID) {}
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
@@ -181,7 +180,7 @@ public:
     this->DataLayout = nullptr;
   }
 
-private:
+ private:
   llvm::Module *Module;
   llvm::DataLayout *DataLayout;
   llvm::Function *CurrentFunction;
@@ -231,7 +230,7 @@ private:
     auto Int64Ty = llvm::Type::getInt64Ty(Context);
 
     std::vector<llvm::Type *> GetOrAllocateDataBufferArgs{
-        Int64Ty, // uint64_t size
+        Int64Ty,  // uint64_t size
     };
     auto GetOrAllocateDataBufferTy =
         llvm::FunctionType::get(Int8PtrTy, GetOrAllocateDataBufferArgs, false);
@@ -239,18 +238,18 @@ private:
         "getOrAllocateDataBuffer", GetOrAllocateDataBufferTy);
 
     std::vector<llvm::Type *> PrintInstArgs{
-        Int8PtrTy, // char* FunctionName
+        Int8PtrTy,  // char* FunctionName
         // Int8PtrTy, // char* BBName,
         // Int32Ty,   // unsigned Id,
-        Int64Ty,   // uint64_t UID,
-        // Int8PtrTy, // char* OpCodeName,
+        Int64Ty,  // uint64_t UID,
+                  // Int8PtrTy, // char* OpCodeName,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
     this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
 
     std::vector<llvm::Type *> PrintValueArgs{
         Int8Ty,
-        Int8PtrTy, // char* Name,
+        Int8PtrTy,  // char* Name,
         Int32Ty,
         Int32Ty,
     };
@@ -326,8 +325,6 @@ private:
 
     auto FunctionNameValue = getOrCreateStringLiteral(
         this->GlobalStrings, this->Module, BB.getParent()->getName());
-    auto BBNameValue = getOrCreateStringLiteral(this->GlobalStrings,
-                                                this->Module, BB.getName());
     // HeadInst is an instruction that must be at the first place of BB.
     // e.g. PHINode, landingpad.
     auto HeadInsts = std::vector<std::pair<llvm::Instruction *, unsigned>>();
@@ -357,7 +354,7 @@ private:
         continue;
       }
 
-      traceNonPhiInst(Inst, FunctionNameValue, BBNameValue, InstId);
+      traceNonPhiInst(Inst, FunctionNameValue, InstId);
     }
 
     DEBUG(llvm::errs() << "After transformation.\n");
@@ -376,12 +373,10 @@ private:
         auto HeadInst = HeadInstPair.first;
         auto InstId = HeadInstPair.second;
         if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(HeadInst)) {
-          tracePhiInst(PHIInst, FunctionNameValue, BBNameValue, InstId,
-                       InsertBefore);
+          tracePhiInst(PHIInst, FunctionNameValue, InstId, InsertBefore);
         } else if (llvm::isa<llvm::LandingPadInst>(HeadInst)) {
           // landingpad inst can be traced as normal instruction?
-          traceNonPhiInst(HeadInst, FunctionNameValue, BBNameValue, InstId,
-                          InsertBefore);
+          traceNonPhiInst(HeadInst, FunctionNameValue, InstId, InsertBefore);
         } else {
           llvm_unreachable("Invalid head instruction.");
         }
@@ -395,10 +390,9 @@ private:
   // instruction of a basic block.
   // All the trace functions will be inserted before @InsertBefore.
   void tracePhiInst(llvm::PHINode *Inst, llvm::Constant *FunctionNameValue,
-                    llvm::Constant *BBNameValue, unsigned InstId,
-                    llvm::Instruction *InsertBefore) {
+                    unsigned InstId, llvm::Instruction *InsertBefore) {
     std::vector<llvm::Value *> PrintInstArgs =
-        getPrintInstArgs(Inst, FunctionNameValue, BBNameValue, InstId);
+        getPrintInstArgs(Inst, FunctionNameValue, InstId);
     // Call printInst. After the instruction.
     // DEBUG(llvm::errs() << "Insert printInst for phi node.\n");
     llvm::IRBuilder<> Builder(InsertBefore);
@@ -429,8 +423,7 @@ private:
 
   // Insert the trace call to non phi instructions.
   void traceNonPhiInst(llvm::Instruction *Inst,
-                       llvm::Constant *FunctionNameValue,
-                       llvm::Constant *BBNameValue, unsigned InstId,
+                       llvm::Constant *FunctionNameValue, unsigned InstId,
                        llvm::Instruction *InsertBefore = nullptr) {
     std::string OpCodeName = Inst->getOpcodeName();
     assert(OpCodeName != "phi" && "traceNonPhiInst can't trace phi inst.");
@@ -440,7 +433,7 @@ private:
     //                    << Inst->getOpcodeName() << '\n');
 
     std::vector<llvm::Value *> PrintInstArgs =
-        getPrintInstArgs(Inst, FunctionNameValue, BBNameValue, InstId);
+        getPrintInstArgs(Inst, FunctionNameValue, InstId);
     // Call printInst. Before the instruction.
     llvm::IRBuilder<> Builder((InsertBefore == nullptr) ? Inst : InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
@@ -522,13 +515,13 @@ private:
 
   std::vector<llvm::Value *> getPrintInstArgs(llvm::Instruction *Inst,
                                               llvm::Constant *FunctionNameValue,
-                                              llvm::Constant *BBNameValue,
                                               unsigned InstId) {
     // std::string OpCodeName = Inst->getOpcodeName();
 
     // // Create the string literal.
     // auto OpCodeNameValue =
-    //     getOrCreateStringLiteral(this->GlobalStrings, this->Module, OpCodeName);
+    //     getOrCreateStringLiteral(this->GlobalStrings, this->Module,
+    //     OpCodeName);
 
     // auto InstIdValue = llvm::ConstantInt::get(
     //     llvm::IntegerType::getInt32Ty(this->Module->getContext()), InstId,
@@ -553,9 +546,8 @@ private:
   // Note that we can not get the run time value for incoming values.
   // Solution: print the incoming basic block and associated incoming
   // value's name.
-  std::vector<llvm::Value *>
-  getPrintValueArgsForPhiParameter(llvm::Value *IncomingValue,
-                                   llvm::BasicBlock *IncomingBlock) {
+  std::vector<llvm::Value *> getPrintValueArgsForPhiParameter(
+      llvm::Value *IncomingValue, llvm::BasicBlock *IncomingBlock) {
     auto TagValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt8Ty(this->Module->getContext()),
         PRINT_VALUE_TAG_PARAMETER, false);
@@ -605,60 +597,60 @@ private:
     unsigned NumAdditionalArgs = 0;
     std::vector<llvm::Value *> AdditionalArgValues;
     switch (TypeId) {
-    case llvm::Type::TypeID::IntegerTyID:
-    case llvm::Type::TypeID::DoubleTyID: {
-      NumAdditionalArgs = 1;
-      AdditionalArgValues.push_back(Parameter);
-      break;
-    }
-    case llvm::Type::TypeID::PointerTyID: {
-      NumAdditionalArgs = 1;
-      if (isIntrinsicFunctionName(Name)) {
-        // For instrinsic function, just use 0 as the address.
-        AdditionalArgValues.push_back(llvm::ConstantInt::get(
-            llvm::IntegerType::getInt32Ty(this->Module->getContext()), 0,
-            false));
-      } else if (llvm::isa<llvm::InlineAsm>(Parameter)) {
-        // For inline asmembly, just use 1 as the address.
-        AdditionalArgValues.push_back(llvm::ConstantInt::get(
-            llvm::IntegerType::getInt32Ty(this->Module->getContext()), 1,
-            false));
-      } else {
+      case llvm::Type::TypeID::IntegerTyID:
+      case llvm::Type::TypeID::DoubleTyID: {
+        NumAdditionalArgs = 1;
         AdditionalArgValues.push_back(Parameter);
+        break;
       }
-      break;
-    }
-    case llvm::Type::TypeID::VectorTyID: {
-      // Cast to VectorType.
-      auto VectorType = llvm::cast<llvm::VectorType>(Type);
-      NumAdditionalArgs = 2;
-      // For vector, we have to allocate a buffer.
-      auto Buffer = this->getOrCreateVectorStoreBuffer(VectorType, Builder);
-      // Store the vector into the buffer.
-      auto TypeBytes = VectorType->getBitWidth() / 8;
-      // Since the buffer can be allocated from other vector, do a bitcast.
-      auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
-      // Align with 1 byte is always safe.
-      // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
-      auto AlignBytes = 1;
-      Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
-      /**
-       * For some corner case, the bit width will be less than 8!
-       * For example, vector<4 x i1> for boolean types.
-       * In this case, we have to use datalayout for storage bytes.
-       */
-      auto TypeStorageBytes = this->DataLayout->getTypeStoreSize(VectorType);
-      AdditionalArgValues.push_back(llvm::ConstantInt::get(
-          llvm::IntegerType::getInt32Ty(this->Module->getContext()),
-          TypeStorageBytes, false));
-      // The second additional argument will be the buffer.
-      AdditionalArgValues.push_back(Buffer);
-      break;
-    }
-    default: {
-      NumAdditionalArgs = 0;
-      break;
-    }
+      case llvm::Type::TypeID::PointerTyID: {
+        NumAdditionalArgs = 1;
+        if (isIntrinsicFunctionName(Name)) {
+          // For instrinsic function, just use 0 as the address.
+          AdditionalArgValues.push_back(llvm::ConstantInt::get(
+              llvm::IntegerType::getInt32Ty(this->Module->getContext()), 0,
+              false));
+        } else if (llvm::isa<llvm::InlineAsm>(Parameter)) {
+          // For inline asmembly, just use 1 as the address.
+          AdditionalArgValues.push_back(llvm::ConstantInt::get(
+              llvm::IntegerType::getInt32Ty(this->Module->getContext()), 1,
+              false));
+        } else {
+          AdditionalArgValues.push_back(Parameter);
+        }
+        break;
+      }
+      case llvm::Type::TypeID::VectorTyID: {
+        // Cast to VectorType.
+        auto VectorType = llvm::cast<llvm::VectorType>(Type);
+        NumAdditionalArgs = 2;
+        // For vector, we have to allocate a buffer.
+        auto Buffer = this->getOrCreateVectorStoreBuffer(VectorType, Builder);
+        // Store the vector into the buffer.
+        auto TypeBytes = VectorType->getBitWidth() / 8;
+        // Since the buffer can be allocated from other vector, do a bitcast.
+        auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
+        // Align with 1 byte is always safe.
+        // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
+        auto AlignBytes = 1;
+        Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
+        /**
+         * For some corner case, the bit width will be less than 8!
+         * For example, vector<4 x i1> for boolean types.
+         * In this case, we have to use datalayout for storage bytes.
+         */
+        auto TypeStorageBytes = this->DataLayout->getTypeStoreSize(VectorType);
+        AdditionalArgValues.push_back(llvm::ConstantInt::get(
+            llvm::IntegerType::getInt32Ty(this->Module->getContext()),
+            TypeStorageBytes, false));
+        // The second additional argument will be the buffer.
+        AdditionalArgValues.push_back(Buffer);
+        break;
+      }
+      default: {
+        NumAdditionalArgs = 0;
+        break;
+      }
     }
 
     assert(NumAdditionalArgs == AdditionalArgValues.size() &&
@@ -728,23 +720,23 @@ void TracePass::parseTraceFunctions(const std::string &Names) {
       DEBUG(llvm::errs() << "Failed demangling name " << MangledName
                          << " due to ");
       switch (DemangleStatus) {
-      case -4: {
-        DEBUG(llvm::errs() << "unknown error.\n");
-        break;
-      }
-      case -3: {
-        DEBUG(llvm::errs() << "invalid args.\n");
-        break;
-      }
-      case -2: {
-        DEBUG(llvm::errs() << "invalid mangled name.\n");
-        break;
-      }
-      case -1: {
-        DEBUG(llvm::errs() << "memory alloc failure.\n");
-        break;
-      }
-      default: { llvm_unreachable("Illegal demangle status."); }
+        case -4: {
+          DEBUG(llvm::errs() << "unknown error.\n");
+          break;
+        }
+        case -3: {
+          DEBUG(llvm::errs() << "invalid args.\n");
+          break;
+        }
+        case -2: {
+          DEBUG(llvm::errs() << "invalid mangled name.\n");
+          break;
+        }
+        case -1: {
+          DEBUG(llvm::errs() << "memory alloc failure.\n");
+          break;
+        }
+        default: { llvm_unreachable("Illegal demangle status."); }
       }
       // When failed, there is no realloc. We can safely go to the next one.
       continue;
@@ -832,9 +824,8 @@ void TracePass::findReachableFunctions() {
         << "==================== Reachable Functions ==================\n");
 }
 
-llvm::Value *
-TracePass::getOrCreateVectorStoreBuffer(llvm::VectorType *Type,
-                                        llvm::IRBuilder<> &Builder) {
+llvm::Value *TracePass::getOrCreateVectorStoreBuffer(
+    llvm::VectorType *Type, llvm::IRBuilder<> &Builder) {
   auto TypeStorageBytes = this->DataLayout->getTypeStoreSize(Type);
 
   /**
@@ -888,7 +879,7 @@ TracePass::getOrCreateVectorStoreBuffer(llvm::VectorType *Type,
   // return VectorStoreBuffer.at(BitSize);
 }
 
-} // namespace
+}  // namespace
 
 #undef DEBUG_TYPE
 
