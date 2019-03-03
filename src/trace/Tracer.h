@@ -38,6 +38,8 @@ void printInst(const char *FunctionName, uint64_t UID);
 void printValue(const char Tag, const char *Name, unsigned TypeId,
                 unsigned NumAdditionalArgs, ...);
 
+void printInstValue(unsigned NumAdditionalArgs, ...);
+
 void printInstEnd();
 void printFuncEnterEnd();
 /***********************************************************************/

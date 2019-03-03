@@ -83,6 +83,9 @@ static uint64_t countInTraceFunc = 0;
 static uint64_t tracedCount = 0;
 
 static InstructionUIDMapReader instUIDMap;
+static const InstructionUIDMapReader::InstructionDescriptor
+    *currentInstDescriptor;
+static size_t currentInstValueDescriptorId;
 
 // Use this flag to ingore all the initialization phase.
 static bool hasSeenMain = false;
@@ -516,11 +519,12 @@ void printInst(const char *FunctionName, uint64_t UID) {
   }
   initialize();
 
-  const auto &instDescriptor = instUIDMap.getDescriptor(UID);
-  auto OpCodeName = instDescriptor.OpName.c_str();
-  auto BBName = instDescriptor.BBName.c_str();
+  currentInstDescriptor = &(instUIDMap.getDescriptor(UID));
+  currentInstValueDescriptorId = 0;
+  auto OpCodeName = currentInstDescriptor->OpName.c_str();
+  auto BBName = currentInstDescriptor->BBName.c_str();
   // auto FunctionName = instDescriptor.FuncName.c_str();
-  auto Id = instDescriptor.PosInBB;
+  auto Id = currentInstDescriptor->PosInBB;
 
   // Check if this is a landingpad instruction if we want to have the stack.
   if (MEASURE_IN_TRACE_FUNC) {
@@ -631,6 +635,78 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
     }
     default: {
       printValueUnsupportImpl(Tag, Name, TypeId);
+      break;
+    }
+  }
+  va_end(VAList);
+  insideMyself = false;
+  return;
+}
+
+void printInstValue(unsigned NumAdditionalArgs, ...) {
+  if (insideMyself) {
+    return;
+  } else {
+    insideMyself = true;
+  }
+  if (!hasSeenMain) {
+    insideMyself = false;
+    return;
+  }
+  if (!shouldLog()) {
+    insideMyself = false;
+    return;
+  }
+
+  assert(currentInstDescriptor != nullptr && "Missing inst descriptor.");
+  assert(currentInstValueDescriptorId < currentInstDescriptor->Values.size() &&
+         "Overflow of value descriptor id.");
+
+  const auto &currentInstValueDescriptor =
+      currentInstDescriptor->Values[currentInstValueDescriptorId];
+  currentInstValueDescriptorId++;
+
+  auto TypeID = currentInstValueDescriptor.TypeID;
+  auto Tag = currentInstValueDescriptor.IsParam ? PRINT_VALUE_TAG_PARAMETER
+                                                : PRINT_VALUE_TAG_RESULT;
+  // TODO: Totally remove Name.
+  const char *Name = "";
+
+  va_list VAList;
+  va_start(VAList, NumAdditionalArgs);
+  switch (TypeID) {
+    case TypeID::LabelTyID: {
+      // For label, log the name again to be compatible with other type.
+      // assert(false && "So far printInstValue does not work for label type.");
+      const char *labelName = va_arg(VAList, const char *);
+      printValueLabelImpl(Tag, labelName, TypeID);
+      break;
+    }
+    case TypeID::IntegerTyID: {
+      uint64_t value = va_arg(VAList, uint64_t);
+      printValueIntImpl(Tag, Name, TypeID, value);
+      break;
+    }
+    // Float is promoted to double on x64.
+    case TypeID::FloatTyID:
+    case TypeID::DoubleTyID: {
+      double value = va_arg(VAList, double);
+      printValueFloatImpl(Tag, Name, TypeID, value);
+      break;
+    }
+    case TypeID::PointerTyID: {
+      void *value = va_arg(VAList, void *);
+      printValuePointerImpl(Tag, Name, TypeID, value);
+      break;
+    }
+    case TypeID::VectorTyID: {
+      uint32_t size = va_arg(VAList, uint32_t);
+      uint8_t *buffer = va_arg(VAList, uint8_t *);
+      printValueVectorImpl(Tag, Name, TypeID, size, buffer);
+      break;
+    }
+    default: {
+      printValueUnsupportImpl(Tag, Name, TypeID);
       break;
     }
   }
