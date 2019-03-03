@@ -57,7 +57,6 @@ class Gem5ReplayConfig(object):
                         x=self.stream_engine_throttling
                     )
                     '--gem-forge-stream-engine-enable-coalesce=1'
-                    '--gem-forge-stream-engine-enable-coalesce=1'
                     '--gem-forge-stream-engine-enable-merge=1'
                     '--gem-forge-stream-engine-l1d={l1d}'.format(
                         l1d=self.stream_engine_l1d)
