@@ -260,6 +260,7 @@ class Benchmark(object):
         # Remember to set the environment for profile.
         os.putenv('LLVM_TDG_WORK_MODE', '0')
         os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
+        os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
         run_cmd = [
             './' + self.get_profile_bin(),
         ]
@@ -347,6 +348,7 @@ class Benchmark(object):
             ['rm', '-f', '{name}.*.trace'.format(name=self.get_name())])
         # Remember to set the environment for trace.
         os.putenv('LLVM_TDG_TRACE_FILE', trace_file)
+        os.putenv('LLVM_TDG_INST_UID_FILE', self.get_inst_uid())
         run_cmd = [
             './' + self.get_trace_bin(),
         ]

@@ -1,4 +1,5 @@
 #include "trace/Tracer.h"
+#include "trace/InstructionUIDMapReader.h"
 #include "trace/ProfileLogger.h"
 
 #include <cassert>
@@ -23,26 +24,26 @@
 // Definitely not the best way to do thes, but since it barely changes
 // and imitiveTypes - make sure LastPrimitiveTyID stays up to date.
 enum TypeID {
-  VoidTyID = 0,  ///<  0: type with no size
-  HalfTyID,      ///<  1: 16-bit floating point type
-  FloatTyID,     ///<  2: 32-bit floating point type
-  DoubleTyID,    ///<  3: 64-bit floating point type
-  X86_FP80TyID,  ///<  4: 80-bit floating point type (X87)
-  FP128TyID,     ///<  5: 128-bit floating point type (112-bit mantissa)
-  PPC_FP128TyID, ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
-  LabelTyID,     ///<  7: Labels
-  MetadataTyID,  ///<  8: Metadata
-  X86_MMXTyID,   ///<  9: MMX vectors (64 bits, X86 specific)
-  TokenTyID,     ///< 10: Tokens
+  VoidTyID = 0,   ///<  0: type with no size
+  HalfTyID,       ///<  1: 16-bit floating point type
+  FloatTyID,      ///<  2: 32-bit floating point type
+  DoubleTyID,     ///<  3: 64-bit floating point type
+  X86_FP80TyID,   ///<  4: 80-bit floating point type (X87)
+  FP128TyID,      ///<  5: 128-bit floating point type (112-bit mantissa)
+  PPC_FP128TyID,  ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
+  LabelTyID,      ///<  7: Labels
+  MetadataTyID,   ///<  8: Metadata
+  X86_MMXTyID,    ///<  9: MMX vectors (64 bits, X86 specific)
+  TokenTyID,      ///< 10: Tokens
 
   // Derived types... see DerivedTypes.h file.
   // Make sure FirstDerivedTyID stays up to date!
-  IntegerTyID,  ///< 11: Arbitrary bit width integers
-  FunctionTyID, ///< 12: Functions
-  StructTyID,   ///< 13: Structures
-  ArrayTyID,    ///< 14: Arrays
-  PointerTyID,  ///< 15: Pointers
-  VectorTyID    ///< 16: SIMD 'packed' format, or other vector type
+  IntegerTyID,   ///< 11: Arbitrary bit width integers
+  FunctionTyID,  ///< 12: Functions
+  StructTyID,    ///< 13: Structures
+  ArrayTyID,     ///< 14: Arrays
+  PointerTyID,   ///< 15: Pointers
+  VectorTyID     ///< 16: SIMD 'packed' format, or other vector type
 };
 
 // Contain some common definitions
@@ -80,6 +81,8 @@ static bool insideMyself = false;
 static uint64_t count = 0;
 static uint64_t countInTraceFunc = 0;
 static uint64_t tracedCount = 0;
+
+static InstructionUIDMapReader instUIDMap;
 
 // Use this flag to ingore all the initialization phase.
 static bool hasSeenMain = false;
@@ -146,7 +149,7 @@ static ProfileLogger allProfile;
 // Traced profile log.
 static std::string tracedProfileFileName;
 static ProfileLogger tracedProfile;
-} // namespace
+}  // namespace
 
 // This serves as the guard.
 
@@ -217,6 +220,12 @@ static void initialize() {
     allProfileFileName = std::string(traceFileName) + ".profile";
     tracedProfileFileName = std::string(traceFileName) + ".traced.profile";
 
+    // Create the instruction uid file.
+    const char *instUIDMapFileName = std::getenv("LLVM_TDG_INST_UID_FILE");
+    assert(instUIDMapFileName != nullptr &&
+           "Please provide the inst uid file.");
+    instUIDMap.parseFrom(instUIDMapFileName);
+
     workMode = static_cast<WorkMode>(getUint64Env("LLVM_TDG_WORK_MODE"));
 
     if (workMode == WorkMode::TraceUniformSampled) {
@@ -271,32 +280,31 @@ static bool shouldLog() {
     c = countInTraceFunc;
   }
   switch (workMode) {
-  case WorkMode::Profile: {
-    return false;
-  }
-  case WorkMode::TraceAll: {
-    return true;
-  }
-  case WorkMode::TraceTraced: {
-    return tracedFunctionsInStack > 0;
-  }
-  case WorkMode::TraceUniformSampled: {
-    if (c >= START_INST) {
-      return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
-    } else {
+    case WorkMode::Profile: {
       return false;
     }
-  }
-  case WorkMode::TraceSpecifiedInterval: {
-    if (intervals.empty())
-      return false;
-    const auto &interval = intervals.front();
-    if (c < interval.first) {
-      return false;
+    case WorkMode::TraceAll: {
+      return true;
     }
-    return c < interval.second;
-  }
-  default: { assert(false && "Unknown work mode."); }
+    case WorkMode::TraceTraced: {
+      return tracedFunctionsInStack > 0;
+    }
+    case WorkMode::TraceUniformSampled: {
+      if (c >= START_INST) {
+        return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
+      } else {
+        return false;
+      }
+    }
+    case WorkMode::TraceSpecifiedInterval: {
+      if (intervals.empty()) return false;
+      const auto &interval = intervals.front();
+      if (c < interval.first) {
+        return false;
+      }
+      return c < interval.second;
+    }
+    default: { assert(false && "Unknown work mode."); }
   }
 }
 
@@ -306,32 +314,32 @@ static bool shouldSwitchTraceFile() {
     c = countInTraceFunc;
   }
   switch (workMode) {
-  case WorkMode::Profile:
-  case WorkMode::TraceAll:
-  case WorkMode::TraceTraced: {
-    return false;
-  }
-  case WorkMode::TraceUniformSampled: {
-    if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
-      // We are the last one of every MAX_INST. Switch file.
-      return true;
-    } else {
+    case WorkMode::Profile:
+    case WorkMode::TraceAll:
+    case WorkMode::TraceTraced: {
       return false;
     }
-  }
-  case WorkMode::TraceSpecifiedInterval: {
-    if (intervals.empty()) {
+    case WorkMode::TraceUniformSampled: {
+      if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
+        // We are the last one of every MAX_INST. Switch file.
+        return true;
+      } else {
+        return false;
+      }
+    }
+    case WorkMode::TraceSpecifiedInterval: {
+      if (intervals.empty()) {
+        return false;
+      }
+      if (c == intervals.front().second - 1) {
+        printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
+               intervals.front().second);
+        intervals.pop_front();
+        return true;
+      }
       return false;
     }
-    if (c == intervals.front().second - 1) {
-      printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
-             intervals.front().second);
-      intervals.pop_front();
-      return true;
-    }
-    return false;
-  }
-  default: { assert(false && "Unknown work mode."); }
+    default: { assert(false && "Unknown work mode."); }
   }
 }
 
@@ -343,21 +351,21 @@ static bool shouldExit() {
   }
 
   switch (workMode) {
-  case WorkMode::Profile:
-  case WorkMode::TraceAll:
-  case WorkMode::TraceTraced: {
-    return false;
-  }
-  case WorkMode::TraceUniformSampled: {
-    if (MEASURE_IN_TRACE_FUNC) {
-      c = countInTraceFunc;
+    case WorkMode::Profile:
+    case WorkMode::TraceAll:
+    case WorkMode::TraceTraced: {
+      return false;
     }
-    return c == END_INST;
-  }
-  case WorkMode::TraceSpecifiedInterval: {
-    return intervals.empty();
-  }
-  default: { assert(false && "Unknown work mode."); };
+    case WorkMode::TraceUniformSampled: {
+      if (MEASURE_IN_TRACE_FUNC) {
+        c = countInTraceFunc;
+      }
+      return c == END_INST;
+    }
+    case WorkMode::TraceSpecifiedInterval: {
+      return intervals.empty();
+    }
+    default: { assert(false && "Unknown work mode."); };
   }
 }
 
@@ -490,8 +498,7 @@ void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
   return;
 }
 
-void printInst(const char *FunctionName, const char *BBName, unsigned Id,
-               uint64_t UID, char *OpCodeName) {
+void printInst(const char *FunctionName, uint64_t UID) {
   if (insideMyself) {
     return;
   } else {
@@ -508,6 +515,12 @@ void printInst(const char *FunctionName, const char *BBName, unsigned Id,
     }
   }
   initialize();
+
+  const auto &instDescriptor = instUIDMap.getDescriptor(UID);
+  auto OpCodeName = instDescriptor.OpName.c_str();
+  auto BBName = instDescriptor.BBName.c_str();
+  // auto FunctionName = instDescriptor.FuncName.c_str();
+  auto Id = instDescriptor.PosInBB;
 
   // Check if this is a landingpad instruction if we want to have the stack.
   if (MEASURE_IN_TRACE_FUNC) {
@@ -588,38 +601,38 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
-  case TypeID::LabelTyID: {
-    // For label, log the name again to be compatible with other type.
-    printValueLabelImpl(Tag, Name, TypeId);
-    break;
-  }
-  case TypeID::IntegerTyID: {
-    uint64_t value = va_arg(VAList, uint64_t);
-    printValueIntImpl(Tag, Name, TypeId, value);
-    break;
-  }
-  // Float is promoted to double on x64.
-  case TypeID::FloatTyID:
-  case TypeID::DoubleTyID: {
-    double value = va_arg(VAList, double);
-    printValueFloatImpl(Tag, Name, TypeId, value);
-    break;
-  }
-  case TypeID::PointerTyID: {
-    void *value = va_arg(VAList, void *);
-    printValuePointerImpl(Tag, Name, TypeId, value);
-    break;
-  }
-  case TypeID::VectorTyID: {
-    uint32_t size = va_arg(VAList, uint32_t);
-    uint8_t *buffer = va_arg(VAList, uint8_t *);
-    printValueVectorImpl(Tag, Name, TypeId, size, buffer);
-    break;
-  }
-  default: {
-    printValueUnsupportImpl(Tag, Name, TypeId);
-    break;
-  }
+    case TypeID::LabelTyID: {
+      // For label, log the name again to be compatible with other type.
+      printValueLabelImpl(Tag, Name, TypeId);
+      break;
+    }
+    case TypeID::IntegerTyID: {
+      uint64_t value = va_arg(VAList, uint64_t);
+      printValueIntImpl(Tag, Name, TypeId, value);
+      break;
+    }
+    // Float is promoted to double on x64.
+    case TypeID::FloatTyID:
+    case TypeID::DoubleTyID: {
+      double value = va_arg(VAList, double);
+      printValueFloatImpl(Tag, Name, TypeId, value);
+      break;
+    }
+    case TypeID::PointerTyID: {
+      void *value = va_arg(VAList, void *);
+      printValuePointerImpl(Tag, Name, TypeId, value);
+      break;
+    }
+    case TypeID::VectorTyID: {
+      uint32_t size = va_arg(VAList, uint32_t);
+      uint8_t *buffer = va_arg(VAList, uint8_t *);
+      printValueVectorImpl(Tag, Name, TypeId, size, buffer);
+      break;
+    }
+    default: {
+      printValueUnsupportImpl(Tag, Name, TypeId);
+      break;
+    }
   }
   va_end(VAList);
   insideMyself = false;

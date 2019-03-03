@@ -28,8 +28,7 @@ uint8_t *getOrAllocateDataBuffer(uint64_t size);
 
 void printFuncEnter(const char *FunctionName, unsigned IsTraced);
 
-void printInst(const char *FunctionName, const char *BBName, unsigned Id,
-               uint64_t UID, char *OpCodeName);
+void printInst(const char *FunctionName, uint64_t UID);
 
 // Predefined tag:
 // 'p' for parameter
@@ -48,7 +47,7 @@ void printFuncEnterEnd();
 void printFuncEnterImpl(const char *FunctionName);
 
 void printInstImpl(const char *FunctionName, const char *BBName, unsigned Id,
-                   uint64_t UID, char *OpCodeName);
+                   uint64_t UID, const char *OpCodeName);
 
 // Predefined tag:
 // 'p' for parameter
