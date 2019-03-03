@@ -49,13 +49,6 @@ class SPEC2017Benchmark(Benchmark):
         if not (os.path.isdir(self.get_build_path()) and os.path.isdir(self.get_exe_path())):
             self.runcpu_fake()
 
-        # Special case for x264_s: we have to create a symbolic link to the input.
-        if self.work_load == '625.x264_s':
-            input_file = os.path.join(self.get_exe_path(), 'BuckBunny.yuv')
-            original_input_file = os.path.join(
-                self.get_exe_path(), '../../BuckBunny.yuv')
-            Util.create_symbolic_link(original_input_file, input_file)
-
         # Finally use specinvoke to get the arguments.
         os.chdir(self.get_exe_path())
         self.args = self.find_args(subprocess.check_output([
@@ -133,9 +126,6 @@ class SPEC2017Benchmark(Benchmark):
     def get_raw_bc(self):
         return self.target + '.bc'
 
-    def get_trace_ids(self):
-        return self.trace_ids
-
     def runcpu_fake(self):
         # Clear the existing build.
         clear_cmd = [
@@ -161,6 +151,13 @@ class SPEC2017Benchmark(Benchmark):
             self.work_load
         ]
         Util.call_helper(fake_cmd)
+
+        # Special case for x264_s: we have to create a symbolic link to the input.
+        if self.work_load == '625.x264_s':
+            input_file = os.path.join(self.get_exe_path(), 'BuckBunny.yuv')
+            original_input_file = os.path.join(
+                self.get_exe_path(), '../../BuckBunny.yuv')
+            Util.create_symbolic_link(original_input_file, input_file)
 
     def build_raw_bc(self):
         self.runcpu_fake()
@@ -522,17 +519,17 @@ class SPEC2017Benchmarks:
 
 
         # Not working so far due to setjmp/longjmp.
-        # 'omnetpp_s': {
-        #     'name': '620.omnetpp_s',
-        #     'links': [],
-        #     'start_inst': 1e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 100e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'omnetpp_s': {
+            'name': '620.omnetpp_s',
+            'links': [],
+            'start_inst': 1e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 100e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
     }
 

@@ -250,18 +250,11 @@ class SDVBSBenchmark(Benchmark):
             trace_reachable_only=False,
             # debugs=['TracePass']
         )
-        # Stream experiments.
-        os.putenv('LLVM_TDG_WORK_MODE', str(3))
-        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
-        os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
 
         # Fractal experiments.
-        # os.putenv('LLVM_TDG_WORK_MODE', str(4))
-        # os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        # os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+        os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
 
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
@@ -273,7 +266,6 @@ class SDVBSBenchmark(Benchmark):
             transform_config=transform_config,
             trace_file=trace,
             profile_file=profile_file,
-            # tdg_detail='integrated',
             tdg_detail='standalone',
             output_tdg=tdg,
             debugs=debugs,
