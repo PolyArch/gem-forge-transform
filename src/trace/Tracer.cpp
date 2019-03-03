@@ -666,47 +666,47 @@ void printInstValue(unsigned NumAdditionalArgs, ...) {
       currentInstDescriptor->Values[currentInstValueDescriptorId];
   currentInstValueDescriptorId++;
 
-  auto TypeID = currentInstValueDescriptor.TypeID;
+  auto TypeId = currentInstValueDescriptor.TypeID;
   auto Tag = currentInstValueDescriptor.IsParam ? PRINT_VALUE_TAG_PARAMETER
                                                 : PRINT_VALUE_TAG_RESULT;
   // TODO: Totally remove Name.
-  const char *Name = "";
+  const char* Name = "";
 
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
-  switch (TypeID) {
+  switch (TypeId) {
     case TypeID::LabelTyID: {
       // For label, log the name again to be compatible with other type.
       // assert(false && "So far printInstValue does not work for label type.");
-      const char *labelName = va_arg(VAList, const char *);
-      printValueLabelImpl(Tag, labelName, TypeID);
+      const char* labelName = va_arg(VAList, const char *);
+      printValueLabelImpl(Tag, labelName, TypeId);
       break;
     }
     case TypeID::IntegerTyID: {
       uint64_t value = va_arg(VAList, uint64_t);
-      printValueIntImpl(Tag, Name, TypeID, value);
+      printValueIntImpl(Tag, Name, TypeId, value);
       break;
     }
     // Float is promoted to double on x64.
     case TypeID::FloatTyID:
     case TypeID::DoubleTyID: {
       double value = va_arg(VAList, double);
-      printValueFloatImpl(Tag, Name, TypeID, value);
+      printValueFloatImpl(Tag, Name, TypeId, value);
       break;
     }
     case TypeID::PointerTyID: {
       void *value = va_arg(VAList, void *);
-      printValuePointerImpl(Tag, Name, TypeID, value);
+      printValuePointerImpl(Tag, Name, TypeId, value);
       break;
     }
     case TypeID::VectorTyID: {
       uint32_t size = va_arg(VAList, uint32_t);
       uint8_t *buffer = va_arg(VAList, uint8_t *);
-      printValueVectorImpl(Tag, Name, TypeID, size, buffer);
+      printValueVectorImpl(Tag, Name, TypeId, size, buffer);
       break;
     }
     default: {
-      printValueUnsupportImpl(Tag, Name, TypeID);
+      printValueUnsupportImpl(Tag, Name, TypeId);
       break;
     }
   }
