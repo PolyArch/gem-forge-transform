@@ -192,6 +192,7 @@ class TracePass : public llvm::FunctionPass {
   llvm::Value *GetOrAllocateDataBufferFunc;
   llvm::Value *PrintInstFunc;
   llvm::Value *PrintValueFunc;
+  llvm::Value *PrintInstValueFunc;
   llvm::Value *PrintFuncEnterFunc;
   llvm::Value *PrintInstEndFunc;
   llvm::Value *PrintFuncEnterEndFunc;
@@ -239,10 +240,7 @@ class TracePass : public llvm::FunctionPass {
 
     std::vector<llvm::Type *> PrintInstArgs{
         Int8PtrTy,  // char* FunctionName
-        // Int8PtrTy, // char* BBName,
-        // Int32Ty,   // unsigned Id,
-        Int64Ty,  // uint64_t UID,
-                  // Int8PtrTy, // char* OpCodeName,
+        Int64Ty,    // uint64_t UID,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
     this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
@@ -256,6 +254,14 @@ class TracePass : public llvm::FunctionPass {
     auto PrintValueTy = llvm::FunctionType::get(VoidTy, PrintValueArgs, true);
     this->PrintValueFunc =
         Module.getOrInsertFunction("printValue", PrintValueTy);
+
+    std::vector<llvm::Type *> PrintInstValueArgs{
+        Int32Ty,  // unsigned NumAdditionalArgs,
+    };
+    auto PrintInstValueTy =
+        llvm::FunctionType::get(VoidTy, PrintInstValueArgs, true);
+    this->PrintInstValueFunc =
+        Module.getOrInsertFunction("printInstValue", PrintInstValueTy);
 
     std::vector<llvm::Type *> PrintFuncEnterArgs{
         Int8PtrTy,
@@ -442,26 +448,10 @@ class TracePass : public llvm::FunctionPass {
       // Call printValue for each parameter before the instruction.
       for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
            OperandId < NumOperands; OperandId++) {
-        auto PrintValueArgs = getPrintValueArgs(
+        auto PrintInstValueArgs = getPrintInstValueArgs(
             PRINT_VALUE_TAG_PARAMETER, Inst->getOperand(OperandId), Builder);
 
-        if (Inst->getParent()->getParent()->getName() == "cargf") {
-          DEBUG(llvm::errs() << "Trace non-phi inst " << Inst->getName()
-                             << " op " << Inst->getOpcodeName() << '\n');
-          for (auto Iter = Inst->getParent()->begin(),
-                    End = Inst->getParent()->end();
-               Iter != End; ++Iter) {
-            DEBUG(llvm::errs() << '(' << Iter->getName() << ", "
-                               << Iter->getOpcodeName() << ")\n");
-            if (auto CallIter = llvm::dyn_cast<llvm::CallInst>(&*Iter)) {
-              if (CallIter->getCalledFunction() != nullptr) {
-                DEBUG(llvm::errs() << CallIter->getCalledFunction()->getName());
-              }
-            }
-          }
-        }
-
-        Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+        Builder.CreateCall(this->PrintInstValueFunc, PrintInstValueArgs);
       }
 
       // Call printResult after the instruction (if it has a result).
@@ -504,9 +494,9 @@ class TracePass : public llvm::FunctionPass {
           }
         }
 
-        auto PrintValueArgs =
-            getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
-        Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
+        auto PrintInstValueArgs =
+            getPrintInstValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
+        Builder.CreateCall(this->PrintInstValueFunc, PrintInstValueArgs);
       }
     }
     // Call printInstEnd to commit.
@@ -575,6 +565,96 @@ class TracePass : public llvm::FunctionPass {
     std::vector<llvm::Value *> Args{TagValue, NameValue, TypeIdValue,
                                     NumAdditionalArgsValue,
                                     IncomingValueNameValue};
+    return Args;
+  }
+
+  // get arguments from printValue
+  std::vector<llvm::Value *> getPrintInstValueArgs(const char Tag,
+                                                   llvm::Value *Parameter,
+                                                   llvm::IRBuilder<> &Builder) {
+    auto Name = Parameter->getName();
+    auto Type = Parameter->getType();
+    auto TypeId = Type->getTypeID();
+
+    unsigned NumAdditionalArgs = 0;
+    std::vector<llvm::Value *> AdditionalArgValues;
+    switch (TypeId) {
+      case llvm::Type::TypeID::IntegerTyID:
+      case llvm::Type::TypeID::DoubleTyID: {
+        NumAdditionalArgs = 1;
+        AdditionalArgValues.push_back(Parameter);
+        break;
+      }
+      case llvm::Type::TypeID::PointerTyID: {
+        NumAdditionalArgs = 1;
+        if (isIntrinsicFunctionName(Name)) {
+          // For instrinsic function, just use 0 as the address.
+          AdditionalArgValues.push_back(llvm::ConstantInt::get(
+              llvm::IntegerType::getInt32Ty(this->Module->getContext()), 0,
+              false));
+        } else if (llvm::isa<llvm::InlineAsm>(Parameter)) {
+          // For inline asmembly, just use 1 as the address.
+          AdditionalArgValues.push_back(llvm::ConstantInt::get(
+              llvm::IntegerType::getInt32Ty(this->Module->getContext()), 1,
+              false));
+        } else {
+          AdditionalArgValues.push_back(Parameter);
+        }
+        break;
+      }
+      case llvm::Type::TypeID::VectorTyID: {
+        // Cast to VectorType.
+        auto VectorType = llvm::cast<llvm::VectorType>(Type);
+        NumAdditionalArgs = 2;
+        // For vector, we have to allocate a buffer.
+        auto Buffer = this->getOrCreateVectorStoreBuffer(VectorType, Builder);
+        // Store the vector into the buffer.
+        auto TypeBytes = VectorType->getBitWidth() / 8;
+        // Since the buffer can be allocated from other vector, do a bitcast.
+        auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
+        // Align with 1 byte is always safe.
+        // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
+        auto AlignBytes = 1;
+        Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
+        /**
+         * For some corner case, the bit width will be less than 8!
+         * For example, vector<4 x i1> for boolean types.
+         * In this case, we have to use datalayout for storage bytes.
+         */
+        auto TypeStorageBytes = this->DataLayout->getTypeStoreSize(VectorType);
+        AdditionalArgValues.push_back(llvm::ConstantInt::get(
+            llvm::IntegerType::getInt32Ty(this->Module->getContext()),
+            TypeStorageBytes, false));
+        // The second additional argument will be the buffer.
+        AdditionalArgValues.push_back(Buffer);
+        break;
+      }
+      case llvm::Type::TypeID::LabelTyID: {
+        NumAdditionalArgs = 1;
+        // For label, log the name.
+        auto NameValue =
+            getOrCreateStringLiteral(this->GlobalStrings, this->Module, Name);
+        AdditionalArgValues.push_back(NameValue);
+        break;
+      }
+      default: {
+        NumAdditionalArgs = 0;
+        break;
+      }
+    }
+
+    assert(NumAdditionalArgs == AdditionalArgValues.size() &&
+           "The number of additional arguments doesn't match.");
+
+    auto NumAdditionalArgsValue = llvm::ConstantInt::get(
+        llvm::IntegerType::getInt32Ty(this->Module->getContext()),
+        NumAdditionalArgs, false);
+
+    std::vector<llvm::Value *> Args{NumAdditionalArgsValue};
+    for (auto AdditionalArgValue : AdditionalArgValues) {
+      Args.push_back(AdditionalArgValue);
+    }
+
     return Args;
   }
 
