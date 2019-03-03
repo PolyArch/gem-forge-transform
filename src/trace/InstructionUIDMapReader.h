@@ -3,6 +3,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 /**
  * Reading in the UIDMap.
@@ -11,17 +12,28 @@
  */
 class InstructionUIDMapReader {
  public:
+  struct InstructionValueDescriptor {
+    bool IsParam;
+    unsigned TypeID;
+
+    InstructionValueDescriptor(bool _IsParam, unsigned _TypeID)
+        : IsParam(_IsParam), TypeID(_TypeID) {}
+  };
+
   struct InstructionDescriptor {
     std::string OpName;
     std::string FuncName;
     std::string BBName;
     int PosInBB;
+    std::vector<InstructionValueDescriptor> Values;
     InstructionDescriptor(std::string _OpName, std::string _FuncName,
-                          std::string _BBName, int _PosInBB)
+                          std::string _BBName, int _PosInBB,
+                          std::vector<InstructionValueDescriptor> _Values)
         : OpName(std::move(_OpName)),
           FuncName(std::move(_FuncName)),
           BBName(std::move(_BBName)),
-          PosInBB(_PosInBB) {}
+          PosInBB(_PosInBB),
+          Values(std::move(_Values)) {}
   };
 
   using InstructionUID = uint64_t;
