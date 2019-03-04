@@ -244,12 +244,13 @@ class Benchmark(object):
         print('Doing simpoints')
         SimPoint.SimPoint(self.get_profile())
         # Copy the result to run_path.
-        simpont_fn = 'simpoints.txt'
-        Util.call_helper([
-            'cp',
-            simpont_fn,
-            self.get_run_path()
-        ])
+        if self.get_exe_path() != self.get_run_path():
+            simpont_fn = 'simpoints.txt'
+            Util.call_helper([
+                'cp',
+                simpont_fn,
+                self.get_run_path()
+            ])
         os.chdir(self.cwd)
 
     """

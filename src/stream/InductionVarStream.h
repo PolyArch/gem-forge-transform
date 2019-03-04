@@ -31,7 +31,7 @@ public:
 
   bool isCandidate() const override { return this->IsCandidate; }
 
-  void addAccess(const DynamicValue &DynamicVal) {
+  void addAccess(const DynamicValue &DynamicVal) override {
     if (!this->IsCandidate) {
       // I am not even a candidate, ignore all this.
       return;

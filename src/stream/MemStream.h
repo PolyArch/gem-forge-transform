@@ -24,7 +24,8 @@ public:
     this->searchAddressComputeInstructions(IsInductionVar);
   }
 
-  void addAccess(uint64_t Addr, DynamicInstruction::DynamicId DynamicId) {
+  void addAccess(uint64_t Addr,
+                 DynamicInstruction::DynamicId DynamicId) override {
     if (this->StartId == DynamicInstruction::InvalidId) {
       this->StartId = DynamicId;
     }
@@ -51,7 +52,8 @@ public:
   getComputeInsts() const override {
     return this->AddrInsts;
   }
-  const std::unordered_set<const llvm::LoadInst *> &getBaseLoads() const override {
+  const std::unordered_set<const llvm::LoadInst *> &
+  getBaseLoads() const override {
     return this->BaseLoads;
   }
   const std::unordered_set<llvm::PHINode *> &getBaseInductionVars() const {

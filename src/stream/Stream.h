@@ -111,6 +111,14 @@ public:
     this->TotalIters++;
   }
 
+  virtual void addAccess(uint64_t Addr,
+                         DynamicInstruction::DynamicId DynamicId) {
+    assert(false && "addAccess in Stream is not implemented.");
+  }
+  virtual void addAccess(const DynamicValue &DynamicVal) {
+    assert(false && "addAccess for IV in Stream is not implemented.");
+  }
+
   void endStream();
 
   void finalizePattern();
