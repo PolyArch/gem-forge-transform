@@ -5,6 +5,7 @@
 #include "Utils.h"
 #include "stream/InductionVarStream.h"
 #include "stream/MemStream.h"
+#include "stream/StreamRegionAnalyzer.h"
 #include "stream/ae/FunctionalStreamEngine.h"
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
@@ -214,25 +215,10 @@ protected:
 
   void analyzeStream();
   bool isLoopContinuous(const llvm::Loop *Loop);
-  void addAccess(const LoopStackT &LoopStack, ActiveStreamMapT &ActiveStreams,
-                 DynamicInstruction *DynamicInst);
+  void addAccess(DynamicInstruction *DynamicInst);
 
-  void handleAlias(DynamicInstruction *DynamicInst);
-
-  void endIter(const LoopStackT &LoopStack, ActiveStreamMapT &ActiveStreams,
-               ActiveIVStreamMapT &ActiveIVStreams);
-  void pushLoopStack(LoopStackT &LoopStack, ActiveStreamMapT &ActiveStreams,
-                     ActiveIVStreamMapT &ActiveIVStreams, llvm::Loop *NewLoop);
-  void popLoopStack(LoopStackT &LoopStack, ActiveStreamMapT &ActiveStreams,
-                    ActiveIVStreamMapT &ActiveIVStreams);
-  void activateStream(ActiveStreamMapT &ActiveStreams,
-                      llvm::Instruction *Instruction);
-  void activateIVStream(ActiveIVStreamMapT &ActiveIVStreams,
-                        llvm::PHINode *PHINode);
-  void initializeMemStreamIfNecessary(const llvm::Loop *Loop,
-                                      llvm::Instruction *Inst);
-  void initializeIVStreamIfNecessary(const llvm::Loop *Loop,
-                                     llvm::PHINode *Inst);
+  void pushLoopStack(LoopStackT &LoopStack, llvm::Loop *NewLoop);
+  void popLoopStack(LoopStackT &LoopStack);
 
   /*************************************************************
    * Stream Choice.
@@ -307,6 +293,9 @@ protected:
       ChosenLoopSortedStreams;
 
   InstTransformPlanMapT InstPlanMap;
+
+  std::unique_ptr<StreamRegionAnalyzer> StreamAnalyzer;
+  uint64_t RegionIdx;
 
   std::unique_ptr<llvm::Interpreter> AddrInterpreter;
   std::unique_ptr<FunctionalStreamEngine> FuncSE;
