@@ -287,7 +287,7 @@ void StreamRegionAnalyzer::endRegion(
 }
 
 Stream *StreamRegionAnalyzer::getStreamByInstAndConfiguredLoop(
-    const llvm::Instruction *Inst, const llvm::Loop *ConfiguredLoop) {
+    const llvm::Instruction *Inst, const llvm::Loop *ConfiguredLoop) const {
   auto Iter = this->InstStreamMap.find(Inst);
   if (Iter == this->InstStreamMap.end()) {
     return nullptr;
@@ -495,7 +495,7 @@ void StreamRegionAnalyzer::buildAddressModule() {
     MStream->generateComputeFunction(AddressModule);
   }
 
-  // Write it to file.
+  // Write it to file for debug purpose.
   std::error_code EC;
   llvm::raw_fd_ostream ModuleFStream(AddressModulePath, EC,
                                      llvm::sys::fs::OpenFlags::F_None);
@@ -503,6 +503,12 @@ void StreamRegionAnalyzer::buildAddressModule() {
          "Failed to open the address computation module file.");
   AddressModule->print(ModuleFStream, nullptr);
   ModuleFStream.close();
+
+  // Create the interpreter and functional stream engine.
+  this->AddrInterpreter =
+      std::make_unique<llvm::Interpreter>(std::move(AddressModule));
+  this->FuncSE =
+      std::make_unique<FunctionalStreamEngine>(this->AddrInterpreter);
 }
 
 void StreamRegionAnalyzer::buildTransformPlan() {
@@ -563,6 +569,9 @@ void StreamRegionAnalyzer::buildTransformPlan() {
          */
         for (auto U : StepInst->users()) {
           if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+            if (!this->TopLoop->contains(I)) {
+              continue;
+            }
             this->InstPlanMap.at(I).addUsedStream(S);
           }
         }
@@ -577,6 +586,9 @@ void StreamRegionAnalyzer::buildTransformPlan() {
     // Add uses for all the users to use myself.
     for (auto U : SelfInst->users()) {
       if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+        if (!this->TopLoop->contains(I)) {
+          continue;
+        }
         this->InstPlanMap.at(I).addUsedStream(S);
         DEBUG(llvm::errs() << "Add used stream for user "
                            << LoopUtils::formatLLVMInst(I) << " with stream "
@@ -625,6 +637,10 @@ void StreamRegionAnalyzer::buildTransformPlan() {
     if (auto NewlyDeletingOperandInst =
             llvm::dyn_cast<llvm::Instruction>(NewlyDeletingValue)) {
       // The operand of the deleting use is an instruction.
+      if (!this->TopLoop->contains(NewlyDeletingOperandInst)) {
+        // This operand is not within our loop, ignore it.
+        continue;
+      }
       if (DeleteCandidates.count(NewlyDeletingOperandInst) == 0) {
         // The operand is not even a delete candidate.
         continue;
@@ -689,6 +705,251 @@ void StreamRegionAnalyzer::dumpTransformPlan() {
          "Failed to open dump loop transform plan file.");
   PlanFStream << ss.str() << '\n';
   PlanFStream.close();
+}
+
+std::list<Stream *>
+StreamRegionAnalyzer::getSortedChosenStreamsByConfiguredLoop(
+    const llvm::Loop *ConfiguredLoop) {
+  assert(this->TopLoop->contains(ConfiguredLoop) &&
+         "ConfiguredLoop should be within TopLoop.");
+
+  // Topological sort.
+  std::stack<std::pair<Stream *, int>> ChosenStreams;
+  for (auto &InstChosenStream : this->InstChosenStreamMap) {
+    auto &S = InstChosenStream.second;
+    if (S->getLoop() == ConfiguredLoop) {
+      ChosenStreams.emplace(S, 0);
+    }
+  }
+
+  std::unordered_set<Stream *> Inserted;
+  std::list<Stream *> SortedStreams;
+  while (!ChosenStreams.empty()) {
+    auto &Entry = ChosenStreams.top();
+    auto &S = Entry.first;
+    if (Entry.second == 0) {
+      Entry.second = 1;
+      for (auto &ChosenBaseS : S->getChosenBaseStreams()) {
+        if (ChosenBaseS->getLoop() != ConfiguredLoop) {
+          continue;
+        }
+        if (Inserted.count(ChosenBaseS) == 0) {
+          ChosenStreams.emplace(ChosenBaseS, 0);
+        }
+      }
+    } else {
+      if (Inserted.count(S) == 0) {
+        SortedStreams.emplace_back(S);
+        Inserted.insert(S);
+      }
+      ChosenStreams.pop();
+    }
+  }
+
+  return SortedStreams;
+}
+
+Stream *
+StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
+  if (!this->TopLoop->contains(Inst)) {
+    return nullptr;
+  }
+  auto Iter = this->InstChosenStreamMap.find(Inst);
+  if (Iter == this->InstChosenStreamMap.end()) {
+    return nullptr;
+  } else {
+    return Iter->second;
+  }
+}
+
+const StreamTransformPlan &
+StreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
+  assert(this->TopLoop->contains(Inst) && "Inst should be within the TopLoop.");
+  return this->InstPlanMap.at(Inst);
+}
+
+FunctionalStreamEngine *StreamRegionAnalyzer::getFuncSE() {
+  return this->FuncSE.get();
+}
+
+std::string StreamRegionAnalyzer::classifyStream(const MemStream &S) const {
+
+  if (S.getNumBaseLoads() > 0) {
+    // We have dependent base loads here.
+    return "INDIRECT";
+  }
+
+  // No base loads.
+  const auto &BaseInductionVars = S.getBaseInductionVars();
+  if (BaseInductionVars.empty()) {
+    // No base ivs, should be a constant stream, but here we treat it as AFFINE.
+    return "AFFINE";
+  }
+
+  if (BaseInductionVars.size() > 1) {
+    // Multiple IVs.
+    return "MULTI_IV";
+  }
+
+  const auto &BaseIV = *BaseInductionVars.begin();
+  auto BaseIVStream =
+      this->getStreamByInstAndConfiguredLoop(BaseIV, S.getLoop());
+  if (BaseIVStream == nullptr) {
+    // This should not happen, but so far make it indirect.
+    return "INDIRECT";
+  }
+
+  const auto &BaseIVBaseLoads = BaseIVStream->getBaseLoads();
+  if (!BaseIVBaseLoads.empty()) {
+    for (const auto &BaseIVBaseLoad : BaseIVBaseLoads) {
+      if (BaseIVBaseLoad == S.getInst()) {
+        return "POINTER_CHASE";
+      }
+    }
+    return "INDIRECT";
+  }
+
+  if (BaseIVStream->getPattern().computed()) {
+    auto Pattern = BaseIVStream->getPattern().getPattern().ValPattern;
+    if (Pattern <= StreamPattern::ValuePattern::QUARDRIC) {
+      // The pattern of the IV is AFFINE.
+      return "AFFINE";
+    }
+  }
+
+  return "RANDOM";
+}
+
+void StreamRegionAnalyzer::dumpStats() const {
+
+  std::string StatFilePath = this->AnalyzePath + "/stats.txt";
+
+  std::ofstream O(StatFilePath);
+  assert(O.is_open() && "Failed to open stats file.");
+
+  O << "--------------- Stats -----------------\n";
+  /**
+   * Loop
+   * Inst
+   * AddrPat
+   * AccPat
+   * Iters
+   * Accs
+   * Updates
+   * StreamCount
+   * LoopLevel
+   * BaseLoads
+   * StreamClass
+   * Footprint
+   * AddrInsts
+   * AliasInsts
+   * Qualified
+   * Chosen
+   * PossiblePaths
+   */
+
+  O << "--------------- Stream -----------------\n";
+  for (auto &InstStreamEntry : this->InstStreamMap) {
+    if (llvm::isa<llvm::PHINode>(InstStreamEntry.first)) {
+      continue;
+    }
+    for (auto &S : InstStreamEntry.second) {
+      auto &Stream = *reinterpret_cast<MemStream *>(S);
+      O << LoopUtils::getLoopId(Stream.getLoop());
+      O << ' ' << LoopUtils::formatLLVMInst(Stream.getInst());
+
+      std::string AddrPattern = "NOT_COMPUTED";
+      std::string AccPattern = "NOT_COMPUTED";
+      size_t Iters = Stream.getTotalIters();
+      size_t Accesses = Stream.getTotalAccesses();
+      size_t Updates = 0;
+      size_t StreamCount = Stream.getTotalStreams();
+      size_t LoopLevel = Stream.getLoopLevel();
+      size_t BaseLoads = Stream.getNumBaseLoads();
+
+      std::string StreamClass = this->classifyStream(Stream);
+      size_t Footprint = Stream.getFootprint().getNumCacheLinesAccessed();
+      size_t AddrInsts = Stream.getNumAddrInsts();
+
+      std::string Qualified = "NO";
+      if (Stream.getQualified()) {
+        Qualified = "YES";
+      }
+
+      std::string Chosen = Stream.isChosen() ? "YES" : "NO";
+
+      int LoopPossiblePaths = -1;
+
+      size_t AliasInsts = Stream.getAliasInsts().size();
+
+      if (Stream.getPattern().computed()) {
+        const auto &Pattern = Stream.getPattern().getPattern();
+        AddrPattern = StreamPattern::formatValuePattern(Pattern.ValPattern);
+        AccPattern = StreamPattern::formatAccessPattern(Pattern.AccPattern);
+        Updates = Pattern.Updates;
+      }
+      O << ' ' << AddrPattern;
+      O << ' ' << AccPattern;
+      O << ' ' << Iters;
+      O << ' ' << Accesses;
+      O << ' ' << Updates;
+      O << ' ' << StreamCount;
+      O << ' ' << LoopLevel;
+      O << ' ' << BaseLoads;
+      O << ' ' << StreamClass;
+      O << ' ' << Footprint;
+      O << ' ' << AddrInsts;
+      O << ' ' << AliasInsts;
+      O << ' ' << Qualified;
+      O << ' ' << Chosen;
+      O << ' ' << LoopPossiblePaths;
+      O << '\n';
+    }
+  }
+
+  O << "--------------- Loop -----------------\n";
+  O << "--------------- IV Stream ------------\n";
+  for (auto &InstStreamEntry : this->InstStreamMap) {
+    if (!llvm::isa<llvm::PHINode>(InstStreamEntry.first)) {
+      continue;
+    }
+    for (auto &S : InstStreamEntry.second) {
+      auto &IVStream = *reinterpret_cast<InductionVarStream *>(S);
+      O << LoopUtils::getLoopId(IVStream.getLoop());
+      O << ' ' << LoopUtils::formatLLVMInst(IVStream.getPHIInst());
+
+      std::string AddrPattern = "NOT_COMPUTED";
+      std::string AccPattern = "NOT_COMPUTED";
+      size_t Iters = IVStream.getTotalIters();
+      size_t Accesses = IVStream.getTotalAccesses();
+      size_t Updates = 0;
+      size_t StreamCount = IVStream.getTotalStreams();
+
+      size_t ComputeInsts = IVStream.getComputeInsts().size();
+
+      std::string StreamClass = "whatever";
+      if (IVStream.getPattern().computed()) {
+        const auto &Pattern = IVStream.getPattern().getPattern();
+        AddrPattern = StreamPattern::formatValuePattern(Pattern.ValPattern);
+        AccPattern = StreamPattern::formatAccessPattern(Pattern.AccPattern);
+        Updates = Pattern.Updates;
+      }
+
+      int LoopPossiblePaths = -1;
+
+      O << ' ' << AddrPattern;
+      O << ' ' << AccPattern;
+      O << ' ' << Iters;
+      O << ' ' << Accesses;
+      O << ' ' << Updates;
+      O << ' ' << StreamCount;
+      O << ' ' << StreamClass;
+      O << ' ' << ComputeInsts;
+      O << ' ' << LoopPossiblePaths;
+      O << '\n';
+    }
+  }
+  O.close();
 }
 
 #undef DEBUG_TYPE

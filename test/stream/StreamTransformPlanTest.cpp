@@ -14,7 +14,9 @@ protected:
                          const ExpectedPlanMapT &ExpectedPlan,
                          const ExpectedStepStreamMapT &ExpectedStepStreams) {
 
-    const auto &InstTransformPlanMap = this->Pass.getInstTransformPlanMap();
+    auto Analyzer = this->Pass.getAnalyzerByLoop(Loop);
+    EXPECT_NE(nullptr, Analyzer) << "Failed to find the stream analyzer.\n";
+    const auto &InstTransformPlanMap = Analyzer->getInstTransformPlanMap();
 
     for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
          BBIter != BBEnd; ++BBIter) {
