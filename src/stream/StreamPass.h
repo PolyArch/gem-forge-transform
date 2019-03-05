@@ -199,13 +199,15 @@ protected:
   void transform() override;
 
   std::string classifyStream(const MemStream &S) const;
-  using ActiveStreamMapT =
-      std::unordered_map<const llvm::Loop *,
-                         std::unordered_map<llvm::Instruction *, MemStream *>>;
   using ActiveIVStreamMapT = std::unordered_map<
       const llvm::Loop *,
       std::unordered_map<const llvm::PHINode *, InductionVarStream *>>;
   using LoopStackT = std::list<llvm::Loop *>;
+
+  std::unordered_map<llvm::Loop *, std::unique_ptr<StreamRegionAnalyzer>>
+      LoopStreamAnalyzerMap;
+  StreamRegionAnalyzer *CurrentStreamAnalyzer;
+  uint64_t RegionIdx;
 
   /*************************************************************
    * Stream Analysis.
@@ -279,9 +281,6 @@ protected:
       ChosenLoopSortedStreams;
 
   InstTransformPlanMapT InstPlanMap;
-
-  std::unique_ptr<StreamRegionAnalyzer> StreamAnalyzer;
-  uint64_t RegionIdx;
 
   std::unique_ptr<llvm::Interpreter> AddrInterpreter;
   std::unique_ptr<FunctionalStreamEngine> FuncSE;

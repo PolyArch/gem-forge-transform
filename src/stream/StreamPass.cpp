@@ -338,11 +338,17 @@ void StreamPass::transform() {
 
 void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
   if (LoopStack.empty()) {
-    this->StreamAnalyzer = std::make_unique<StreamRegionAnalyzer>(
-        this->RegionIdx, Loop,
-        this->CachedLI->getLoopInfo(Loop->getHeader()->getParent()),
-        this->Trace->DataLayout, this->OutputExtraFolderPath);
-    this->RegionIdx++;
+    // Get or create the region analyzer.
+    if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
+      auto StreamAnalyzer = std::make_unique<StreamRegionAnalyzer>(
+          this->RegionIdx, Loop,
+          this->CachedLI->getLoopInfo(Loop->getHeader()->getParent()),
+          this->Trace->DataLayout, this->OutputExtraFolderPath);
+      this->RegionIdx++;
+      this->LoopStreamAnalyzerMap.insert(
+          std::make_pair(Loop, std::move(StreamAnalyzer)));
+    }
+    this->CurrentStreamAnalyzer = this->LoopStreamAnalyzerMap.at(Loop).get();
   }
 
   LoopStack.emplace_back(Loop);
@@ -367,14 +373,10 @@ void StreamPass::popLoopStack(LoopStackT &LoopStack) {
   // Deactivate all the streams in this loop level.
   const auto &EndedLoop = LoopStack.back();
 
-  this->StreamAnalyzer->endIter(LoopStack.back());
-  this->StreamAnalyzer->endLoop(LoopStack.back());
+  this->CurrentStreamAnalyzer->endIter(LoopStack.back());
+  this->CurrentStreamAnalyzer->endLoop(LoopStack.back());
 
   LoopStack.pop_back();
-
-  if (LoopStack.empty()) {
-    this->StreamAnalyzer->endRegion(StreamPassChooseStrategy);
-  }
 }
 
 bool StreamPass::isLoopContinuous(const llvm::Loop *Loop) {
@@ -436,6 +438,14 @@ void StreamPass::analyzeStream() {
       while (!this->Trace->DynamicInstructionList.empty()) {
         this->Trace->commitOneDynamicInst();
       }
+
+      /**
+       * Notify all region analyzer to wrap up.
+       */
+      for (auto &LoopStreamAnalyzer : this->LoopStreamAnalyzerMap) {
+        LoopStreamAnalyzer.second->endRegion(StreamPassChooseStrategy);
+      }
+
       break;
     }
 
@@ -453,7 +463,7 @@ void StreamPass::analyzeStream() {
         this->pushLoopStack(LoopStack, NewLoop);
       } else {
         // This means that we are at a new iteration.
-        this->StreamAnalyzer->endIter(LoopStack.back());
+        this->CurrentStreamAnalyzer->endIter(LoopStack.back());
       }
     }
 
@@ -463,7 +473,7 @@ void StreamPass::analyzeStream() {
 
       if (!LoopStack.empty()) {
         // We are in a region.
-        this->StreamAnalyzer->addMemAccess(NewDynamicInst, this->Trace);
+        this->CurrentStreamAnalyzer->addMemAccess(NewDynamicInst, this->Trace);
       }
 
       this->CacheWarmerPtr->addAccess(Utils::getMemAddr(NewDynamicInst));
@@ -473,7 +483,7 @@ void StreamPass::analyzeStream() {
      * Handle the value for induction variable streams.
      */
     if (!LoopStack.empty()) {
-      this->StreamAnalyzer->addIVAccess(NewDynamicInst);
+      this->CurrentStreamAnalyzer->addIVAccess(NewDynamicInst);
     }
   }
 }
