@@ -1,5 +1,7 @@
 #include "stream/Stream.h"
 
+#include "google/protobuf/util/json_util.h"
+
 Stream::Stream(TypeT _Type, const std::string &_Folder,
                const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
                const llvm::Loop *_InnerMostLoop, size_t _LoopLevel)
@@ -35,6 +37,11 @@ void Stream::addBaseStream(Stream *Other) {
   } else {
     this->HasMissingBaseStream = true;
   }
+}
+
+void Stream::addBackEdgeBaseStream(Stream *Other) {
+  this->BackMemBaseStreams.insert(Other);
+  Other->BackIVDependentStreams.insert(this);
 }
 
 /**
@@ -74,6 +81,11 @@ void Stream::addChosenBaseStream(Stream *Other) {
   }
 }
 
+void Stream::addChosenBackEdgeBaseStream(Stream *Other) {
+  this->ChosenBackMemBaseStreams.insert(Other);
+  Other->ChosenBackIVDependentStreams.insert(this);
+}
+
 void Stream::addAllChosenBaseStream(Stream *Other) {
   assert(Other != this && "Self dependent chosen streams is not allowed.");
   assert(this->isChosen() &&
@@ -91,27 +103,6 @@ void Stream::endStream() {
   this->LastAccessIters = 0;
   this->TotalStreams++;
   this->StartId = DynamicInstruction::InvalidId;
-
-  // Serialize just with text.
-  this->PatternTextFStream << "ValPat "
-                           << StreamPattern::formatValuePattern(
-                                  ComputedPattern.ValPattern)
-                           << std::endl;
-  this->PatternTextFStream << "AccPat "
-                           << StreamPattern::formatAccessPattern(
-                                  ComputedPattern.AccPattern)
-                           << std::endl;
-#define SerializeFieldText(field)                                              \
-  this->PatternTextFStream << #field << ' ' << ComputedPattern.field           \
-                           << std::endl
-  SerializeFieldText(Iters);
-  SerializeFieldText(Accesses);
-  SerializeFieldText(Updates);
-  SerializeFieldText(Base);
-  SerializeFieldText(StrideI);
-  SerializeFieldText(NI);
-  SerializeFieldText(StrideJ);
-#undef SerializeFieldText
 
   // Also serialize with protobuf.
   assert(this->PatternSerializer != nullptr &&
@@ -136,6 +127,13 @@ void Stream::endStream() {
     }
   }
   this->PatternSerializer->serialize(this->ProtobufPattern);
+
+  // Also serialize with json, without the history.
+  std::string PatternJsonString;
+  this->ProtobufPattern.clear_history();
+  google::protobuf::util::MessageToJsonString(this->ProtobufPattern,
+                                              &PatternJsonString);
+  this->PatternTextFStream << PatternJsonString << '\n';
 }
 
 void Stream::finalizePattern() {
@@ -146,96 +144,46 @@ void Stream::finalizePattern() {
 }
 
 void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
-
-  std::ofstream InfoTextFStream(this->InfoTextFullPath);
-  assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
-
-  InfoTextFStream << this->formatName() << '\n';               // stream name
-  InfoTextFStream << this->getStreamId() << '\n';              // stream id
-  InfoTextFStream << this->Inst->getOpcodeName() << '\n';      // stream type
-  InfoTextFStream << this->getElementSize(DataLayout) << '\n'; // element size
-  InfoTextFStream << this->PatternFullPath << '\n';            // pattern path
-  InfoTextFStream << this->HistoryFullPath << '\n';            // history path
-  InfoTextFStream << "Chosen: " << this->Chosen << '\n';       // chosen
-  InfoTextFStream << "Coalesce: " << this->CoalesceGroup
-                  << '\n'; // coalesce group id
-
-  InfoTextFStream << "Base loads. ---------\n";
-  for (const auto &BaseLoad : this->getBaseLoads()) {
-    InfoTextFStream << "  " << Utils::formatLLVMInst(BaseLoad) << '\n';
-  }
-
-  // The next line is the chosen base streams.
-  InfoTextFStream << "Base streams. ---------\n";
-  for (const auto &BaseStream : this->BaseStreams) {
-    InfoTextFStream << "  " << BaseStream->getStreamId() << ' '
-                    << BaseStream->formatName() << '\n';
-  }
-  InfoTextFStream << "Base step streams. ---------\n";
-  for (const auto &BaseStepStream : this->BaseStepStreams) {
-    InfoTextFStream << "  " << BaseStepStream->getStreamId() << ' '
-                    << BaseStepStream->formatName() << '\n';
-  }
-  InfoTextFStream << "Base step root streams. ---------\n";
-  for (const auto &BaseStepRootStream : this->BaseStepRootStreams) {
-    InfoTextFStream << "  " << BaseStepRootStream->getStreamId() << ' '
-                    << BaseStepRootStream->formatName() << '\n';
-  }
-  InfoTextFStream << "Chosen base streams. ---------\n";
-  for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
-    InfoTextFStream << "  " << ChosenBaseStream->getStreamId() << ' '
-                    << ChosenBaseStream->formatName() << '\n';
-  }
-  InfoTextFStream << "------------------------------\n";
-  // The next line is the chosen step streams.
-  InfoTextFStream << "Chosen base step streams. ---------\n";
-  for (const auto &ChosenBaseStepStream : this->ChosenBaseStepStreams) {
-    InfoTextFStream << "  " << ChosenBaseStepStream->getStreamId() << ' '
-                    << ChosenBaseStepStream->formatName() << '\n';
-  }
-  InfoTextFStream << "------------------------------\n";
-  InfoTextFStream << "Chosen base step root streams. ---------\n";
-  for (const auto &ChosenBaseStepRootStream : this->ChosenBaseStepRootStreams) {
-    InfoTextFStream << "  " << ChosenBaseStepRootStream->getStreamId() << ' '
-                    << ChosenBaseStepRootStream->formatName() << '\n';
-  }
-  InfoTextFStream << "------------------------------\n";
-  // The next line is all chosen base streams.
-  InfoTextFStream << "All chosen base streams. ----\n";
-  for (const auto &AllChosenBaseStream : this->AllChosenBaseStreams) {
-    InfoTextFStream << "  " << AllChosenBaseStream->getStreamId() << ' '
-                    << AllChosenBaseStream->formatName() << '\n';
-  }
-  InfoTextFStream << "------------------------------\n";
-  /**
-   * Formatting any additional text information for the subclass.
-   */
-  this->formatAdditionalInfoText(InfoTextFStream);
-  InfoTextFStream.close();
-
   // Also serialize with protobuf.
   Gem5ProtobufSerializer InfoSerializer(this->InfoFullPath);
   LLVM::TDG::StreamInfo ProtobufInfo;
-  ProtobufInfo.set_name(this->formatName());
-  ProtobufInfo.set_id(this->getStreamId());
-  ProtobufInfo.set_type(this->Inst->getOpcodeName());
-  ProtobufInfo.set_loop_level(this->InnerMostLoop->getLoopDepth());
-  ProtobufInfo.set_config_loop_level(this->Loop->getLoopDepth());
-  ProtobufInfo.set_element_size(this->getElementSize(DataLayout));
-  ProtobufInfo.set_pattern_path(this->PatternFullPath);
-  ProtobufInfo.set_history_path(this->HistoryFullPath);
-  ProtobufInfo.set_coalesce_group(this->CoalesceGroup);
-  for (const auto &ChosenBaseStream : this->ChosenBaseStreams) {
-    ProtobufInfo.add_chosen_base_ids(ChosenBaseStream->getStreamId());
-  }
-  for (const auto &ChosenBaseStepStream : this->ChosenBaseStepStreams) {
-    ProtobufInfo.add_chosen_base_step_ids(ChosenBaseStepStream->getStreamId());
-  }
-  for (const auto &ChosenBaseStepRootStream : this->ChosenBaseStepRootStreams) {
-    ProtobufInfo.add_chosen_base_step_root_ids(
-        ChosenBaseStepRootStream->getStreamId());
-  }
+  this->fillProtobufStreamInfo(DataLayout, &ProtobufInfo);
   InfoSerializer.serialize(ProtobufInfo);
+
+  std::ofstream InfoTextFStream(this->InfoTextFullPath);
+  assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
+  std::string InfoJsonString;
+  google::protobuf::util::MessageToJsonString(ProtobufInfo, &InfoJsonString);
+  InfoTextFStream << InfoJsonString << '\n';
+  InfoTextFStream.close();
+}
+
+void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
+                                    LLVM::TDG::StreamInfo *ProtobufInfo) const {
+  ProtobufInfo->set_name(this->formatName());
+  ProtobufInfo->set_id(this->getStreamId());
+  ProtobufInfo->set_type(this->Inst->getOpcodeName());
+  ProtobufInfo->set_loop_level(this->InnerMostLoop->getLoopDepth());
+  ProtobufInfo->set_config_loop_level(this->Loop->getLoopDepth());
+  ProtobufInfo->set_element_size(this->getElementSize(DataLayout));
+  ProtobufInfo->set_pattern_path(this->PatternFullPath);
+  ProtobufInfo->set_history_path(this->HistoryFullPath);
+  ProtobufInfo->set_coalesce_group(this->CoalesceGroup);
+  ProtobufInfo->set_chosen(this->Chosen);
+
+#define ADD_STREAM(SET, FIELD)                                                 \
+  {                                                                            \
+    for (const auto &S : SET) {                                                \
+      auto Entry = ProtobufInfo->add_##FIELD();                                \
+      Entry->set_name(S->formatName());                                        \
+      Entry->set_id(S->getStreamId());                                         \
+    }                                                                          \
+  }
+  ADD_STREAM(this->BaseStreams, base_streams);
+  ADD_STREAM(this->BackMemBaseStreams, back_base_streams);
+  ADD_STREAM(this->ChosenBaseStreams, chosen_base_streams);
+
+#undef ADD_STREAM
 }
 
 int Stream::getElementSize(llvm::DataLayout *DataLayout) const {

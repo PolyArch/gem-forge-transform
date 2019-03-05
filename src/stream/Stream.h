@@ -16,6 +16,24 @@
 #include <string>
 #include <unordered_set>
 
+/**
+ * The base class to represent all streams (IV and MEM).
+ *
+ * The key information stored the dependence graph, which has two version:
+ * basic and chosen.
+ *
+ * The basic dependence graph stores all static dependence information.
+ * Edges are inserted between streams configured within the same loop level.
+ *
+ * BaseStream: Input stream used by myself;
+ * DependentStream: Stream dependent on myself;
+ *
+ * MEM -> IV dependency is a back-edge and stored in BackMemBaseStream
+ * and BackIVDependentStream.
+ *
+ * The Chosen dependence graph represents the final chosen graph.
+ */
+
 class Stream {
 public:
   enum TypeT {
@@ -27,33 +45,15 @@ public:
          const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
          const llvm::Loop *_InnerMostLoop, size_t _LoopLevel);
 
-  bool hasNoBaseStream() const { return this->BaseStreams.empty(); }
-  const std::unordered_set<Stream *> &getBaseStreams() const {
-    return this->BaseStreams;
-  }
-  const std::unordered_set<Stream *> &getBaseStepRootStreams() const {
-    return this->BaseStepRootStreams;
-  }
-  const std::unordered_set<Stream *> &getChosenBaseStreams() const {
-    return this->ChosenBaseStreams;
-  }
-  const std::unordered_set<Stream *> &getChosenBaseStepStreams() const {
-    return this->ChosenBaseStepStreams;
-  }
-  const std::unordered_set<Stream *> &getAllChosenBaseStreams() const {
-    return this->AllChosenBaseStreams;
-  }
-  const std::unordered_set<Stream *> &getDependentStreams() const {
-    return this->DependentStreams;
-  }
-  const std::unordered_set<Stream *> &getAllChosenDependentStreams() const {
-    return this->AllChosenDependentStreams;
-  }
+  using StreamSet = std::unordered_set<Stream *>;
+
   /**
-   * Interface to decide even if the stream can be considered as a candidate
-   * (before mark it qualified or not).
+   * Candidate: statically determined.
+   * QualifySeed: dynamically determined.
    */
-  virtual bool isCandidate() const { return true; }
+  virtual bool isCandidate() const = 0;
+  virtual bool isQualifySeed() const = 0;
+
   void markQualified() {
     assert(!this->HasMissingBaseStream &&
            "Marking a stream with missing base stream qualified.");
@@ -89,15 +89,6 @@ public:
   const StreamPattern &getPattern() const { return this->Pattern; }
 
   /**
-   * A hacky idea is to use nullptr to represent an missing stream.
-   * This base stream is never qualified. This is to solve the case when the
-   * needing base stream is not instantiated at a specific level.
-   */
-  void addBaseStream(Stream *Other);
-  void addChosenBaseStream(Stream *Other);
-  void addAllChosenBaseStream(Stream *Other);
-
-  /**
    * This must happen after all the calls to addBaseStream.
    */
   void computeBaseStepRootStreams();
@@ -124,6 +115,9 @@ public:
   void finalizePattern();
   void finalizeInfo(llvm::DataLayout *DataLayout);
 
+  void fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
+                              LLVM::TDG::StreamInfo *ProtobufInfo) const;
+
   virtual bool isAliased() const { return false; }
   std::string formatType() const {
     switch (this->Type) {
@@ -142,10 +136,6 @@ public:
            this->Inst->getFunction()->getName().str() + " " +
            this->Loop->getHeader()->getName().str() + " " +
            Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
-    // return "(" + this->formatType() + " " +
-    //        Utils::getDemangledFunctionName(this->Inst->getFunction()) + " " +
-    //        this->Loop->getHeader()->getName().str() + " " +
-    //        Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
   }
 
   virtual const std::unordered_set<const llvm::Instruction *> &
@@ -172,6 +162,49 @@ public:
     }
   }
 
+  /**
+   * Accessors for stream sets.
+   */
+  bool hasNoBaseStream() const { return this->BaseStreams.empty(); }
+  const StreamSet &getBaseStreams() const { return this->BaseStreams; }
+  const StreamSet &getBackMemBaseStreams() const {
+    return this->BackMemBaseStreams;
+  }
+  const StreamSet &getBackIVDependentStreams() const {
+    return this->BackIVDependentStreams;
+  }
+
+  const StreamSet &getBaseStepRootStreams() const {
+    return this->BaseStepRootStreams;
+  }
+  const StreamSet &getChosenBaseStreams() const {
+    return this->ChosenBaseStreams;
+  }
+  const StreamSet &getChosenBaseStepStreams() const {
+    return this->ChosenBaseStepStreams;
+  }
+  const StreamSet &getAllChosenBaseStreams() const {
+    return this->AllChosenBaseStreams;
+  }
+  const StreamSet &getDependentStreams() const {
+    return this->DependentStreams;
+  }
+  const StreamSet &getAllChosenDependentStreams() const {
+    return this->AllChosenDependentStreams;
+  }
+
+  /**
+   * Build the dependence graph by add all the base streams.
+   */
+  using GetStreamFuncT =
+      std::function<Stream *(const llvm::Instruction *, const llvm::Loop *)>;
+  virtual void buildBasicDependenceGraph(GetStreamFuncT GetStream) = 0;
+
+  using GetChosenStreamFuncT =
+      std::function<Stream *(const llvm::Instruction *)>;
+  virtual void
+  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) = 0;
+
 protected:
   /**
    * Stores the information of the stream.
@@ -195,15 +228,24 @@ protected:
   const llvm::Loop *InnerMostLoop;
   const size_t LoopLevel;
 
-  std::unordered_set<Stream *> BaseStreams;
-  std::unordered_set<Stream *> BaseStepStreams;
-  std::unordered_set<Stream *> BaseStepRootStreams;
-  std::unordered_set<Stream *> DependentStreams;
-  std::unordered_set<Stream *> ChosenBaseStreams;
-  std::unordered_set<Stream *> ChosenBaseStepStreams;
-  std::unordered_set<Stream *> ChosenBaseStepRootStreams;
-  std::unordered_set<Stream *> AllChosenBaseStreams;
-  std::unordered_set<Stream *> AllChosenDependentStreams;
+  StreamSet BaseStreams;
+  StreamSet DependentStreams;
+  StreamSet BackMemBaseStreams;
+  StreamSet BackIVDependentStreams;
+
+  StreamSet BaseStepStreams;
+  StreamSet BaseStepRootStreams;
+
+  StreamSet ChosenBaseStreams;
+  StreamSet ChosenDependentStreams;
+  StreamSet ChosenBackMemBaseStreams;
+  StreamSet ChosenBackIVDependentStreams;
+
+  StreamSet ChosenBaseStepStreams;
+  StreamSet ChosenBaseStepRootStreams;
+
+  StreamSet AllChosenBaseStreams;
+  StreamSet AllChosenDependentStreams;
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;
@@ -244,6 +286,13 @@ protected:
    * Used for subclass to add additionl dumping information.
    */
   virtual void formatAdditionalInfoText(std::ostream &OStream) const {}
+
+  void addBaseStream(Stream *Other);
+  void addBackEdgeBaseStream(Stream *Other);
+
+  void addChosenBaseStream(Stream *Other);
+  void addChosenBackEdgeBaseStream(Stream *Other);
+  void addAllChosenBaseStream(Stream *Other);
 };
 
 #endif

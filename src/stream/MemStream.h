@@ -24,6 +24,10 @@ public:
     this->searchAddressComputeInstructions(IsInductionVar);
   }
 
+  void buildBasicDependenceGraph(GetStreamFuncT GetStream) override;
+  void
+  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) override;
+
   void addAccess(uint64_t Addr,
                  DynamicInstruction::DynamicId DynamicId) override {
     if (this->StartId == DynamicInstruction::InvalidId) {
@@ -77,6 +81,7 @@ public:
   }
 
   bool isCandidate() const override;
+  bool isQualifySeed() const override;
 
   const AddressDataGraph &getAddressDataGraph() const { return this->AddrDG; }
 

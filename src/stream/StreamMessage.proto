@@ -12,9 +12,26 @@ message StreamInfo {
     string pattern_path = 7;
     string history_path = 8;
     int32 coalesce_group = 9;
-    repeated uint64 chosen_base_ids = 20;
-    repeated uint64 chosen_base_step_ids = 21;
-    repeated uint64 chosen_base_step_root_ids = 22;
+
+    bool chosen = 10;
+
+    repeated StreamId base_streams = 16;
+    repeated StreamId back_base_streams = 17;
+    repeated StreamId chosen_base_streams = 18;
+
+    // repeated uint64 chosen_base_ids = 20;
+    // repeated uint64 chosen_base_step_ids = 21;
+    // repeated uint64 chosen_base_step_root_ids = 22;
+
+    message StreamId {
+      string name = 1;
+      uint64 id = 2;
+    }
+}
+
+message StreamRegion {
+    string region = 1;
+    repeated StreamInfo streams = 8;
 }
 
 message StreamPattern {

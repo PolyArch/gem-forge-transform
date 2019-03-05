@@ -1,5 +1,7 @@
 #include "StreamRegionAnalyzer.h"
 
+#include "google/protobuf/util/json_util.h"
+
 #include <sstream>
 
 #include <sys/stat.h>
@@ -9,8 +11,10 @@
 StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            llvm::Loop *_TopLoop,
                                            llvm::LoopInfo *_LI,
+                                           llvm::DataLayout *_DataLayout,
                                            const std::string &_RootPath)
-    : RegionIdx(_RegionIdx), TopLoop(_TopLoop), LI(_LI), RootPath(_RootPath) {
+    : RegionIdx(_RegionIdx), TopLoop(_TopLoop), LI(_LI),
+      DataLayout(_DataLayout), RootPath(_RootPath) {
   // Initialize the folder for this region.
   std::stringstream ss;
   ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
@@ -24,6 +28,7 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
   }
 
   this->initializeStreams();
+  this->buildStreamDependenceGraph();
 }
 
 StreamRegionAnalyzer::~StreamRegionAnalyzer() {
@@ -131,6 +136,29 @@ void StreamRegionAnalyzer::initializeStreamForAllLoops(
   } while (this->TopLoop->contains(ConfiguredLoop));
 }
 
+void StreamRegionAnalyzer::buildStreamDependenceGraph() {
+  auto GetStream = [this](const llvm::Instruction *Inst,
+                          const llvm::Loop *ConfiguredLoop) -> Stream * {
+    return this->getStreamByInstAndConfiguredLoop(Inst, ConfiguredLoop);
+  };
+  for (auto &InstStream : this->InstStreamMap) {
+    for (auto &S : InstStream.second) {
+      S->buildBasicDependenceGraph(GetStream);
+    }
+  }
+  /**
+   * After add all the base streams, we are going to compute the base step root
+   * streams. The computeBaseStepRootStreams() is by itself recursive. This will
+   * result in some overhead, but hopefully the dependency chain is not very
+   * long.
+   */
+  for (auto &InstStream : this->InstStreamMap) {
+    for (auto &S : InstStream.second) {
+      S->computeBaseStepRootStreams();
+    }
+  }
+}
+
 void StreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
                                         DataGraph *DG) {
   auto StaticInst = DynamicInst->getStaticInstruction();
@@ -227,4 +255,207 @@ void StreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
   }
 }
 
-void StreamRegionAnalyzer::endRegion() {}
+void StreamRegionAnalyzer::endRegion(
+    StreamPassChooseStrategyE StreamPassChooseStrategy) {
+  this->markQualifiedStreams();
+  this->disqualifyStreams();
+  if (StreamPassChooseStrategy == StreamPassChooseStrategyE::OUTER_MOST) {
+    this->chooseStreamAtOuterMost();
+  } else {
+    this->chooseStreamAtInnerMost();
+  }
+  this->buildChosenStreamDependenceGraph();
+
+  this->dumpStreamInfos();
+}
+
+Stream *StreamRegionAnalyzer::getStreamByInstAndConfiguredLoop(
+    const llvm::Instruction *Inst, const llvm::Loop *ConfiguredLoop) {
+  auto Iter = this->InstStreamMap.find(Inst);
+  if (Iter == this->InstStreamMap.end()) {
+    return nullptr;
+  }
+  const auto &Streams = Iter->second;
+  for (const auto &S : Streams) {
+    if (S->getLoop() == ConfiguredLoop) {
+      return S;
+    }
+  }
+  llvm_unreachable("Failed to find the stream at specified loop level.");
+}
+
+void StreamRegionAnalyzer::markQualifiedStreams() {
+
+  std::list<Stream *> Queue;
+  for (auto &InstStream : this->InstStreamMap) {
+    for (auto &S : InstStream.second) {
+      if (S->isQualifySeed()) {
+        Queue.emplace_back(S);
+      }
+    }
+  }
+
+  /**
+   * BFS on the qualified streams.
+   */
+  while (!Queue.empty()) {
+    auto S = Queue.front();
+    Queue.pop_front();
+    if (S->isQualified()) {
+      // We have already processed this stream.
+      continue;
+    }
+    if (!S->isQualifySeed()) {
+      assert(false && "Stream should be a qualify seed to be inserted into the "
+                      "qualifying queue.");
+      continue;
+    }
+    S->markQualified();
+    // Check all the dependent streams.
+    for (const auto &DependentStream : S->getDependentStreams()) {
+      if (DependentStream->isQualifySeed()) {
+        Queue.emplace_back(DependentStream);
+      }
+    }
+  }
+}
+
+void StreamRegionAnalyzer::disqualifyStreams() {
+
+  /**
+   * For IVStreams with base loads, we assume they are qualified from the
+   * beginning point. Now it's time to check if their base memory streams are
+   * actually qualified. If not, we need to propagate the dequalified signal
+   * along the dependence chain.
+   */
+  std::list<Stream *> DisqualifiedQueue;
+  for (auto &InstStream : this->InstStreamMap) {
+    for (auto &S : InstStream.second) {
+      if (S->isQualified()) {
+        continue;
+      }
+      for (auto &BackIVDependentStream : S->getBackIVDependentStreams()) {
+        if (BackIVDependentStream->isQualified()) {
+          // We should disqualify this stream.
+          DisqualifiedQueue.emplace_back(BackIVDependentStream);
+        }
+      }
+    }
+  }
+
+  /**
+   * Propagate the disqualfied signal.
+   */
+  while (!DisqualifiedQueue.empty()) {
+    auto S = DisqualifiedQueue.front();
+    DisqualifiedQueue.pop_front();
+    if (!S->isQualified()) {
+      // This stream is already disqualified.
+      continue;
+    }
+    S->markUnqualified();
+
+    // Propagate to dependent streams.
+    for (const auto &DependentStream : S->getDependentStreams()) {
+      if (DependentStream->isQualified()) {
+        DisqualifiedQueue.emplace_back(DependentStream);
+      }
+    }
+
+    // Also need to check back edges.
+    for (const auto &DependentStream : S->getBackIVDependentStreams()) {
+      if (DependentStream->isQualified()) {
+        DisqualifiedQueue.emplace_back(DependentStream);
+      }
+    }
+  }
+}
+
+void StreamRegionAnalyzer::chooseStreamAtInnerMost() {
+  for (auto &InstStream : this->InstStreamMap) {
+    auto Inst = InstStream.first;
+    Stream *ChosenStream = nullptr;
+    for (auto &S : InstStream.second) {
+      if (S->isQualified()) {
+        ChosenStream = S;
+        break;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      auto Inserted =
+          this->InstChosenStreamMap.emplace(Inst, ChosenStream).second;
+      assert(Inserted && "Multiple chosen streams for one instruction.");
+      ChosenStream->markChosen();
+    }
+  }
+}
+
+void StreamRegionAnalyzer::chooseStreamAtOuterMost() {
+  for (auto &InstStream : this->InstStreamMap) {
+    auto Inst = InstStream.first;
+    Stream *ChosenStream = nullptr;
+    for (auto &S : InstStream.second) {
+      if (S->isQualified()) {
+        // This will make sure we get the outer most qualified stream.
+        ChosenStream = S;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      this->InstChosenStreamMap.emplace(Inst, ChosenStream);
+      ChosenStream->markChosen();
+    }
+  }
+}
+
+void StreamRegionAnalyzer::buildChosenStreamDependenceGraph() {
+  auto GetChosenStream = [this](const llvm::Instruction *Inst) -> Stream * {
+    auto Iter = this->InstChosenStreamMap.find(Inst);
+    if (Iter == this->InstChosenStreamMap.end()) {
+      return nullptr;
+    }
+    return Iter->second;
+  };
+  for (auto &InstStream : this->InstChosenStreamMap) {
+    auto &S = InstStream.second;
+    S->buildChosenDependenceGraph(GetChosenStream);
+  }
+}
+
+void StreamRegionAnalyzer::dumpStreamInfos() {
+  {
+    LLVM::TDG::StreamRegion ProtobufStreamRegion;
+    for (auto &InstStream : this->InstStreamMap) {
+      for (auto &S : InstStream.second) {
+        auto Info = ProtobufStreamRegion.add_streams();
+        S->fillProtobufStreamInfo(this->DataLayout, Info);
+      }
+    }
+
+    auto InfoTextPath = this->AnalyzePath + "/streams.json";
+    std::ofstream InfoTextFStream(InfoTextPath);
+    assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
+    std::string InfoJsonString;
+    google::protobuf::util::MessageToJsonString(ProtobufStreamRegion,
+                                                &InfoJsonString);
+    InfoTextFStream << InfoJsonString << '\n';
+    InfoTextFStream.close();
+  }
+
+  {
+    LLVM::TDG::StreamRegion ProtobufStreamRegion;
+    for (auto &InstStream : this->InstChosenStreamMap) {
+      auto &S = InstStream.second;
+      auto Info = ProtobufStreamRegion.add_streams();
+      S->fillProtobufStreamInfo(this->DataLayout, Info);
+    }
+
+    auto InfoTextPath = this->AnalyzePath + "/chosen_streams.json";
+    std::ofstream InfoTextFStream(InfoTextPath);
+    assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
+    std::string InfoJsonString;
+    google::protobuf::util::MessageToJsonString(ProtobufStreamRegion,
+                                                &InfoJsonString);
+    InfoTextFStream << InfoJsonString << '\n';
+    InfoTextFStream.close();
+  }
+}

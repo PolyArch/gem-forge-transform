@@ -14,10 +14,10 @@ InductionVarStream::InductionVarStream(const std::string &_Folder,
   this->searchComputeInsts(this->PHIInst, this->Loop);
   this->StepInsts =
       InductionVarStream::searchStepInsts(this->PHIInst, this->InnerMostLoop);
-  this->IsCandidate = this->isCandidateImpl();
+  this->IsCandidateStatic = this->isCandidateStatic();
 }
 
-bool InductionVarStream::isCandidateImpl() const {
+bool InductionVarStream::isCandidateStatic() const {
   if ((!this->PHIInst->getType()->isIntegerTy()) &&
       (!this->PHIInst->getType()->isPointerTy())) {
     return false;
@@ -200,4 +200,49 @@ InductionVarStream::searchStepInsts(const llvm::PHINode *PHINode,
   return StepInsts;
 }
 
-#undef DEBUG_TYPE
+void InductionVarStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
+  // Check the back edge.
+  for (const auto &BaseLoad : this->BaseLoadInsts) {
+    auto BaseMStream = GetStream(BaseLoad, this->Loop);
+    assert(BaseMStream != nullptr && "Failed to get back-edge MStream.");
+    this->addBackEdgeBaseStream(BaseMStream);
+  }
+}
+
+bool InductionVarStream::isCandidate() const { return this->IsCandidateStatic; }
+
+bool InductionVarStream::isQualifySeed() const {
+  if (!this->isCandidate()) {
+    // I am not even a static candidate.
+    return false;
+  }
+  // Check the dynamic behavior.
+  if (!this->Pattern.computed()) {
+    return false;
+  }
+
+  auto AddrPattern = this->Pattern.getPattern().ValPattern;
+  if (AddrPattern > StreamPattern::ValuePattern::UNKNOWN &&
+      AddrPattern <= StreamPattern::ValuePattern::QUARDRIC) {
+    // This is an affine induction variable.
+    return true;
+  }
+
+  /**
+   * If I have back edges, consider myselfy as a candidate.
+   */
+  if (!this->BackMemBaseStreams.empty()) {
+    return true;
+  }
+  return false;
+}
+
+void InductionVarStream::buildChosenDependenceGraph(
+    GetChosenStreamFuncT GetChosenStream) {
+  // Check the back edge.
+  for (const auto &BaseLoad : this->BaseLoadInsts) {
+    auto BaseMStream = GetChosenStream(BaseLoad);
+    assert(BaseMStream != nullptr && "Failed to get chosen back-edge MStream.");
+    this->addChosenBackEdgeBaseStream(BaseMStream);
+  }
+}
