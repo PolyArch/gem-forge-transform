@@ -60,6 +60,19 @@ void MemStream::searchAddressComputeInstructions(
   }
 }
 
+void MemStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
+  for (const auto &BaseIV : this->BaseInductionVars) {
+    auto BaseIVStream = GetStream(BaseIV, this->Loop);
+    assert(BaseIVStream != nullptr && "Missing base IVStream.");
+    this->addBaseStream(BaseIVStream);
+  }
+  for (const auto &BaseLoad : this->BaseLoads) {
+    auto BaseMStream = GetStream(BaseLoad, this->Loop);
+    assert(BaseMStream != nullptr && "Missing base MemStream.");
+    this->addBaseStream(BaseMStream);
+  }
+}
+
 bool MemStream::isCandidate() const {
   // I have to contain no circle to be a candidate.
   if (this->AddrDG.hasCircle()) {
@@ -75,6 +88,34 @@ bool MemStream::isCandidate() const {
   return true;
 }
 
+bool MemStream::isQualifySeed() const {
+  if (!this->isCandidate()) {
+    return false;
+  }
+  if (this->isAliased()) {
+    return false;
+  }
+  if (this->BaseStreams.empty()) {
+    if (!this->Pattern.computed()) {
+      return false;
+    }
+    auto AddrPattern = this->Pattern.getPattern().ValPattern;
+    if (AddrPattern <= StreamPattern::ValuePattern::QUARDRIC) {
+      // This is affine. Push into the queue as start point.
+      return true;
+    }
+    return false;
+  } else {
+    // Check all the base streams.
+    for (const auto &BaseStream : this->BaseStreams) {
+      if (!BaseStream->isQualified()) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
 void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
   this->AddrDG.format(OStream);
 }
@@ -82,4 +123,18 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
 void MemStream::generateComputeFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   this->AddrDG.generateComputeFunction(this->AddressFunctionName, Module);
+}
+
+void MemStream::buildChosenDependenceGraph(
+    GetChosenStreamFuncT GetChosenStream) {
+  for (const auto &BaseIV : this->BaseInductionVars) {
+    auto BaseIVStream = GetChosenStream(BaseIV);
+    assert(BaseIVStream != nullptr && "Missing chosen base IVStream.");
+    this->addChosenBaseStream(BaseIVStream);
+  }
+  for (const auto &BaseLoad : this->BaseLoads) {
+    auto BaseMStream = GetChosenStream(BaseLoad);
+    assert(BaseMStream != nullptr && "Missing chosen base MemStream.");
+    this->addChosenBaseStream(BaseMStream);
+  }
 }

@@ -10,8 +10,6 @@
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
 
-enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
-
 extern llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy;
 
 struct StreamTransformPlan {
@@ -223,22 +221,10 @@ protected:
   /*************************************************************
    * Stream Choice.
    *************************************************************/
-  void chooseStreamOuterMostLoop();
-  void chooseStreamInnerMostLoop();
-  virtual void chooseStream() {
-    if (StreamPassChooseStrategy == StreamPassChooseStrategyE::OUTER_MOST) {
-      this->chooseStreamOuterMostLoop();
-    } else {
-      this->chooseStreamInnerMostLoop();
-    }
-  }
-  void buildStreamDependenceGraph();
-  void markQualifiedStream();
-  void disqualifyStream();
   void addChosenStream(const llvm::Loop *Loop, const llvm::Instruction *Inst,
                        Stream *S);
-  void buildChosenStreamDependenceGraph();
-  void buildAllChosenStreamDependenceGraph();
+  // void buildChosenStreamDependenceGraph();
+  // void buildAllChosenStreamDependenceGraph();
   void buildAddressInterpreterForChosenStreams();
   std::string getAddressModuleName() const;
 

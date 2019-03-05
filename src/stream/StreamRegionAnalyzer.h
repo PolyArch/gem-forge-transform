@@ -7,10 +7,13 @@
 #include "stream/MemStream.h"
 #include "stream/ae/FunctionalStreamEngine.h"
 
+enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
+
 class StreamRegionAnalyzer {
 public:
   StreamRegionAnalyzer(uint64_t _RegionIdx, llvm::Loop *_TopLoop,
-                       llvm::LoopInfo *_LI, const std::string &_RootPath);
+                       llvm::LoopInfo *_LI, llvm::DataLayout *_DataLayout,
+                       const std::string &_RootPath);
 
   StreamRegionAnalyzer(const StreamRegionAnalyzer &Other) = delete;
   StreamRegionAnalyzer(StreamRegionAnalyzer &&Other) = delete;
@@ -23,12 +26,13 @@ public:
   void addIVAccess(DynamicInstruction *DynamicInst);
   void endIter(const llvm::Loop *Loop);
   void endLoop(const llvm::Loop *Loop);
-  void endRegion();
+  void endRegion(StreamPassChooseStrategyE StreamPassChooseStrategy);
 
 private:
   uint64_t RegionIdx;
   llvm::Loop *TopLoop;
   llvm::LoopInfo *LI;
+  llvm::DataLayout *DataLayout;
   std::string RootPath;
   std::string AnalyzePath;
 
@@ -38,6 +42,11 @@ private:
    */
   std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
       InstStreamMap;
+
+  /**
+   * Map from an instruction to its chosen stream.
+   */
+  std::unordered_map<const llvm::Instruction *, Stream *> InstChosenStreamMap;
 
   /**
    * Map from a loop to all the streams configured at the entry point to this
@@ -54,6 +63,21 @@ private:
 
   void initializeStreams();
   void initializeStreamForAllLoops(const llvm::Instruction *StreamInst);
+
+  Stream *getStreamByInstAndConfiguredLoop(const llvm::Instruction *Inst,
+                                           const llvm::Loop *ConfiguredLoop);
+  void buildStreamDependenceGraph();
+
+  void markQualifiedStreams();
+  void disqualifyStreams();
+
+  void chooseStreamAtInnerMost();
+  void chooseStreamAtOuterMost();
+
+  void buildChosenStreamDependenceGraph();
+
+  void dumpStreamInfos();
+
 };
 
 #endif
