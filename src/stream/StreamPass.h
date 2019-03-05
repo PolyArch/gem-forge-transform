@@ -6,9 +6,6 @@
 #include "stream/InductionVarStream.h"
 #include "stream/MemStream.h"
 #include "stream/StreamRegionAnalyzer.h"
-#include "stream/ae/FunctionalStreamEngine.h"
-
-#include "ExecutionEngine/Interpreter/Interpreter.h"
 
 extern llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy;
 
@@ -110,26 +107,7 @@ public:
       : ReplayTrace(_ID), DynInstCount(0), DynMemInstCount(0), StepInstCount(0),
         ConfigInstCount(0), DeletedInstCount(0) {}
 
-  /**
-   * Type define.
-   */
-  using InstTransformPlanMapT =
-      std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
-
-  /**
-   * Public accessors for unit testing.
-   */
-  const InstTransformPlanMapT &getInstTransformPlanMap() const {
-    return this->InstPlanMap;
-  }
-
-  MemStream *getMemStreamByInstLoop(const llvm::Instruction *Inst,
-                                    const llvm::Loop *Loop);
-  InductionVarStream *getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
-                                               const llvm::Loop *Loop);
-  const InductionVarStream *
-  getIVStreamByPHINodeLoop(const llvm::PHINode *PHINode,
-                           const llvm::Loop *Loop) const;
+  StreamRegionAnalyzer *getAnalyzerByLoop(const llvm::Loop *Loop) const;
 
 protected:
   bool initialize(llvm::Module &Module) override;
@@ -137,13 +115,12 @@ protected:
   void dumpStats(std::ostream &O) override;
   void transform() override;
 
-  std::string classifyStream(const MemStream &S) const;
   using ActiveIVStreamMapT = std::unordered_map<
       const llvm::Loop *,
       std::unordered_map<const llvm::PHINode *, InductionVarStream *>>;
   using LoopStackT = std::list<llvm::Loop *>;
 
-  std::unordered_map<llvm::Loop *, std::unique_ptr<StreamRegionAnalyzer>>
+  std::unordered_map<const llvm::Loop *, std::unique_ptr<StreamRegionAnalyzer>>
       LoopStreamAnalyzerMap;
   StreamRegionAnalyzer *CurrentStreamAnalyzer;
   uint64_t RegionIdx;
@@ -160,16 +137,6 @@ protected:
   void popLoopStack(LoopStackT &LoopStack);
 
   /*************************************************************
-   * Stream Choice.
-   *************************************************************/
-  void addChosenStream(const llvm::Loop *Loop, const llvm::Instruction *Inst,
-                       Stream *S);
-  // void buildChosenStreamDependenceGraph();
-  // void buildAllChosenStreamDependenceGraph();
-  void buildAddressInterpreterForChosenStreams();
-  std::string getAddressModuleName() const;
-
-  /*************************************************************
    * Stream transform.
    *************************************************************/
   /**
@@ -178,15 +145,6 @@ protected:
   using ActiveStreamInstMapT =
       std::unordered_map<const llvm::Instruction *,
                          DynamicInstruction::DynamicId>;
-  void makeStreamTransformPlan();
-  StreamTransformPlan &getOrCreatePlan(const llvm::Instruction *Inst);
-  StreamTransformPlan *getPlanNullable(const llvm::Instruction *Inst);
-  void dumpInfoForLoop(const llvm::Loop *Loop, std::ostream &OS,
-                       const std::string &Padding) const;
-  void DEBUG_PLAN_FOR_LOOP(const llvm::Loop *Loop);
-  void DEBUG_SORTED_STREAMS_FOR_LOOP(const llvm::Loop *Loop);
-  void sortChosenStream(Stream *S, std::list<Stream *> &Stack,
-                        std::unordered_set<Stream *> &SortedStreams);
   void
   pushLoopStackAndConfigureStreams(LoopStackT &LoopStack, llvm::Loop *NewLoop,
                                    DataGraph::DynamicInstIter NewInstIter,
@@ -197,32 +155,6 @@ protected:
                                     ActiveStreamInstMapT &ActiveStreamInstMap);
   void DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst);
   virtual void transformStream();
-
-  std::string AddressModulePath;
-
-  std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
-      InstStreamMap;
-
-  std::unordered_map<const llvm::Instruction *, std::list<MemStream>>
-      InstMemStreamMap;
-
-  std::unordered_map<const llvm::PHINode *, std::list<InductionVarStream>>
-      PHINodeIVStreamMap;
-
-  std::unordered_map<const llvm::Instruction *, Stream *> ChosenInstStreamMap;
-
-  std::unordered_map<const llvm::Loop *,
-                     std::unordered_map<const llvm::Instruction *, Stream *>>
-      ChosenLoopInstStream;
-  // Sorted the streams in dependence order.
-  // This is the order we will configure the stream.
-  std::unordered_map<const llvm::Loop *, std::list<Stream *>>
-      ChosenLoopSortedStreams;
-
-  InstTransformPlanMapT InstPlanMap;
-
-  std::unique_ptr<llvm::Interpreter> AddrInterpreter;
-  std::unique_ptr<FunctionalStreamEngine> FuncSE;
 
   /************************************************************
    * Memorization.

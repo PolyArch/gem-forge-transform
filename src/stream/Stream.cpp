@@ -101,7 +101,7 @@ void Stream::endStream() {
   this->StartId = DynamicInstruction::InvalidId;
 
   this->ProtobufPatterns.emplace_back();
-  auto ProtobufPattern = this->ProtobufPatterns.back();
+  auto &ProtobufPattern = this->ProtobufPatterns.back();
 
   ProtobufPattern.set_val_pattern(
       StreamPattern::formatValuePattern(ComputedPattern.ValPattern));

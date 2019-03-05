@@ -8,6 +8,8 @@
 #include "stream/StreamTransformPlan.h"
 #include "stream/ae/FunctionalStreamEngine.h"
 
+#include "ExecutionEngine/Interpreter/Interpreter.h"
+
 enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
 
 class StreamRegionAnalyzer {
@@ -28,6 +30,11 @@ public:
   void endIter(const llvm::Loop *Loop);
   void endLoop(const llvm::Loop *Loop);
   void endRegion(StreamPassChooseStrategyE StreamPassChooseStrategy);
+  void dumpStats() const;
+
+  /**
+   * Query for the analysis results.
+   */
 
   using InstTransformPlanMapT =
       std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
@@ -35,6 +42,16 @@ public:
   const InstTransformPlanMapT &getInstTransformPlanMap() const {
     return this->InstPlanMap;
   }
+
+  std::list<Stream *>
+  getSortedChosenStreamsByConfiguredLoop(const llvm::Loop *ConfiguredLoop);
+
+  Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
+
+  const StreamTransformPlan &
+  getTransformPlanByInst(const llvm::Instruction *Inst);
+
+  FunctionalStreamEngine *getFuncSE();
 
 private:
   uint64_t RegionIdx;
@@ -74,11 +91,15 @@ private:
    */
   InstTransformPlanMapT InstPlanMap;
 
+  std::unique_ptr<llvm::Interpreter> AddrInterpreter;
+  std::unique_ptr<FunctionalStreamEngine> FuncSE;
+
   void initializeStreams();
   void initializeStreamForAllLoops(const llvm::Instruction *StreamInst);
 
-  Stream *getStreamByInstAndConfiguredLoop(const llvm::Instruction *Inst,
-                                           const llvm::Loop *ConfiguredLoop);
+  Stream *
+  getStreamByInstAndConfiguredLoop(const llvm::Instruction *Inst,
+                                   const llvm::Loop *ConfiguredLoop) const;
   void buildStreamDependenceGraph();
 
   void markQualifiedStreams();
@@ -95,6 +116,7 @@ private:
 
   void dumpTransformPlan();
   void dumpStreamInfos();
+  std::string classifyStream(const MemStream &S) const;
 };
 
 #endif
