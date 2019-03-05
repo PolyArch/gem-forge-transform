@@ -216,9 +216,7 @@ protected:
   std::string PatternTextFullPath;
   std::string InfoTextFullPath;
   std::string HistoryTextFullPath;
-  LLVM::TDG::StreamPattern ProtobufPattern;
-  Gem5ProtobufSerializer *PatternSerializer;
-  std::ofstream PatternTextFStream;
+  std::list<LLVM::TDG::StreamPattern> ProtobufPatterns;
 
   /**
    * Stores the instruction and loop.

@@ -17,10 +17,6 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
   this->InfoTextFullPath = this->InfoFullPath + ".txt";
   this->HistoryFullPath = this->Folder + "/" + this->formatName() + ".history";
   this->HistoryTextFullPath = this->HistoryFullPath + ".txt";
-  this->PatternSerializer = new Gem5ProtobufSerializer(this->PatternFullPath);
-  this->PatternTextFStream.open(this->PatternTextFullPath);
-  assert(this->PatternTextFStream.is_open() &&
-         "Failed to open output stream file.");
 }
 
 void Stream::addBaseStream(Stream *Other) {
@@ -104,43 +100,52 @@ void Stream::endStream() {
   this->TotalStreams++;
   this->StartId = DynamicInstruction::InvalidId;
 
-  // Also serialize with protobuf.
-  assert(this->PatternSerializer != nullptr &&
-         "The pattern serializer has already been released.");
-  this->ProtobufPattern.set_val_pattern(
+  this->ProtobufPatterns.emplace_back();
+  auto ProtobufPattern = this->ProtobufPatterns.back();
+
+  ProtobufPattern.set_val_pattern(
       StreamPattern::formatValuePattern(ComputedPattern.ValPattern));
-  this->ProtobufPattern.set_acc_pattern(
+  ProtobufPattern.set_acc_pattern(
       StreamPattern::formatAccessPattern(ComputedPattern.AccPattern));
-  this->ProtobufPattern.set_iters(ComputedPattern.Iters);
-  this->ProtobufPattern.set_accesses(ComputedPattern.Accesses);
-  this->ProtobufPattern.set_updates(ComputedPattern.Updates);
-  this->ProtobufPattern.set_base(ComputedPattern.Base);
-  this->ProtobufPattern.set_stride_i(ComputedPattern.StrideI);
-  this->ProtobufPattern.set_ni(ComputedPattern.NI);
-  this->ProtobufPattern.set_stride_j(ComputedPattern.StrideJ);
-  this->ProtobufPattern.clear_history();
+  ProtobufPattern.set_iters(ComputedPattern.Iters);
+  ProtobufPattern.set_accesses(ComputedPattern.Accesses);
+  ProtobufPattern.set_updates(ComputedPattern.Updates);
+  ProtobufPattern.set_base(ComputedPattern.Base);
+  ProtobufPattern.set_stride_i(ComputedPattern.StrideI);
+  ProtobufPattern.set_ni(ComputedPattern.NI);
+  ProtobufPattern.set_stride_j(ComputedPattern.StrideJ);
+  ProtobufPattern.clear_history();
   for (const auto &HistoryEntry : ComputedPattern.History) {
-    auto ProtobufHistoryEntry = this->ProtobufPattern.add_history();
+    auto ProtobufHistoryEntry = ProtobufPattern.add_history();
     ProtobufHistoryEntry->set_valid(HistoryEntry.first);
     if (HistoryEntry.first) {
       ProtobufHistoryEntry->set_value(HistoryEntry.second);
     }
   }
-  this->PatternSerializer->serialize(this->ProtobufPattern);
-
-  // Also serialize with json, without the history.
-  std::string PatternJsonString;
-  this->ProtobufPattern.clear_history();
-  google::protobuf::util::MessageToJsonString(this->ProtobufPattern,
-                                              &PatternJsonString);
-  this->PatternTextFStream << PatternJsonString << '\n';
 }
 
 void Stream::finalizePattern() {
   this->Pattern.finalizePattern();
-  this->PatternTextFStream.close();
-  delete this->PatternSerializer;
-  this->PatternSerializer = nullptr;
+
+  auto PatternSerializer = new Gem5ProtobufSerializer(this->PatternFullPath);
+  std::ofstream PatternTextFStream(this->PatternTextFullPath);
+  assert(PatternTextFStream.is_open() && "Failed to open output stream file.");
+
+  for (auto &ProtobufPattern : this->ProtobufPatterns) {
+    PatternSerializer->serialize(ProtobufPattern);
+
+    std::string PatternJsonString;
+    // For the json file, we do not log history.
+    ProtobufPattern.clear_history();
+    google::protobuf::util::MessageToJsonString(ProtobufPattern,
+                                                &PatternJsonString);
+    PatternTextFStream << PatternJsonString << '\n';
+  }
+
+  PatternTextFStream.close();
+  delete PatternSerializer;
+  PatternSerializer = nullptr;
+  this->ProtobufPatterns.clear();
 }
 
 void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {

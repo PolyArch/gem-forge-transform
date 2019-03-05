@@ -259,6 +259,15 @@ void StreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
 
 void StreamRegionAnalyzer::endRegion(
     StreamPassChooseStrategyE StreamPassChooseStrategy) {
+
+  // Finalize all patterns.
+  // This will dump the pattern to file.
+  for (auto &InstStream : this->InstStreamMap) {
+    for (auto &S : InstStream.second) {
+      S->finalizePattern();
+    }
+  }
+
   this->markQualifiedStreams();
   this->disqualifyStreams();
   if (StreamPassChooseStrategy == StreamPassChooseStrategyE::OUTER_MOST) {
