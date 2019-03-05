@@ -4,11 +4,14 @@
 
 #include "google/protobuf/util/json_util.h"
 
+#include <iomanip>
 #include <sstream>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#define DEBUG_TYPE "StreamRegionAnalyzer"
 
 StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            llvm::Loop *_TopLoop,
@@ -277,8 +280,10 @@ void StreamRegionAnalyzer::endRegion(
   }
   this->buildChosenStreamDependenceGraph();
   this->buildAddressModule();
+  this->buildTransformPlan();
 
   this->dumpStreamInfos();
+  this->dumpTransformPlan();
 }
 
 Stream *StreamRegionAnalyzer::getStreamByInstAndConfiguredLoop(
@@ -499,3 +504,191 @@ void StreamRegionAnalyzer::buildAddressModule() {
   AddressModule->print(ModuleFStream, nullptr);
   ModuleFStream.close();
 }
+
+void StreamRegionAnalyzer::buildTransformPlan() {
+
+  // First initialize the all the plans to nothing.
+  for (auto BBIter = this->TopLoop->block_begin(),
+            BBEnd = this->TopLoop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      this->InstPlanMap.emplace(std::piecewise_construct,
+                                std::forward_as_tuple(Inst),
+                                std::forward_as_tuple());
+    }
+  }
+
+  /**
+   * Slice the program and assign transformation plan for static instructions.
+   * 1. For every chosen stream S:
+   *  a. Mark the stream as
+   *    load -> delete, store -> stream-store, phi -> delete.
+   *  b. Find the user of the stream and add user information.
+   *  c. Find all the compute instructions and mark them as delete candidates.
+   *  d. Mark address/phi instruction as deleted.
+   *  e. Mark S as processed.
+   * 2. Use the deleted dependence edge as the seed, and mark the delete
+   * candidates as deleted iff. all the use edges of the candidate are already
+   * marked as deleted.
+   */
+  std::unordered_set<const llvm::Instruction *> DeleteCandidates;
+  std::unordered_set<const llvm::Instruction *> DeletedInsts;
+  std::list<const llvm::Use *> NewlyDeletingQueue;
+  std::unordered_set<const llvm::Use *> DeletedUses;
+
+  for (auto &InstChosenStream : this->InstChosenStreamMap) {
+
+    auto &SelfInst = InstChosenStream.first;
+    auto &S = InstChosenStream.second;
+
+    DEBUG(llvm::errs() << "make transform plan for stream " << S->formatName()
+                       << '\n');
+
+    // Handle all the step instructions.
+    if (S->Type == Stream::TypeT::IV) {
+      for (const auto &StepInst : S->getStepInsts()) {
+        this->InstPlanMap.at(StepInst).planToStep(S);
+        DEBUG(llvm::errs() << "Select transform plan for inst "
+                           << LoopUtils::formatLLVMInst(StepInst) << " to "
+                           << StreamTransformPlan::formatPlanT(
+                                  StreamTransformPlan::PlanT::STEP)
+                           << '\n');
+        /**
+         * A hack here to make the user of step instruction also user of the
+         * stream. PURE EVIL!!
+         * TODO: Is there better way to do this?
+         */
+        for (auto U : StepInst->users()) {
+          if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+            this->InstPlanMap.at(I).addUsedStream(S);
+          }
+        }
+      }
+    }
+
+    // Add all the compute instructions as delete candidates.
+    for (const auto &ComputeInst : S->getComputeInsts()) {
+      DeleteCandidates.insert(ComputeInst);
+    }
+
+    // Add uses for all the users to use myself.
+    for (auto U : SelfInst->users()) {
+      if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+        this->InstPlanMap.at(I).addUsedStream(S);
+        DEBUG(llvm::errs() << "Add used stream for user "
+                           << LoopUtils::formatLLVMInst(I) << " with stream "
+                           << S->formatName() << '\n');
+      }
+    }
+
+    // Mark myself as DELETE (load) or STORE (store).
+    auto &SelfPlan = this->InstPlanMap.at(SelfInst);
+    if (llvm::isa<llvm::StoreInst>(SelfInst)) {
+      assert(SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING &&
+             "Already have a plan for the store.");
+      SelfPlan.planToStore(S);
+      // For store, only the address use is deleted.
+      NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(1));
+    } else {
+      // For load or iv, delete if we have no other plan for it.
+      if (SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING) {
+        SelfPlan.planToDelete();
+      }
+      for (unsigned OperandIdx = 0, NumOperands = SelfInst->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(OperandIdx));
+      }
+    }
+
+    DEBUG(llvm::errs() << "Select transform plan for inst "
+                       << LoopUtils::formatLLVMInst(SelfInst) << " to "
+                       << StreamTransformPlan::formatPlanT(SelfPlan.Plan)
+                       << '\n');
+  }
+
+  // Second step: find deletable instruction from the candidates.
+  while (!NewlyDeletingQueue.empty()) {
+    auto NewlyDeletingUse = NewlyDeletingQueue.front();
+    NewlyDeletingQueue.pop_front();
+
+    if (DeletedUses.count(NewlyDeletingUse) != 0) {
+      // We have already process this use.
+      continue;
+    }
+
+    DeletedUses.insert(NewlyDeletingUse);
+
+    auto NewlyDeletingValue = NewlyDeletingUse->get();
+    if (auto NewlyDeletingOperandInst =
+            llvm::dyn_cast<llvm::Instruction>(NewlyDeletingValue)) {
+      // The operand of the deleting use is an instruction.
+      if (DeleteCandidates.count(NewlyDeletingOperandInst) == 0) {
+        // The operand is not even a delete candidate.
+        continue;
+      }
+      if (DeletedInsts.count(NewlyDeletingOperandInst) != 0) {
+        // This inst is already deleted.
+        continue;
+      }
+      // Check if all the uses have been deleted.
+      bool AllUsesDeleted = true;
+      for (const auto &U : NewlyDeletingOperandInst->uses()) {
+        if (DeletedUses.count(&U) == 0) {
+          AllUsesDeleted = false;
+          break;
+        }
+      }
+      if (AllUsesDeleted) {
+        // We can safely delete this one now.
+        // Actually mark this one as delete if we have no other plan for it.
+        auto &Plan = this->InstPlanMap.at(NewlyDeletingOperandInst);
+        switch (Plan.Plan) {
+        case StreamTransformPlan::PlanT::NOTHING:
+        case StreamTransformPlan::PlanT::DELETE: {
+          Plan.planToDelete();
+          break;
+        }
+        }
+        // Add all the uses to NewlyDeletingQueue.
+        for (unsigned OperandIdx = 0,
+                      NumOperands = NewlyDeletingOperandInst->getNumOperands();
+             OperandIdx != NumOperands; ++OperandIdx) {
+          NewlyDeletingQueue.push_back(
+              &NewlyDeletingOperandInst->getOperandUse(OperandIdx));
+        }
+      }
+    }
+  }
+}
+
+void StreamRegionAnalyzer::dumpTransformPlan() {
+  std::stringstream ss;
+  ss << "DEBUG PLAN FOR LOOP " << LoopUtils::getLoopId(this->TopLoop)
+     << "----------------\n";
+  for (auto BBIter = this->TopLoop->block_begin(),
+            BBEnd = this->TopLoop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    ss << BB->getName().str() << "---------------------------\n";
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      std::string PlanStr = this->InstPlanMap.at(Inst).format();
+      ss << std::setw(50) << std::left << LoopUtils::formatLLVMInst(Inst)
+         << PlanStr << '\n';
+    }
+  }
+
+  // Also dump to file.
+  std::string PlanPath = this->AnalyzePath + "/plan.txt";
+  std::ofstream PlanFStream(PlanPath);
+  assert(PlanFStream.is_open() &&
+         "Failed to open dump loop transform plan file.");
+  PlanFStream << ss.str() << '\n';
+  PlanFStream.close();
+}
+
+#undef DEBUG_TYPE

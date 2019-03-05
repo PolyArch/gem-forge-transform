@@ -15,22 +15,6 @@ llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy(
                      clEnumValN(StreamPassChooseStrategyE::INNER_MOST, "inner",
                                 "Always pick the inner most loop level.")));
 
-std::string StreamTransformPlan::format() const {
-  std::stringstream ss;
-  ss << std::setw(10) << std::left
-     << StreamTransformPlan::formatPlanT(this->Plan);
-  if (this->Plan == StreamTransformPlan::PlanT::STEP) {
-    ss << '-';
-    for (auto StepStream : this->StepStreams) {
-      ss << StepStream->formatName();
-    }
-    ss << '-';
-  }
-  for (auto UsedStream : this->UsedStreams) {
-    ss << UsedStream->formatName() << ' ';
-  }
-  return ss.str();
-}
 
 bool StreamPass::initialize(llvm::Module &Module) {
   bool Ret = ReplayTrace::initialize(Module);
@@ -271,21 +255,9 @@ void StreamPass::dumpStats(std::ostream &O) {
 
 void StreamPass::transform() {
   this->analyzeStream();
-  // this->buildStreamDependenceGraph();
-  // this->markQualifiedStream();
-  // this->disqualifyStream();
-  // this->chooseStream();
   // this->buildChosenStreamDependenceGraph();
   // this->buildAllChosenStreamDependenceGraph();
 
-  // /**
-  //  * Finalize the pattern, which will be used by the functional streams.
-  //  */
-  // for (auto &InstStreamEntry : this->InstStreamMap) {
-  //   for (auto &S : InstStreamEntry.second) {
-  //     S->finalizePattern();
-  //   }
-  // }
   // this->buildAddressInterpreterForChosenStreams();
 
   // this->makeStreamTransformPlan();

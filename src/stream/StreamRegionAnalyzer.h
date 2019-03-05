@@ -5,6 +5,7 @@
 #include "Utils.h"
 #include "stream/InductionVarStream.h"
 #include "stream/MemStream.h"
+#include "stream/StreamTransformPlan.h"
 #include "stream/ae/FunctionalStreamEngine.h"
 
 enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
@@ -28,6 +29,13 @@ public:
   void endLoop(const llvm::Loop *Loop);
   void endRegion(StreamPassChooseStrategyE StreamPassChooseStrategy);
 
+  using InstTransformPlanMapT =
+      std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
+
+  const InstTransformPlanMapT &getInstTransformPlanMap() const {
+    return this->InstPlanMap;
+  }
+
 private:
   uint64_t RegionIdx;
   llvm::Loop *TopLoop;
@@ -49,6 +57,12 @@ private:
   std::unordered_map<const llvm::Instruction *, Stream *> InstChosenStreamMap;
 
   /**
+   * Map from a loop to all the streams with this loop as the inner most loop.
+   */
+  std::unordered_map<const llvm::Loop *, std::unordered_set<Stream *>>
+      InnerMostLoopStreamMap;
+
+  /**
    * Map from a loop to all the streams configured at the entry point to this
    * loop.
    */
@@ -56,10 +70,9 @@ private:
       ConfiguredLoopStreamMap;
 
   /**
-   * Map from a loop to all the streams with this loop as the inner most loop.
+   * Map the instruction to the transform plan.
    */
-  std::unordered_map<const llvm::Loop *, std::unordered_set<Stream *>>
-      InnerMostLoopStreamMap;
+  InstTransformPlanMapT InstPlanMap;
 
   void initializeStreams();
   void initializeStreamForAllLoops(const llvm::Instruction *StreamInst);
@@ -78,9 +91,10 @@ private:
 
   void buildAddressModule();
 
+  void buildTransformPlan();
+
+  void dumpTransformPlan();
   void dumpStreamInfos();
-
-
 };
 
 #endif

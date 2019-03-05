@@ -50,6 +50,7 @@ add_library(LLVMTDGPass SHARED
     stream/Stream.cpp
     stream/InductionVarStream.cpp
     stream/MemStream.cpp
+    stream/StreamTransformPlan.cpp
     stream/StreamRegionAnalyzer.cpp
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp
