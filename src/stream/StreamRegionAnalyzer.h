@@ -76,7 +76,10 @@ private:
 
   void buildChosenStreamDependenceGraph();
 
+  void buildAddressModule();
+
   void dumpStreamInfos();
+
 
 };
 

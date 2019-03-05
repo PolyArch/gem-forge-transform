@@ -1,5 +1,7 @@
 #include "StreamRegionAnalyzer.h"
 
+#include "llvm/Support/FileSystem.h"
+
 #include "google/protobuf/util/json_util.h"
 
 #include <sstream>
@@ -265,6 +267,7 @@ void StreamRegionAnalyzer::endRegion(
     this->chooseStreamAtInnerMost();
   }
   this->buildChosenStreamDependenceGraph();
+  this->buildAddressModule();
 
   this->dumpStreamInfos();
 }
@@ -458,4 +461,32 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
     InfoTextFStream << InfoJsonString << '\n';
     InfoTextFStream.close();
   }
+}
+
+void StreamRegionAnalyzer::buildAddressModule() {
+
+  auto AddressModulePath = this->AnalyzePath + "/addr.bc";
+
+  auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
+  auto AddressModule =
+      std::make_unique<llvm::Module>(AddressModulePath, Context);
+
+  for (auto &InstStream : this->InstChosenStreamMap) {
+    auto Inst = InstStream.first;
+    if (llvm::isa<llvm::PHINode>(Inst)) {
+      // If this is an IVStream.
+      continue;
+    }
+    auto MStream = reinterpret_cast<MemStream *>(InstStream.second);
+    MStream->generateComputeFunction(AddressModule);
+  }
+
+  // Write it to file.
+  std::error_code EC;
+  llvm::raw_fd_ostream ModuleFStream(AddressModulePath, EC,
+                                     llvm::sys::fs::OpenFlags::F_None);
+  assert(!ModuleFStream.has_error() &&
+         "Failed to open the address computation module file.");
+  AddressModule->print(ModuleFStream, nullptr);
+  ModuleFStream.close();
 }
