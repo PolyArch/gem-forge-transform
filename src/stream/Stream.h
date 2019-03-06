@@ -82,6 +82,11 @@ public:
   const std::string &getHistoryTextPath() const {
     return this->HistoryTextFullPath;
   }
+
+  const std::list<LLVM::TDG::StreamPattern> &getProtobufPatterns() const {
+    return this->ProtobufPatterns;
+  }
+
   size_t getLoopLevel() const { return this->LoopLevel; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }

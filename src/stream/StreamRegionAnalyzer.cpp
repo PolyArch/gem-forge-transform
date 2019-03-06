@@ -7,10 +7,6 @@
 #include <iomanip>
 #include <sstream>
 
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #define DEBUG_TYPE "StreamRegionAnalyzer"
 
 StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
@@ -25,12 +21,8 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
   ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
   this->AnalyzePath = this->RootPath + "/" + ss.str();
 
-  struct stat st = {0};
-  if (stat(this->AnalyzePath.c_str(), &st) == -1) {
-    mkdir(this->AnalyzePath.c_str(), 0700);
-  } else {
-    assert(false && "The analyze folder already exists.");
-  }
+  auto ErrCode = llvm::sys::fs::create_directory(this->AnalyzePath);
+  assert(!ErrCode && "Failed to create AnalyzePath.");
 
   this->initializeStreams();
   this->buildStreamDependenceGraph();

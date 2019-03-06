@@ -1,5 +1,7 @@
 #include "stream/Stream.h"
 
+#include "llvm/Support/FileSystem.h"
+
 #include "google/protobuf/util/json_util.h"
 
 Stream::Stream(TypeT _Type, const std::string &_Folder,
@@ -11,7 +13,12 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
       CoalesceGroup(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
       Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
       Pattern() {
-  this->PatternFullPath = this->Folder + "/" + this->formatName() + ".pattern";
+
+  auto PatternFolder = this->Folder + "/pattern";
+  auto ErrCode = llvm::sys::fs::create_directory(PatternFolder);
+  assert(!ErrCode && "Failed to create pattern folder.");
+
+  this->PatternFullPath = PatternFolder + "/" + this->formatName() + ".pattern";
   this->PatternTextFullPath = this->PatternFullPath + ".txt";
   this->InfoFullPath = this->Folder + "/" + this->formatName() + ".info";
   this->InfoTextFullPath = this->InfoFullPath + ".txt";
@@ -127,13 +134,10 @@ void Stream::endStream() {
 void Stream::finalizePattern() {
   this->Pattern.finalizePattern();
 
-  auto PatternSerializer = new Gem5ProtobufSerializer(this->PatternFullPath);
   std::ofstream PatternTextFStream(this->PatternTextFullPath);
   assert(PatternTextFStream.is_open() && "Failed to open output stream file.");
 
   for (auto &ProtobufPattern : this->ProtobufPatterns) {
-    PatternSerializer->serialize(ProtobufPattern);
-
     std::string PatternJsonString;
     // For the json file, we do not log history.
     ProtobufPattern.clear_history();
@@ -143,9 +147,6 @@ void Stream::finalizePattern() {
   }
 
   PatternTextFStream.close();
-  delete PatternSerializer;
-  PatternSerializer = nullptr;
-  this->ProtobufPatterns.clear();
 }
 
 void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {

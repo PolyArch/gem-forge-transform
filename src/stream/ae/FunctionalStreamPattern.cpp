@@ -4,51 +4,53 @@
 #include "llvm/Support/raw_ostream.h"
 
 FunctionalStreamPattern::FunctionalStreamPattern(
-    const std::string &_PatternPath)
-    : PatternPath(_PatternPath), PatternStream(_PatternPath) {}
+    const PatternListT &_ProtobufPatterns)
+    : ProtobufPatterns(_ProtobufPatterns),
+      NextPattern(_ProtobufPatterns.cbegin()) {}
 
 void FunctionalStreamPattern::configure() {
-  bool Success = this->PatternStream.read(this->Pattern);
-  if (!Success) {
-    llvm::errs() << "Failed to read the next pattern from file "
-                 << this->PatternPath << "\n";
+
+  if (this->NextPattern == this->ProtobufPatterns.cend()) {
+    llvm::errs() << "Failed to read the next pattern.";
   }
-  assert(Success && "Failed to read in the next pattern.");
+
+  this->CurrentPattern = this->NextPattern;
+  ++this->NextPattern;
 
   this->idxI = 0;
   this->idxJ = 0;
 }
 
 std::pair<bool, uint64_t> FunctionalStreamPattern::getNextValue() {
-  if (this->Pattern.val_pattern() == "CONSTANT") {
-    return std::make_pair(true, this->Pattern.base());
+  if (this->CurrentPattern->val_pattern() == "CONSTANT") {
+    return std::make_pair(true, this->CurrentPattern->base());
   }
 
-  if (this->Pattern.val_pattern() == "UNKNOWN") {
+  if (this->CurrentPattern->val_pattern() == "UNKNOWN") {
     // Jesus.
     return std::make_pair(false, static_cast<uint64_t>(0));
   }
 
-  if (this->Pattern.val_pattern() == "LINEAR") {
-    uint64_t nextValue =
-        this->Pattern.base() + this->Pattern.stride_i() * this->idxI;
+  if (this->CurrentPattern->val_pattern() == "LINEAR") {
+    uint64_t nextValue = this->CurrentPattern->base() +
+                         this->CurrentPattern->stride_i() * this->idxI;
     this->idxI++;
     return std::make_pair(true, nextValue);
   }
 
-  if (this->Pattern.val_pattern() == "QUARDRIC") {
-    uint64_t nextValue = this->Pattern.base() +
-                         this->Pattern.stride_i() * this->idxI +
-                         this->Pattern.stride_j() * this->idxJ;
+  if (this->CurrentPattern->val_pattern() == "QUARDRIC") {
+    uint64_t nextValue = this->CurrentPattern->base() +
+                         this->CurrentPattern->stride_i() * this->idxI +
+                         this->CurrentPattern->stride_j() * this->idxJ;
     this->idxI++;
-    if (this->idxI == this->Pattern.ni()) {
+    if (this->idxI == this->CurrentPattern->ni()) {
       this->idxI = 0;
       this->idxJ++;
     }
     return std::make_pair(true, nextValue);
   }
 
-  if (this->Pattern.val_pattern() == "RANDOM") {
+  if (this->CurrentPattern->val_pattern() == "RANDOM") {
     // Jesus.
     return std::make_pair(false, static_cast<uint64_t>(0));
   }

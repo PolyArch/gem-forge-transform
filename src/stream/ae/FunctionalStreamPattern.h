@@ -1,14 +1,16 @@
 #ifndef LLVM_TDG_FUNCTIONAL_STREAM_PATTERN_H
 #define LLVM_TDG_FUNCTIONAL_STREAM_PATTERN_H
 
-#include "Gem5ProtobufSerializer.h"
 #include "stream/StreamMessage.pb.h"
 
+#include <list>
 #include <string>
 
 class FunctionalStreamPattern {
 public:
-  FunctionalStreamPattern(const std::string &_PatternPath);
+  using PatternListT = std::list<LLVM::TDG::StreamPattern>;
+
+  FunctionalStreamPattern(const PatternListT &_ProtobufPatterns);
 
   /**
    * Read the next pattern from the stream.
@@ -25,16 +27,15 @@ public:
   std::pair<bool, uint64_t> getNextValue();
 
 private:
-  std::string PatternPath;
-  Gem5ProtobufReader PatternStream;
-  LLVM::TDG::StreamPattern Pattern;
+  const PatternListT &ProtobufPatterns;
+  PatternListT::const_iterator NextPattern;
+  PatternListT::const_iterator CurrentPattern;
 
   /**
    * Used for the linear and quardric pattern.
    */
   uint64_t idxI;
   uint64_t idxJ;
-
 };
 
 #endif
