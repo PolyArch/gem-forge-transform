@@ -3,23 +3,23 @@
 DynamicStreamCoalescer::DynamicStreamCoalescer(FunctionalStream *_RootStream)
     : RootStream(_RootStream), TotalSteps(0) {
 
-  assert(this->RootStream->isStepRoot() &&
-         "Should only try to coalesce for step root streams.");
+  // assert(this->RootStream->isStepRoot() &&
+  //        "Should only try to coalesce for step root streams.");
 
-  const auto &AllDependentStepStreams =
-      this->RootStream->getAllDependentStepStreamsSorted();
+  // const auto &AllDependentStepStreams =
+  //     this->RootStream->getAllDependentStepStreamsSorted();
 
-  // Initialize the Id map.
-  for (const auto &DependentStepStream : AllDependentStepStreams) {
+  // // Initialize the Id map.
+  // for (const auto &DependentStepStream : AllDependentStepStreams) {
 
-    // Let's skip those indirect memory stream.
-    if (!DynamicStreamCoalescer::isDirectMemStream(DependentStepStream)) {
-      continue;
-    }
+  //   // Let's skip those indirect memory stream.
+  //   if (!DynamicStreamCoalescer::isDirectMemStream(DependentStepStream)) {
+  //     continue;
+  //   }
 
-    auto FSId = this->FSIdMap.size();
-    this->FSIdMap.emplace(DependentStepStream, FSId);
-  }
+  //   auto FSId = this->FSIdMap.size();
+  //   this->FSIdMap.emplace(DependentStepStream, FSId);
+  // }
 
   // Initialize the coalesce matrix and the UFArray.
   this->CoalescerMatrix.reserve(this->FSIdMap.size());

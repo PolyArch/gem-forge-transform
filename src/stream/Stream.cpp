@@ -18,11 +18,19 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
   auto ErrCode = llvm::sys::fs::create_directory(PatternFolder);
   assert(!ErrCode && "Failed to create pattern folder.");
 
+  auto HistoryFolder = this->Folder + "/history";
+  ErrCode = llvm::sys::fs::create_directory(HistoryFolder);
+  assert(!ErrCode && "Failed to create history folder.");
+
+  auto InfoFolder = this->Folder + "/info";
+  ErrCode = llvm::sys::fs::create_directory(InfoFolder);
+  assert(!ErrCode && "Failed to create info folder.");
+
   this->PatternFullPath = PatternFolder + "/" + this->formatName() + ".pattern";
   this->PatternTextFullPath = this->PatternFullPath + ".txt";
-  this->InfoFullPath = this->Folder + "/" + this->formatName() + ".info";
+  this->InfoFullPath = InfoFolder + "/" + this->formatName() + ".info";
   this->InfoTextFullPath = this->InfoFullPath + ".txt";
-  this->HistoryFullPath = this->Folder + "/" + this->formatName() + ".history";
+  this->HistoryFullPath = HistoryFolder + "/" + this->formatName() + ".history";
   this->HistoryTextFullPath = this->HistoryFullPath + ".txt";
 }
 

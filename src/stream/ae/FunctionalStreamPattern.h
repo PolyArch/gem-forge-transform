@@ -24,7 +24,9 @@ public:
    * for random pattern we do not know the missing address if it does not show
    * up in the trace.
    */
-  std::pair<bool, uint64_t> getNextValue();
+  std::pair<bool, uint64_t> getValue() const;
+
+  void step();
 
 private:
   const PatternListT &ProtobufPatterns;
