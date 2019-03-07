@@ -30,6 +30,7 @@ public:
   void endIter(const llvm::Loop *Loop);
   void endLoop(const llvm::Loop *Loop);
   void endRegion(StreamPassChooseStrategyE StreamPassChooseStrategy);
+  void endTransform();
   void dumpStats() const;
 
   /**

@@ -24,13 +24,12 @@ public:
   FunctionalStream &operator=(FunctionalStream &&Other) = delete;
 
   Stream *getStream() { return this->S; }
-  bool isStepRoot() const {
-    return this->BaseStepStreams.empty() && this->S->Type == Stream::TypeT::IV;
-  }
 
-  const std::list<FunctionalStream *> &
-  getAllDependentStepStreamsSorted() const {
-    return this->AllDependentStepStreamsSorted;
+  void addBaseStream(FunctionalStream *BaseStream);
+
+  const std::unordered_set<FunctionalStream *> &
+  getDependentFunctionalStreams() const {
+    return this->DependentStreams;
   }
 
   uint64_t getAddress() const { return this->CurrentAddress; }
@@ -42,22 +41,15 @@ public:
    */
   void access();
 
-  /**
-   * When a load comes in, we update the value only if there is dependent stream
-   * and the type is supported.
-   */
-  void updateLoadedValue(DataGraph *DG, const DynamicValue &DynamicVal);
+  void setValue(const DynamicValue &DynamicVal);
+  void update(DataGraph *DG);
 
-  /**
-   * When a phi node comes in, we update the value if this is an iv stream with
-   * base load.
-   */
-  void updatePHINodeValue(DataGraph *DG, const DynamicValue &DynamicValue);
+  void endStream();
 
   /**
    * Dump the history into the file when the stream ends.
    */
-  void endStream();
+  void endAll();
 
 private:
   Stream *S;
@@ -65,18 +57,12 @@ private:
   MemoryFootprint MemFootprint;
 
   std::unordered_map<const llvm::Value *, FunctionalStream *> BaseStreams;
-  std::unordered_set<FunctionalStream *> BaseStepStreams;
-  std::unordered_set<FunctionalStream *> BaseStepRootStreams;
   std::unordered_set<FunctionalStream *> DependentStreams;
-  std::unordered_set<FunctionalStream *> DependentStepStreams;
-
-  std::list<FunctionalStream *> AllDependentStepStreamsSorted;
 
   FunctionalStreamPattern Pattern;
 
-  LLVM::TDG::StreamHistory ProtobufHistoryEntry;
-  Gem5ProtobufSerializer HistorySerializer;
-  std::ofstream HistoryTextFStream;
+  std::list<LLVM::TDG::StreamHistory> ProtobufHistoryEntries;
+  LLVM::TDG::StreamHistory *CurrentProtobufHistory;
 
   /**
    * For IVStream these two fields should always be the same.
@@ -104,13 +90,6 @@ private:
                                  const uint64_t &Val) const;
   uint64_t extractAddressFromGenericValue(llvm::Type *Type,
                                           llvm::GenericValue &GenericVal) const;
-
-  void update(DataGraph *DG);
-
-  /**
-   * This will update myself and recursive update all the dependent streams.
-   */
-  void updateRecursively(DataGraph *DG);
 };
 
 #endif

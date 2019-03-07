@@ -3,77 +3,20 @@
 
 #include "llvm/Support/Format.h"
 
+#include "google/protobuf/util/json_util.h"
+
 #define DEBUG_TYPE "FunctionalStream"
 FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
     : S(_S), SE(_SE), Pattern(_S->getProtobufPatterns()),
-      HistorySerializer(_S->getHistoryPath()),
-      HistoryTextFStream(_S->getHistoryTextPath()), CurrentIdx(InvalidIdx),
-      IsAddressValid(false), IsValueValid(false) {
+      CurrentIdx(InvalidIdx), IsAddressValid(false), IsValueValid(false) {
   DEBUG(llvm::errs() << "Initialized FunctionalStream of " << S->formatName()
                      << '\n');
-
-  assert(this->HistoryTextFStream.is_open() &&
-         "Failed to open the history text ofstream.");
-
-  /**
-   * Set the id field for the history protobuf message.
-   */
-  this->ProtobufHistoryEntry.set_id(this->S->getStreamId());
-
-  /**
-   * Find the base functional streams.
-   */
-  for (const auto &BS : this->S->getChosenBaseStreams()) {
-    auto FuncBS = this->SE->getNullableFunctionalStream(BS);
-    assert(FuncBS != nullptr && "Failed to find the functional base stream.");
-    this->BaseStreams.emplace(FuncBS->S->getInst(), FuncBS);
-    FuncBS->DependentStreams.insert(this);
-    llvm::errs() << "Add base functional stream " << FuncBS->S->formatName()
-                 << '\n';
-  }
-
-  /**
-   * Find the dependent step streams.
-   */
-  for (const auto &BaseStepStream : this->S->getChosenBaseStepStreams()) {
-    auto FuncBaseStepStream =
-        this->SE->getNullableFunctionalStream(BaseStepStream);
-    assert(FuncBaseStepStream != nullptr &&
-           "Failed to find the functional base step stream.");
-    // Register myself as the dependent step instruction.
-    this->BaseStepStreams.insert(FuncBaseStepStream);
-    FuncBaseStepStream->DependentStepStreams.insert(this);
-    if (FuncBaseStepStream->isStepRoot()) {
-      this->BaseStepRootStreams.insert(FuncBaseStepStream);
-    } else {
-      for (auto StepRootStream : FuncBaseStepStream->BaseStepRootStreams) {
-        this->BaseStepRootStreams.insert(StepRootStream);
-      }
-    }
-  }
-  if (this->BaseStepRootStreams.size() > 1) {
-    llvm::errs() << "Found more than 1 step root streams for "
-                 << this->S->formatName() << '\n';
-  }
-  assert(this->BaseStepRootStreams.size() <= 1 &&
-         "More than 1 step root streams found.");
-  for (auto StepRootStream : this->BaseStepRootStreams) {
-    StepRootStream->registerToStepRoot(this);
-  }
 }
 
-void FunctionalStream::registerToStepRoot(
-    FunctionalStream *NewStepDependentStream) {
-  assert(this->isStepRoot() &&
-         "Try to register step dependent stream for non-root stream.");
-  for (auto StepDependentStream : this->AllDependentStepStreamsSorted) {
-    if (StepDependentStream == NewStepDependentStream) {
-      llvm::errs() << "Step dependent stream has already been registered.";
-    }
-    assert(StepDependentStream != NewStepDependentStream &&
-           "Step dependent stream should be registered at most once.");
-  }
-  this->AllDependentStepStreamsSorted.emplace_back(NewStepDependentStream);
+void FunctionalStream::addBaseStream(FunctionalStream *BaseStream) {
+  assert(BaseStream != this && "No self dependence.");
+  this->BaseStreams.emplace(BaseStream->getStream()->getInst(), BaseStream);
+  BaseStream->DependentStreams.insert(this);
 }
 
 void FunctionalStream::DEBUG_DUMP(llvm::raw_ostream &OS) const {
@@ -84,6 +27,11 @@ void FunctionalStream::DEBUG_DUMP(llvm::raw_ostream &OS) const {
 }
 
 void FunctionalStream::configure(DataGraph *DG) {
+
+  this->ProtobufHistoryEntries.emplace_back();
+  this->CurrentProtobufHistory = &(this->ProtobufHistoryEntries.back());
+  this->CurrentProtobufHistory->set_id(this->S->getStreamId());
+
   this->Pattern.configure();
   this->CurrentIdx = InvalidIdx;
   this->CurrentIdx++;
@@ -104,13 +52,13 @@ void FunctionalStream::step(DataGraph *DG) {
    */
   assert(this->CurrentIdx != InvalidIdx &&
          "Invalid current idx to be updated.");
-  if (this->ProtobufHistoryEntry.history_size() < this->CurrentIdx) {
-    this->ProtobufHistoryEntry.add_history();
+  if (this->CurrentProtobufHistory->history_size() < this->CurrentIdx) {
+    this->CurrentProtobufHistory->add_history();
   }
-  assert(this->ProtobufHistoryEntry.history_size() == this->CurrentIdx &&
+  assert(this->CurrentProtobufHistory->history_size() == this->CurrentIdx &&
          "Mismatch between history size and the current idx.");
   auto History =
-      this->ProtobufHistoryEntry.mutable_history(this->CurrentIdx - 1);
+      this->CurrentProtobufHistory->mutable_history(this->CurrentIdx - 1);
   History->set_valid(this->IsAddressValid);
   History->set_addr(this->CurrentAddress);
   History->set_used(this->CurrentEntryUsed);
@@ -124,26 +72,8 @@ void FunctionalStream::step(DataGraph *DG) {
 
   this->CurrentIdx++;
   this->CurrentEntryUsed = false;
+  this->Pattern.step();
   this->update(DG);
-  DEBUG(llvm::errs() << "Stpped ");
-  DEBUG(this->DEBUG_DUMP(llvm::errs()));
-  DEBUG(llvm::errs() << '\n');
-  // Also step all the dependent streams.
-  if (StackDepth == 100) {
-    llvm::errs() << "Step stack depth reaches 100, there should be a circle in "
-                    "the stream dependence graph.";
-    assert(false && "Circle detected in the stream dependence graph as the "
-                    "step stack depth is too high.");
-  }
-
-  // Send the step signal to dependent step streams.
-  for (auto &DependentStepStream : this->AllDependentStepStreamsSorted) {
-    DEBUG(llvm::errs() << "Trigger step of dependent FunctionalStream of "
-                       << DependentStepStream->S->formatName() << '\n');
-    DependentStepStream->step(DG);
-  }
-
-  StackDepth--;
 }
 
 void FunctionalStream::access() {
@@ -152,57 +82,7 @@ void FunctionalStream::access() {
   this->CurrentEntryUsed = true;
 }
 
-void FunctionalStream::updatePHINodeValue(DataGraph *DG,
-                                          const DynamicValue &DynamicVal) {
-  assert(
-      this->S->Type == Stream::TypeT::IV &&
-      "Function updatePHINodeValue should never be called for non-iv stream.");
-
-  auto Type = this->S->getInst()->getType();
-  switch (Type->getTypeID()) {
-  case llvm::Type::PointerTyID: {
-    this->CurrentValue = DynamicVal.getAddr();
-    this->IsValueValid = true;
-    this->CurrentAddress = CurrentValue;
-    this->IsAddressValid = true;
-    break;
-  }
-  case llvm::Type::IntegerTyID: {
-    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
-    unsigned BitWidth = IntegerType->getBitWidth();
-    if (BitWidth > sizeof(this->CurrentValue) * 8) {
-      llvm::errs() << "Too wide an integer value " << BitWidth;
-      this->DEBUG_DUMP(llvm::errs());
-      llvm::errs() << '\n';
-    }
-    assert(BitWidth <= sizeof(this->CurrentValue) * 8 &&
-           "Too wide an integer value.");
-    this->CurrentValue = DynamicVal.getInt();
-    this->IsValueValid = true;
-    this->CurrentAddress = CurrentValue;
-    this->IsAddressValid = true;
-    break;
-  }
-  default: {
-    llvm_unreachable("Unsupported llvm type for an iv stream.");
-    return;
-  }
-  }
-
-  // If we are here, it means we should update the dependent streams.
-  DEBUG(llvm::errs() << "Updated loaded value ");
-  DEBUG(this->DEBUG_DUMP(llvm::errs()));
-  DEBUG(llvm::errs() << '\n');
-  for (auto &DependentStream : this->DependentStreams) {
-    DependentStream->updateRecursively(DG);
-  }
-}
-
-void FunctionalStream::updateLoadedValue(DataGraph *DG,
-                                         const DynamicValue &DynamicVal) {
-  assert(
-      this->S->Type == Stream::TypeT::MEM &&
-      "Function updatedLoadedValue should never be called for non-mem stream.");
+void FunctionalStream::setValue(const DynamicValue &DynamicVal) {
   auto Type = this->S->getInst()->getType();
   switch (Type->getTypeID()) {
   case llvm::Type::PointerTyID: {
@@ -230,45 +110,37 @@ void FunctionalStream::updateLoadedValue(DataGraph *DG,
      */
     if (!this->DependentStreams.empty()) {
       llvm_unreachable(
-          "Unsupported llvm type for a load stream with dependent streams.");
+          "Unsupported llvm type for a stream with dependent streams.");
     }
     return;
   }
-  }
-
-  // If we are here, it means we should update the dependent streams.
-  DEBUG(llvm::errs() << "Updated loaded value ");
-  DEBUG(this->DEBUG_DUMP(llvm::errs()));
-  DEBUG(llvm::errs() << '\n');
-  for (auto &DependentStream : this->DependentStreams) {
-    DependentStream->updateRecursively(DG);
   }
 }
 
 void FunctionalStream::endStream() {
   // Add footprint information.
   if (this->S->Type == Stream::TypeT::MEM) {
-    this->ProtobufHistoryEntry.set_num_cache_lines(
+    this->CurrentProtobufHistory->set_num_cache_lines(
         this->MemFootprint.getNumCacheLinesAccessed());
-    this->ProtobufHistoryEntry.set_num_accesses(
+    this->CurrentProtobufHistory->set_num_accesses(
         this->MemFootprint.getNumAccesses());
     this->MemFootprint.clear();
   }
+}
 
-  this->HistorySerializer.serialize(this->ProtobufHistoryEntry);
+void FunctionalStream::endAll() {
+  Gem5ProtobufSerializer HistorySerializer(this->S->getHistoryPath());
+  std::ofstream HistoryTextFStream(this->S->getHistoryTextPath());
+  assert(HistoryTextFStream.is_open() &&
+         "Failed to open the history text ofstream.");
+  for (auto &H : this->ProtobufHistoryEntries) {
+    HistorySerializer.serialize(H);
 
-  /**
-   * Also dump in text format for debug purpose.
-   */
-  for (size_t Idx = 0, NumHistory = this->ProtobufHistoryEntry.history_size();
-       Idx < NumHistory; ++Idx) {
-    const auto &History = this->ProtobufHistoryEntry.history(Idx);
-    this->HistoryTextFStream << History.valid() << ' ' << History.used() << ' '
-                             << std::hex << History.addr() << '\n';
+    std::string JSONString;
+    google::protobuf::util::MessageToJsonString(H, &JSONString);
+    HistoryTextFStream << JSONString << '\n';
   }
-  this->HistoryTextFStream << "-----------------------\n";
-
-  this->ProtobufHistoryEntry.clear_history();
+  HistoryTextFStream.close();
 }
 
 void FunctionalStream::update(DataGraph *DG) {
@@ -279,32 +151,11 @@ void FunctionalStream::update(DataGraph *DG) {
     auto ComputedAddress = this->computeAddress(DG);
     this->IsAddressValid = ComputedAddress.first;
     this->CurrentAddress = ComputedAddress.second;
-    // } else if (this->S->Type == Stream::TypeT::IV &&
-    //            !this->S->getBaseLoads().empty()) {
-    //   // This is an iv stream with base load. Be careful.
-    //   if (this->CurrentIdx == 1) {
-    //     // This is the first element, we should look for the incoming value.
-    //     auto PHINode = llvm::dyn_cast<llvm::PHINode>(this->S->getInst());
-    //     assert(PHINode != nullptr && "IVStream should have phi node.");
-    //     auto Loop = this->S->getLoop();
-    //     for (unsigned IncomingIdx = 0,
-    //                   NumIncomingValues = PHINode->getNumIncomingValues();
-    //          IncomingIdx != NumIncomingValues; ++IncomingIdx) {
-    //       auto BB = PHINode->getIncomingBlock(IncomingIdx);
-    //       if (Loop->contains(BB)) {
-    //         continue;
-    //       }
-    //       // Found the outside incoming value we are look
-    //     }
-
-    //   } else {
-    //     // Later iterations should use the value from the base load.
-    //   }
   } else {
     // This is a direct stream.
-    const auto NextValue = this->Pattern.getNextValue();
-    this->IsAddressValid = NextValue.first;
-    this->CurrentAddress = NextValue.second;
+    const auto Value = this->Pattern.getValue();
+    this->IsAddressValid = Value.first;
+    this->CurrentAddress = Value.second;
   }
 
   /**
@@ -314,35 +165,7 @@ void FunctionalStream::update(DataGraph *DG) {
     // For IV stream the value is the address.
     this->CurrentValue = this->CurrentAddress;
     this->IsValueValid = this->IsAddressValid;
-  } else {
-    /**
-     * For Mem stream the value we will wait for the datagraph to inform us
-     * the loaded value. For now we are not update the current value. This
-     * means implicitly using the previous value. It may happen that the
-     * loaded value is missing from the trace, in which case the value is
-     * still the previous value, but we leave it as that in the histroy.
-     */
-    this->IsValueValid = false;
   }
-}
-
-void FunctionalStream::updateRecursively(DataGraph *DG) {
-  static int StackDepth = 0;
-  StackDepth++;
-  if (StackDepth == 100) {
-    assert(false && "Stack depth reaches 100 for updateRecursively, there "
-                    "should be a circle in the stream dependence graph.");
-  }
-
-  this->update(DG);
-  DEBUG(llvm::errs() << "Recursivly updated ");
-  DEBUG(this->DEBUG_DUMP(llvm::errs()));
-  DEBUG(llvm::errs() << '\n');
-  for (auto &DependentStream : this->DependentStreams) {
-    DependentStream->updateRecursively(DG);
-  }
-
-  StackDepth--;
 }
 
 std::pair<bool, uint64_t>

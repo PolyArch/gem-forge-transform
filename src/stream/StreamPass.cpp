@@ -56,6 +56,12 @@ void StreamPass::transform() {
 
   this->transformStream();
 
+  // End all for every region.
+  for (auto &LoopStreamAnalyzer : this->LoopStreamAnalyzerMap) {
+    auto &Analyzer = LoopStreamAnalyzer.second;
+    Analyzer->endTransform();
+  }
+
   // /**
   //  * Finalize the infomations, after we have the coalesce information.
   //  */
@@ -484,7 +490,7 @@ void StreamPass::transformStream() {
         auto S =
             this->CurrentStreamAnalyzer->getChosenStreamByInst(NewStaticInst);
         if (S != nullptr) {
-          this->CurrentStreamAnalyzer->getFuncSE()->updateLoadedValue(
+          this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
               S, this->Trace, *(NewDynamicInst->DynamicResult));
         }
       }
@@ -497,7 +503,7 @@ void StreamPass::transformStream() {
         if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
           auto S = this->CurrentStreamAnalyzer->getChosenStreamByInst(PHINode);
           if (S != nullptr) {
-            this->CurrentStreamAnalyzer->getFuncSE()->updatePHINodeValue(
+            this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
                 S, this->Trace, *(NewDynamicInst->DynamicOperands[OperandIdx]));
           }
         }

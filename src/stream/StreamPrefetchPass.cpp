@@ -98,7 +98,7 @@ void StreamPrefetchPass::transformStream() {
         auto S =
             this->CurrentStreamAnalyzer->getChosenStreamByInst(NewStaticInst);
         if (S != nullptr) {
-          this->CurrentStreamAnalyzer->getFuncSE()->updateLoadedValue(
+          this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
               S, this->Trace, *(NewDynamicInst->DynamicResult));
         }
       }
@@ -111,7 +111,7 @@ void StreamPrefetchPass::transformStream() {
         if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
           auto S = this->CurrentStreamAnalyzer->getChosenStreamByInst(PHINode);
           if (S != nullptr) {
-            this->CurrentStreamAnalyzer->getFuncSE()->updatePHINodeValue(
+            this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
                 S, this->Trace, *(NewDynamicInst->DynamicOperands[OperandIdx]));
           }
         }

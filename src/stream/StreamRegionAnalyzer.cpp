@@ -278,6 +278,14 @@ void StreamRegionAnalyzer::endRegion(
   this->dumpTransformPlan();
 }
 
+void StreamRegionAnalyzer::endTransform() {
+  this->FuncSE->endAll();
+  for (auto &InstChosenStream : this->InstChosenStreamMap) {
+    auto &ChosenStream = InstChosenStream.second;
+    ChosenStream->finalizeInfo(this->DataLayout);
+  }
+}
+
 Stream *StreamRegionAnalyzer::getStreamByInstAndConfiguredLoop(
     const llvm::Instruction *Inst, const llvm::Loop *ConfiguredLoop) const {
   auto Iter = this->InstStreamMap.find(Inst);
@@ -499,8 +507,13 @@ void StreamRegionAnalyzer::buildAddressModule() {
   // Create the interpreter and functional stream engine.
   this->AddrInterpreter =
       std::make_unique<llvm::Interpreter>(std::move(AddressModule));
-  this->FuncSE =
-      std::make_unique<FunctionalStreamEngine>(this->AddrInterpreter);
+  std::unordered_set<Stream *> ChosenStreams;
+  for (auto &InstChosenStream : this->InstChosenStreamMap) {
+    auto ChosenStream = InstChosenStream.second;
+    ChosenStreams.insert(ChosenStream);
+  }
+  this->FuncSE = std::make_unique<FunctionalStreamEngine>(this->AddrInterpreter,
+                                                          ChosenStreams);
 }
 
 void StreamRegionAnalyzer::buildTransformPlan() {
