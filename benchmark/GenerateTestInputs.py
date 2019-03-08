@@ -37,6 +37,9 @@ class TestInputBenchmark(Benchmark):
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
 
+    def get_exe_path(self):
+        return self.work_path
+
     def get_run_path(self):
         return self.work_path
 
@@ -92,6 +95,7 @@ class TestInputBenchmark(Benchmark):
         )
         # Remember to set the flag to trace traced function.
         os.putenv('LLVM_TDG_WORK_MODE', str(2))
+        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
@@ -174,10 +178,10 @@ if __name__ == '__main__':
             (b, ),
             [build_job_id]
         )
-        trace_job_id = job_scheduler.add_job(
-            benchmark_name + '.clean',
-            clean,
-            (b, ),
-            [trace_job_id]
-        )
+        # trace_job_id = job_scheduler.add_job(
+        #     benchmark_name + '.clean',
+        #     clean,
+        #     (b, ),
+        #     [trace_job_id]
+        # )
     job_scheduler.run()

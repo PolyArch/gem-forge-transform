@@ -1,4 +1,4 @@
-#define M 10
+#define M 1024
 
 int arr[M];
 
