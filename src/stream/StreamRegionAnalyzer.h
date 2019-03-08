@@ -116,6 +116,7 @@ private:
   void buildTransformPlan();
 
   void dumpTransformPlan();
+  void dumpConfigurePlan();
   void dumpStreamInfos();
   std::string classifyStream(const MemStream &S) const;
 };

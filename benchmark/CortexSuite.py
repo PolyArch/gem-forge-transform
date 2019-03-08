@@ -8,29 +8,17 @@ import os
 class CortexBenchmark(Benchmark):
 
     FLAGS = {
-        # Stream experiments.
-        # RBM has vectorized loop with extra iterations.
-        # So far we can not handle it.
-        # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'sphinx': ['O2'],
-        # 'srr': ['O2'],
-        # 'lda': ['O2'],
-        # 'svd3': ['O2'],
-        # 'pca': ['O2'],
-        # 'motion-estimation': ['O2'],
-        # 'liblinear': ['O2'],
-
         # Advanced stream experiments.
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
-        # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'sphinx': ['O2'],
-        # 'srr': ['O2'],
-        # 'lda': ['O2'],
-        'svd3': ['O2'],
-        # 'pca': ['O2'],
-        'motion-estimation': ['O2'],
-        'liblinear': ['O2'],
+        'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'sphinx': ['O2'],
+        'srr': ['O2'],
+        'lda': ['O2'],
+        # 'svd3': ['O2'],
+        'pca': ['O2'],
+        # 'motion-estimation': ['O2'],
+        # 'liblinear': ['O2'],
 
         # Fractal experiments.
         # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
@@ -274,9 +262,6 @@ class CortexBenchmark(Benchmark):
 
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
-
-    def init_trace_ids(self):
-        return self.trace_ids
 
     def find_all_sources(self, folder):
         sources = list()

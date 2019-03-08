@@ -21,7 +21,7 @@ class SDVBSBenchmark(Benchmark):
 
     # Stream experiments.
     FLAGS = {
-        'disparity': ['O2'],
+        # 'disparity': ['O2'],
         'localization': ['O2'],
         'mser': ['O2'],
         'multi_ncut': ['O2'],
@@ -179,12 +179,6 @@ class SDVBSBenchmark(Benchmark):
 
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
-
-    def init_trace_ids(self):
-        # Fractal.
-        # return super(SDVBSBenchmark, self).init_trace_ids()
-        # Stream.
-        return self.trace_ids
 
     def find_all_sources(self, folder):
         sources = list()

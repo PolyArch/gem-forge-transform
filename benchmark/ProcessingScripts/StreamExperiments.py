@@ -60,7 +60,7 @@ class StreamExperiments(object):
         for trace in benchmark.get_traces():
             result = self.driver.get_simulation_result(
                 benchmark, trace, transform_config, simulation_config)
-            time += result.stats.get_sim_seconds()
+            time += result.stats.get_sim_seconds() * trace.weight
         return time
 
     def analyzeSingleBenchmark(self, benchmark):

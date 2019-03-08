@@ -276,6 +276,7 @@ void StreamRegionAnalyzer::endRegion(
 
   this->dumpStreamInfos();
   this->dumpTransformPlan();
+  this->dumpConfigurePlan();
 }
 
 void StreamRegionAnalyzer::endTransform() {
@@ -708,6 +709,33 @@ void StreamRegionAnalyzer::dumpTransformPlan() {
   std::ofstream PlanFStream(PlanPath);
   assert(PlanFStream.is_open() &&
          "Failed to open dump loop transform plan file.");
+  PlanFStream << ss.str() << '\n';
+  PlanFStream.close();
+}
+
+void StreamRegionAnalyzer::dumpConfigurePlan() {
+  std::list<const llvm::Loop *> Stack;
+  Stack.emplace_back(this->TopLoop);
+  std::stringstream ss;
+  while (!Stack.empty()) {
+    auto Loop = Stack.back();
+    Stack.pop_back();
+    for (auto &Sub : Loop->getSubLoops()) {
+      Stack.emplace_back(Sub);
+    }
+    ss << LoopUtils::getLoopId(Loop) << '\n';
+    for (auto S : this->getSortedChosenStreamsByConfiguredLoop(Loop)) {
+      for (auto Level = this->TopLoop->getLoopDepth();
+           Level < Loop->getLoopDepth(); ++Level) {
+        ss << "  ";
+      }
+      ss << S->formatName() << '\n';
+    }
+  }
+  std::string PlanPath = this->AnalyzePath + "/config.plan.txt";
+  std::ofstream PlanFStream(PlanPath);
+  assert(PlanFStream.is_open() &&
+         "Failed to open dump loop configure plan file.");
   PlanFStream << ss.str() << '\n';
   PlanFStream.close();
 }
