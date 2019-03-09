@@ -21,7 +21,7 @@ class SDVBSBenchmark(Benchmark):
 
     # Stream experiments.
     FLAGS = {
-        # 'disparity': ['O2'],
+        'disparity': ['O2'],
         'localization': ['O2'],
         'mser': ['O2'],
         'multi_ncut': ['O2'],

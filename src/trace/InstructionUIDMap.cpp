@@ -119,6 +119,11 @@ void InstructionUIDMap::parseFrom(const std::string &FileName,
       MemorizedStaticInstMap;
 
   for (const auto &UIDDescriptor : this->Map) {
+
+    const auto &FuncName = UIDDescriptor.second.FuncName;
+    const auto &BBName = UIDDescriptor.second.BBName;
+    const auto &PosInBB = UIDDescriptor.second.PosInBB;
+
     llvm::Function *Func = Module->getFunction(FuncName);
     assert(Func && "Failed to look up traced function in module.");
 
