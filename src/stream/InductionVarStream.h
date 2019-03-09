@@ -8,8 +8,7 @@ class InductionVarStream : public Stream {
 public:
   InductionVarStream(const std::string &_Folder, const llvm::PHINode *_PHIInst,
                      const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
-                     size_t _Level);
-
+                     size_t _Level, llvm::DataLayout *DataLayout);
   InductionVarStream(const InductionVarStream &Other) = delete;
   InductionVarStream(InductionVarStream &&Other) = delete;
   InductionVarStream &operator=(const InductionVarStream &Other) = delete;

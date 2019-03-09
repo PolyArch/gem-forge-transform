@@ -8,8 +8,10 @@ InductionVarStream::InductionVarStream(const std::string &_Folder,
                                        const llvm::PHINode *_PHIInst,
                                        const llvm::Loop *_Loop,
                                        const llvm::Loop *_InnerMostLoop,
-                                       size_t _Level)
-    : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _InnerMostLoop, _Level),
+                                       size_t _Level,
+                                       llvm::DataLayout *DataLayout)
+    : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _InnerMostLoop, _Level,
+             DataLayout),
       PHIInst(_PHIInst) {
   this->searchComputeInsts(this->PHIInst, this->Loop);
   this->StepInsts =

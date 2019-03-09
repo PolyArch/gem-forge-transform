@@ -10,6 +10,8 @@ protected:
   testStepInstDetection(llvm::Loop *Loop,
                         const ExpectedStepInstNameMapT &ExpectedStepInsts) {
 
+    llvm::DataLayout DataLayout(this->Module.get());
+
     // Create the IVStreams for all the phi nodes.
     auto PHIRange = Loop->getHeader()->phis();
     for (auto PHIIter = PHIRange.begin(), PHIEnd = PHIRange.end();
@@ -21,7 +23,7 @@ protected:
         continue;
       }
       InductionVarStream IVStream(this->OutputExtraFolder, PHIInst, Loop, Loop,
-                                  0);
+                                  0, &DataLayout);
       const auto &ExpectedStepInstNames = ExpectedStepInstsIter->second;
       std::unordered_set<std::string> ActualStepInstNames;
       for (auto StepInst : IVStream.getStepInsts()) {

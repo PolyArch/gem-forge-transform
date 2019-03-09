@@ -244,7 +244,13 @@ void FunctionalStream::setGenericValueFromDynamicValue(
     GenericVal.IntVal = llvm::APInt(BitWidth, Val);
     break;
   }
+  case llvm::Type::DoubleTyID: {
+    GenericVal.DoubleVal = DynamicVal.getDouble();
+    break;
+  }
   default: {
+    llvm::errs() << "Unsupported llvm type found for " << this->S->formatName()
+                 << '\n';
     llvm_unreachable(
         "Unsupported llvm type to be translated into generic value.");
   }

@@ -158,6 +158,7 @@ class JobScheduler:
             assert(child_job.status == JobScheduler.STATE_INIT or child_job.status ==
                    JobScheduler.STATE_FAILED)
             self.kick(child)
+        self.dump(self.log_f)
         self.lock.release()
 
     def failed(self, job_id):
@@ -178,6 +179,7 @@ class JobScheduler:
             job.status = JobScheduler.STATE_FAILED
             for child_id in self.job_children[job_id]:
                 stack.append(child_id)
+        self.dump(self.log_f)
         self.lock.release()
 
     def str_status(self, status):
@@ -213,9 +215,9 @@ class JobScheduler:
 
     def run(self):
         assert(self.state == JobScheduler.STATE_INIT)
-        log_f = tempfile.NamedTemporaryFile(
+        self.log_f = tempfile.NamedTemporaryFile(
             prefix='job_scheduler.{n}.'.format(n=self.name), delete=False)
-        print(log_f.name)
+        print(self.log_f.name)
         seconds = 0
 
         self.state = JobScheduler.STATE_STARTED
@@ -231,7 +233,7 @@ class JobScheduler:
             if seconds > 600:
                 seconds = 0
                 log_f.truncate()
-                self.dump(log_f)
+                self.dump(self.log_f)
 
             finished = True
             # Try to get the res.
@@ -254,9 +256,9 @@ class JobScheduler:
                 self.state = JobScheduler.STATE_FINISHED
                 break
         self.dump(sys.stdout)
-        self.dump(log_f)
+        self.dump(self.log_f)
         self.pool.close()
-        log_f.close()
+        self.log_f.close()
         self.pool.join()
 
 
