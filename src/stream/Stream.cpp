@@ -6,13 +6,16 @@
 
 Stream::Stream(TypeT _Type, const std::string &_Folder,
                const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
-               const llvm::Loop *_InnerMostLoop, size_t _LoopLevel)
+               const llvm::Loop *_InnerMostLoop, size_t _LoopLevel,
+               llvm::DataLayout *DataLayout)
     : Type(_Type), Folder(_Folder), Inst(_Inst), Loop(_Loop),
       InnerMostLoop(_InnerMostLoop), LoopLevel(_LoopLevel),
       HasMissingBaseStream(false), Qualified(false), Chosen(false),
       CoalesceGroup(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
       Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
       Pattern() {
+
+  this->ElementSize = this->getElementSize(DataLayout);
 
   auto PatternFolder = this->Folder + "/pattern";
   auto ErrCode = llvm::sys::fs::create_directory(PatternFolder);
@@ -179,7 +182,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_type(this->Inst->getOpcodeName());
   ProtobufInfo->set_loop_level(this->InnerMostLoop->getLoopDepth());
   ProtobufInfo->set_config_loop_level(this->Loop->getLoopDepth());
-  ProtobufInfo->set_element_size(this->getElementSize(DataLayout));
+  ProtobufInfo->set_element_size(this->ElementSize);
   ProtobufInfo->set_pattern_path(this->PatternFullPath);
   ProtobufInfo->set_history_path(this->HistoryFullPath);
   ProtobufInfo->set_coalesce_group(this->CoalesceGroup);

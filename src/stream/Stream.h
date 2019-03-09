@@ -43,7 +43,8 @@ public:
   const TypeT Type;
   Stream(TypeT _Type, const std::string &_Folder,
          const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
-         const llvm::Loop *_InnerMostLoop, size_t _LoopLevel);
+         const llvm::Loop *_InnerMostLoop, size_t _LoopLevel,
+         llvm::DataLayout *DataLayout);
 
   using StreamSet = std::unordered_set<Stream *>;
 
@@ -230,6 +231,8 @@ protected:
   const llvm::Loop *Loop;
   const llvm::Loop *InnerMostLoop;
   const size_t LoopLevel;
+
+  size_t ElementSize;
 
   StreamSet BaseStreams;
   StreamSet DependentStreams;

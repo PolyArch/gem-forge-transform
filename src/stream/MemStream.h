@@ -9,9 +9,10 @@ class MemStream : public Stream {
 public:
   MemStream(const std::string &_Folder, const llvm::Instruction *_Inst,
             const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
-            size_t _LoopLevel,
+            size_t _LoopLevel, llvm::DataLayout *DataLayout,
             std::function<bool(const llvm::PHINode *)> IsInductionVar)
-      : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _InnerMostLoop, _LoopLevel),
+      : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _InnerMostLoop, _LoopLevel,
+               DataLayout),
         AddrDG(_Loop, Utils::getMemAddrValue(_Inst), IsInductionVar) {
     assert(Utils::isMemAccessInst(this->Inst) &&
            "Should be load/store instruction to build a stream.");

@@ -108,14 +108,16 @@ void StreamRegionAnalyzer::initializeStreamForAllLoops(
         ConfiguredLoop->getLoopDepth() - this->TopLoop->getLoopDepth();
     Stream *NewStream = nullptr;
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
-      NewStream = new InductionVarStream(
-          this->AnalyzePath, PHIInst, ConfiguredLoop, InnerMostLoop, LoopLevel);
+      NewStream =
+          new InductionVarStream(this->AnalyzePath, PHIInst, ConfiguredLoop,
+                                 InnerMostLoop, LoopLevel, this->DataLayout);
     } else {
       auto IsIVStream = [this](const llvm::PHINode *PHINode) -> bool {
         return this->InstStreamMap.count(PHINode) != 0;
       };
-      NewStream = new MemStream(this->AnalyzePath, StreamInst, ConfiguredLoop,
-                                InnerMostLoop, LoopLevel, IsIVStream);
+      NewStream =
+          new MemStream(this->AnalyzePath, StreamInst, ConfiguredLoop,
+                        InnerMostLoop, LoopLevel, this->DataLayout, IsIVStream);
     }
     Streams.emplace_back(NewStream);
 
@@ -480,7 +482,7 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
 
 void StreamRegionAnalyzer::buildAddressModule() {
 
-  auto AddressModulePath = this->AnalyzePath + "/addr.bc";
+  auto AddressModulePath = this->AnalyzePath + "/addr.ll";
 
   auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
   auto AddressModule =
