@@ -232,7 +232,7 @@ class JobScheduler:
             seconds += self.poll_seconds
             if seconds > 600:
                 seconds = 0
-                log_f.truncate()
+                self.log_f.truncate()
                 self.dump(self.log_f)
 
             finished = True
