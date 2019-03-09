@@ -8,12 +8,10 @@
 #define DEBUG_TYPE "ParserProtobuf"
 
 TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName,
-                                         const std::string &InstUIDMapFileName)
-    : TraceFile(TraceFileName, std::ios::in | std::ios::binary), Count(0) {
-  if (InstUIDMapFileName != "") {
-    this->InstUIDMap.parseFrom(InstUIDMapFileName);
-  }
-
+                                         const InstructionUIDMap &_InstUIDMap)
+    : TraceFile(TraceFileName, std::ios::in | std::ios::binary),
+      InstUIDMap(_InstUIDMap),
+      Count(0) {
   assert(this->TraceFile.is_open() && "Failed openning trace file.");
   this->IStream =
       new google::protobuf::io::IstreamInputStream(&this->TraceFile);
@@ -80,19 +78,6 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
   }
   Parsed.Result =
       this->parseLLVMDynamicValueToString(this->TraceEntry.inst().result());
-  // if (Parsed.Result == "") {
-  //   if (Parsed.Func == "x264_pixel_sad_8x8" && Parsed.BB == "bb" && Parsed.Op == "icmp") {
-  //     std::cerr << "Something is wrong for uid " << this->TraceEntry.inst().uid() << '\n';
-  //     switch (this->TraceEntry.inst().result().value_case()) {
-  //       case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVInt: {
-  //         std::cerr << "kVInt\n";
-  //         break;
-  //       }
-  //       default: { std::cerr << "default\n"; }
-  //     }
-  //   }
-  // }
-  // Parsed.Result = this->TraceEntry.inst().result();
 
   for (int i = 0; i < this->TraceEntry.inst().params_size(); ++i) {
     Parsed.Operands.emplace_back(

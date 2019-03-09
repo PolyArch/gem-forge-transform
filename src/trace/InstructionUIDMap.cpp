@@ -3,6 +3,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 
 #include <fstream>
 
@@ -78,7 +79,8 @@ void InstructionUIDMap::serializeTo(const std::string &FileName) const {
   }
 }
 
-void InstructionUIDMap::parseFrom(const std::string &FileName) {
+void InstructionUIDMap::parseFrom(const std::string &FileName,
+                                  llvm::Module *Module) {
   assert(this->Map.empty() &&
          "UIDMap is not empty when try to parse from some file.");
   std::ifstream I(FileName);
@@ -107,11 +109,80 @@ void InstructionUIDMap::parseFrom(const std::string &FileName) {
             .second;
     assert(Inserted && "Failed to insert the record.");
   }
+
+  // Find the real llvm instruction in the Module.
+
+  // Memorized map to quickly locate the static instruction.
+  std::unordered_map<
+      llvm::Function *,
+      std::unordered_map<std::string, std::vector<llvm::Instruction *>>>
+      MemorizedStaticInstMap;
+
+  for (const auto &UIDDescriptor : this->Map) {
+    llvm::Function *Func = Module->getFunction(FuncName);
+    assert(Func && "Failed to look up traced function in module.");
+
+    auto FuncMapIter = MemorizedStaticInstMap.find(Func);
+    if (FuncMapIter == MemorizedStaticInstMap.end()) {
+      FuncMapIter =
+          MemorizedStaticInstMap
+              .emplace(std::piecewise_construct, std::forward_as_tuple(Func),
+                       std::forward_as_tuple())
+              .first;
+    }
+
+    auto &BBMap = FuncMapIter->second;
+    auto BBMapIter = BBMap.find(BBName);
+    if (BBMapIter == BBMap.end()) {
+      // Iterate through function's Basic blocks to create all the bbs.
+      for (auto BBIter = Func->begin(), BBEnd = Func->end(); BBIter != BBEnd;
+           ++BBIter) {
+        std::string BBName = BBIter->getName().str();
+        auto &InstVec =
+            BBMap
+                .emplace(std::piecewise_construct,
+                         std::forward_as_tuple(BBName), std::forward_as_tuple())
+                .first->second;
+        // After this point BBName is moved.
+        for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
+             InstIter != InstEnd; ++InstIter) {
+          InstVec.push_back(&*InstIter);
+        }
+      }
+      BBMapIter = BBMap.find(BBName);
+      assert(BBMapIter != BBMap.end() &&
+             "Failed to find the basic block in BBMap.");
+    }
+
+    const auto &InstVec = BBMapIter->second;
+    assert(PosInBB >= 0 && PosInBB < InstVec.size() && "Invalid Index.");
+    auto Inst = InstVec[PosInBB];
+
+    // Insert this into the map.
+    auto Inserted = this->UIDInstMap.emplace(UIDDescriptor.first, Inst).second;
+    assert(Inserted && "Failed to insert to UIDInstMap.");
+
+    Inserted = this->InstUIDMap.emplace(Inst, UIDDescriptor.first).second;
+    assert(Inserted && "Failed to insert to InstUIDMap.");
+  }
 }
 
 const InstructionUIDMap::InstructionDescriptor &
 InstructionUIDMap::getDescriptor(const InstructionUID UID) const {
   auto Iter = this->Map.find(UID);
   assert(Iter != this->Map.end() && "Unrecognized UID.");
+  return Iter->second;
+}
+
+llvm::Instruction *InstructionUIDMap::getInst(const InstructionUID UID) const {
+  auto Iter = this->UIDInstMap.find(UID);
+  assert(Iter != this->UIDInstMap.end() && "Unrecognized UID.");
+  return Iter->second;
+}
+
+InstructionUIDMap::InstructionUID InstructionUIDMap::getUID(
+    const llvm::Instruction *Inst) const {
+  auto Iter = this->InstUIDMap.find(Inst);
+  assert(Iter != this->InstUIDMap.end() && "Unrecognized inst.");
   return Iter->second;
 }

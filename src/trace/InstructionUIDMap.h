@@ -48,12 +48,16 @@ class InstructionUIDMap {
 
   InstructionUID getOrAllocateUID(llvm::Instruction *Inst, int PosInBB = -1);
   void serializeTo(const std::string &FileName) const;
-  void parseFrom(const std::string &FileName);
+  void parseFrom(const std::string &FileName, llvm::Module *Module);
 
   const InstructionDescriptor &getDescriptor(const InstructionUID UID) const;
+  llvm::Instruction *getInst(const InstructionUID UID) const;
+  InstructionUID getUID(const llvm::Instruction *Inst) const;
 
  private:
   std::unordered_map<InstructionUID, InstructionDescriptor> Map;
+  std::unordered_map<InstructionUID, llvm::Instruction *> UIDInstMap;
+  std::unordered_map<const llvm::Instruction *, InstructionUID> InstUIDMap;
 };
 
 #endif

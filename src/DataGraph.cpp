@@ -176,12 +176,10 @@ DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
     this->Parser = new TraceParserGZip(TraceFileName);
   } else if (TraceFileFormat.getValue() == "protobuf") {
     DEBUG(llvm::errs() << "Creating parser.\n");
-    if (InstUIDFileName.getNumOccurrences() > 0) {
-      this->Parser =
-          new TraceParserProtobuf(TraceFileName, InstUIDFileName.getValue());
-    } else {
-      this->Parser = new TraceParserProtobuf(TraceFileName);
-    }
+    assert(InstUIDFileName.getNumOccurrences() > 0 &&
+           "You must provide instruction uid file.");
+    this->InstUIDMap.parseFrom(InstUIDFileName.getValue(), this->Module);
+    this->Parser = new TraceParserProtobuf(TraceFileName, this->InstUIDMap);
     DEBUG(llvm::errs() << "Creating parser. Done\n");
   } else {
     llvm_unreachable("Unknown trace file format.");
@@ -351,7 +349,8 @@ bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
       // then we donot log the result.
       if (!Utils::isCallOrInvokeInst(StaticInstruction)) {
         if (StaticInstruction->getName() != "") {
-          llvm::errs() << "Missing DynamicResult for inst " << Utils::formatLLVMInst(StaticInstruction) << '\n';
+          llvm::errs() << "Missing DynamicResult for inst "
+                       << Utils::formatLLVMInst(StaticInstruction) << '\n';
           assert(false);
         }
       }

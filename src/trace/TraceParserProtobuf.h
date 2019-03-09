@@ -13,7 +13,7 @@
 class TraceParserProtobuf : public TraceParser {
  public:
   TraceParserProtobuf(const std::string &TraceFileName,
-                      const std::string &InstUIDMapFileName = "");
+                      const InstructionUIDMap &_InstUIDMap);
   ~TraceParserProtobuf();
   Type getNextType() override;
   TracedInst parseLLVMInstruction() override;
@@ -26,7 +26,7 @@ class TraceParserProtobuf : public TraceParser {
   google::protobuf::io::CodedInputStream *CodedIStream;
   LLVM::TDG::DynamicLLVMTraceEntry TraceEntry;
 
-  InstructionUIDMap InstUIDMap;
+  const InstructionUIDMap &InstUIDMap;
 
   // Some statistics.
   uint64_t Count;
