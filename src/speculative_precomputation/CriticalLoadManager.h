@@ -3,14 +3,11 @@
 
 #include "speculative_precomputation/PrecomputationSlice.h"
 
-#include "DataGraph.h"
-
-#include "llvm/IR/Instructions.h"
-
 #include <string>
+#include <utility>
 
 class CriticalLoadManager {
-public:
+ public:
   CriticalLoadManager(llvm::LoadInst *_CriticalLoad,
                       const std::string &_RootPath);
 
@@ -23,7 +20,9 @@ public:
   void hit(DataGraph *DG);
   void clear();
 
-private:
+  void dump() const;
+
+ private:
   llvm::LoadInst *CriticalLoad;
   std::string AnalyzePath;
 
@@ -46,7 +45,17 @@ private:
     Built,
   };
 
+  std::unique_ptr<PrecomputationSlice> ComputedSlice;
+
   StatusE Status;
+
+  /**
+   * Some basic statistics.
+   */
+  size_t HitsCount;
+  size_t SlicesCreated;
+  size_t SlicesTriggered;
+  size_t CorrectSlicesTriggered;
 };
 
 #endif
