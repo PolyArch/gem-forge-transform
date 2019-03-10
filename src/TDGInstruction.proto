@@ -48,6 +48,7 @@ message TDGInstruction {
     StreamStepExtra stream_step = 38;
     StreamStoreExtra stream_store = 39;
     StreamEndExtra stream_end = 40;
+    SpecPreTriggerExtra specpre_trigger = 41;
   }
 
   message StoreExtra {
@@ -95,6 +96,8 @@ message TDGInstruction {
   message StreamStoreExtra { uint64 stream_id = 1; }
 
   message StreamEndExtra { uint64 stream_id = 1; }
+
+  message SpecPreTriggerExtra { string slice_stream = 1; }
 }
 
 message TDG { repeated TDGInstruction instructions = 1; }

@@ -26,6 +26,7 @@ class CriticalLoadManager {
   llvm::LoadInst *CriticalLoad;
   std::string AnalyzePath;
   std::string SliceStream;
+  std::string SliceStreamRelativePath;
 
   /**
    * A simple state machine.
