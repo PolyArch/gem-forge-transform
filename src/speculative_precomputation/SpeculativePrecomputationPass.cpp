@@ -27,6 +27,7 @@ bool SpeculativePrecomputationPass::finalize(llvm::Module &Module) {
 void SpeculativePrecomputationPass::transform() {
   DEBUG(llvm::errs() << "SpeculativePrecomputation: start.\n");
 
+  size_t InstCount = 0;
   while (true) {
     auto NewDynInstIter = this->Trace->loadOneDynamicInst();
     llvm::Instruction *NewStaticInst = nullptr;
@@ -39,6 +40,7 @@ void SpeculativePrecomputationPass::transform() {
       if (Utils::isMemAccessInst(NewStaticInst)) {
         this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*NewDynInstIter));
       }
+      InstCount++;
     } else {
       // Commit any remaining buffered instructions when hitting the end.
       while (!this->Trace->DynamicInstructionList.empty()) {
@@ -64,6 +66,14 @@ void SpeculativePrecomputationPass::transform() {
       if (InstManagerIter != this->InstManagerMap.end()) {
         auto &Manager = InstManagerIter->second;
         Manager.hit(this->Trace);
+      }
+    }
+
+    // Check if we need to clear the slices periodically.
+    constexpr size_t SLICE_CLEAR_PERIOD = 128000;
+    if (InstCount % SLICE_CLEAR_PERIOD == 0) {
+      for (auto &InstManager : this->InstManagerMap) {
+        InstManager.second.clear();
       }
     }
   }

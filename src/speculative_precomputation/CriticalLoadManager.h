@@ -25,6 +25,7 @@ class CriticalLoadManager {
  private:
   llvm::LoadInst *CriticalLoad;
   std::string AnalyzePath;
+  std::string SliceStream;
 
   /**
    * A simple state machine.
@@ -48,6 +49,11 @@ class CriticalLoadManager {
   std::unique_ptr<PrecomputationSlice> ComputedSlice;
 
   StatusE Status;
+
+  /**
+   * Another serializer to the data flow stream
+   */
+  std::unique_ptr<TDGSerializer> SliceSerializer;
 
   /**
    * Some basic statistics.
