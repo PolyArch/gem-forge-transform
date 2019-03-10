@@ -31,6 +31,8 @@ class PrecomputationSlice {
    */
   void generateSlice(TDGSerializer *Serializer, bool IsReal) const;
 
+  DynamicInstruction::DynamicId getHeaderDynamicId() const;
+
  private:
   llvm::LoadInst *CriticalInst;
   DataGraph *DG;
@@ -46,6 +48,7 @@ class PrecomputationSlice {
     }
   };
 
+  DynamicInstruction::DynamicId HeaderDynamicId;
   std::list<SliceInst *> SliceTemplate;
 
   void initializeSlice();

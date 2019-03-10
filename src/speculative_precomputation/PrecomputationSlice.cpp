@@ -5,7 +5,9 @@
 
 PrecomputationSlice::PrecomputationSlice(llvm::LoadInst *_CriticalInst,
                                          DataGraph *_DG)
-    : CriticalInst(_CriticalInst), DG(_DG) {
+    : CriticalInst(_CriticalInst),
+      DG(_DG),
+      HeaderDynamicId(DynamicInstruction::InvalidId) {
   this->initializeSlice();
 }
 
@@ -42,7 +44,10 @@ void PrecomputationSlice::initializeSlice() {
        Iter != End && RIBSize < RIBMaxSize; ++Iter, ++RIBSize) {
     auto DynamicInst = *Iter;
     auto StaticInst = DynamicInst->getStaticInstruction();
-    assert(StaticInst != nullptr && "Failed to get staic instruction in RIB.");
+    if (StaticInst == nullptr) {
+      // Most likely this is our trigger inst.
+      continue;
+    }
     if (StaticInst == this->CriticalInst && RIBSize > 0) {
       // This is the second time we encounter the critical inst, break.
       break;
@@ -55,6 +60,7 @@ void PrecomputationSlice::initializeSlice() {
     }
 
     // Add to the slice.
+    this->HeaderDynamicId = DynamicInst->getId();
     this->SliceTemplate.emplace_front(
         new SliceInst(PrecomputationSlice::copyDynamicLLVMInst(DynamicInst)));
 
@@ -93,6 +99,12 @@ bool PrecomputationSlice::isSame(const PrecomputationSlice &Other) const {
     }
   }
   return true;
+}
+
+DynamicInstruction::DynamicId PrecomputationSlice::getHeaderDynamicId() const {
+  assert(this->HeaderDynamicId != DynamicInstruction::InvalidId &&
+         "Invalid dynamic id for header of the slice.");
+  return this->HeaderDynamicId;
 }
 
 void PrecomputationSlice::generateSlice(TDGSerializer *Serializer,

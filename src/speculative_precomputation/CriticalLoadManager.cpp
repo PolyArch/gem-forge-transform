@@ -3,6 +3,26 @@
 
 #include "llvm/Support/FileSystem.h"
 
+class SliceTriggerInstruction : public DynamicInstruction {
+ public:
+  SliceTriggerInstruction(const std::string &_SliceStreamFileName)
+      : SliceStreamFileName(_SliceStreamFileName) {}
+  std::string getOpName() const override { return "specpre-trigger"; }
+
+  // There should be some customized fields in the future.
+  void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
+                                DataGraph *DG) const override {
+    // Calling mutable_adfa_config should set this field.
+    auto Extra = ProtobufEntry->mutable_specpre_trigger();
+    assert(ProtobufEntry->has_specpre_trigger() &&
+           "The protobuf entry should have specpre trigger extra struct.");
+    Extra->set_slice_stream(this->SliceStreamFileName);
+  }
+
+ private:
+  std::string SliceStreamFileName;
+};
+
 CriticalLoadManager::CriticalLoadManager(llvm::LoadInst *_CriticalLoad,
                                          const std::string &_RootPath)
     : CriticalLoad(_CriticalLoad),
@@ -17,6 +37,8 @@ CriticalLoadManager::CriticalLoadManager(llvm::LoadInst *_CriticalLoad,
   assert(!ErrCode && "Failed to create AnalyzePath.");
 
   this->SliceStream = this->AnalyzePath + "/slice.tdg";
+  this->SliceStreamRelativePath =
+      Utils::formatLLVMInst(this->CriticalLoad) + "/slice.tdg";
   this->SliceSerializer = std::make_unique<TDGSerializer>(this->SliceStream);
   // Serialize an empty static information to conform with format.
   LLVM::TDG::StaticInformation StaticInfo;
@@ -39,6 +61,7 @@ void CriticalLoadManager::hit(DataGraph *DG) {
   // We first build the slice.
   auto Slice = std::make_unique<PrecomputationSlice>(this->CriticalLoad, DG);
 
+  auto SliceHeaderId = Slice->getHeaderDynamicId();
   if (this->Status == StatusE::Building) {
     this->SlicesCreated++;
     this->ComputedSlice = std::move(Slice);
@@ -55,6 +78,12 @@ void CriticalLoadManager::hit(DataGraph *DG) {
       this->ComputedSlice->generateSlice(this->SliceSerializer.get(), false);
     }
   }
+
+  // Insert the trigger instruction into the DG before the first inst of the
+  // slice.
+  auto TriggerInst = new SliceTriggerInstruction(this->SliceStreamRelativePath);
+  auto SliceHead = DG->getDynamicInstFromId(SliceHeaderId);
+  DG->insertDynamicInst(SliceHead, TriggerInst);
 }
 
 void CriticalLoadManager::clear() {
