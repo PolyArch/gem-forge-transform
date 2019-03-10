@@ -1,8 +1,8 @@
 #include "SpeculativePrecomputationPass.h"
 
-llvm::cl::opt<std::string>
-    LoadProfileFileName("speculative-precomputation-load-profile-file",
-                        llvm::cl::desc("Load profile file."));
+llvm::cl::opt<std::string> LoadProfileFileName(
+    "speculative-precomputation-load-profile-file",
+    llvm::cl::desc("Load profile file."));
 
 #define DEBUG_TYPE "SpeculativePrecomputationPass"
 
@@ -17,6 +17,9 @@ bool SpeculativePrecomputationPass::initialize(llvm::Module &Module) {
 }
 
 bool SpeculativePrecomputationPass::finalize(llvm::Module &Module) {
+  for (auto &InstManager : this->InstManagerMap) {
+    InstManager.second.dump();
+  }
   this->InstManagerMap.clear();
   return ReplayTrace::finalize(Module);
 }
@@ -100,6 +103,6 @@ void SpeculativePrecomputationPass::initializeCriticalLoadManagers() {
 #undef DEBUG_TYPE
 
 char SpeculativePrecomputationPass::ID = 0;
-static llvm::RegisterPass<SpeculativePrecomputationPass>
-    X("speculative-precomputation-pass",
-      "speculative precomputation transform pass", false, false);
+static llvm::RegisterPass<SpeculativePrecomputationPass> X(
+    "speculative-precomputation-pass",
+    "speculative precomputation transform pass", false, false);
