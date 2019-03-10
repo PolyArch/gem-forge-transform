@@ -1,0 +1,7 @@
+{
+    "id": "specpre",
+    "options": [
+        "-speculative-precomputation-pass",
+        "-speculative-precomputation-load-profile-file={RUN_PATH}/replay/{BENCHMARK}.replay.{TRACE_ID}.tdg.o8.ch2/profile.txt"
+    ]
+}

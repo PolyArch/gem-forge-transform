@@ -451,7 +451,7 @@ class Benchmark(object):
             C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
         ]
-        transform_options = transform_config.get_options()
+        transform_options = transform_config.get_options(self, trace_file)
         opt_cmd += transform_options
         opt_cmd += [
             '-trace-file={trace_file}'.format(trace_file=trace_file),

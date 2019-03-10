@@ -61,6 +61,10 @@ add_library(LLVMTDGPass SHARED
     stream/ae/DynamicStreamCoalescer.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
+    # Speculative Precomputation.
+    speculative_precomputation/PrecomputationSlice.cpp
+    speculative_precomputation/CriticalLoadManager.cpp
+    speculative_precomputation/SpeculativePrecomputationPass.cpp
 )
 
 
