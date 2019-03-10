@@ -7,6 +7,7 @@
 #include "LocateAccelerableFunctions.h"
 #include "LoopUtils.h"
 #include "TDGSerializer.h"
+#include "Utils.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Pass.h"
