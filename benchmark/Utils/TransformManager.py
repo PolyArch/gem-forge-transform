@@ -16,8 +16,21 @@ class TransformConfig(object):
     def get_transform_id(self):
         return self.json['id']
 
-    def get_options(self):
-        return self.json['options']
+    def get_options(self, benchmark, tdg):
+        # Simple hacky preprocessing.
+        options = list()
+        _, trace = os.path.split(tdg)
+        trace_id = trace.split('.')[3]
+        for o in self.json['options']:
+            if '{' in o:
+                options.append(
+                    o.format(
+                        RUN_PATH=benchmark.get_run_path(),
+                        BENCHMARK=benchmark.get_name(),
+                        TRACE_ID=trace_id))
+            else:
+                options.append(o)
+        return options
 
     def get_transform(self):
         return self.json['transform']
