@@ -15,10 +15,10 @@ class CortexBenchmark(Benchmark):
         'sphinx': ['O2'],
         'srr': ['O2'],
         'lda': ['O2'],
-        # 'svd3': ['O2'],
+        'svd3': ['O2'],
         'pca': ['O2'],
-        # 'motion-estimation': ['O2'],
-        # 'liblinear': ['O2'],
+        'motion-estimation': ['O2'],
+        'liblinear': ['O2'],
 
         # Fractal experiments.
         # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
@@ -324,18 +324,10 @@ class CortexBenchmark(Benchmark):
             trace_reachable_only=False,
             # debugs=['TracePass']
         )
-        # Stream experiments.
-        os.putenv('LLVM_TDG_WORK_MODE', str(3))
-        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
-        os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-        os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-        os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-        os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
 
-        # Fractal experiments.
-        # os.putenv('LLVM_TDG_WORK_MODE', str(4))
-        # os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        # os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+        os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
 
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
