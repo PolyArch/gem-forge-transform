@@ -87,7 +87,7 @@ void FunctionalStreamEngine::updateWithValue(Stream *S, DataGraph *DG,
     auto FS = UpdateQueue.front();
     UpdateQueue.pop_front();
     Count++;
-    if (Count == 100) {
+    if (Count == this->StreamMap.size() * 2) {
       llvm::errs() << "Potential cycle dependence found when updating for "
                    << S->formatName() << '\n';
       assert(false && "Potential cycle dependence found.\n");
