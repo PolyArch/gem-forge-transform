@@ -97,7 +97,7 @@ message TDGInstruction {
 
   message StreamEndExtra { uint64 stream_id = 1; }
 
-  message SpecPreTriggerExtra { string slice_stream = 1; }
+  message SpecPreTriggerExtra { string slice_stream = 1; uint64 critical_pc = 2; }
 }
 
 message TDG { repeated TDGInstruction instructions = 1; }

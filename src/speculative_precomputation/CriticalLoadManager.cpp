@@ -4,9 +4,11 @@
 #include "llvm/Support/FileSystem.h"
 
 class SliceTriggerInstruction : public DynamicInstruction {
- public:
-  SliceTriggerInstruction(const std::string &_SliceStreamFileName)
-      : SliceStreamFileName(_SliceStreamFileName) {}
+public:
+  SliceTriggerInstruction(const std::string &_SliceStreamFileName,
+                          const llvm::Instruction *_CriticalInst)
+      : SliceStreamFileName(_SliceStreamFileName), CriticalInst(_CriticalInst) {
+  }
   std::string getOpName() const override { return "specpre-trigger"; }
 
   // There should be some customized fields in the future.
@@ -17,20 +19,18 @@ class SliceTriggerInstruction : public DynamicInstruction {
     assert(ProtobufEntry->has_specpre_trigger() &&
            "The protobuf entry should have specpre trigger extra struct.");
     Extra->set_slice_stream(this->SliceStreamFileName);
+    Extra->set_critical_pc(DG->getInstUIDMap().getUID(this->CriticalInst));
   }
 
- private:
+private:
   std::string SliceStreamFileName;
+  const llvm::Instruction *CriticalInst;
 };
 
 CriticalLoadManager::CriticalLoadManager(llvm::LoadInst *_CriticalLoad,
                                          const std::string &_RootPath)
-    : CriticalLoad(_CriticalLoad),
-      Status(StatusE::Unknown),
-      HitsCount(0),
-      SlicesCreated(0),
-      SlicesTriggered(0),
-      CorrectSlicesTriggered(0) {
+    : CriticalLoad(_CriticalLoad), Status(StatusE::Unknown), HitsCount(0),
+      SlicesCreated(0), SlicesTriggered(0), CorrectSlicesTriggered(0) {
   this->AnalyzePath =
       _RootPath + "/" + Utils::formatLLVMInst(this->CriticalLoad);
   auto ErrCode = llvm::sys::fs::create_directory(this->AnalyzePath);
@@ -81,7 +81,8 @@ void CriticalLoadManager::hit(DataGraph *DG) {
 
   // Insert the trigger instruction into the DG before the first inst of the
   // slice.
-  auto TriggerInst = new SliceTriggerInstruction(this->SliceStreamRelativePath);
+  auto TriggerInst = new SliceTriggerInstruction(this->SliceStreamRelativePath,
+                                                 this->CriticalLoad);
   auto SliceHead = DG->getDynamicInstFromId(SliceHeaderId);
   DG->insertDynamicInst(SliceHead, TriggerInst);
 }
