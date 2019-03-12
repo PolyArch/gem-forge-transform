@@ -87,16 +87,22 @@ class SPEC2017Benchmark(Benchmark):
         )
 
     def get_config_file(self):
-        return '{build_system}-llvm-linux-x86_64.cfg'.format(
-            build_system=self.build_system
+        return '{build_system}-llvm-linux-x86_64-{expr}.cfg'.format(
+            build_system=self.build_system,
+            expr=C.EXPERIMENTS,
         )
 
-    def get_build_path(self):
+    def get_benchmark_path(self):
         return os.path.join(
             self.spec,
             'benchspec',
             'CPU',
             self.work_load,
+        )
+
+    def get_build_path(self):
+        return os.path.join(
+            self.get_benchmark_path(),
             'build',
             'build_base_{label}-m64.0000'.format(
                 label=self.get_build_label())
@@ -112,10 +118,7 @@ class SPEC2017Benchmark(Benchmark):
                 label=self.get_build_label()
             )
         return os.path.join(
-            self.spec,
-            'benchspec',
-            'CPU',
-            self.work_load,
+            self.get_benchmark_path(),
             'run',
             run_dirname
         )
@@ -131,13 +134,19 @@ class SPEC2017Benchmark(Benchmark):
         clear_cmd = [
             'rm',
             '-rf',
-            self.get_build_path()
+            os.path.join(
+                self.get_benchmark_path(),
+                'build'
+            )
         ]
         Util.call_helper(clear_cmd)
         clear_cmd = [
             'rm',
             '-rf',
-            self.get_exe_path()
+            os.path.join(
+                self.get_benchmark_path(),
+                'run'
+            )
         ]
         Util.call_helper(clear_cmd)
         # Fake the runcpu.
@@ -288,15 +297,6 @@ class SPEC2017Benchmark(Benchmark):
         )
         # Set the tracer mode.
 
-        # Stream project.
-        # os.putenv('LLVM_TDG_WORK_MODE', str(3))
-        # os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
-        # os.putenv('LLVM_TDG_MAX_INST', str(int(self.max_inst)))
-        # os.putenv('LLVM_TDG_START_INST', str(int(self.start_inst)))
-        # os.putenv('LLVM_TDG_END_INST', str(int(self.end_inst)))
-        # os.putenv('LLVM_TDG_SKIP_INST', str(int(self.skip_inst)))
-
-        # Fractal project.
         os.putenv('LLVM_TDG_WORK_MODE', str(4))
         os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
         os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')

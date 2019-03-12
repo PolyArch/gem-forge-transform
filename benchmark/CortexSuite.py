@@ -7,7 +7,7 @@ import os
 
 class CortexBenchmark(Benchmark):
 
-    FLAGS = {
+    FLAGS_STREAM = {
         # Advanced stream experiments.
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
@@ -19,16 +19,18 @@ class CortexBenchmark(Benchmark):
         'pca': ['O2'],
         'motion-estimation': ['O2'],
         'liblinear': ['O2'],
+    }
 
+    FLAGS_FRACTAL = {
         # Fractal experiments.
-        # 'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'sphinx': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'srr': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'lda': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'svd3': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'pca': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'motion-estimation': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'liblinear': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'sphinx': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'srr': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'lda': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'svd3': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'pca': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'motion-estimation': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'liblinear': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
     }
 
     DEFINES = {
@@ -220,7 +222,10 @@ class CortexBenchmark(Benchmark):
             Util.create_symbolic_link(source, dest)
 
         self.cwd = os.getcwd()
-        self.flags = CortexBenchmark.FLAGS[self.benchmark_name]
+        if C.EXPERIMENTS == 'stream':
+            self.flags = CortexBenchmark.FLAGS_STREAM[self.benchmark_name]
+        elif C.EXPERIMENTS == 'fractal':
+            self.flags = CortexBenchmark.FLAGS_FRACTAL[self.benchmark_name]
         self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_size]
         self.includes = CortexBenchmark.INCLUDES[self.benchmark_name]
         self.trace_functions = '.'.join(
@@ -362,7 +367,7 @@ class CortexSuite:
             'large',
         ]
         for input_size in input_sizes:
-            for benchmark_name in CortexBenchmark.FLAGS:
+            for benchmark_name in CortexBenchmark.FLAGS_STREAM:
                 benchmark = CortexBenchmark(
                     benchmark_args, folder, benchmark_name, input_size)
                 self.benchmarks.append(benchmark)
