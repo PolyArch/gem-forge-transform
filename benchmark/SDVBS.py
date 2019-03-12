@@ -7,20 +7,20 @@ import os
 
 class SDVBSBenchmark(Benchmark):
     # Fractal experiments.
-    # FLAGS = {
-    #     'disparity': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'localization': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'mser': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'sift': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'stitch': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'svm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'texture_synthesis': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    #     'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-    # }
+    FLAGS_FRACTAL = {
+        'disparity': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'localization': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'mser': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'sift': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'stitch': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'svm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'texture_synthesis': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+    }
 
     # Stream experiments.
-    FLAGS = {
+    FLAGS_STREAM = {
         'disparity': ['O2'],
         'localization': ['O2'],
         'mser': ['O2'],
@@ -132,7 +132,10 @@ class SDVBSBenchmark(Benchmark):
         Util.mkdir_chain(self.source_bc_dir)
         Util.mkdir_chain(self.common_src_bc_dir)
 
-        self.flags = SDVBSBenchmark.FLAGS[self.benchmark_name]
+        if C.EXPERIMENTS == 'stream':
+            self.flags = SDVBSBenchmark.FLAGS_STREAM[self.benchmark_name]
+        elif C.EXPERIMENTS == 'fractal':
+            self.flags = SDVBSBenchmark.FLAGS_FRACTAL[self.benchmark_name]
         self.defines = SDVBSBenchmark.DEFINES[self.benchmark_name]
         # Also define the input name.
         self.defines[self.input_name] = None
@@ -281,7 +284,7 @@ class SDVBSSuite:
             'fullhd',
         ]
         for input_name in input_names:
-            for benchmark_name in SDVBSBenchmark.FLAGS:
+            for benchmark_name in SDVBSBenchmark.FLAGS_FRACTAL:
                 benchmark = SDVBSBenchmark(
                     benchmark_args,
                     self.folder, benchmark_name, input_name)
