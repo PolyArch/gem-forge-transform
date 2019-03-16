@@ -9,6 +9,7 @@ LLVM_TDG_DRIVER_DIR = os.path.join(LLVM_TDG_DIR, 'benchmark')
 
 # Where to store the llvm_bc and traces.
 EXPERIMENTS = 'stream'
+# EXPERIMENTS = 'fractal'
 LLVM_TDG_RESULT_DIR = os.path.join(os.getenv('LLVM_TDG_RESULT_PATH'), EXPERIMENTS)
 
 LLVM_TDG_REPLAY_C = os.path.join(LLVM_TDG_DIR, 'benchmark', 'replay.c')
