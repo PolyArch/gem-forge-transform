@@ -313,6 +313,10 @@ class Driver:
             return simulation_result
         assert(False)
 
+    def clean(self):
+        for benchmark in self.benchmarks:
+            benchmark.clean(options.clean)
+
 
 def main(options):
 
@@ -323,6 +327,8 @@ def main(options):
             ADFAExperiments.analyze(driver)
         if options.analyze == 'stream':
             StreamExperiments.analyze(driver)
+    if options.clean != '':
+        driver.clean()
 
     benchmark_stream_statistics = dict()
 
@@ -475,6 +481,8 @@ if __name__ == '__main__':
                       dest='simulate', default=False)
     parser.add_option('--analyze', type='string', action='store',
                       dest='analyze', default='')
+    parser.add_option('--clean', type='string', action='store',
+                      dest='clean', default='')
 
     parser.add_option('--trans-configs', type='string', action='callback', default='',
                       dest='transforms', callback=parse_transform_configurations)

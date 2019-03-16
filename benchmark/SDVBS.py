@@ -24,7 +24,7 @@ class SDVBSBenchmark(Benchmark):
         'disparity': ['O2'],
         'localization': ['O2'],
         'mser': ['O2'],
-        'multi_ncut': ['O2'],
+        'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
         'sift': ['O2'],
         'stitch': ['O2'],
         'svm': ['O2'],
@@ -209,6 +209,7 @@ class SDVBSBenchmark(Benchmark):
         ]
         for flag in flags:
             compile_cmd.append('-{flag}'.format(flag=flag))
+        # Hack for fSortIndexes.
         for define in defines:
             if defines[define] is not None:
                 compile_cmd.append(

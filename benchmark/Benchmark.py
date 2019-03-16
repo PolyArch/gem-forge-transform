@@ -516,7 +516,7 @@ class Benchmark(object):
         gem5_args = [
             C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
             '--outdir={outdir}'.format(outdir=gem5_out_dir),
-            # "--debug-flags=AbstractDataFlowAccelerator,LLVMTraceCPU",
+            # "--debug-flags=LLVMTraceCPU",
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=replay_bin),
             '--llvm-standalone={standlone}'.format(standlone=self.standalone),
@@ -561,3 +561,18 @@ class Benchmark(object):
         )
         print('# Replaying the datagraph...')
         Util.call_helper(gem5_args)
+
+    """
+    Clean the results.
+    """
+
+    def clean(self, target):
+        for trace in self.get_traces():
+            if target == 'transform':
+                for transform_config in self.transform_manager.get_all_configs():
+                    tdg = self.get_tdg(transform_config, trace)
+                    print('Clean {tdg}.'.format(tdg=tdg))
+                    Util.call_helper(['rm', '-f', tdg])
+                    Util.call_helper(['rm', '-f', tdg + '.cache'])
+                    Util.call_helper(['rm', '-f', tdg + '.stats.txt'])
+                    Util.call_helper(['rm', '-rf', tdg + '.extra'])
