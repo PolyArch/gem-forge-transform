@@ -5,16 +5,28 @@
 #include "google/protobuf/util/json_util.h"
 
 Stream::Stream(TypeT _Type, const std::string &_Folder,
+               const std::string &_RelativeFolder,
                const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
                const llvm::Loop *_InnerMostLoop, size_t _LoopLevel,
                llvm::DataLayout *DataLayout)
-    : Type(_Type), Folder(_Folder), Inst(_Inst), Loop(_Loop),
-      InnerMostLoop(_InnerMostLoop), LoopLevel(_LoopLevel),
-      HasMissingBaseStream(false), Qualified(false), Chosen(false),
-      CoalesceGroup(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
-      Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
+    : Type(_Type),
+      Folder(_Folder),
+      RelativeFolder(_RelativeFolder),
+      Inst(_Inst),
+      Loop(_Loop),
+      InnerMostLoop(_InnerMostLoop),
+      LoopLevel(_LoopLevel),
+      HasMissingBaseStream(false),
+      Qualified(false),
+      Chosen(false),
+      CoalesceGroup(-1),
+      TotalIters(0),
+      TotalAccesses(0),
+      TotalStreams(0),
+      Iters(1),
+      LastAccessIters(0),
+      StartId(DynamicInstruction::InvalidId),
       Pattern() {
-
   this->ElementSize = this->getElementSize(DataLayout);
 
   auto PatternFolder = this->Folder + "/pattern";
@@ -29,12 +41,9 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
   ErrCode = llvm::sys::fs::create_directory(InfoFolder);
   assert(!ErrCode && "Failed to create info folder.");
 
-  this->PatternFullPath = PatternFolder + "/" + this->formatName() + ".pattern";
-  this->PatternTextFullPath = this->PatternFullPath + ".txt";
-  this->InfoFullPath = InfoFolder + "/" + this->formatName() + ".info";
-  this->InfoTextFullPath = this->InfoFullPath + ".txt";
-  this->HistoryFullPath = HistoryFolder + "/" + this->formatName() + ".history";
-  this->HistoryTextFullPath = this->HistoryFullPath + ".txt";
+  this->PatternFileName = "pattern/" + this->formatName() + ".pattern";
+  this->InfoFileName = "info/" + this->formatName() + ".info";
+  this->HistoryFileName = "history/" + this->formatName() + ".history";
 }
 
 void Stream::addBaseStream(Stream *Other) {
@@ -145,7 +154,8 @@ void Stream::endStream() {
 void Stream::finalizePattern() {
   this->Pattern.finalizePattern();
 
-  std::ofstream PatternTextFStream(this->PatternTextFullPath);
+  std::ofstream PatternTextFStream(
+      this->getTextPath(this->getPatternFullPath()));
   assert(PatternTextFStream.is_open() && "Failed to open output stream file.");
 
   for (auto &ProtobufPattern : this->ProtobufPatterns) {
@@ -162,12 +172,12 @@ void Stream::finalizePattern() {
 
 void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
   // Also serialize with protobuf.
-  Gem5ProtobufSerializer InfoSerializer(this->InfoFullPath);
+  Gem5ProtobufSerializer InfoSerializer(this->getInfoFullPath());
   LLVM::TDG::StreamInfo ProtobufInfo;
   this->fillProtobufStreamInfo(DataLayout, &ProtobufInfo);
   InfoSerializer.serialize(ProtobufInfo);
 
-  std::ofstream InfoTextFStream(this->InfoTextFullPath);
+  std::ofstream InfoTextFStream(this->getTextPath(this->getInfoFullPath()));
   assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
   std::string InfoJsonString;
   google::protobuf::util::MessageToJsonString(ProtobufInfo, &InfoJsonString);
@@ -183,18 +193,18 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_loop_level(this->InnerMostLoop->getLoopDepth());
   ProtobufInfo->set_config_loop_level(this->Loop->getLoopDepth());
   ProtobufInfo->set_element_size(this->ElementSize);
-  ProtobufInfo->set_pattern_path(this->PatternFullPath);
-  ProtobufInfo->set_history_path(this->HistoryFullPath);
+  ProtobufInfo->set_pattern_path(this->getPatternRelativePath());
+  ProtobufInfo->set_history_path(this->getHistoryRelativePath());
   ProtobufInfo->set_coalesce_group(this->CoalesceGroup);
   ProtobufInfo->set_chosen(this->Chosen);
 
-#define ADD_STREAM(SET, FIELD)                                                 \
-  {                                                                            \
-    for (const auto &S : SET) {                                                \
-      auto Entry = ProtobufInfo->add_##FIELD();                                \
-      Entry->set_name(S->formatName());                                        \
-      Entry->set_id(S->getStreamId());                                         \
-    }                                                                          \
+#define ADD_STREAM(SET, FIELD)                  \
+  {                                             \
+    for (const auto &S : SET) {                 \
+      auto Entry = ProtobufInfo->add_##FIELD(); \
+      Entry->set_name(S->formatName());         \
+      Entry->set_id(S->getStreamId());          \
+    }                                           \
   }
   ADD_STREAM(this->BaseStreams, base_streams);
   ADD_STREAM(this->BackMemBaseStreams, back_base_streams);
