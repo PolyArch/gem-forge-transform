@@ -14,12 +14,16 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            llvm::LoopInfo *_LI,
                                            llvm::DataLayout *_DataLayout,
                                            const std::string &_RootPath)
-    : RegionIdx(_RegionIdx), TopLoop(_TopLoop), LI(_LI),
-      DataLayout(_DataLayout), RootPath(_RootPath) {
+    : RegionIdx(_RegionIdx),
+      TopLoop(_TopLoop),
+      LI(_LI),
+      DataLayout(_DataLayout),
+      RootPath(_RootPath) {
   // Initialize the folder for this region.
   std::stringstream ss;
   ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
-  this->AnalyzePath = this->RootPath + "/" + ss.str();
+  this->AnalyzeRelativePath = ss.str();
+  this->AnalyzePath = this->RootPath + "/" + this->AnalyzeRelativePath;
 
   auto ErrCode = llvm::sys::fs::create_directory(this->AnalyzePath);
   assert(!ErrCode && "Failed to create AnalyzePath.");
@@ -40,7 +44,6 @@ StreamRegionAnalyzer::~StreamRegionAnalyzer() {
 }
 
 void StreamRegionAnalyzer::initializeStreams() {
-
   /**
    * TODO: Consider memorizing this.
    */
@@ -108,16 +111,16 @@ void StreamRegionAnalyzer::initializeStreamForAllLoops(
         ConfiguredLoop->getLoopDepth() - this->TopLoop->getLoopDepth();
     Stream *NewStream = nullptr;
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
-      NewStream =
-          new InductionVarStream(this->AnalyzePath, PHIInst, ConfiguredLoop,
-                                 InnerMostLoop, LoopLevel, this->DataLayout);
+      NewStream = new InductionVarStream(
+          this->AnalyzePath, this->AnalyzeRelativePath, PHIInst, ConfiguredLoop,
+          InnerMostLoop, LoopLevel, this->DataLayout);
     } else {
       auto IsIVStream = [this](const llvm::PHINode *PHINode) -> bool {
         return this->InstStreamMap.count(PHINode) != 0;
       };
-      NewStream =
-          new MemStream(this->AnalyzePath, StreamInst, ConfiguredLoop,
-                        InnerMostLoop, LoopLevel, this->DataLayout, IsIVStream);
+      NewStream = new MemStream(this->AnalyzePath, this->AnalyzeRelativePath,
+                                StreamInst, ConfiguredLoop, InnerMostLoop,
+                                LoopLevel, this->DataLayout, IsIVStream);
     }
     Streams.emplace_back(NewStream);
 
@@ -256,7 +259,6 @@ void StreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
 
 void StreamRegionAnalyzer::endRegion(
     StreamPassChooseStrategyE StreamPassChooseStrategy) {
-
   // Finalize all patterns.
   // This will dump the pattern to file.
   for (auto &InstStream : this->InstStreamMap) {
@@ -305,7 +307,6 @@ Stream *StreamRegionAnalyzer::getStreamByInstAndConfiguredLoop(
 }
 
 void StreamRegionAnalyzer::markQualifiedStreams() {
-
   std::list<Stream *> Queue;
   for (auto &InstStream : this->InstStreamMap) {
     for (auto &S : InstStream.second) {
@@ -326,8 +327,9 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
       continue;
     }
     if (!S->isQualifySeed()) {
-      assert(false && "Stream should be a qualify seed to be inserted into the "
-                      "qualifying queue.");
+      assert(false &&
+             "Stream should be a qualify seed to be inserted into the "
+             "qualifying queue.");
       continue;
     }
     S->markQualified();
@@ -341,7 +343,6 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
 }
 
 void StreamRegionAnalyzer::disqualifyStreams() {
-
   /**
    * For IVStreams with base loads, we assume they are qualified from the
    * beginning point. Now it's time to check if their base memory streams are
@@ -481,7 +482,6 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
 }
 
 void StreamRegionAnalyzer::buildAddressModule() {
-
   auto AddressModulePath = this->AnalyzePath + "/addr.ll";
 
   auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
@@ -520,7 +520,6 @@ void StreamRegionAnalyzer::buildAddressModule() {
 }
 
 void StreamRegionAnalyzer::buildTransformPlan() {
-
   // First initialize the all the plans to nothing.
   for (auto BBIter = this->TopLoop->block_begin(),
             BBEnd = this->TopLoop->block_end();
@@ -554,7 +553,6 @@ void StreamRegionAnalyzer::buildTransformPlan() {
   std::unordered_set<const llvm::Use *> DeletedUses;
 
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
-
     auto &SelfInst = InstChosenStream.first;
     auto &S = InstChosenStream.second;
 
@@ -670,11 +668,11 @@ void StreamRegionAnalyzer::buildTransformPlan() {
         // Actually mark this one as delete if we have no other plan for it.
         auto &Plan = this->InstPlanMap.at(NewlyDeletingOperandInst);
         switch (Plan.Plan) {
-        case StreamTransformPlan::PlanT::NOTHING:
-        case StreamTransformPlan::PlanT::DELETE: {
-          Plan.planToDelete();
-          break;
-        }
+          case StreamTransformPlan::PlanT::NOTHING:
+          case StreamTransformPlan::PlanT::DELETE: {
+            Plan.planToDelete();
+            break;
+          }
         }
         // Add all the uses to NewlyDeletingQueue.
         for (unsigned OperandIdx = 0,
@@ -784,8 +782,8 @@ StreamRegionAnalyzer::getSortedChosenStreamsByConfiguredLoop(
   return SortedStreams;
 }
 
-Stream *
-StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
+Stream *StreamRegionAnalyzer::getChosenStreamByInst(
+    const llvm::Instruction *Inst) {
   if (!this->TopLoop->contains(Inst)) {
     return nullptr;
   }
@@ -797,8 +795,8 @@ StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
   }
 }
 
-const StreamTransformPlan &
-StreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
+const StreamTransformPlan &StreamRegionAnalyzer::getTransformPlanByInst(
+    const llvm::Instruction *Inst) {
   assert(this->TopLoop->contains(Inst) && "Inst should be within the TopLoop.");
   return this->InstPlanMap.at(Inst);
 }
@@ -808,7 +806,6 @@ FunctionalStreamEngine *StreamRegionAnalyzer::getFuncSE() {
 }
 
 std::string StreamRegionAnalyzer::classifyStream(const MemStream &S) const {
-
   if (S.getNumBaseLoads() > 0) {
     // We have dependent base loads here.
     return "INDIRECT";
@@ -856,7 +853,6 @@ std::string StreamRegionAnalyzer::classifyStream(const MemStream &S) const {
 }
 
 void StreamRegionAnalyzer::dumpStats() const {
-
   std::string StatFilePath = this->AnalyzePath + "/stats.txt";
 
   std::ofstream O(StatFilePath);

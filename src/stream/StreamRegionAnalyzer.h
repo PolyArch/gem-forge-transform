@@ -13,7 +13,7 @@
 enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
 
 class StreamRegionAnalyzer {
-public:
+ public:
   StreamRegionAnalyzer(uint64_t _RegionIdx, llvm::Loop *_TopLoop,
                        llvm::LoopInfo *_LI, llvm::DataLayout *_DataLayout,
                        const std::string &_RootPath);
@@ -44,22 +44,23 @@ public:
     return this->InstPlanMap;
   }
 
-  std::list<Stream *>
-  getSortedChosenStreamsByConfiguredLoop(const llvm::Loop *ConfiguredLoop);
+  std::list<Stream *> getSortedChosenStreamsByConfiguredLoop(
+      const llvm::Loop *ConfiguredLoop);
 
   Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
 
-  const StreamTransformPlan &
-  getTransformPlanByInst(const llvm::Instruction *Inst);
+  const StreamTransformPlan &getTransformPlanByInst(
+      const llvm::Instruction *Inst);
 
   FunctionalStreamEngine *getFuncSE();
 
-private:
+ private:
   uint64_t RegionIdx;
   llvm::Loop *TopLoop;
   llvm::LoopInfo *LI;
   llvm::DataLayout *DataLayout;
   std::string RootPath;
+  std::string AnalyzeRelativePath;
   std::string AnalyzePath;
 
   /**
@@ -98,9 +99,8 @@ private:
   void initializeStreams();
   void initializeStreamForAllLoops(const llvm::Instruction *StreamInst);
 
-  Stream *
-  getStreamByInstAndConfiguredLoop(const llvm::Instruction *Inst,
-                                   const llvm::Loop *ConfiguredLoop) const;
+  Stream *getStreamByInstAndConfiguredLoop(
+      const llvm::Instruction *Inst, const llvm::Loop *ConfiguredLoop) const;
   void buildStreamDependenceGraph();
 
   void markQualifiedStreams();

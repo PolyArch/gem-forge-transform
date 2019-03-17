@@ -5,13 +5,14 @@
 #define DEBUG_TYPE "InductionVarStream"
 
 InductionVarStream::InductionVarStream(const std::string &_Folder,
+                                       const std::string &_RelativeFolder,
                                        const llvm::PHINode *_PHIInst,
                                        const llvm::Loop *_Loop,
                                        const llvm::Loop *_InnerMostLoop,
                                        size_t _Level,
                                        llvm::DataLayout *DataLayout)
-    : Stream(TypeT::IV, _Folder, _PHIInst, _Loop, _InnerMostLoop, _Level,
-             DataLayout),
+    : Stream(TypeT::IV, _Folder, _RelativeFolder, _PHIInst, _Loop,
+             _InnerMostLoop, _Level, DataLayout),
       PHIInst(_PHIInst) {
   this->searchComputeInsts(this->PHIInst, this->Loop);
   this->StepInsts =
@@ -26,10 +27,10 @@ bool InductionVarStream::isCandidateStatic() const {
   }
   for (const auto &ComputeInst : this->ComputeInsts) {
     switch (ComputeInst->getOpcode()) {
-    case llvm::Instruction::Call:
-    case llvm::Instruction::Invoke: {
-      return false;
-    }
+      case llvm::Instruction::Call:
+      case llvm::Instruction::Invoke: {
+        return false;
+      }
     }
   }
   // Do not enable IVMemStream for now.
@@ -60,7 +61,6 @@ bool InductionVarStream::isCandidateStatic() const {
 
 void InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
                                             const llvm::Loop *Loop) {
-
   std::list<llvm::Instruction *> Queue;
 
   DEBUG(llvm::errs() << "Search compute instructions for "
@@ -129,7 +129,6 @@ void InductionVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
 std::unordered_set<const llvm::Instruction *>
 InductionVarStream::searchStepInsts(const llvm::PHINode *PHINode,
                                     const llvm::Loop *Loop) {
-
   std::list<llvm::Instruction *> Queue;
 
   DEBUG(llvm::errs() << "Search step instructions for "

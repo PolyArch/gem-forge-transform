@@ -6,13 +6,14 @@
 #include "stream/ae/AddressDataGraph.h"
 
 class MemStream : public Stream {
-public:
-  MemStream(const std::string &_Folder, const llvm::Instruction *_Inst,
-            const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
-            size_t _LoopLevel, llvm::DataLayout *DataLayout,
+ public:
+  MemStream(const std::string &_Folder, const std::string &_RelativeFolder,
+            const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
+            const llvm::Loop *_InnerMostLoop, size_t _LoopLevel,
+            llvm::DataLayout *DataLayout,
             std::function<bool(const llvm::PHINode *)> IsInductionVar)
-      : Stream(TypeT::MEM, _Folder, _Inst, _Loop, _InnerMostLoop, _LoopLevel,
-               DataLayout),
+      : Stream(TypeT::MEM, _Folder, _RelativeFolder, _Inst, _Loop,
+               _InnerMostLoop, _LoopLevel, DataLayout),
         AddrDG(_Loop, Utils::getMemAddrValue(_Inst), IsInductionVar) {
     assert(Utils::isMemAccessInst(this->Inst) &&
            "Should be load/store instruction to build a stream.");
@@ -26,8 +27,8 @@ public:
   }
 
   void buildBasicDependenceGraph(GetStreamFuncT GetStream) override;
-  void
-  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) override;
+  void buildChosenDependenceGraph(
+      GetChosenStreamFuncT GetChosenStream) override;
 
   void addAccess(uint64_t Addr,
                  DynamicInstruction::DynamicId DynamicId) override {
@@ -53,12 +54,12 @@ public:
   bool isIndirect() const { return !this->BaseLoads.empty(); }
   size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
   size_t getNumAddrInsts() const { return this->AddrInsts.size(); }
-  const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const override {
+  const std::unordered_set<const llvm::Instruction *> &getComputeInsts()
+      const override {
     return this->AddrInsts;
   }
-  const std::unordered_set<const llvm::LoadInst *> &
-  getBaseLoads() const override {
+  const std::unordered_set<const llvm::LoadInst *> &getBaseLoads()
+      const override {
     return this->BaseLoads;
   }
   const std::unordered_set<llvm::PHINode *> &getBaseInductionVars() const {
@@ -88,10 +89,10 @@ public:
 
   void generateComputeFunction(std::unique_ptr<llvm::Module> &Module) const;
 
-protected:
+ protected:
   void formatAdditionalInfoText(std::ostream &OStream) const override;
 
-private:
+ private:
   MemoryFootprint Footprint;
   std::unordered_set<const llvm::LoadInst *> BaseLoads;
   std::unordered_set<llvm::PHINode *> BaseInductionVars;

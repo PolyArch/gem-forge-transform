@@ -35,16 +35,16 @@
  */
 
 class Stream {
-public:
+ public:
   enum TypeT {
     IV,
     MEM,
   };
   const TypeT Type;
   Stream(TypeT _Type, const std::string &_Folder,
-         const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
-         const llvm::Loop *_InnerMostLoop, size_t _LoopLevel,
-         llvm::DataLayout *DataLayout);
+         const std::string &_RelativeFolder, const llvm::Instruction *_Inst,
+         const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
+         size_t _LoopLevel, llvm::DataLayout *DataLayout);
 
   using StreamSet = std::unordered_set<Stream *>;
 
@@ -77,12 +77,25 @@ public:
   const llvm::Loop *getInnerMostLoop() const { return this->InnerMostLoop; }
   const llvm::Instruction *getInst() const { return this->Inst; }
   uint64_t getStreamId() const { return reinterpret_cast<uint64_t>(this); }
-  const std::string &getPatternPath() const { return this->PatternFullPath; }
-  const std::string &getInfoPath() const { return this->InfoFullPath; }
-  const std::string &getHistoryPath() const { return this->HistoryFullPath; }
-  const std::string &getHistoryTextPath() const {
-    return this->HistoryTextFullPath;
+  std::string getPatternFullPath() const {
+    return this->Folder + "/" + this->PatternFileName;
   }
+  std::string getInfoFullPath() const {
+    return this->Folder + "/" + this->InfoFileName;
+  }
+  std::string getHistoryFullPath() const {
+    return this->Folder + "/" + this->HistoryFileName;
+  }
+  std::string getPatternRelativePath() const {
+    return this->RelativeFolder + "/" + this->PatternFileName;
+  }
+  std::string getInfoRelativePath() const {
+    return this->RelativeFolder + "/" + this->InfoFileName;
+  }
+  std::string getHistoryRelativePath() const {
+    return this->RelativeFolder + "/" + this->HistoryFileName;
+  }
+  std::string getTextPath(const std::string &Raw) const { return Raw + ".txt"; }
 
   const std::list<LLVM::TDG::StreamPattern> &getProtobufPatterns() const {
     return this->ProtobufPatterns;
@@ -127,11 +140,11 @@ public:
   virtual bool isAliased() const { return false; }
   std::string formatType() const {
     switch (this->Type) {
-    case IV:
-      return "IV";
-    case MEM:
-      return "MEM";
-    default: { llvm_unreachable("Illegal stream type to be formatted."); }
+      case IV:
+        return "IV";
+      case MEM:
+        return "MEM";
+      default: { llvm_unreachable("Illegal stream type to be formatted."); }
     }
   }
   std::string formatName() const {
@@ -144,27 +157,27 @@ public:
            Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
   }
 
-  virtual const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const = 0;
+  virtual const std::unordered_set<const llvm::Instruction *> &getComputeInsts()
+      const = 0;
 
-  virtual const std::unordered_set<const llvm::Instruction *> &
-  getStepInsts() const {
+  virtual const std::unordered_set<const llvm::Instruction *> &getStepInsts()
+      const {
     assert(false && "getStepInst only implemented for IVStream.");
   }
 
-  virtual const std::unordered_set<const llvm::LoadInst *> &
-  getBaseLoads() const = 0;
+  virtual const std::unordered_set<const llvm::LoadInst *> &getBaseLoads()
+      const = 0;
 
   static bool isStepInst(const llvm::Instruction *Inst) {
     auto Opcode = Inst->getOpcode();
     switch (Opcode) {
-    case llvm::Instruction::Add: {
-      return true;
-    }
-    case llvm::Instruction::GetElementPtr: {
-      return true;
-    }
-    default: { return false; }
+      case llvm::Instruction::Add: {
+        return true;
+      }
+      case llvm::Instruction::GetElementPtr: {
+        return true;
+      }
+      default: { return false; }
     }
   }
 
@@ -208,20 +221,18 @@ public:
 
   using GetChosenStreamFuncT =
       std::function<Stream *(const llvm::Instruction *)>;
-  virtual void
-  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) = 0;
+  virtual void buildChosenDependenceGraph(
+      GetChosenStreamFuncT GetChosenStream) = 0;
 
-protected:
+ protected:
   /**
    * Stores the information of the stream.
    */
   std::string Folder;
-  std::string PatternFullPath;
-  std::string InfoFullPath;
-  std::string HistoryFullPath;
-  std::string PatternTextFullPath;
-  std::string InfoTextFullPath;
-  std::string HistoryTextFullPath;
+  std::string RelativeFolder;
+  std::string PatternFileName;
+  std::string InfoFileName;
+  std::string HistoryFileName;
   std::list<LLVM::TDG::StreamPattern> ProtobufPatterns;
 
   /**
