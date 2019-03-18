@@ -86,16 +86,23 @@ message TDGInstruction {
   }
 
   message StreamConfigExtra {
-    string stream_name = 1;
-    uint64 stream_id = 2;
-    string info_path = 3;
+    message SingleConfig {
+      string stream_name = 1;
+      uint64 stream_id = 2;
+      string info_path = 3;
+    }
+    string loop = 1;
+    repeated SingleConfig configs = 2;
   }
 
   message StreamStepExtra { uint64 stream_id = 1; }
 
   message StreamStoreExtra { uint64 stream_id = 1; }
 
-  message StreamEndExtra { uint64 stream_id = 1; }
+  message StreamEndExtra { 
+    string loop = 1;
+    repeated uint64 stream_ids = 2; 
+  }
 
   message SpecPreTriggerExtra { string slice_stream = 1; uint64 critical_pc = 2; }
 }

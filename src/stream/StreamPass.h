@@ -10,7 +10,7 @@
 extern llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy;
 
 class StreamStepInst : public DynamicInstruction {
- public:
+public:
   StreamStepInst(Stream *_S, DynamicId _Id = InvalidId)
       : DynamicInstruction(), S(_S) {
     /**
@@ -22,7 +22,7 @@ class StreamStepInst : public DynamicInstruction {
   }
   std::string getOpName() const override { return "stream-step"; }
 
- protected:
+protected:
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
                                 DataGraph *DG) const override {
     auto StreamStepExtra = ProtobufEntry->mutable_stream_step();
@@ -31,12 +31,12 @@ class StreamStepInst : public DynamicInstruction {
     StreamStepExtra->set_stream_id(this->S->getStreamId());
   }
 
- private:
+private:
   Stream *S;
 };
 
 class StreamStoreInst : public DynamicInstruction {
- public:
+public:
   StreamStoreInst(Stream *_S, DynamicId _Id = InvalidId)
       : DynamicInstruction(), S(_S) {
     /**
@@ -48,7 +48,7 @@ class StreamStoreInst : public DynamicInstruction {
   }
   std::string getOpName() const override { return "stream-store"; }
 
- protected:
+protected:
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
                                 DataGraph *DG) const override {
     auto StreamStoreExtra = ProtobufEntry->mutable_stream_store();
@@ -57,62 +57,69 @@ class StreamStoreInst : public DynamicInstruction {
     StreamStoreExtra->set_stream_id(this->S->getStreamId());
   }
 
- private:
+private:
   Stream *S;
 };
 
 class StreamConfigInst : public DynamicInstruction {
- public:
-  StreamConfigInst(Stream *_S) : DynamicInstruction(), S(_S) {}
+public:
+  StreamConfigInst(const llvm::Loop *_Loop, std::list<Stream *> _Streams)
+      : DynamicInstruction(), Loop(_Loop), Streams(std::move(_Streams)) {}
   std::string getOpName() const override { return "stream-config"; }
 
- protected:
+protected:
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
                                 DataGraph *DG) const override {
     auto ConfigExtra = ProtobufEntry->mutable_stream_config();
     assert(ProtobufEntry->has_stream_config() &&
            "The protobuf entry should have stream config extra struct.");
-    ConfigExtra->set_stream_name(this->S->formatName());
-    ConfigExtra->set_stream_id(this->S->getStreamId());
-    ConfigExtra->set_info_path(this->S->getInfoRelativePath());
+    ConfigExtra->set_loop(LoopUtils::getLoopId(this->Loop));
+    for (auto S : this->Streams) {
+      auto Config = ConfigExtra->add_configs();
+      Config->set_stream_name(S->formatName());
+      Config->set_stream_id(S->getStreamId());
+      Config->set_info_path(S->getInfoRelativePath());
+    }
   }
 
- private:
-  Stream *S;
+private:
+  const llvm::Loop *Loop;
+  std::list<Stream *> Streams;
 };
 
 class StreamEndInst : public DynamicInstruction {
- public:
-  StreamEndInst(Stream *_S) : DynamicInstruction(), S(_S) {}
+public:
+  StreamEndInst(const llvm::Loop *_Loop, std::list<Stream *> _Streams)
+      : DynamicInstruction(), Loop(_Loop), Streams(std::move(_Streams)) {}
   std::string getOpName() const override { return "stream-end"; }
 
- protected:
+protected:
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
                                 DataGraph *DG) const override {
     auto EndExtra = ProtobufEntry->mutable_stream_end();
     assert(ProtobufEntry->has_stream_end() &&
            "The protobuf entry should have stream end extra struct.");
-    EndExtra->set_stream_id(this->S->getStreamId());
+    EndExtra->set_loop(LoopUtils::getLoopId(this->Loop));
+    for (auto S : this->Streams) {
+      EndExtra->add_stream_ids(S->getStreamId());
+    }
   }
 
- private:
-  Stream *S;
+private:
+  const llvm::Loop *Loop;
+  std::list<Stream *> Streams;
 };
 
 class StreamPass : public ReplayTrace {
- public:
+public:
   static char ID;
   StreamPass(char _ID = ID)
-      : ReplayTrace(_ID),
-        DynInstCount(0),
-        DynMemInstCount(0),
-        StepInstCount(0),
-        ConfigInstCount(0),
-        DeletedInstCount(0) {}
+      : ReplayTrace(_ID), DynInstCount(0), DynMemInstCount(0), StepInstCount(0),
+        ConfigInstCount(0), DeletedInstCount(0) {}
 
   StreamRegionAnalyzer *getAnalyzerByLoop(const llvm::Loop *Loop) const;
 
- protected:
+protected:
   bool initialize(llvm::Module &Module) override;
   bool finalize(llvm::Module &Module) override;
   void dumpStats(std::ostream &O) override;
@@ -148,13 +155,14 @@ class StreamPass : public ReplayTrace {
   using ActiveStreamInstMapT =
       std::unordered_map<const llvm::Instruction *,
                          DynamicInstruction::DynamicId>;
-  void pushLoopStackAndConfigureStreams(
-      LoopStackT &LoopStack, llvm::Loop *NewLoop,
-      DataGraph::DynamicInstIter NewInstIter,
-      ActiveStreamInstMapT &ActiveStreamInstMap);
-  void popLoopStackAndUnconfigureStreams(
-      LoopStackT &LoopStack, DataGraph::DynamicInstIter NewInstIter,
-      ActiveStreamInstMapT &ActiveStreamInstMap);
+  void
+  pushLoopStackAndConfigureStreams(LoopStackT &LoopStack, llvm::Loop *NewLoop,
+                                   DataGraph::DynamicInstIter NewInstIter,
+                                   ActiveStreamInstMapT &ActiveStreamInstMap);
+  void
+  popLoopStackAndUnconfigureStreams(LoopStackT &LoopStack,
+                                    DataGraph::DynamicInstIter NewInstIter,
+                                    ActiveStreamInstMapT &ActiveStreamInstMap);
   void DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst);
   virtual void transformStream();
 
