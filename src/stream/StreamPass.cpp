@@ -264,6 +264,20 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     InitDepIds.insert(RegDep.second);
   }
 
+  auto ConfigInst = new StreamConfigInst(NewLoop, SortedStreams);
+  auto ConfigInstId = ConfigInst->getId();
+  this->Trace->insertDynamicInst(NewInstIter, ConfigInst);
+
+  /**
+   * Insert the register dependence of the init deps.
+   */
+  auto &RegDeps = this->Trace->RegDeps.at(ConfigInstId);
+  for (auto DepId : InitDepIds) {
+    RegDeps.emplace_back(nullptr, DepId);
+  }
+
+  this->ConfigInstCount++;
+
   for (auto &S : SortedStreams) {
 
     // Inform the stream engine.
@@ -271,22 +285,6 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     this->CurrentStreamAnalyzer->getFuncSE()->configure(S, this->Trace);
 
     auto Inst = S->getInst();
-    auto ConfigInst = new StreamConfigInst(S);
-    auto ConfigInstId = ConfigInst->getId();
-
-    this->Trace->insertDynamicInst(NewInstIter, ConfigInst);
-
-    /**
-     * Insert the register dependence.
-     */
-    auto &RegDeps = this->Trace->RegDeps.at(ConfigInstId);
-    for (auto &BaseStream : S->getBaseStreams()) {
-      auto BaseStreamInst = BaseStream->getInst();
-      auto ActiveStreamInstMapIter = ActiveStreamInstMap.find(BaseStreamInst);
-      if (ActiveStreamInstMapIter != ActiveStreamInstMap.end()) {
-        RegDeps.emplace_back(nullptr, ActiveStreamInstMapIter->second);
-      }
-    }
 
     /**
      * Also be dependent on previous step/config inst of myself.
@@ -300,15 +298,6 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     } else {
       ActiveStreamInstMap.emplace(Inst, ConfigInstId);
     }
-
-    /**
-     * Also insert the init deps.
-     */
-    for (auto DepId : InitDepIds) {
-      RegDeps.emplace_back(nullptr, DepId);
-    }
-
-    this->ConfigInstCount++;
   }
 }
 
@@ -333,29 +322,25 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
       this->CurrentStreamAnalyzer->getSortedChosenStreamsByConfiguredLoop(
           EndedLoop);
 
+  auto EndInst = new StreamEndInst(EndedLoop, SortedStreams);
+  auto EndInstId = EndInst->getId();
+
+  this->Trace->insertDynamicInst(NewInstIter, EndInst);
+
+  auto &RegDeps = this->Trace->RegDeps.at(EndInstId);
+  /**
+   * Also insert the init deps.
+   */
+  for (auto DepId : InitDepIds) {
+    RegDeps.emplace_back(nullptr, DepId);
+  }
+
   // Unconfigure in reverse order.
   for (auto StreamIter = SortedStreams.rbegin(),
             StreamEnd = SortedStreams.rend();
        StreamIter != StreamEnd; ++StreamIter) {
     auto S = *StreamIter;
     auto Inst = S->getInst();
-
-    auto EndInst = new StreamEndInst(S);
-    auto EndInstId = EndInst->getId();
-
-    this->Trace->insertDynamicInst(NewInstIter, EndInst);
-
-    /**
-     * Insert the register dependence.
-     */
-    auto &RegDeps = this->Trace->RegDeps.at(EndInstId);
-    for (auto &BaseStream : S->getBaseStreams()) {
-      auto BaseStreamInst = BaseStream->getInst();
-      auto ActiveStreamInstMapIter = ActiveStreamInstMap.find(BaseStreamInst);
-      if (ActiveStreamInstMapIter != ActiveStreamInstMap.end()) {
-        RegDeps.emplace_back(nullptr, ActiveStreamInstMapIter->second);
-      }
-    }
 
     /**
      * Also be dependent on previous step/config inst of myself.
@@ -371,13 +356,6 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
       ActiveStreamInstMapIter->second = EndInstId;
     } else {
       ActiveStreamInstMap.emplace(Inst, EndInstId);
-    }
-
-    /**
-     * Also insert the init deps.
-     */
-    for (auto DepId : InitDepIds) {
-      RegDeps.emplace_back(nullptr, DepId);
     }
 
     /**

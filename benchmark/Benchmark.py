@@ -479,7 +479,8 @@ class Benchmark(object):
             opt_cmd.append('-output-extra-folder-path=' + output_extra_folder)
         else:
             assert(False)
-        debugs = ['StreamPass']
+        # debugs = ['StreamPass']
+        debugs = list()
         if debugs:
             opt_cmd.append(
                 '-debug-only={debugs}'.format(debugs=','.join(debugs)))
