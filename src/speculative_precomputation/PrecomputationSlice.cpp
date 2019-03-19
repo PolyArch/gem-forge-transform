@@ -5,8 +5,7 @@
 
 PrecomputationSlice::PrecomputationSlice(llvm::LoadInst *_CriticalInst,
                                          DataGraph *_DG)
-    : CriticalInst(_CriticalInst),
-      DG(_DG),
+    : CriticalInst(_CriticalInst), DG(_DG),
       HeaderDynamicId(DynamicInstruction::InvalidId) {
   this->initializeSlice();
 }
@@ -115,6 +114,8 @@ void PrecomputationSlice::generateSlice(TDGSerializer *Serializer,
   std::unordered_map<SliceInst *, DynamicInstruction::DynamicId>
       SliceInstDynamicIdMap;
 
+  assert(!this->SliceTemplate.empty() && "Empty template is illegal.");
+
   while (TemplateIter != TemplateEnd) {
     /**
      * Create the dynamic instruction.
@@ -149,8 +150,8 @@ void PrecomputationSlice::generateSlice(TDGSerializer *Serializer,
   }
 }
 
-LLVMDynamicInstruction *PrecomputationSlice::copyDynamicLLVMInst(
-    DynamicInstruction *DynamicInst) {
+LLVMDynamicInstruction *
+PrecomputationSlice::copyDynamicLLVMInst(DynamicInstruction *DynamicInst) {
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Only copy llvm dynamic instruction.");
 

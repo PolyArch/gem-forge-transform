@@ -5,6 +5,7 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/text_format.h>
+#include <google/protobuf/util/json_util.h>
 
 namespace {
 /**
@@ -13,7 +14,7 @@ namespace {
  * gem5's protoio.
  */
 static const uint32_t Gem5MagicNumber = 0x356d6567;
-}  // namespace
+} // namespace
 
 ProtobufSerializer::ProtobufSerializer(const std::string &FileName,
                                        std::ios_base::openmode OpenMode) {
@@ -56,7 +57,12 @@ void Gem5ProtobufSerializer::serialize(
 
 void TextProtobufSerializer::serialize(
     const google::protobuf::Message &Message) {
-  google::protobuf::TextFormat::Print(Message, this->OutZeroCopyStream);
+  std::string JsonString;
+  // For the json file, we do not log history.
+  google::protobuf::util::MessageToJsonString(Message, &JsonString);
+  // Write directly to the file stream.
+  this->OutFileStream << "=============== " << Message.ByteSize() << '\n';
+  this->OutFileStream << JsonString << '\n';
 }
 
 Gem5ProtobufReader::Gem5ProtobufReader(const std::string &FileName)

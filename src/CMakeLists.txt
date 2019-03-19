@@ -12,6 +12,7 @@ add_subdirectory(stream)
 protobuf_generate_cpp(TDG_PROTOBUF_SRCS TDG_PROTOBUF_HDRS
     TDGInstruction.proto
 )
+protobuf_generate_python(TDG_PROTOBUF_PY TDGInstruction.proto)
 
 # The llvm pass shared library.
 add_library(LLVMTDGPass SHARED
@@ -88,3 +89,9 @@ llvm_expand_dependencies(LLVM_DEP_LIBS ${LLVM_LIBS})
 target_include_directories(LLVMTDGPass PUBLIC ${LLVM_SRC_LIB_DIR})
 
 target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY} ${LLVM_DEP_LIBS})
+
+# Copy the generated python protobuf file to benchmark/Utils/.
+add_custom_target(PyTDGProtobufSrc ALL
+    cp ${TDG_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/benchmark/Utils/
+    DEPENDS ${TDG_PROTOBUF_PY})
+

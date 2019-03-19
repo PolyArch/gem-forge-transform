@@ -39,9 +39,16 @@ CriticalLoadManager::CriticalLoadManager(llvm::LoadInst *_CriticalLoad,
   this->SliceStream = this->AnalyzePath + "/slice.tdg";
   this->SliceStreamRelativePath =
       Utils::formatLLVMInst(this->CriticalLoad) + "/slice.tdg";
-  this->SliceSerializer = std::make_unique<TDGSerializer>(this->SliceStream);
+
+  bool DebugText = false;
+  this->SliceSerializer =
+      std::make_unique<TDGSerializer>(this->SliceStream, DebugText);
   // Serialize an empty static information to conform with format.
   LLVM::TDG::StaticInformation StaticInfo;
+  /**
+   * Debug try: Randomly fill something in static info.
+   */
+  StaticInfo.set_module("specpre");
   this->SliceSerializer->serializeStaticInfo(StaticInfo);
 }
 
@@ -77,14 +84,13 @@ void CriticalLoadManager::hit(DataGraph *DG) {
     } else {
       this->ComputedSlice->generateSlice(this->SliceSerializer.get(), false);
     }
+    // Insert the trigger instruction into the DG before the first inst of the
+    // slice.
+    auto TriggerInst = new SliceTriggerInstruction(
+        this->SliceStreamRelativePath, this->CriticalLoad);
+    auto SliceHead = DG->getDynamicInstFromId(SliceHeaderId);
+    DG->insertDynamicInst(SliceHead, TriggerInst);
   }
-
-  // Insert the trigger instruction into the DG before the first inst of the
-  // slice.
-  auto TriggerInst = new SliceTriggerInstruction(this->SliceStreamRelativePath,
-                                                 this->CriticalLoad);
-  auto SliceHead = DG->getDynamicInstFromId(SliceHeaderId);
-  DG->insertDynamicInst(SliceHead, TriggerInst);
 }
 
 void CriticalLoadManager::clear() {
