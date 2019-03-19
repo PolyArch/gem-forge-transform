@@ -14,7 +14,7 @@
 
 class TDGSerializer {
 public:
-  explicit TDGSerializer(const std::string &FileName, bool TextMode = false);
+  explicit TDGSerializer(const std::string &_FileName, bool TextMode = false);
   ~TDGSerializer();
 
   /**
@@ -25,6 +25,7 @@ public:
   void serialize(DynamicInstruction *DynamicInst, DataGraph *DG);
 
 private:
+  const std::string FileName;
   Gem5ProtobufSerializer Gem5Serializer;
   TextProtobufSerializer *TextSerializer;
 

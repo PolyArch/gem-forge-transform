@@ -7,11 +7,11 @@
 
 #define DEBUG_TYPE "TDGSerializer"
 
-TDGSerializer::TDGSerializer(const std::string &FileName, bool TextMode)
-    : Gem5Serializer(FileName), TextSerializer(nullptr),
+TDGSerializer::TDGSerializer(const std::string &_FileName, bool TextMode)
+    : FileName(_FileName), Gem5Serializer(_FileName), TextSerializer(nullptr),
       SerializedStaticInfomation(false), SerializedInsts(0) {
   if (TextMode) {
-    this->TextSerializer = new TextProtobufSerializer(FileName + ".txt");
+    this->TextSerializer = new TextProtobufSerializer(_FileName + ".txt");
   }
 }
 
@@ -26,7 +26,8 @@ TDGSerializer::~TDGSerializer() {
     this->TextSerializer = nullptr;
   }
 
-  llvm::errs() << "Serialized " << this->SerializedInsts << '\n';
+  llvm::errs() << "Serialized " << this->SerializedInsts << " to "
+               << this->FileName << '\n';
 }
 
 void TDGSerializer::serializeStaticInfo(
