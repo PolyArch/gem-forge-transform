@@ -1,0 +1,29 @@
+digraph GB{
+rankdir="LR"
+labelloc="t";
+label="main";
+bb0x0 [label=" <begin> BB 0" shape="record"]
+bb0x0  -> bb4195603x0 [arrowhead=open arrowsize=1.5 weight=1 penwidth=4 color=blue minlen=2];
+bb4195603x0 [label=" <begin> BB 1| <0>0: ()| <1>1: ()| <2>2: ()| <3>3: ()| <4>4:ld (1 )" shape="record"]
+bb4195603x0  -> bb4195613x0 [arrowhead=open arrowsize=1.5 weight=1 penwidth=4 color=blue minlen=2];
+bb4195613x0 [label=" <begin> BB 2| <0>0: ()| <1>1: ()" shape="record"]
+bb4195616x0:2 -> bb4195613x0:0 [weight=0.5]
+bb4195613x0  -> bb4195616x0 [arrowhead=open arrowsize=1.5 weight=1 penwidth=4 color=blue minlen=2];
+bb4195616x0 [label=" <begin> BB 3| <0>0: (2 )| <1>1: ()| <2>2: (2 1 7 )| <3>3: ()| <4>4: ()| <5>5:ld x4 (0 )| <6>6: ()| <7>7: (2 6 )| <8>8: (7 5 )| <9>9:ld x4 (0 )| <10>10: (9 8 )| <11>11:st x4 (0 10 )| <12>12: ()| <13>13: ()| <14>14:ctrl (7 13 12 )" shape="record"]
+bb4195613x0:0 -> bb4195616x0:0 [weight=0.5]
+bb4195613x0:0 -> bb4195616x0:2 [weight=0.5]
+bb4195660x0:6 -> bb4195616x0:2 [weight=0.5]
+bb4195603x0:4 -> bb4195616x0:8 [weight=0.5]
+bb4195616x0  -> bb4195616x0 [arrowhead=open arrowsize=1.5 weight=1 penwidth=4 color=blue minlen=2];
+bb4195616x0  -> bb4195660x0 [arrowhead=open arrowsize=1.5 weight=1 penwidth=4 color=blue minlen=2];
+bb4195660x0 [label=" <begin> BB 4| <0>0: ()| <1>1: (0 )| <2>2: ()| <3>3:ld x? (2 )| <4>4: (3 )| <5>5: ()| <6>6: (1 5 )| <7>7: ()| <8>8: ()| <9>9:ctrl (8 7 6 )" shape="record"]
+bb4195616x0:7 -> bb4195660x0:1 [weight=0.5]
+bb4195660x0  -> bb4195613x0 [arrowhead=open arrowsize=1.5 weight=1 penwidth=4 color=blue minlen=2];
+bb4195660x0  -> bb4195676x0 [arrowhead=open arrowsize=1.5 weight=1 penwidth=4 color=blue minlen=2];
+bb4195676x0 [label=" <begin> BB 5| <0>0: ()| <1>1: (0 )| <2>2:st ()| <3>3: ()| <4>4: ()| <5>5:st (4 )| <6>6: ()| <7>7:call (4 3 )" shape="record"]
+bb4195660x0:6 -> bb4195676x0:0 [weight=0.5]
+bb4195616x0:2 -> bb4195676x0:1 [weight=0.5]
+bb4195660x0:4 -> bb4195676x0:2 [weight=0.5]
+"loop_4195613"->"loop_4195616";"loop_4195616" [label="depth = 2;\n3, \ndep: 0 0 \n0: 3 (32380 times)\n"];
+"loop_4195613" [label="depth = 1;\n3, 2, 4, \n"];
+}

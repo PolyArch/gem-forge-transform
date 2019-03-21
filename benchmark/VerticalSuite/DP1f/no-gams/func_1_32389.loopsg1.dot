@@ -1,0 +1,50 @@
+digraph GB{
+compound=true
+subgraph"cluster_2"{label="sg 2"
+style="filled,rounded"
+color=lightgrey
+"7" [label="0" style=filled, color=white]
+"12" [label="ld1" style=filled, color=white]
+"18" [label="st2" style=filled, color=white]
+"17" [label="3" style=filled, color=white]
+"16" [label="ld4" style=filled, color=white]
+"15" [label="5" style=filled, color=white]
+}
+"7" -> "12"[weight=0.5]
+"7" -> "18"[weight=0.5]
+"7" -> "16"[weight=0.5]
+"12" -> "15"[weight=0.5]
+"17" -> "18"[weight=0.5]
+"16" -> "17"[weight=0.5]
+"15" -> "17"[weight=0.5]
+subgraph"cluster_1"{label="sg 1"
+style="filled,rounded"
+color=lightgrey
+"20" [label="0" style=filled, color=white]
+"19" [label="1" style=filled, color=white]
+"21" [label="ctrl2" style=filled, color=white]
+}
+"20" -> "21"[weight=0.5]
+"19" -> "21"[weight=0.5]
+subgraph"cluster_0"{label="sg 0"
+style="filled,rounded"
+color=lightgrey
+"9" [label="0" style=filled, color=white]
+"8" [label="1" style=filled, color=white]
+"14" [label="2" style=filled, color=white]
+"13" [label="3" style=filled, color=white]
+"11" [label="4" style=filled, color=white]
+"10" [label="5" style=filled, color=white]
+}
+"9" -> "5"[weight=0.5,color=red]
+"9" -> "9"[weight=0.5,color=red]
+"9" -> "7"[weight=0.5,color=red]
+"9" -> "14"[weight=0.5]
+"9" -> "33"[weight=0.5,color=red]
+"8" -> "9"[weight=0.5]
+"14" -> "9"[weight=0.5,color=red]
+"14" -> "15"[weight=0.5]
+"14" -> "23"[weight=0.5,color=red]
+"14" -> "21"[weight=0.5]
+"13" -> "14"[weight=0.5]
+}
