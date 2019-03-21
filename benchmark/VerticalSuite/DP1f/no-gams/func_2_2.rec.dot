@@ -1,0 +1,6 @@
+digraph GB{
+rankdir="LR"
+labelloc="t";
+label="_exit";
+bb4248976x0 [label=" <begin> BB 0| <0>0: ()| <1>1: ()| <2>2: ()| <3>3: ()| <4>4: ()| <5>5: ()| <6>6:ctrl (5 4 )| <7>7: (0 )| <8>8: (2 )| <9>9: ()| <10>10: ()" shape="record"]
+}

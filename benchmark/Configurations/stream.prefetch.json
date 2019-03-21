@@ -1,6 +1,0 @@
-{
-    "id": "stream-prefetch",
-    "options": [
-        "-stream-prefetch-pass"
-    ]
-}

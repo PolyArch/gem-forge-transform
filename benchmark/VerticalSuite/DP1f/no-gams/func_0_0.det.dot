@@ -1,0 +1,5 @@
+digraph GB{
+compound=true
+labelloc="t";
+label="__libc_start_main";
+}
