@@ -81,6 +81,10 @@ class SPEC2017Benchmark(Benchmark):
     def get_lang(self):
         return self.lang
 
+    def get_perf_frequency(self):
+        # Spec are so long, perf at a low frequency.
+        return 1
+
     def get_build_label(self):
         return 'LLVM_TDG_{build_system}'.format(
             build_system=self.build_system.upper()

@@ -21,6 +21,7 @@ from Utils import TransformManager
 from ProcessingScripts import ADFAExperiments
 from ProcessingScripts import StreamExperiments
 from ProcessingScripts import ValidExperiments
+from ProcessingScripts import LibraryInstExperiments
 
 import os
 import random
@@ -45,6 +46,10 @@ simulate(tdg, result, debugs)
 
 
 # Top level function for scheduler.
+def perf(benchmark):
+    benchmark.perf()
+
+
 def profile(benchmark):
     benchmark.profile()
 
@@ -89,6 +94,7 @@ class Driver:
         if self.options.benchmark is not None:
             self.benchmarks = [b for b in self.benchmarks if b.get_name()
                                in self.options.benchmark]
+        self.perf_jobs = dict()
         self.profile_jobs = dict()
         self.simpoint_jobs = dict()
         self.trace_jobs = dict()
@@ -171,6 +177,8 @@ class Driver:
         for benchmark in self.benchmarks:
             if self.options.build:
                 benchmark.build_raw_bc()
+            if self.options.perf:
+                self.schedule_perf(job_scheduler, benchmark)
             if self.options.profile:
                 self.schedule_profile(job_scheduler, benchmark)
             if self.options.simpoint:
@@ -187,6 +195,11 @@ class Driver:
         name = benchmark.get_name()
         self.profile_jobs[name] = job_scheduler.add_job(name + '.profile', profile,
                                                         (benchmark, ), list())
+
+    def schedule_perf(self, job_scheduler, benchmark):
+        name = benchmark.get_name()
+        self.perf_jobs[name] = job_scheduler.add_job(name + '.perf', perf,
+                                                     (benchmark, ), list())
 
     def schedule_simpoint(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -334,6 +347,8 @@ def main(options):
             StreamExperiments.analyze(driver)
         if options.analyze == 'valid':
             ValidExperiments.analyze(driver)
+        if options.analyze == 'library':
+            LibraryInstExperiments.analyze(driver)
     if options.clean != '':
         driver.clean()
 
@@ -476,6 +491,8 @@ if __name__ == '__main__':
                       type='int', dest='cores', default=8)
     parser.add_option('-b', '--build', action='store_true',
                       dest='build', default=False)
+    parser.add_option('--perf', action='store_true',
+                      dest='perf', default=False)
     parser.add_option('--profile', action='store_true',
                       dest='profile', default=False)
     parser.add_option('--simpoint', action='store_true',

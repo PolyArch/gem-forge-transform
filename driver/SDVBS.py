@@ -183,6 +183,13 @@ class SDVBSBenchmark(Benchmark):
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
 
+    def get_perf_frequency(self):
+        # multi_ncut runs for too long.
+        if 'multi_ncut' in self.get_name():
+            return 1
+        else:
+            return 100
+
     def find_all_sources(self, folder):
         sources = list()
         for root, dirs, files in os.walk(folder):

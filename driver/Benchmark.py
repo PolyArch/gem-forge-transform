@@ -155,6 +155,12 @@ class Benchmark(object):
     def get_name(self):
         assert('get_name is not implemented by derived class')
 
+    def get_perf_frequency(self):
+        return 100
+
+    def get_unmodified_bin(self):
+        return '{name}.exe'.format(name=self.get_name())
+
     def get_profile_bc(self):
         return '{name}.profiled.bc'.format(name=self.get_name())
 
@@ -256,31 +262,59 @@ class Benchmark(object):
             ])
         os.chdir(self.cwd)
 
+    def perf(self):
+        os.chdir(self.get_exe_path())
+        self.build_unmodified()
+        self.run_perf()
+        os.chdir(self.cwd)
+
     """
-    Generate the profile.
+    Constructed the unmodified binary.
     """
 
-    def run_profile(self):
-        # Remember to set the environment for profile.
-        os.putenv('LLVM_TDG_WORK_MODE', '0')
-        os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
-        os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
-        run_cmd = [
-            './' + self.get_profile_bin(),
+    def build_unmodified(self):
+        build_cmd = [
+            C.CC if self.get_lang() == 'C' else C.CXX,
+            self.get_raw_bc(),
+            '-o',
+            self.get_unmodified_bin()
+        ]
+        build_cmd += self.get_links()
+        Util.call_helper(build_cmd)
+
+    """
+    Run the unmodified binary with perf.
+    """
+
+    def run_perf(self):
+        Util.call_helper([
+            'rm',
+            '-f',
+            'perf.data',
+        ])
+        perf_cmd = [
+            'perf',
+            'record',
+            '-m',
+            '4',
+            '-F',
+            str(self.get_perf_frequency()),
+            '-e',
+            'instructions',
+            './' + self.get_unmodified_bin(),
         ]
         if self.get_args() is not None:
-            run_cmd += self.get_args()
-        print('# Run profiled binary...')
-        Util.call_helper(run_cmd)
-        # Clean the profile bin.
-        os.remove(self.get_profile_bc())
-        os.remove(self.get_profile_bin())
-        # Move profile result to run_path.
+            perf_cmd += self.get_args()
+        Util.call_helper(perf_cmd)
+        # So far let's just dump the perf to file.
+        with open('perf.txt', 'w') as f:
+            Util.call_helper(['perf', 'report'], stdout=f)
+        # Move perf result to run_path.
         if self.get_exe_path() == self.get_run_path():
             return
         Util.call_helper([
-            'cp',
-            self.get_profile(),
+            'mv',
+            'perf.txt',
             self.get_run_path()
         ])
 
@@ -341,6 +375,33 @@ class Benchmark(object):
         ]
         link_cmd += trace_links
         Util.call_helper(link_cmd)
+    """
+    Generate the profile.
+    """
+
+    def run_profile(self):
+        # Remember to set the environment for profile.
+        os.putenv('LLVM_TDG_WORK_MODE', '0')
+        os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
+        os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
+        run_cmd = [
+            './' + self.get_profile_bin(),
+        ]
+        if self.get_args() is not None:
+            run_cmd += self.get_args()
+        print('# Run profiled binary...')
+        Util.call_helper(run_cmd)
+        # Clean the profile bin.
+        os.remove(self.get_profile_bc())
+        os.remove(self.get_profile_bin())
+        # Move profile result to run_path.
+        if self.get_exe_path() == self.get_run_path():
+            return
+        Util.call_helper([
+            'cp',
+            self.get_profile(),
+            self.get_run_path()
+        ])
 
     """
     Generate the trace.
