@@ -39,7 +39,7 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
       if (!Utils::isCallOrInvokeInst(&*InstIter)) {
         continue;
       }
-      llvm::Function *Callee = Utils::getCalledFunction(&*InstIter);
+      auto *Callee = Utils::getCalledFunction(&*InstIter);
       if (Callee == nullptr) {
         // Indirect call, not continuous.
         DEBUG(llvm::errs() << "Loop " << printLoop(Loop)

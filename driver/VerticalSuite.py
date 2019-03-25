@@ -157,6 +157,9 @@ class VerticalSuite:
         items.sort()
         self.benchmarks = list()
         for item in items:
+            if item[0] == '.':
+                # Ignore special folders.
+                continue
             abs_path = os.path.join(suite_folder, item)
             if os.path.isdir(abs_path):
                 self.benchmarks.append(

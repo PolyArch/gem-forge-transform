@@ -1,6 +1,7 @@
 
 #include "DynamicInstruction.h"
 #include "DataGraph.h"
+#include "Utils.h"
 
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/Debug.h"
@@ -26,8 +27,7 @@ DynamicValue &DynamicValue::operator=(const DynamicValue &Other) {
 }
 
 DynamicValue::DynamicValue(DynamicValue &&Other)
-    : Value(std::move(Other.Value)),
-      MemBase(std::move(Other.MemBase)),
+    : Value(std::move(Other.Value)), MemBase(std::move(Other.MemBase)),
       MemOffset(Other.MemOffset) {}
 
 std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
@@ -37,79 +37,79 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
    * modify the undeflying array and I do not want to copy again.
    */
   switch (Type->getTypeID()) {
-    case llvm::Type::FloatTyID: {
-      Bytes.resize(sizeof(float), 0);
-      *reinterpret_cast<float *>(&Bytes[0]) = this->getFloat();
+  case llvm::Type::FloatTyID: {
+    Bytes.resize(sizeof(float), 0);
+    *reinterpret_cast<float *>(&Bytes[0]) = this->getFloat();
+    break;
+  }
+  case llvm::Type::DoubleTyID: {
+    Bytes.resize(sizeof(double), 0);
+    *reinterpret_cast<double *>(&Bytes[0]) = this->getDouble();
+    break;
+  }
+  case llvm::Type::IntegerTyID: {
+    auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
+    unsigned BitWidth = IntegerType->getBitWidth();
+    if ((BitWidth % 8) != 0) {
+      DEBUG(llvm::errs() << "Bit width of integer " << BitWidth << '\n');
+    }
+    if (BitWidth == 1) {
+      // Sometimes, llvm optimize boolean to i1, but this is at least 1 bytes.
+      BitWidth = 8;
+    }
+    assert((BitWidth % 8) == 0 && "Bit width should be multiple of 8.");
+    size_t ByteWidth = BitWidth / 8;
+    Bytes.resize(ByteWidth);
+    /**
+     * Notice that when trace, we already ingored the sign so here
+     * we just take them as unsigned.
+     */
+    switch (ByteWidth) {
+    case 1: {
+      *reinterpret_cast<char *>(&Bytes[0]) = this->getInt();
       break;
     }
-    case llvm::Type::DoubleTyID: {
-      Bytes.resize(sizeof(double), 0);
-      *reinterpret_cast<double *>(&Bytes[0]) = this->getDouble();
+    case 2: {
+      *reinterpret_cast<uint16_t *>(&Bytes[0]) = this->getInt();
       break;
     }
-    case llvm::Type::IntegerTyID: {
-      auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
-      unsigned BitWidth = IntegerType->getBitWidth();
-      if ((BitWidth % 8) != 0) {
-        DEBUG(llvm::errs() << "Bit width of integer " << BitWidth << '\n');
-      }
-      if (BitWidth == 1) {
-        // Sometimes, llvm optimize boolean to i1, but this is at least 1 bytes.
-        BitWidth = 8;
-      }
-      assert((BitWidth % 8) == 0 && "Bit width should be multiple of 8.");
-      size_t ByteWidth = BitWidth / 8;
-      Bytes.resize(ByteWidth);
-      /**
-       * Notice that when trace, we already ingored the sign so here
-       * we just take them as unsigned.
-       */
-      switch (ByteWidth) {
-        case 1: {
-          *reinterpret_cast<char *>(&Bytes[0]) = this->getInt();
-          break;
-        }
-        case 2: {
-          *reinterpret_cast<uint16_t *>(&Bytes[0]) = this->getInt();
-          break;
-        }
-        case 4: {
-          *reinterpret_cast<uint32_t *>(&Bytes[0]) = this->getInt();
-          break;
-        }
-        case 8: {
-          *reinterpret_cast<uint64_t *>(&Bytes[0]) = this->getInt();
-          break;
-        }
-        default: {
-          llvm_unreachable("Unsupported integer width.");
-          break;
-        }
-      }
+    case 4: {
+      *reinterpret_cast<uint32_t *>(&Bytes[0]) = this->getInt();
       break;
     }
-    case llvm::Type::PointerTyID: {
-      // Pointers are treated as uint64_t, base 16.
-      Bytes.resize(sizeof(uint64_t), 0);
-      *reinterpret_cast<uint64_t *>(&Bytes[0]) = this->getAddr();
+    case 8: {
+      *reinterpret_cast<uint64_t *>(&Bytes[0]) = this->getInt();
       break;
     }
-    case llvm::Type::VectorTyID: {
-      Bytes = this->Value;
-      // auto VectorType = llvm::cast<llvm::VectorType>(Type);
-      // size_t ByteWidth = VectorType->getBitWidth() / 8;
-      // Bytes.resize(ByteWidth);
-      // size_t StartPos = 0;
-      // // Parse the comma separated values (base 16).
-      // for (size_t Pos = 0; Pos < Bytes.size(); ++Pos) {
-      //   size_t NextCommaPos = this->Value.find(',', StartPos);
-      //   Bytes[Pos] = static_cast<char>(std::stoi(
-      //       this->Value.substr(StartPos, NextCommaPos - StartPos), 0, 16));
-      //   StartPos = NextCommaPos + 1;
-      // }
+    default: {
+      llvm_unreachable("Unsupported integer width.");
       break;
     }
-    default: { llvm_unreachable("Unsupported type.\n"); }
+    }
+    break;
+  }
+  case llvm::Type::PointerTyID: {
+    // Pointers are treated as uint64_t, base 16.
+    Bytes.resize(sizeof(uint64_t), 0);
+    *reinterpret_cast<uint64_t *>(&Bytes[0]) = this->getAddr();
+    break;
+  }
+  case llvm::Type::VectorTyID: {
+    Bytes = this->Value;
+    // auto VectorType = llvm::cast<llvm::VectorType>(Type);
+    // size_t ByteWidth = VectorType->getBitWidth() / 8;
+    // Bytes.resize(ByteWidth);
+    // size_t StartPos = 0;
+    // // Parse the comma separated values (base 16).
+    // for (size_t Pos = 0; Pos < Bytes.size(); ++Pos) {
+    //   size_t NextCommaPos = this->Value.find(',', StartPos);
+    //   Bytes[Pos] = static_cast<char>(std::stoi(
+    //       this->Value.substr(StartPos, NextCommaPos - StartPos), 0, 16));
+    //   StartPos = NextCommaPos + 1;
+    // }
+    break;
+  }
+  default: { llvm_unreachable("Unsupported type.\n"); }
   }
   return Bytes;
 }
@@ -277,8 +277,7 @@ void DynamicInstruction::formatOpCode(llvm::raw_ostream &Out) const {
 LLVMDynamicInstruction::LLVMDynamicInstruction(
     llvm::Instruction *_StaticInstruction, DynamicValue *_Result,
     std::vector<DynamicValue *> _Operands)
-    : DynamicInstruction(),
-      StaticInstruction(_StaticInstruction),
+    : DynamicInstruction(), StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
   this->DynamicResult = _Result;
   this->DynamicOperands = std::move(_Operands);
@@ -301,8 +300,7 @@ LLVMDynamicInstruction::LLVMDynamicInstruction(
 
 LLVMDynamicInstruction::LLVMDynamicInstruction(
     llvm::Instruction *_StaticInstruction, TraceParser::TracedInst &_Parsed)
-    : DynamicInstruction(),
-      StaticInstruction(_StaticInstruction),
+    : DynamicInstruction(), StaticInstruction(_StaticInstruction),
       OpName(StaticInstruction->getOpcodeName()) {
   if (_Parsed.Result != "") {
     // We do have result.
@@ -511,21 +509,20 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
   if (auto CallStaticInstruction =
           llvm::dyn_cast<llvm::CallInst>(this->StaticInstruction)) {
     if (auto Callee = CallStaticInstruction->getCalledFunction()) {
-      // Make sure this is no indirect call.
+      /**
+       * Special case for memset, which is translated to a
+       * store. Store value will be automatically
+       * replicated to the store size by the simulator later.
+       *
+       * addr|size|value|base|offset
+       *
+       * Note that for intrinsic function the first dynamic operand is
+       * the first argument.
+       * memset(addr, value, size)
+       */
       if (Callee && Callee->isIntrinsic()) {
         auto IntrinsicId = Callee->getIntrinsicID();
         if (IntrinsicId == llvm::Intrinsic::ID::memset) {
-          /**
-           * Special case for memset, which is translated to a
-           * store. Store value will be automatically
-           * replicated to the store size by the simulator later.
-           *
-           * addr|size|value|base|offset
-           *
-           * Note that for intrinsic function the first dynamic operand is
-           * the first argument.
-           * memset(addr, value, size)
-           */
           DynamicValue *StoredAddr = this->DynamicOperands[0];
           uint64_t StoredSize = this->DynamicOperands[2]->getInt();
           auto StoreExtra = ProtobufEntry->mutable_store();
@@ -540,6 +537,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
         }
       }
     }
+    // No return here as CallInst may also be branch inst.
   }
 
   if (auto AllocaStaticInstruction =
@@ -557,25 +555,21 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     return;
   }
 
-  // For conditional branching, we also log the target basic block.
-  bool IsConditionalBranch = false;
-  if (auto BranchStaticInstruction =
-          llvm::dyn_cast<llvm::BranchInst>(this->StaticInstruction)) {
-    IsConditionalBranch = BranchStaticInstruction->isConditional();
-  } else if (llvm::isa<llvm::SwitchInst>(this->StaticInstruction)) {
-    IsConditionalBranch = true;
-  }
-
-  if (IsConditionalBranch) {
+  if (Utils::isAsmBranchInst(this->StaticInstruction)) {
     /**
-     * Get the next basic block by looking ahead.
+     * For branching instructions, we use the first successor block as the
+     * static next pc, and the the real target in the dynamic next pc.
+     */
+
+    /**
+     * Get the dynamic next pc.
      * This will require that there is at least one more instruction
-     * in the buffer. Otherwise, we just panic.
+     * in the buffer. Otherwise, we just return.
      */
     auto NextIter = DG->getDynamicInstFromId(this->getId());
     NextIter++;
     while (NextIter != DG->DynamicInstructionList.end()) {
-      // Check if this is an LLVM inst, i.e. not our inserted.
+      // Check if this is an LLVM inst, i.e. not our inserted ones.
       if ((*NextIter)->getStaticInstruction() != nullptr) {
         break;
       }
@@ -584,19 +578,34 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     if (NextIter == DG->DynamicInstructionList.end()) {
       static size_t MissingNextBB = 0;
       MissingNextBB++;
-      llvm::errs()
-          << "Failed getting next basic block for conditional branch, MISSING "
-          << MissingNextBB << '\n';
+      llvm::errs() << "Failed getting next basic block for "
+                      "branch, MISSING "
+                   << MissingNextBB << '\n';
       return;
     }
     assert(NextIter != DG->DynamicInstructionList.end() &&
            "Failed getting next basic block for conditional branch.");
-    std::string NextBBName =
-        (*NextIter)->getStaticInstruction()->getParent()->getName();
+    auto DynamicNextPC =
+        DG->getInstUIDMap().getUID((*NextIter)->getStaticInstruction());
+
+    /**
+     * Get the static next pc.
+     * If failed, i.e. this is the last static inst in the function.
+     * We use 0.
+     */
+    auto StaticNextInst =
+        Utils::getStaticNextNonPHIInst(this->StaticInstruction);
+    auto StaticNextPC = (StaticNextInst != nullptr)
+                            ? DG->getInstUIDMap().getUID(StaticNextInst)
+                            : 0;
+
     auto BranchExtra = ProtobufEntry->mutable_branch();
-    BranchExtra->set_static_id(
-        reinterpret_cast<uint64_t>(this->StaticInstruction));
-    BranchExtra->set_next_bb(NextBBName);
+    BranchExtra->set_static_next_pc(StaticNextPC);
+    BranchExtra->set_dynamic_next_pc(DynamicNextPC);
+    BranchExtra->set_is_conditional(
+        Utils::isAsmConditionalBranchInst(this->StaticInstruction));
+    BranchExtra->set_is_indirect(
+        Utils::isAsmIndirectBranchInst(this->StaticInstruction));
     return;
   }
 }
