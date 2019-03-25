@@ -668,3 +668,6 @@ class Benchmark(object):
                     Util.call_helper(['rm', '-f', tdg + '.cache'])
                     Util.call_helper(['rm', '-f', tdg + '.stats.txt'])
                     Util.call_helper(['rm', '-rf', tdg + '.extra'])
+            if target == 'trace':
+                print('Clean {trace}.'.format(trace=trace.fn))
+                Util.call_helper(['rm', '-f', trace.fn])

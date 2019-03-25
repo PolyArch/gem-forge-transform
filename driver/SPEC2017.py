@@ -430,18 +430,18 @@ class SPEC2017Benchmarks:
             'lang': 'C',
         },
         # C++ Benchmark
-        # 'deepsjeng_s': {
-        #     'name': '631.deepsjeng_s',
-        #     'links': [],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 110e8,
-        #     'n_traces': 7,
-        #     # 'trace_func': 'think(gamestate_t*, state_t*)',
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'deepsjeng_s': {
+            'name': '631.deepsjeng_s',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 110e8,
+            'n_traces': 7,
+            # 'trace_func': 'think(gamestate_t*, state_t*)',
+            'trace_func': '',
+            'lang': 'CPP',
+        },
         'leela_s': {
             'name': '641.leela_s',
             'links': [],
@@ -480,17 +480,17 @@ class SPEC2017Benchmarks:
         # Throws exception.
         # Need to fix a comparison between integer and pointer error.
         # Only been able to trace the first one.
-        # 'parest_r': {
-        #     'name': '510.parest_r',
-        #     'links': [],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 110e8,
-        #     'n_traces': 2,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'parest_r': {
+            'name': '510.parest_r',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 110e8,
+            'n_traces': 2,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
         # Does not work with ellcc as it uses linux header.
         # Does not throw.
@@ -509,17 +509,17 @@ class SPEC2017Benchmarks:
         # Portablity issue with using std::isfinite but include <math.h>, not <cmath>
         # Does not throw.
         # Haven't tested with ellcc.
-        # 'blender_r': {
-        #     'name': '526.blender_r',
-        #     'links': [],
-        #     'start_inst': 10e8,
-        #     'max_inst': 1e7,
-        #     'skip_inst': 10e8,
-        #     'end_inst': 110e8,
-        #     'n_traces': 10,
-        #     'trace_func': '',
-        #     'lang': 'CPP',
-        # },
+        'blender_r': {
+            'name': '526.blender_r',
+            'links': [],
+            'start_inst': 10e8,
+            'max_inst': 1e7,
+            'skip_inst': 10e8,
+            'end_inst': 110e8,
+            'n_traces': 10,
+            'trace_func': '',
+            'lang': 'CPP',
+        },
 
 
         # Not working so far due to setjmp/longjmp.
@@ -538,10 +538,10 @@ class SPEC2017Benchmarks:
     }
 
     def __init__(self, benchmark_args):
-        self.spec = os.environ.get('SPEC2017_SUITE_PATH')
+        self.spec = os.environ.get('SPEC')
         if self.spec is None:
             print(
-                'Unable to find SPEC2017_SUITE_PATH env var. Please source shrc before using this script')
+                'Unable to find SPEC env var. Please source shrc before using this script')
             sys.exit()
 
         # Remember to setup gllvm.
