@@ -4,6 +4,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <fstream>
 
@@ -166,6 +167,10 @@ void InstructionUIDMap::parseFrom(const std::string &FileName,
         }
       }
       BBMapIter = BBMap.find(BBName);
+      if (BBMapIter == BBMap.end()) {
+        llvm::errs() << "Failed to find the BB " << BBName << " of Func "
+                     << FuncName << '\n';
+      }
       assert(BBMapIter != BBMap.end() &&
              "Failed to find the basic block in BBMap.");
     }
