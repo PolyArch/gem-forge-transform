@@ -7,7 +7,7 @@
 #include "llvm/IR/Instruction.h"
 
 class Utils {
- public:
+public:
   static constexpr uint64_t CacheLineSize = 64;
   static constexpr uint64_t CacheLineMask = ~((1ul << 6) - 1);
 
@@ -46,15 +46,20 @@ class Utils {
            llvm::isa<llvm::InvokeInst>(Value);
   }
 
-  static llvm::Function *getCalledFunction(llvm::Instruction *Inst) {
+  static const llvm::Value *getCalledValue(const llvm::Instruction *Inst) {
     if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
-      return CallInst->getCalledFunction();
+      return CallInst->getCalledValue();
     } else if (auto InvokeInst = llvm::dyn_cast<llvm::InvokeInst>(Inst)) {
-      return InvokeInst->getCalledFunction();
+      return InvokeInst->getCalledValue();
     } else {
       llvm_unreachable(
           "Should not send no call/invoke instruction to getCalledFunction.");
     }
+  }
+
+  static const llvm::Function *
+  getCalledFunction(const llvm::Instruction *Inst) {
+    return llvm::dyn_cast<llvm::Function>(Utils::getCalledValue(Inst));
   }
 
   static llvm::Value *getArgOperand(llvm::Instruction *Inst, unsigned Idx) {
@@ -76,22 +81,12 @@ class Utils {
               "::" + Inst->getParent()->getName() + "::" + Inst->getName() +
               "(" + Inst->getOpcodeName() + ")")
           .str();
-      // return (llvm::Twine(
-      //             Utils::getDemangledFunctionName(Inst->getFunction())) +
-      //         "::" + Inst->getParent()->getName() + "::" + Inst->getName() +
-      //         "(" + Inst->getOpcodeName() + ")")
-      //     .str();
     } else {
       size_t Idx = Utils::getLLVMInstPosInBB(Inst);
       return (llvm::Twine(Inst->getFunction()->getName()) +
               "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
               "(" + Inst->getOpcodeName() + ")")
           .str();
-      // return (llvm::Twine(
-      //             Utils::getDemangledFunctionName(Inst->getFunction())) +
-      //         "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
-      //         "(" + Inst->getOpcodeName() + ")")
-      //     .str();
     }
   }
 
@@ -108,11 +103,15 @@ class Utils {
     }
   }
 
-  static const std::string &getDemangledFunctionName(
-      const llvm::Function *Func);
+  static const std::string &
+  getDemangledFunctionName(const llvm::Function *Func);
 
   static std::unordered_map<const llvm::Function *, std::string>
       MemorizedDemangledFunctionNames;
+
+  static std::unordered_map<const llvm::Instruction *,
+                            const llvm::Instruction *>
+      MemorizedStaticNextNonPHIInstMap;
 
   static size_t getLLVMInstPosInBB(const llvm::Instruction *Inst) {
     size_t Idx = 0;
@@ -126,6 +125,12 @@ class Utils {
     }
     return Idx;
   }
+
+  /**
+   * Get statically the next instruction.
+   */
+  static const llvm::Instruction *
+  getStaticNextNonPHIInst(const llvm::Instruction *Inst);
 
   static std::string formatLLVMValue(const llvm::Value *Value) {
     if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
@@ -154,6 +159,20 @@ class Utils {
     }
     return ret;
   }
+
+  /**
+   * Helper function to estimate the branching property of the asm from the llvm
+   * instruction.
+   *
+   * br: (depending on the target) & direct.
+   * indirectbr: unconditional & indirect.
+   * swtich: assuming jump table implementation, unconditional & indirect.
+   * call/invoke: unconditional & (depending on the callee).
+   * ret: unconditional & indirect.
+   */
+  static bool isAsmBranchInst(const llvm::Instruction *Inst);
+  static bool isAsmConditionalBranchInst(const llvm::Instruction *Inst);
+  static bool isAsmIndirectBranchInst(const llvm::Instruction *Inst);
 };
 
 #endif

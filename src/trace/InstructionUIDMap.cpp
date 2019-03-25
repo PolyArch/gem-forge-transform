@@ -7,62 +7,73 @@
 
 #include <fstream>
 
-InstructionUIDMap::InstructionUID InstructionUIDMap::getOrAllocateUID(
-    llvm::Instruction *Inst, int PosInBB) {
-  auto UID = reinterpret_cast<InstructionUID>(Inst);
-  if (this->Map.count(UID) == 0) {
-    // New instruction.
-    auto BB = Inst->getParent();
-    if (PosInBB == -1) {
-      for (auto InstIter = BB->begin(), InstEnd = BB->end();
-           InstIter != InstEnd; ++InstIter) {
-        PosInBB++;
-        if (Inst == (&*InstIter)) {
-          break;
+InstructionUIDMap::InstructionUID
+InstructionUIDMap::getOrAllocateUID(llvm::Instruction *Inst, int PosInBB) {
+
+  if (this->InstUIDMap.count(Inst) == 0) {
+    this->allocateWholeFunction(Inst->getFunction());
+  }
+
+  auto UID = this->InstUIDMap.at(Inst);
+  return UID;
+}
+
+void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
+
+  for (auto BBIter = Func->begin(), BBEnd = Func->end(); BBIter != BBEnd;
+       ++BBIter) {
+    auto PosInBB = 0;
+    for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
+         InstIter != InstEnd; ++InstIter, ++PosInBB) {
+      auto Inst = &*InstIter;
+      // Create the value vector.
+      std::vector<InstructionValueDescriptor> Values;
+
+      if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(Inst)) {
+        for (unsigned IncomingValueId = 0,
+                      NumIncomingValues = PHIInst->getNumIncomingValues();
+             IncomingValueId < NumIncomingValues; IncomingValueId++) {
+          auto IncomingValue = PHIInst->getIncomingValue(IncomingValueId);
+          auto IncomingBlock = PHIInst->getIncomingBlock(IncomingValueId);
+          bool IsParam = true;
+          auto TypeID = IncomingBlock->getType()->getTypeID();
+          Values.emplace_back(IsParam, TypeID);
+        }
+      } else {
+        for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
+             OperandId < NumOperands; OperandId++) {
+          auto Operand = Inst->getOperand(OperandId);
+          bool IsParam = true;
+          auto TypeID = Operand->getType()->getTypeID();
+
+          Values.emplace_back(IsParam, TypeID);
         }
       }
-    }
-    assert(PosInBB >= 0 && "Negative PosInBB.");
 
-    // Create the value vector.
-    std::vector<InstructionValueDescriptor> Values;
-
-    if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(Inst)) {
-      for (unsigned IncomingValueId = 0,
-                    NumIncomingValues = PHIInst->getNumIncomingValues();
-           IncomingValueId < NumIncomingValues; IncomingValueId++) {
-        auto IncomingValue = PHIInst->getIncomingValue(IncomingValueId);
-        auto IncomingBlock = PHIInst->getIncomingBlock(IncomingValueId);
-        bool IsParam = true;
-        auto TypeID = IncomingBlock->getType()->getTypeID();
-        Values.emplace_back(IsParam, TypeID);
-      }
-    } else {
-      for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
-           OperandId < NumOperands; OperandId++) {
-        auto Operand = Inst->getOperand(OperandId);
-        bool IsParam = true;
-        auto TypeID = Operand->getType()->getTypeID();
+      if (Inst->getName() != "") {
+        bool IsParam = false;
+        auto TypeID = Inst->getType()->getTypeID();
 
         Values.emplace_back(IsParam, TypeID);
       }
+
+      // Return value of str is rvalue, will be moved.
+      auto UID = this->AvailableUID;
+      this->AvailableUID += InstructionUIDMap::InstSize;
+      auto Inserted =
+          this->Map
+              .emplace(std::piecewise_construct, std::forward_as_tuple(UID),
+                       std::forward_as_tuple(
+                           std::string(Inst->getOpcodeName()),
+                           Inst->getFunction()->getName().str(),
+                           BBIter->getName().str(), PosInBB, std::move(Values)))
+              .second;
+      assert(Inserted && "Failed to create entry in uid descriptor map.");
+      // Also insert into the InstUIDMap.
+      Inserted = this->InstUIDMap.emplace(Inst, UID).second;
+      assert(Inserted && "Failed to create entry in inst uid map.");
     }
-
-    if (Inst->getName() != "") {
-      bool IsParam = false;
-      auto TypeID = Inst->getType()->getTypeID();
-
-      Values.emplace_back(IsParam, TypeID);
-    }
-
-    // Return value of str is rvalue, will be moved.
-    this->Map.emplace(
-        std::piecewise_construct, std::forward_as_tuple(UID),
-        std::forward_as_tuple(std::string(Inst->getOpcodeName()),
-                              Inst->getFunction()->getName().str(),
-                              BB->getName().str(), PosInBB, std::move(Values)));
   }
-  return UID;
 }
 
 void InstructionUIDMap::serializeTo(const std::string &FileName) const {
@@ -185,8 +196,8 @@ llvm::Instruction *InstructionUIDMap::getInst(const InstructionUID UID) const {
   return Iter->second;
 }
 
-InstructionUIDMap::InstructionUID InstructionUIDMap::getUID(
-    const llvm::Instruction *Inst) const {
+InstructionUIDMap::InstructionUID
+InstructionUIDMap::getUID(const llvm::Instruction *Inst) const {
   auto Iter = this->InstUIDMap.find(Inst);
   assert(Iter != this->InstUIDMap.end() && "Unrecognized inst.");
   return Iter->second;

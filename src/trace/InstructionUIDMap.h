@@ -13,7 +13,7 @@
  * For now just use the instruction's address.
  */
 class InstructionUIDMap {
- public:
+public:
   struct InstructionValueDescriptor {
     bool IsParam;
     llvm::Type::TypeID TypeID;
@@ -31,16 +31,14 @@ class InstructionUIDMap {
     InstructionDescriptor(std::string _OpName, std::string _FuncName,
                           std::string _BBName, int _PosInBB,
                           std::vector<InstructionValueDescriptor> _Values)
-        : OpName(std::move(_OpName)),
-          FuncName(std::move(_FuncName)),
-          BBName(std::move(_BBName)),
-          PosInBB(_PosInBB),
+        : OpName(std::move(_OpName)), FuncName(std::move(_FuncName)),
+          BBName(std::move(_BBName)), PosInBB(_PosInBB),
           Values(std::move(_Values)) {}
   };
 
   using InstructionUID = uint64_t;
 
-  InstructionUIDMap() = default;
+  InstructionUIDMap() : AvailableUID(TextSectionStart) {}
   InstructionUIDMap(const InstructionUIDMap &Other) = delete;
   InstructionUIDMap(InstructionUIDMap &&Other) = delete;
   InstructionUIDMap &operator=(const InstructionUIDMap &Other) = delete;
@@ -54,10 +52,20 @@ class InstructionUIDMap {
   llvm::Instruction *getInst(const InstructionUID UID) const;
   InstructionUID getUID(const llvm::Instruction *Inst) const;
 
- private:
+private:
   std::unordered_map<InstructionUID, InstructionDescriptor> Map;
   std::unordered_map<InstructionUID, llvm::Instruction *> UIDInstMap;
   std::unordered_map<const llvm::Instruction *, InstructionUID> InstUIDMap;
+
+  InstructionUID AvailableUID;
+
+  /**
+   * Use a simple RISC fixed size for each inst.
+   */
+  constexpr static InstructionUID TextSectionStart = 0x400430;
+  constexpr static int InstSize = 8;
+
+  void allocateWholeFunction(llvm::Function *Func);
 };
 
 #endif

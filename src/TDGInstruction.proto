@@ -74,8 +74,10 @@ message TDGInstruction {
   }
 
   message BranchExtra {
-    uint64 static_id = 1;
-    string next_bb = 2;
+    uint64 static_next_pc = 1;
+    uint64 dynamic_next_pc = 2;
+    bool is_conditional = 3;
+    bool is_indirect = 4;
   }
 
   // ADFA instructions.
