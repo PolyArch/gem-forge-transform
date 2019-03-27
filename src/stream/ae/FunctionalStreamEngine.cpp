@@ -87,7 +87,9 @@ void FunctionalStreamEngine::updateWithValue(Stream *S, DataGraph *DG,
     auto FS = UpdateQueue.front();
     UpdateQueue.pop_front();
     Count++;
-    if (Count == this->StreamMap.size() * 2) {
+    // A definitely upper bound.
+    // With n streams, at most n^2 updates.
+    if (Count == this->StreamMap.size() * this->StreamMap.size() + 1) {
       llvm::errs() << "Potential cycle dependence found when updating for "
                    << S->formatName() << '\n';
       assert(false && "Potential cycle dependence found.\n");
