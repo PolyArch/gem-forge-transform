@@ -3,6 +3,7 @@
 #include "DataGraph.h"
 #include "Utils.h"
 
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -566,27 +567,17 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
      * This will require that there is at least one more instruction
      * in the buffer. Otherwise, we just return.
      */
-    auto NextIter = DG->getDynamicInstFromId(this->getId());
-    NextIter++;
-    while (NextIter != DG->DynamicInstructionList.end()) {
-      // Check if this is an LLVM inst, i.e. not our inserted ones.
-      if ((*NextIter)->getStaticInstruction() != nullptr) {
-        break;
-      }
-      NextIter++;
-    }
-    if (NextIter == DG->DynamicInstructionList.end()) {
-      static size_t MissingNextBB = 0;
-      MissingNextBB++;
+
+    auto DynamicNextStaticInst = this->getDynamicNextStaticInst(DG);
+    if (DynamicNextStaticInst == nullptr) {
+      static size_t MissingDynamicNextStaticInsts = 0;
+      MissingDynamicNextStaticInsts++;
       llvm::errs() << "Failed getting next basic block for "
                       "branch, MISSING "
-                   << MissingNextBB << '\n';
+                   << MissingDynamicNextStaticInsts << '\n';
       return;
     }
-    assert(NextIter != DG->DynamicInstructionList.end() &&
-           "Failed getting next basic block for conditional branch.");
-    auto DynamicNextPC =
-        DG->getInstUIDMap().getUID((*NextIter)->getStaticInstruction());
+    auto DynamicNextPC = DG->getInstUIDMap().getUID(DynamicNextStaticInst);
 
     /**
      * Get the static next pc.
@@ -608,6 +599,81 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
         Utils::isAsmIndirectBranchInst(this->StaticInstruction));
     return;
   }
+}
+
+const llvm::Instruction *
+LLVMDynamicInstruction::getDynamicNextStaticInst(DataGraph *DG) const {
+
+  if (auto BranchInst =
+          llvm::dyn_cast<llvm::BranchInst>(this->StaticInstruction)) {
+    // For branch instruction, we determine the next basic block from
+    // the dynamic value. We do not use the dynamic instruction from
+    // the datagraph as some transformation may remove dynamic instructions from
+    // the DG, which result's in wrong results.
+
+    // Determine the dynamic target BB.
+    const llvm::BasicBlock *DynamicNextBB = nullptr;
+    if (BranchInst->isConditional()) {
+      // Conditional branch.
+      assert(this->DynamicOperands.size() > 0 &&
+             "Missing dynamic branching operand.");
+      auto DynamicBranchOperand = this->DynamicOperands.at(0)->getInt();
+      if (DynamicBranchOperand == 1) {
+        // Branch takes true.
+        DynamicNextBB = BranchInst->getSuccessor(0);
+      } else {
+        // Branch takes false.
+        DynamicNextBB = BranchInst->getSuccessor(1);
+      }
+    } else {
+      // Unconditional branch.
+      DynamicNextBB = BranchInst->getSuccessor(0);
+    }
+
+    // Return the first non-phi instruction.
+    return DynamicNextBB->getFirstNonPHI();
+  }
+
+  if (auto SwitchInst =
+          llvm::dyn_cast<llvm::SwitchInst>(this->StaticInstruction)) {
+    // Similar for switch inst.
+    const llvm::BasicBlock *DynamicNextBB = SwitchInst->getDefaultDest();
+    // Check for cases.
+    assert(this->DynamicOperands.size() > 0 &&
+           "Missing dynamic switch operand.");
+    auto DynamicSwitchOperand = this->DynamicOperands.at(0)->getInt();
+    for (auto CaseIter = SwitchInst->case_begin(),
+              CaseEnd = SwitchInst->case_end();
+         CaseIter != CaseEnd; ++CaseIter) {
+      auto CaseValue = CaseIter->getCaseValue();
+      if (CaseValue->equalsInt(DynamicSwitchOperand)) {
+        // Found the matching case.
+        DynamicNextBB = CaseIter->getCaseSuccessor();
+        break;
+      }
+    }
+    return DynamicNextBB->getFirstNonPHI();
+  }
+
+  auto NextIter = DG->getDynamicInstFromId(this->getId());
+  NextIter++;
+  while (NextIter != DG->DynamicInstructionList.end()) {
+    // Check if this is an LLVM inst, i.e. not our inserted ones.
+    if ((*NextIter)->getStaticInstruction() != nullptr) {
+      break;
+    }
+    NextIter++;
+  }
+  if (NextIter == DG->DynamicInstructionList.end()) {
+    return nullptr;
+  }
+  assert(NextIter != DG->DynamicInstructionList.end() &&
+         "Failed getting next basic block for conditional branch.");
+  // To avoid the case some instructions in the DG are removed,
+  // we do not return the static instruction directly, but the
+  // first non-phi instruction from the BB as a remedy.
+  auto NextStaticInst = (*NextIter)->getStaticInstruction();
+  return NextStaticInst->getParent()->getFirstNonPHI();
 }
 
 #undef DEBUG_TYPE

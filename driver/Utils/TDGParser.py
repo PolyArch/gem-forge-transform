@@ -18,32 +18,40 @@ class Gem5TDGParser(object):
         self.static_info = TDGInstruction_pb2.StaticInformation()
         self.static_info.ParseFromString(self.buf[self.pos:self.pos + size])
         self.pos += size
+        self.parsed = 0
 
     def parseNext(self):
         if self.pos >= self.length:
+            print('Parsed {parsed}'.format(parsed=self.parsed))
             return None
         size, self.pos = _DecodeVarint32(self.buf, self.pos)
-        print("TDGInstruction size {size}, {pos}".format(
-            size=size, pos=self.pos))
+        # print("TDGInstruction size {size}, {pos}".format(
+        #     size=size, pos=self.pos))
         msg = TDGInstruction_pb2.TDGInstruction()
         msg.ParseFromString(self.buf[self.pos:self.pos + size])
 
         self.pos += size
-        print(msg)
+        self.parsed += 1
+
+        if self.parsed % 1e5 == 0:
+            print('Parsed {parsed}'.format(parsed=self.parsed))
+        # print(msg)
 
         return msg
 
 
 def toTxt(fn):
     parser = Gem5TDGParser(fn)
+
     txt_fn = fn + '.txt'
     with open(txt_fn, 'w') as txt:
-        while True:
-            msg = parser.parseNext()
-            if msg is None:
-                break
-            txt.write(msg.__str__())
-            txt.write('\n')
+        txt.write(parser.static_info.__str__())
+    #     while True:
+    #         msg = parser.parseNext()
+    #         if msg is None:
+    #             break
+    #         txt.write(msg.__str__())
+    #         txt.write('\n')
 
 
 def main(argv):

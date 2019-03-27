@@ -134,6 +134,18 @@ public:
 
   void serializeToProtobufExtra(LLVM::TDG::TDGInstruction *ProtobufEntry,
                                 DataGraph *DG) const override;
+
+private:
+  /**
+   * Try to find the dynamically what is the next static instruction.
+   * Should only be used for branches.
+   *
+   * For br: we determine the next static instruction from the dynamic value.
+   * Otherwise: we look at the next dynamic instruction from DG.
+   *
+   * Returns nullptr if failed.
+   */
+  const llvm::Instruction *getDynamicNextStaticInst(DataGraph *DG) const;
 };
 
 #endif
