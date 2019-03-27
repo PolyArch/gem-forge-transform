@@ -34,6 +34,10 @@ CriticalLoadManager::CriticalLoadManager(llvm::LoadInst *_CriticalLoad,
   this->AnalyzePath =
       _RootPath + "/" + Utils::formatLLVMInst(this->CriticalLoad);
   auto ErrCode = llvm::sys::fs::create_directory(this->AnalyzePath);
+  if (ErrCode) {
+    llvm::errs() << "Failed to create AnalyzePath: " << this->AnalyzePath
+                 << ". Reason: " << ErrCode.message() << '\n';
+  }
   assert(!ErrCode && "Failed to create AnalyzePath.");
 
   this->SliceStream = this->AnalyzePath + "/slice.tdg";

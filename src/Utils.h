@@ -72,18 +72,33 @@ public:
           "Should not send no call/invoke instruction to getArgOperand.");
     }
   }
+
   /**
-   * Print an static instruction.
+   * Get a global unique name for the function.
+   * We do not use the name of the function directly as:
+   * 1. In C++, mangled names sometimes are too long. And we want to use the
+   *    name in file name (maximum 256) for clarity.
+   * 2. Missing any source location information.
+   *
+   * We require that all bc are compiled with line tables. And we use:
+   * Souce.Line.(Demangled)Name.
+   * Name is removed if the name is too long.
+   */
+  static std::string formatLLVMFunc(const llvm::Function *Func);
+
+  /**
+   * Get a global unique name for the inst.
+   * Func::BB::Name/PosInBB(Op).
    */
   static std::string formatLLVMInst(const llvm::Instruction *Inst) {
     if (Inst->getName() != "") {
-      return (llvm::Twine(Inst->getFunction()->getName()) +
+      return (llvm::Twine(Utils::formatLLVMFunc(Inst->getFunction())) +
               "::" + Inst->getParent()->getName() + "::" + Inst->getName() +
               "(" + Inst->getOpcodeName() + ")")
           .str();
     } else {
       size_t Idx = Utils::getLLVMInstPosInBB(Inst);
-      return (llvm::Twine(Inst->getFunction()->getName()) +
+      return (llvm::Twine(Utils::formatLLVMFunc(Inst->getFunction())) +
               "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
               "(" + Inst->getOpcodeName() + ")")
           .str();

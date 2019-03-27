@@ -69,7 +69,7 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
 std::string LoopUtils::getLoopId(const llvm::Loop *Loop) {
   auto Header = Loop->getHeader();
   auto Func = Header->getParent();
-  return Func->getName().str() + "::" + Loop->getName().str();
+  return Utils::formatLLVMFunc(Func) + "::" + Loop->getName().str();
 }
 
 uint64_t LoopUtils::getNumStaticInstInLoop(llvm::Loop *Loop) {

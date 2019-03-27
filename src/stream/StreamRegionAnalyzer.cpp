@@ -14,18 +14,24 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            llvm::LoopInfo *_LI,
                                            llvm::DataLayout *_DataLayout,
                                            const std::string &_RootPath)
-    : RegionIdx(_RegionIdx),
-      TopLoop(_TopLoop),
-      LI(_LI),
-      DataLayout(_DataLayout),
-      RootPath(_RootPath) {
+    : RegionIdx(_RegionIdx), TopLoop(_TopLoop), LI(_LI),
+      DataLayout(_DataLayout), RootPath(_RootPath) {
   // Initialize the folder for this region.
   std::stringstream ss;
   ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
   this->AnalyzeRelativePath = ss.str();
   this->AnalyzePath = this->RootPath + "/" + this->AnalyzeRelativePath;
 
+  {
+    auto ErrCode = llvm::sys::fs::exists(this->AnalyzePath);
+    assert(!ErrCode && "AnalyzePath already exists.");
+  }
+
   auto ErrCode = llvm::sys::fs::create_directory(this->AnalyzePath);
+  if (ErrCode) {
+    llvm::errs() << "Failed to create AnalyzePath: " << this->AnalyzePath
+                 << ". Reason: " << ErrCode.message() << '\n';
+  }
   assert(!ErrCode && "Failed to create AnalyzePath.");
 
   this->initializeStreams();
@@ -327,9 +333,8 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
       continue;
     }
     if (!S->isQualifySeed()) {
-      assert(false &&
-             "Stream should be a qualify seed to be inserted into the "
-             "qualifying queue.");
+      assert(false && "Stream should be a qualify seed to be inserted into the "
+                      "qualifying queue.");
       continue;
     }
     S->markQualified();
@@ -668,11 +673,11 @@ void StreamRegionAnalyzer::buildTransformPlan() {
         // Actually mark this one as delete if we have no other plan for it.
         auto &Plan = this->InstPlanMap.at(NewlyDeletingOperandInst);
         switch (Plan.Plan) {
-          case StreamTransformPlan::PlanT::NOTHING:
-          case StreamTransformPlan::PlanT::DELETE: {
-            Plan.planToDelete();
-            break;
-          }
+        case StreamTransformPlan::PlanT::NOTHING:
+        case StreamTransformPlan::PlanT::DELETE: {
+          Plan.planToDelete();
+          break;
+        }
         }
         // Add all the uses to NewlyDeletingQueue.
         for (unsigned OperandIdx = 0,
@@ -782,8 +787,8 @@ StreamRegionAnalyzer::getSortedChosenStreamsByConfiguredLoop(
   return SortedStreams;
 }
 
-Stream *StreamRegionAnalyzer::getChosenStreamByInst(
-    const llvm::Instruction *Inst) {
+Stream *
+StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
   if (!this->TopLoop->contains(Inst)) {
     return nullptr;
   }
@@ -795,8 +800,8 @@ Stream *StreamRegionAnalyzer::getChosenStreamByInst(
   }
 }
 
-const StreamTransformPlan &StreamRegionAnalyzer::getTransformPlanByInst(
-    const llvm::Instruction *Inst) {
+const StreamTransformPlan &
+StreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
   assert(this->TopLoop->contains(Inst) && "Inst should be within the TopLoop.");
   return this->InstPlanMap.at(Inst);
 }
