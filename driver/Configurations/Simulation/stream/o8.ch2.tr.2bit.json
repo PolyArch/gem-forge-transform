@@ -1,0 +1,24 @@
+{
+    "id": "stream.o8.ch2.tr.2bit",
+    "options": [
+        "--llvm-issue-width=8",
+        "--l1d_size=32kB",
+        "--l1d_lat=2",
+        "--l1d_mshrs=4",
+        "--l1d_assoc=8",
+        "--l2_size=1MB",
+        "--l2_lat=20",
+        "--l2_mshrs=32",
+        "--l2_assoc=8",
+        "--l2bus_width=32",
+        "--mem-channels=2",
+        "--gem-forge-cache-load-ports=2",
+        "--gem-forge-cache-store-ports=2",
+		"--gem-forge-no-gem5-branch-predictor",
+        "--gem-forge-stream-engine-max-run-ahead-length=10",
+        "--gem-forge-stream-engine-throttling=dynamic"
+    ],
+    "support-transform-ids": [
+        "stream"
+    ]
+}

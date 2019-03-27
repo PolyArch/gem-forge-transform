@@ -21,7 +21,7 @@ class SDVBSBenchmark(Benchmark):
 
     # Stream experiments.
     FLAGS_STREAM = {
-        'disparity': ['O2'],
+        'disparity': ['O2', 'gline-tables-only'],
         'localization': ['O2'],
         'mser': ['O2'],
         'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
@@ -31,19 +31,6 @@ class SDVBSBenchmark(Benchmark):
         'texture_synthesis': ['O2'],
         'tracking': ['O2'],
     }
-
-    # Advanced stream setting.
-    # FLAGS = {
-    #     'disparity': ['O2'],
-    #     'localization': ['O2'],
-    #     'mser': ['O2'],
-    #     'multi_ncut': ['O2'],
-    #     'sift': ['O2'],
-    #     'stitch': ['O2'],
-    #     'svm': ['O2'],
-    #     # 'texture_synthesis': ['O2'],
-    #     'tracking': ['O2'],
-    # }
 
     DEFINES = {
         'disparity': {'GCC': None},
