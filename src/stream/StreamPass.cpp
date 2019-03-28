@@ -1,6 +1,5 @@
 #include "stream/StreamPass.h"
 
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/FileSystem.h"
 
 #include <iomanip>
@@ -90,7 +89,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
   if (LoopStack.empty()) {
     // Get or create the region analyzer.
     if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
-      auto StreamAnalyzer = llvm::make_unique<StreamRegionAnalyzer>(
+      auto StreamAnalyzer = std::make_unique<StreamRegionAnalyzer>(
           this->RegionIdx, Loop,
           this->CachedLI->getLoopInfo(Loop->getHeader()->getParent()),
           this->Trace->DataLayout, this->OutputExtraFolderPath);
