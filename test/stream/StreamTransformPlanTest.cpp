@@ -143,7 +143,7 @@ TEST_F(StreamTransformPassTransformPlanTestFixture, BasicListTransverse) {
        }},
   };
 
-  ExpectedStepStreamMapT ExpectedStepStreams = {};
+  ExpectedStepStreamMapT ExpectedStepStreams;
 
   this->testTransformPlan(Loop, ExpectedTransformPlanTypes,
                           ExpectedStepStreams);

@@ -142,6 +142,7 @@ private:
     uint64_t PrevValue;
 
     ValuePatternFSM() : State(UNKNOWN), Updates(0), PrevValue(0) {}
+    virtual ~ValuePatternFSM() = default;
 
     virtual ValuePattern getValuePattern() const = 0;
     virtual void update(uint64_t Val) = 0;

@@ -178,6 +178,7 @@ class TracePass : public llvm::FunctionPass {
 
     delete this->DataLayout;
     this->DataLayout = nullptr;
+    return false;
   }
 
  private:
