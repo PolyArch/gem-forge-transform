@@ -1,6 +1,8 @@
 
 #include "ReplayPassTestFixture.h"
 
+#include "llvm/ADT/STLExtras.h"
+
 void ReplayPassTestFixture::SetUp() {
   this->Input = nullptr;
   this->Module = nullptr;
@@ -11,7 +13,7 @@ void ReplayPassTestFixture::TearDown() {}
 void ReplayPassTestFixture::setUpEnvironment(
     const std::string &InputSourceFile) {
 
-  this->Input = std::make_unique<TestInput>(InputSourceFile, "replay");
+  this->Input = llvm::make_unique<TestInput>(InputSourceFile, "replay");
   this->Module = makeLLVMModule(this->Context, this->Input->getBitCodeFile());
 
   /**

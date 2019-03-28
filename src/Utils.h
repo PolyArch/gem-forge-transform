@@ -2,6 +2,7 @@
 #define LLVM_TDG_UTILS_H
 
 #include "DynamicInstruction.h"
+#include "trace/InstructionUIDMap.h"
 
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Instruction.h"
@@ -188,6 +189,12 @@ public:
   static bool isAsmBranchInst(const llvm::Instruction *Inst);
   static bool isAsmConditionalBranchInst(const llvm::Instruction *Inst);
   static bool isAsmIndirectBranchInst(const llvm::Instruction *Inst);
+
+  // Singleton InstUIDMap.
+  static InstructionUIDMap &getInstUIDMap() { return Utils::InstUIDMap; }
+
+private:
+  static InstructionUIDMap InstUIDMap;
 };
 
 #endif

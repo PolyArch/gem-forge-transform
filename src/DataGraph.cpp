@@ -14,10 +14,6 @@ llvm::cl::opt<std::string> TraceFileName("trace-file",
 llvm::cl::opt<std::string>
     TraceFileFormat("trace-format", llvm::cl::desc("Trace file format."));
 
-llvm::cl::opt<std::string> InstUIDFileName(
-    "datagraph-inst-uid-file",
-    llvm::cl::desc("Inst UID Map file for datagraph building."));
-
 #define DEBUG_TYPE "DataGraph"
 
 void AddrToMemAccessMap::update(Address Addr, DynamicId Id) {
@@ -171,10 +167,8 @@ DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
     this->Parser = new TraceParserGZip(TraceFileName);
   } else if (TraceFileFormat.getValue() == "protobuf") {
     DEBUG(llvm::errs() << "Creating parser.\n");
-    assert(InstUIDFileName.getNumOccurrences() > 0 &&
-           "You must provide instruction uid file.");
-    this->InstUIDMap.parseFrom(InstUIDFileName.getValue(), this->Module);
-    this->Parser = new TraceParserProtobuf(TraceFileName, this->InstUIDMap);
+    this->Parser =
+        new TraceParserProtobuf(TraceFileName, Utils::getInstUIDMap());
     DEBUG(llvm::errs() << "Creating parser. Done\n");
   } else {
     llvm_unreachable("Unknown trace file format.");

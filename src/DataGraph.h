@@ -2,7 +2,6 @@
 #define LLVM_TDG_DYNAMIC_TRACE_H
 
 #include "DynamicInstruction.h"
-#include "trace/InstructionUIDMap.h"
 #include "trace/TraceParser.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -17,7 +16,6 @@
 
 extern llvm::cl::opt<std::string> TraceFileName;
 extern llvm::cl::opt<std::string> TraceFileFormat;
-extern llvm::cl::opt<std::string> InstUIDFileName;
 
 /**
  * AddrToMemAccessMap maintains a map from memory address to the last access
@@ -29,7 +27,7 @@ extern llvm::cl::opt<std::string> InstUIDFileName;
  * e.g. 1000000 instruction distance.
  */
 class AddrToMemAccessMap {
- public:
+public:
   AddrToMemAccessMap() = default;
   AddrToMemAccessMap(const AddrToMemAccessMap &Other) = delete;
   AddrToMemAccessMap(AddrToMemAccessMap &&Other) = delete;
@@ -49,7 +47,7 @@ class AddrToMemAccessMap {
 
   size_t size() const { return this->Map.size(); }
 
- private:
+private:
   using LogEntry = std::pair<Address, DynamicId>;
   std::list<LogEntry> Log;
   std::unordered_map<Address, DynamicId> Map;
@@ -62,14 +60,14 @@ class AddrToMemAccessMap {
  * Compute the memory dependence.
  */
 class MemoryDependenceComputer {
- public:
+public:
   MemoryDependenceComputer() = default;
   MemoryDependenceComputer(const MemoryDependenceComputer &Other) = delete;
   MemoryDependenceComputer(MemoryDependenceComputer &&Other) = delete;
-  MemoryDependenceComputer &operator=(const MemoryDependenceComputer &Other) =
-      delete;
-  MemoryDependenceComputer &operator=(MemoryDependenceComputer &&Other) =
-      delete;
+  MemoryDependenceComputer &
+  operator=(const MemoryDependenceComputer &Other) = delete;
+  MemoryDependenceComputer &
+  operator=(MemoryDependenceComputer &&Other) = delete;
 
   using Address = AddrToMemAccessMap::Address;
   using DynamicId = DynamicInstruction::DynamicId;
@@ -81,13 +79,13 @@ class MemoryDependenceComputer {
   size_t loadMapSize() const { return LoadMap.size(); }
   size_t storeMapSize() const { return StoreMap.size(); }
 
- private:
+private:
   AddrToMemAccessMap LoadMap;
   AddrToMemAccessMap StoreMap;
 };
 
 class DataGraph {
- public:
+public:
   using DynamicId = DynamicInstruction::DynamicId;
 
   enum DataGraphDetailLv {
@@ -149,7 +147,7 @@ class DataGraph {
   DynamicInstIter getDynamicInstFromId(DynamicId Id) const;
 
   class DynamicFrame {
-   public:
+  public:
     llvm::Function *Function;
 
     // A tiny run time environment, basically for memory base/offset
@@ -186,8 +184,8 @@ class DataGraph {
       this->PrevBasicBlock = PrevBB;
     }
 
-    const std::list<DynamicId> &translateRegisterDependence(
-        llvm::Instruction *StaticInst) const;
+    const std::list<DynamicId> &
+    translateRegisterDependence(llvm::Instruction *StaticInst) const;
     void updateRegisterDependenceLookUpMap(llvm::Instruction *StaticInst,
                                            std::list<DynamicId> Ids);
     void updateRegisterDependenceLookUpMap(llvm::Instruction *StaticInst,
@@ -196,7 +194,7 @@ class DataGraph {
       return this->RegDepLookUpMap.size();
     }
 
-   private:
+  private:
     llvm::BasicBlock *PrevBasicBlock;
 
     /**
@@ -239,9 +237,7 @@ class DataGraph {
 
   void updatePrevControlInstId(DynamicInstruction *DynamicInst);
 
-  const InstructionUIDMap &getInstUIDMap() const { return this->InstUIDMap; }
-
- private:
+private:
   /**********************************************************************
    * These are temporary fields used in construnction only.
    */
@@ -255,7 +251,6 @@ class DataGraph {
   bool parseDynamicInstruction(TraceParser::TracedInst &Parsed);
   void parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed);
 
-  InstructionUIDMap InstUIDMap;
   TraceParser *Parser;
 
   /**
@@ -320,8 +315,8 @@ class DataGraph {
    */
   std::unordered_map<llvm::Instruction *, std::string>
       StaticInstructionUniqueNameMap;
-  const std::string &getUniqueNameForStaticInstruction(
-      llvm::Instruction *StaticInst);
+  const std::string &
+  getUniqueNameForStaticInstruction(llvm::Instruction *StaticInst);
 
   /**
    * Utility function to print a static instructions.

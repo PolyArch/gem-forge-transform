@@ -15,6 +15,7 @@
 #include <map>
 #include <string>
 
+extern llvm::cl::opt<std::string> InstUIDFileName;
 extern llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel;
 extern llvm::cl::opt<std::string> GemForgeOutputDataGraphFileName;
 extern llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath;

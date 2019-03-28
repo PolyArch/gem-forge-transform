@@ -9,8 +9,10 @@
 #include <vector>
 
 /**
- * Maintains a simple uid for each instruction.
- * For now just use the instruction's address.
+ * Maintains a simple uid for each instruction and each function.
+ *
+ * UID of instruction is a uint64_t and can be used as pc.
+ * UID of function is a string of 'source::line(id)'.
  */
 class InstructionUIDMap {
 public:
@@ -51,11 +53,16 @@ public:
   const InstructionDescriptor &getDescriptor(const InstructionUID UID) const;
   llvm::Instruction *getInst(const InstructionUID UID) const;
   InstructionUID getUID(const llvm::Instruction *Inst) const;
+  const std::string &getFuncUID(const llvm::Function *Func) const;
 
 private:
-  std::unordered_map<InstructionUID, InstructionDescriptor> Map;
+  std::unordered_map<InstructionUID, InstructionDescriptor>
+      UIDInstDescriptorMap;
   std::unordered_map<InstructionUID, llvm::Instruction *> UIDInstMap;
   std::unordered_map<const llvm::Instruction *, InstructionUID> InstUIDMap;
+
+  std::unordered_map<const llvm::Function *, std::string> FuncUIDMap;
+  std::unordered_map<std::string, int> FuncUIDUsedMap;
 
   InstructionUID AvailableUID;
 
@@ -66,6 +73,7 @@ private:
   constexpr static int InstSize = 8;
 
   void allocateWholeFunction(llvm::Function *Func);
+  void allocateFunctionUID(const llvm::Function *Func);
 };
 
 #endif

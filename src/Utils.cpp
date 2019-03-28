@@ -14,6 +14,8 @@ std::unordered_map<const llvm::Function *, std::string>
 std::unordered_map<const llvm::Instruction *, const llvm::Instruction *>
     Utils::MemorizedStaticNextNonPHIInstMap;
 
+InstructionUIDMap Utils::InstUIDMap;
+
 const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
   auto MemorizedIter = Utils::MemorizedDemangledFunctionNames.find(Func);
   if (MemorizedIter == Utils::MemorizedDemangledFunctionNames.end()) {
@@ -79,30 +81,7 @@ const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
 }
 
 std::string Utils::formatLLVMFunc(const llvm::Function *Func) {
-  auto DebugMDNode = Func->getMetadata(llvm::LLVMContext::MD_dbg);
-  if (DebugMDNode != nullptr) {
-    if (auto DISubprogram = llvm::dyn_cast<llvm::DISubprogram>(
-            Func->getMetadata(llvm::LLVMContext::MD_dbg))) {
-      if (auto DIFile = DISubprogram->getFile()) {
-        std::stringstream SS;
-        SS << llvm::sys::path::filename(DIFile->getFilename()).str()
-           << "::" << DISubprogram->getLine();
-        /**
-         * With the source file and line, we should already guarantee
-         * the uniqueness of the functions.
-         * For clarity, we try to add the function's demangled name.
-         */
-        const auto &DemangledFuncName = Utils::getDemangledFunctionName(Func);
-        if (DemangledFuncName.size() < 100) {
-          SS << '(' << DemangledFuncName << ')';
-        }
-        return SS.str();
-      }
-    }
-  }
-
-  // If we missed the debug information, we just use the function name.
-  return Func->getName();
+  return Utils::getInstUIDMap().getFuncUID(Func);
 }
 
 const llvm::Instruction *

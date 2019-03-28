@@ -1,6 +1,7 @@
 #include "CriticalLoadManager.h"
 #include "Utils.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/FileSystem.h"
 
 class SliceTriggerInstruction : public DynamicInstruction {
@@ -19,7 +20,7 @@ public:
     assert(ProtobufEntry->has_specpre_trigger() &&
            "The protobuf entry should have specpre trigger extra struct.");
     Extra->set_slice_stream(this->SliceStreamFileName);
-    Extra->set_critical_pc(DG->getInstUIDMap().getUID(this->CriticalInst));
+    Extra->set_critical_pc(Utils::getInstUIDMap().getUID(this->CriticalInst));
   }
 
 private:
@@ -46,7 +47,7 @@ CriticalLoadManager::CriticalLoadManager(llvm::LoadInst *_CriticalLoad,
 
   bool DebugText = false;
   this->SliceSerializer =
-      std::make_unique<TDGSerializer>(this->SliceStream, DebugText);
+      llvm::make_unique<TDGSerializer>(this->SliceStream, DebugText);
   // Serialize an empty static information to conform with format.
   LLVM::TDG::StaticInformation StaticInfo;
   /**
@@ -70,7 +71,7 @@ void CriticalLoadManager::hit(DataGraph *DG) {
   }
 
   // We first build the slice.
-  auto Slice = std::make_unique<PrecomputationSlice>(this->CriticalLoad, DG);
+  auto Slice = llvm::make_unique<PrecomputationSlice>(this->CriticalLoad, DG);
 
   auto SliceHeaderId = Slice->getHeaderDynamicId();
   if (this->Status == StatusE::Building) {
