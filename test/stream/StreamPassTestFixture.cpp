@@ -1,5 +1,7 @@
 #include "StreamPassTestFixture.h"
 
+#include "llvm/ADT/STLExtras.h"
+
 void StreamTransformPassTestFixture::SetUp() {
   this->Input = nullptr;
   this->Module = nullptr;
@@ -10,7 +12,7 @@ void StreamTransformPassTestFixture::TearDown() {}
 void StreamTransformPassTestFixture::setUpEnvironment(
     const std::string &InputSourceFile) {
 
-  this->Input = std::make_unique<TestInput>(InputSourceFile, "stream");
+  this->Input = llvm::make_unique<TestInput>(InputSourceFile, "stream");
   this->Module = makeLLVMModule(this->Context, this->Input->getBitCodeFile());
   assert(this->Module != nullptr && "Failed to initialize the module.");
 

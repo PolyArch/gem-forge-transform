@@ -180,7 +180,7 @@ void DynamicInstruction::serializeToProtobuf(
   auto StaticInst = this->getStaticInstruction();
   if (StaticInst != nullptr) {
     ProtobufEntry->set_pc(
-        reinterpret_cast<uint64_t>(DG->getInstUIDMap().getUID(StaticInst)));
+        reinterpret_cast<uint64_t>(Utils::getInstUIDMap().getUID(StaticInst)));
     auto BB = StaticInst->getParent();
     if (BB->getFirstNonPHI() == StaticInst) {
       /**
@@ -577,7 +577,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
                    << MissingDynamicNextStaticInsts << '\n';
       return;
     }
-    auto DynamicNextPC = DG->getInstUIDMap().getUID(DynamicNextStaticInst);
+    auto DynamicNextPC = Utils::getInstUIDMap().getUID(DynamicNextStaticInst);
 
     /**
      * Get the static next pc.
@@ -587,7 +587,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     auto StaticNextInst =
         Utils::getStaticNextNonPHIInst(this->StaticInstruction);
     auto StaticNextPC = (StaticNextInst != nullptr)
-                            ? DG->getInstUIDMap().getUID(StaticNextInst)
+                            ? Utils::getInstUIDMap().getUID(StaticNextInst)
                             : 0;
 
     auto BranchExtra = ProtobufEntry->mutable_branch();

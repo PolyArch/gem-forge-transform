@@ -5,6 +5,8 @@
 
 #include "adfa/AbstractDataFlowAcceleratorPass.h"
 
+#include "llvm/ADT/STLExtras.h"
+
 class ADFADependenceTestFixture : public testing::Test {
  protected:
   virtual void SetUp();
@@ -33,7 +35,7 @@ void ADFADependenceTestFixture::TearDown() {
 
 void ADFADependenceTestFixture::setUpEnvironment(
     const std::string &InputSourceFile) {
-  this->Input = std::make_unique<TestInput>(InputSourceFile, "adfa");
+  this->Input = llvm::make_unique<TestInput>(InputSourceFile, "adfa");
   this->Module = makeLLVMModule(this->Context, this->Input->getBitCodeFile());
   assert(this->Module != nullptr && "Failed to initialize the module.");
 

@@ -11,6 +11,10 @@
 
 #include <fstream>
 
+llvm::cl::opt<std::string> InstUIDFileName(
+    "datagraph-inst-uid-file",
+    llvm::cl::desc("Inst UID Map file for datagraph building."));
+
 llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel(
     "datagraph-detail",
     llvm::cl::desc("Choose how detail the datagraph should be:"),
@@ -35,9 +39,9 @@ llvm::cl::opt<bool> GemForgeOutputDataGraphTextMode(
 #define DEBUG_TYPE "ReplayPass"
 namespace {
 
-llvm::Constant *getOrCreateStringLiteral(
-    std::map<std::string, llvm::Constant *> &GlobalStrings,
-    llvm::Module *Module, const std::string &Str) {
+llvm::Constant *
+getOrCreateStringLiteral(std::map<std::string, llvm::Constant *> &GlobalStrings,
+                         llvm::Module *Module, const std::string &Str) {
   if (GlobalStrings.find(Str) == GlobalStrings.end()) {
     // Create the constant array.
     auto Array =
@@ -67,11 +71,11 @@ llvm::Constant *getOrCreateStringLiteral(
   }
   return GlobalStrings.at(Str);
 }
-}  // namespace
+} // namespace
 
 // Fake push instruction.
 class PushInstruction : public DynamicInstruction {
- public:
+public:
   // Let's not worry about the align for now.
   PushInstruction(const DynamicValue &_Value) : Value(_Value) {}
   std::string getOpName() const override { return "push"; }
@@ -81,7 +85,7 @@ class PushInstruction : public DynamicInstruction {
 };
 
 class CallExternalInstruction : public DynamicInstruction {
- public:
+public:
   // Let's not worry about the align for now.
   CallExternalInstruction(const std::string &_Symbol) : Symbol(_Symbol) {}
   std::string getOpName() const override { return "call-external"; }
@@ -91,7 +95,7 @@ class CallExternalInstruction : public DynamicInstruction {
 };
 
 class RetExternalInstruction : public DynamicInstruction {
- public:
+public:
   // Let's not worry about the align for now.
   RetExternalInstruction(const DynamicValue &_Result) : Result(_Result) {}
   std::string getOpName() const override { return "ret-external"; }
@@ -101,11 +105,8 @@ class RetExternalInstruction : public DynamicInstruction {
 };
 
 ReplayTrace::ReplayTrace(char _ID)
-    : llvm::ModulePass(_ID),
-      Trace(nullptr),
-      OutTraceName("llvm.tdg"),
-      OutputExtraFolderPath("llvm.tdg.extra"),
-      Serializer(nullptr),
+    : llvm::ModulePass(_ID), Trace(nullptr), OutTraceName("llvm.tdg"),
+      OutputExtraFolderPath("llvm.tdg.extra"), Serializer(nullptr),
       CacheWarmerPtr(nullptr) {}
 
 ReplayTrace::~ReplayTrace() {}
@@ -174,6 +175,11 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
   if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
     this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
   }
+
+  // Initialize the InstUIDMap.
+  assert(InstUIDFileName.getNumOccurrences() > 0 &&
+         "You must provide instruction uid file.");
+  Utils::getInstUIDMap().parseFrom(InstUIDFileName.getValue(), this->Module);
 
   DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
                      << this->DGDetailLevel << ".\n");
@@ -346,7 +352,7 @@ bool ReplayTrace::processFunction(llvm::Function &Function) {
 }
 
 class FakeDynamicInstruction : public DynamicInstruction {
- public:
+public:
   FakeDynamicInstruction(const std::string &_OpName,
                          DynamicValue *_DynamicResult,
                          std::vector<DynamicValue *> _DynamicOperands)
@@ -358,8 +364,8 @@ class FakeDynamicInstruction : public DynamicInstruction {
   std::string OpName;
 };
 
-static DynamicInstruction *createFakeDynamicLoad(
-    llvm::Instruction *StaticInst) {
+static DynamicInstruction *
+createFakeDynamicLoad(llvm::Instruction *StaticInst) {
   assert(StaticInst != nullptr && "Null static instruction.");
   DynamicValue *Result = new DynamicValue("0");
   DynamicValue *Operand = new DynamicValue("0");
@@ -369,8 +375,8 @@ static DynamicInstruction *createFakeDynamicLoad(
   return new LLVMDynamicInstruction(StaticInst, Result, std::move(Operands));
 }
 
-static DynamicInstruction *createFakeDynamicStore(
-    llvm::Instruction *StaticInst) {
+static DynamicInstruction *
+createFakeDynamicStore(llvm::Instruction *StaticInst) {
   DynamicValue *StoreValue = new DynamicValue("0");
   DynamicValue *Operand = new DynamicValue("0");
   Operand->MemBase = "$sp";
@@ -465,31 +471,31 @@ void ReplayTrace::fakeFixRegisterDeps() {
     DynamicInstruction *DynamicInst = *Iter;
     auto StaticInstruction = DynamicInst->getStaticInstruction();
     switch (StaticInstruction->getOpcode()) {
-      // case llvm::Instruction::FDiv:
-      case llvm::Instruction::FMul:
-      case llvm::Instruction::Mul:
-      case llvm::Instruction::UDiv:
-      case llvm::Instruction::SDiv:
-      case llvm::Instruction::URem:
-      case llvm::Instruction::SRem: {
-        // Add the fake register dependence.
-        if (PrevMulDivInst != nullptr) {
-          if (this->Trace->RegDeps.find(DynamicInst->getId()) ==
-              this->Trace->RegDeps.end()) {
-            this->Trace->RegDeps.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(DynamicInst->getId()),
-                std::forward_as_tuple());
-          }
-          this->Trace->RegDeps.at(DynamicInst->getId())
-              .emplace_back(PrevMulDivInst->getStaticInstruction(),
-                            PrevMulDivInst->getId());
+    // case llvm::Instruction::FDiv:
+    case llvm::Instruction::FMul:
+    case llvm::Instruction::Mul:
+    case llvm::Instruction::UDiv:
+    case llvm::Instruction::SDiv:
+    case llvm::Instruction::URem:
+    case llvm::Instruction::SRem: {
+      // Add the fake register dependence.
+      if (PrevMulDivInst != nullptr) {
+        if (this->Trace->RegDeps.find(DynamicInst->getId()) ==
+            this->Trace->RegDeps.end()) {
+          this->Trace->RegDeps.emplace(
+              std::piecewise_construct,
+              std::forward_as_tuple(DynamicInst->getId()),
+              std::forward_as_tuple());
         }
-        PrevMulDivInst = DynamicInst;
-        break;
+        this->Trace->RegDeps.at(DynamicInst->getId())
+            .emplace_back(PrevMulDivInst->getStaticInstruction(),
+                          PrevMulDivInst->getId());
       }
-      default:
-        break;
+      PrevMulDivInst = DynamicInst;
+      break;
+    }
+    default:
+      break;
     }
   }
 }

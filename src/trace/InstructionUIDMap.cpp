@@ -1,10 +1,15 @@
 #include "trace/InstructionUIDMap.h"
+#include "Utils.h"
 
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include <sstream>
 
 #include <fstream>
 
@@ -20,7 +25,7 @@ InstructionUIDMap::getOrAllocateUID(llvm::Instruction *Inst, int PosInBB) {
 }
 
 void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
-
+  this->allocateFunctionUID(Func);
   for (auto BBIter = Func->begin(), BBEnd = Func->end(); BBIter != BBEnd;
        ++BBIter) {
     auto PosInBB = 0;
@@ -62,7 +67,7 @@ void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
       auto UID = this->AvailableUID;
       this->AvailableUID += InstructionUIDMap::InstSize;
       auto Inserted =
-          this->Map
+          this->UIDInstDescriptorMap
               .emplace(std::piecewise_construct, std::forward_as_tuple(UID),
                        std::forward_as_tuple(
                            std::string(Inst->getOpcodeName()),
@@ -77,10 +82,53 @@ void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
   }
 }
 
+void InstructionUIDMap::allocateFunctionUID(const llvm::Function *Func) {
+  assert(this->FuncUIDMap.count(Func) == 0 &&
+         "Function UID already allocated.");
+  auto FuncUIDBase = Func->getName().str();
+  auto DebugMDNode = Func->getMetadata(llvm::LLVMContext::MD_dbg);
+  if (DebugMDNode != nullptr) {
+    if (auto DISubprogram = llvm::dyn_cast<llvm::DISubprogram>(
+            Func->getMetadata(llvm::LLVMContext::MD_dbg))) {
+      if (auto DIFile = DISubprogram->getFile()) {
+        std::stringstream SS;
+        SS << llvm::sys::path::filename(DIFile->getFilename()).str()
+           << "::" << DISubprogram->getLine();
+        /**
+         * With the source file and line, we should already guarantee
+         * the uniqueness of the functions.
+         * FIX: OMG I was wrong. Source file + line does not guarantee the
+         * uniqueness, due to C++ template function.
+         *
+         * An adhoc fix: use the first 128 bytes.
+         */
+        const auto &DemangledFuncName = Utils::getDemangledFunctionName(Func);
+        if (DemangledFuncName.size() <= 128) {
+          SS << '(' << DemangledFuncName << ')';
+        }
+        FuncUIDBase = SS.str();
+      }
+    }
+  }
+
+  auto UIDEmplaceResult = this->FuncUIDUsedMap.emplace(FuncUIDBase, 1);
+  if (!UIDEmplaceResult.second) {
+    // This FuncUIDBase is already used.
+    // Increase the used count.
+    UIDEmplaceResult.first->second++;
+    // Modify the FuncUID by appending a sequence number.
+    FuncUIDBase += std::to_string(UIDEmplaceResult.first->second);
+  }
+
+  // Insert the FuncUID.
+  this->FuncUIDMap.emplace(Func, FuncUIDBase);
+}
+
 void InstructionUIDMap::serializeTo(const std::string &FileName) const {
   std::ofstream O(FileName);
   assert(O.is_open() && "Failed to open InstructionUIDMap serialization file.");
-  for (const auto &Record : this->Map) {
+  O << this->UIDInstDescriptorMap.size() << '\n';
+  for (const auto &Record : this->UIDInstDescriptorMap) {
     O << Record.first << ' ' << Record.second.FuncName << ' '
       << Record.second.BBName << ' ' << Record.second.PosInBB << ' '
       << Record.second.OpName << ' ' << Record.second.Values.size();
@@ -89,22 +137,33 @@ void InstructionUIDMap::serializeTo(const std::string &FileName) const {
     }
     O << '\n';
   }
+  O << this->FuncUIDMap.size() << '\n';
+  for (const auto &FuncUID : this->FuncUIDMap) {
+    O << FuncUID.second << '-' << FuncUID.first->getName().str() << '\n';
+  }
 }
 
 void InstructionUIDMap::parseFrom(const std::string &FileName,
                                   llvm::Module *Module) {
-  assert(this->Map.empty() &&
+  assert(this->UIDInstDescriptorMap.empty() &&
          "UIDMap is not empty when try to parse from some file.");
   std::ifstream I(FileName);
   assert(I.is_open() && "Failed to open InstructionUIDMap parse file.");
-  InstructionUID UID;
-  std::string FuncName, BBName, OpName;
-  int PosInBB, NumValues;
 
-  bool IsParam;
-  unsigned TypeID;
+  // Parse the inst uid.
+  size_t InstUIDSize;
+  assert((I >> InstUIDSize) && "Failed to read in the number of inst uids.");
+  for (size_t InstUIDLine = 0; InstUIDLine < InstUIDSize; ++InstUIDLine) {
 
-  while (I >> UID >> FuncName >> BBName >> PosInBB >> OpName >> NumValues) {
+    InstructionUID UID;
+    std::string FuncName, BBName, OpName;
+    int PosInBB, NumValues;
+
+    bool IsParam;
+    unsigned TypeID;
+
+    assert((I >> UID >> FuncName >> BBName >> PosInBB >> OpName >> NumValues) &&
+           "Failed to read in the inst uid.");
     std::vector<InstructionValueDescriptor> Values;
     Values.reserve(NumValues);
     for (int Idx = 0; Idx < NumValues; ++Idx) {
@@ -114,7 +173,7 @@ void InstructionUIDMap::parseFrom(const std::string &FileName,
 
     // Local variables will be copied.
     auto Inserted =
-        this->Map
+        this->UIDInstDescriptorMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(UID),
                      std::forward_as_tuple(OpName, FuncName, BBName, PosInBB,
                                            Values))
@@ -122,15 +181,27 @@ void InstructionUIDMap::parseFrom(const std::string &FileName,
     assert(Inserted && "Failed to insert the record.");
   }
 
-  // Find the real llvm instruction in the Module.
+  // Parse the func uid.
+  size_t FuncUIDSize;
+  assert((I >> FuncUIDSize) && "Failed to read in the number of func uids.");
+  for (size_t FuncUIDLine = 0; FuncUIDLine < FuncUIDSize; ++FuncUIDLine) {
+    std::string FuncName, FuncUID;
+    std::getline(I, FuncUID, '-');
+    std::getline(I, FuncName);
+    auto Func = Module->getFunction(FuncName);
+    assert(Func && "Failed to look up func from FuncUID.");
+    auto Inserted = this->FuncUIDMap.emplace(Func, FuncUID).second;
+    assert(Inserted && "Failed to insert FuncUID.");
+  }
 
+  // Find the real llvm instruction in the Module.
   // Memorized map to quickly locate the static instruction.
   std::unordered_map<
       llvm::Function *,
       std::unordered_map<std::string, std::vector<llvm::Instruction *>>>
       MemorizedStaticInstMap;
 
-  for (const auto &UIDDescriptor : this->Map) {
+  for (const auto &UIDDescriptor : this->UIDInstDescriptorMap) {
 
     const auto &FuncName = UIDDescriptor.second.FuncName;
     const auto &BBName = UIDDescriptor.second.BBName;
@@ -190,8 +261,8 @@ void InstructionUIDMap::parseFrom(const std::string &FileName,
 
 const InstructionUIDMap::InstructionDescriptor &
 InstructionUIDMap::getDescriptor(const InstructionUID UID) const {
-  auto Iter = this->Map.find(UID);
-  assert(Iter != this->Map.end() && "Unrecognized UID.");
+  auto Iter = this->UIDInstDescriptorMap.find(UID);
+  assert(Iter != this->UIDInstDescriptorMap.end() && "Unrecognized UID.");
   return Iter->second;
 }
 
@@ -205,5 +276,12 @@ InstructionUIDMap::InstructionUID
 InstructionUIDMap::getUID(const llvm::Instruction *Inst) const {
   auto Iter = this->InstUIDMap.find(Inst);
   assert(Iter != this->InstUIDMap.end() && "Unrecognized inst.");
+  return Iter->second;
+}
+
+const std::string &
+InstructionUIDMap::getFuncUID(const llvm::Function *Func) const {
+  auto Iter = this->FuncUIDMap.find(Func);
+  assert(Iter != this->FuncUIDMap.end() && "Unrecognized func.");
   return Iter->second;
 }

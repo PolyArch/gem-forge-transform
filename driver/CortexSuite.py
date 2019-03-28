@@ -226,6 +226,7 @@ class CortexBenchmark(Benchmark):
             self.flags = CortexBenchmark.FLAGS_STREAM[self.benchmark_name]
         elif C.EXPERIMENTS == 'fractal':
             self.flags = CortexBenchmark.FLAGS_FRACTAL[self.benchmark_name]
+        self.flags.append('gline-tables-only')
         self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_size]
         self.includes = CortexBenchmark.INCLUDES[self.benchmark_name]
         self.trace_functions = '.'.join(

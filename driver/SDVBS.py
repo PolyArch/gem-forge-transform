@@ -21,7 +21,7 @@ class SDVBSBenchmark(Benchmark):
 
     # Stream experiments.
     FLAGS_STREAM = {
-        'disparity': ['O2', 'gline-tables-only'],
+        'disparity': ['O2'],
         'localization': ['O2'],
         'mser': ['O2'],
         'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
@@ -123,6 +123,7 @@ class SDVBSBenchmark(Benchmark):
             self.flags = SDVBSBenchmark.FLAGS_STREAM[self.benchmark_name]
         elif C.EXPERIMENTS == 'fractal':
             self.flags = SDVBSBenchmark.FLAGS_FRACTAL[self.benchmark_name]
+        self.flags.append('gline-tables-only')
         self.defines = SDVBSBenchmark.DEFINES[self.benchmark_name]
         # Also define the input name.
         self.defines[self.input_name] = None
