@@ -64,6 +64,7 @@ class VerticalBenchmark(Benchmark):
             # '-fno-slp-vectorize',
             '-emit-llvm',
             '-std=c99',
+            '-gline-tables-only',
             '-I{INCLUDE}'.format(INCLUDE=os.path.dirname(self.src_path)),
             '-o',
             bc
