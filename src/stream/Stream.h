@@ -45,6 +45,7 @@ public:
          const std::string &_RelativeFolder, const llvm::Instruction *_Inst,
          const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
          size_t _LoopLevel, llvm::DataLayout *DataLayout);
+  virtual ~Stream() = default;
 
   using StreamSet = std::unordered_set<Stream *>;
 
