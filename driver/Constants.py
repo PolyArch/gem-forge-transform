@@ -95,7 +95,11 @@ if not USE_ELLCC:
     LLVM_LINK = os.path.join(LLVM_BIN_PATH, 'llvm-link')
     LLVM_DIS = os.path.join(LLVM_BIN_PATH, 'llvm-dis')
     # Some one installed a wrong version of protobuf on my computer.
-    PROTOBUF_LIB = os.path.join('/usr/local/lib/libprotobuf.a')
+    # PROTOBUF_LIB = os.path.join('/usr/local/lib/libprotobuf.a')
+    PROTOBUF_LIB = os.getenv('LIBPROTOBUF_STATIC_LIB')
+    if PROTOBUF_LIB is None:
+        print('Missing env var LIBPROTOBUF_STATIC_LIB')
+        assert(False)
     LIBUNWIND_LIB = os.path.join('-lunwind')
 else:
     OPT = os.path.join(ELLCC_BIN_PATH, 'opt')
