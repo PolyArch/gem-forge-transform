@@ -1,6 +1,5 @@
 #include "StreamRegionAnalyzer.h"
 
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/FileSystem.h"
 
 #include "google/protobuf/util/json_util.h"
@@ -492,7 +491,7 @@ void StreamRegionAnalyzer::buildAddressModule() {
 
   auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
   auto AddressModule =
-      llvm::make_unique<llvm::Module>(AddressModulePath, Context);
+      std::make_unique<llvm::Module>(AddressModulePath, Context);
 
   for (auto &InstStream : this->InstChosenStreamMap) {
     auto Inst = InstStream.first;
@@ -515,13 +514,13 @@ void StreamRegionAnalyzer::buildAddressModule() {
 
   // Create the interpreter and functional stream engine.
   this->AddrInterpreter =
-      llvm::make_unique<llvm::Interpreter>(std::move(AddressModule));
+      std::make_unique<llvm::Interpreter>(std::move(AddressModule));
   std::unordered_set<Stream *> ChosenStreams;
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
     auto ChosenStream = InstChosenStream.second;
     ChosenStreams.insert(ChosenStream);
   }
-  this->FuncSE = llvm::make_unique<FunctionalStreamEngine>(this->AddrInterpreter,
+  this->FuncSE = std::make_unique<FunctionalStreamEngine>(this->AddrInterpreter,
                                                           ChosenStreams);
 }
 

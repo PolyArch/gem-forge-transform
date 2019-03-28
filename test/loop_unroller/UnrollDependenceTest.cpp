@@ -5,10 +5,8 @@
 
 #include "LoopUnroller.h"
 
-#include "llvm/ADT/STLExtras.h"
-
 class LoopUnrollerTestFixture : public testing::Test {
- protected:
+protected:
   virtual void SetUp();
   virtual void TearDown();
 
@@ -40,7 +38,7 @@ void LoopUnrollerTestFixture::TearDown() {
 
 void LoopUnrollerTestFixture::setUpEnvironment(
     const std::string &InputSourceFile) {
-  this->Input = llvm::make_unique<TestInput>(InputSourceFile, "");
+  this->Input = std::make_unique<TestInput>(InputSourceFile, "");
   this->Module = makeLLVMModule(this->Context, this->Input->getBitCodeFile());
   assert(this->Module != nullptr && "Failed to initialize the module.");
 
@@ -48,9 +46,9 @@ void LoopUnrollerTestFixture::setUpEnvironment(
   this->Input->setUpLLVMOptions("");
 
   // Create the DG.
-  this->DG = llvm::make_unique<DataGraph>(
+  this->DG = std::make_unique<DataGraph>(
       this->Module.get(), DataGraph::DataGraphDetailLv::STANDALONE);
-  this->Serializer = llvm::make_unique<TDGSerializer>(
+  this->Serializer = std::make_unique<TDGSerializer>(
       this->Input->getOutputDataGraphFile(), true);
 }
 

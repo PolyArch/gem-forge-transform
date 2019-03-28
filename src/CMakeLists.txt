@@ -78,7 +78,7 @@ target_include_directories(LLVMTDGPass
 # LLVM is (typically) built with no C++ RTTI. We need to match that;
 # otherwise, we'll get linker errors about missing RTTI data.
 set_target_properties(LLVMTDGPass PROPERTIES
-    COMPILE_FLAGS "-std=c++11 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
+    COMPILE_FLAGS "-std=c++14 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
 
 # Link to LLVM components.
