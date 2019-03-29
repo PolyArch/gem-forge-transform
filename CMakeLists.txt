@@ -30,6 +30,9 @@ if (USE_ELLCC)
 endif (USE_ELLCC)
 
 message(STATUS ${CMAKE_PREFIX_PATH})
+
+set(Protobuf_USE_STATIC_LIBS ON)
+message(STATUS ${CMAKE_FIND_LIBRARY_SUFFIXES})
 find_package(Protobuf 
     REQUIRED
 )
