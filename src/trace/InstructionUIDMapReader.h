@@ -1,6 +1,8 @@
 #ifndef LLVM_TDG_INSTRUCTION_UID_MAP_READER_H
 #define LLVM_TDG_INSTRUCTION_UID_MAP_READER_H
 
+#include "UIDMap.pb.h"
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -12,30 +14,6 @@
  */
 class InstructionUIDMapReader {
  public:
-  struct InstructionValueDescriptor {
-    bool IsParam;
-    unsigned TypeID;
-
-    InstructionValueDescriptor(bool _IsParam, unsigned _TypeID)
-        : IsParam(_IsParam), TypeID(_TypeID) {}
-  };
-
-  struct InstructionDescriptor {
-    std::string OpName;
-    std::string FuncName;
-    std::string BBName;
-    int PosInBB;
-    std::vector<InstructionValueDescriptor> Values;
-    InstructionDescriptor(std::string _OpName, std::string _FuncName,
-                          std::string _BBName, int _PosInBB,
-                          std::vector<InstructionValueDescriptor> _Values)
-        : OpName(std::move(_OpName)),
-          FuncName(std::move(_FuncName)),
-          BBName(std::move(_BBName)),
-          PosInBB(_PosInBB),
-          Values(std::move(_Values)) {}
-  };
-
   using InstructionUID = uint64_t;
 
   InstructionUIDMapReader() = default;
@@ -47,10 +25,10 @@ class InstructionUIDMapReader {
 
   void parseFrom(const std::string &FileName);
 
-  const InstructionDescriptor &getDescriptor(const InstructionUID UID) const;
+  const LLVM::TDG::InstructionDescriptor &getDescriptor(const InstructionUID UID) const;
 
  private:
-  std::unordered_map<InstructionUID, InstructionDescriptor> Map;
+  LLVM::TDG::UIDMap Map;
 };
 
 #endif

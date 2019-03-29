@@ -83,7 +83,7 @@ static uint64_t countInTraceFunc = 0;
 static uint64_t tracedCount = 0;
 
 static InstructionUIDMapReader instUIDMap;
-static const InstructionUIDMapReader::InstructionDescriptor
+static const LLVM::TDG::InstructionDescriptor
     *currentInstDescriptor;
 static size_t currentInstValueDescriptorId;
 
@@ -521,10 +521,10 @@ void printInst(const char *FunctionName, uint64_t UID) {
 
   currentInstDescriptor = &(instUIDMap.getDescriptor(UID));
   currentInstValueDescriptorId = 0;
-  auto OpCodeName = currentInstDescriptor->OpName.c_str();
-  auto BBName = currentInstDescriptor->BBName.c_str();
+  auto OpCodeName = currentInstDescriptor->op().c_str();
+  auto BBName = currentInstDescriptor->bb().c_str();
   // auto FunctionName = instDescriptor.FuncName.c_str();
-  auto Id = currentInstDescriptor->PosInBB;
+  auto Id = currentInstDescriptor->pos_in_bb();
 
   // Check if this is a landingpad instruction if we want to have the stack.
   if (MEASURE_IN_TRACE_FUNC) {
@@ -659,15 +659,15 @@ void printInstValue(unsigned NumAdditionalArgs, ...) {
   }
 
   assert(currentInstDescriptor != nullptr && "Missing inst descriptor.");
-  assert(currentInstValueDescriptorId < currentInstDescriptor->Values.size() &&
+  assert(currentInstValueDescriptorId < currentInstDescriptor->values_size() &&
          "Overflow of value descriptor id.");
 
   const auto &currentInstValueDescriptor =
-      currentInstDescriptor->Values[currentInstValueDescriptorId];
+      currentInstDescriptor->values(currentInstValueDescriptorId);
   currentInstValueDescriptorId++;
 
-  auto TypeId = currentInstValueDescriptor.TypeID;
-  auto Tag = currentInstValueDescriptor.IsParam ? PRINT_VALUE_TAG_PARAMETER
+  auto TypeId = currentInstValueDescriptor.type_id();
+  auto Tag = currentInstValueDescriptor.is_param() ? PRINT_VALUE_TAG_PARAMETER
                                                 : PRINT_VALUE_TAG_RESULT;
   // TODO: Totally remove Name.
   const char* Name = "";

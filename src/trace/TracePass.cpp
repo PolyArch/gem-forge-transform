@@ -174,6 +174,7 @@ class TracePass : public llvm::FunctionPass {
     // file name.
     if (InstUIDFileName.getNumOccurrences() > 0) {
       this->InstUIDMap.serializeTo(InstUIDFileName.getValue());
+      this->InstUIDMap.serializeToTxt(InstUIDFileName.getValue() + ".txt");
     }
 
     delete this->DataLayout;

@@ -174,6 +174,9 @@ class Benchmark(object):
         return '{name}.profile.inst.uid.txt'.format(name=self.get_name())
 
     def get_inst_uid(self):
+        return '{name}.inst.uid'.format(name=self.get_name())
+
+    def get_inst_uid_txt(self):
         return '{name}.inst.uid.txt'.format(name=self.get_name())
 
     def get_trace_bin(self):
@@ -439,7 +442,12 @@ class Benchmark(object):
                 break
         Util.call_helper([
             'mv',
-            '{name}.inst.uid.txt'.format(name=self.get_name()),
+            self.get_inst_uid(),
+            self.get_run_path()
+        ])
+        Util.call_helper([
+            'mv',
+            self.get_inst_uid_txt(),
             self.get_run_path()
         ])
 

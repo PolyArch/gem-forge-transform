@@ -32,9 +32,21 @@ void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
     for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
          InstIter != InstEnd; ++InstIter, ++PosInBB) {
       auto Inst = &*InstIter;
-      // Create the value vector.
-      std::vector<InstructionValueDescriptor> Values;
 
+      // Return value of str is rvalue, will be moved.
+      auto UID = this->AvailableUID;
+      this->AvailableUID += InstructionUIDMap::InstSize;
+  
+      auto & UIDInstDescriptorMap = *(this->UIDMap.mutable_inst_map());
+      UIDInstDescriptorMap.operator[](UID) = LLVM::TDG::InstructionDescriptor();
+
+      auto & InstDescriptor = UIDInstDescriptorMap[UID];
+      InstDescriptor.set_op(std::string(Inst->getOpcodeName()));
+      InstDescriptor.set_func(Inst->getFunction()->getName().str());
+      InstDescriptor.set_bb(BBIter->getName().str());
+      InstDescriptor.set_pos_in_bb(PosInBB);
+
+      // Insert all the params & result.
       if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         for (unsigned IncomingValueId = 0,
                       NumIncomingValues = PHIInst->getNumIncomingValues();
@@ -43,7 +55,9 @@ void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
           auto IncomingBlock = PHIInst->getIncomingBlock(IncomingValueId);
           bool IsParam = true;
           auto TypeID = IncomingBlock->getType()->getTypeID();
-          Values.emplace_back(IsParam, TypeID);
+          auto Value = InstDescriptor.add_values();
+          Value->set_is_param(IsParam);
+          Value->set_type_id(TypeID);
         }
       } else {
         for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
@@ -51,32 +65,23 @@ void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
           auto Operand = Inst->getOperand(OperandId);
           bool IsParam = true;
           auto TypeID = Operand->getType()->getTypeID();
-
-          Values.emplace_back(IsParam, TypeID);
+          auto Value = InstDescriptor.add_values();
+          Value->set_is_param(IsParam);
+          Value->set_type_id(TypeID);
         }
       }
 
       if (Inst->getName() != "") {
         bool IsParam = false;
         auto TypeID = Inst->getType()->getTypeID();
-
-        Values.emplace_back(IsParam, TypeID);
+        auto Value = InstDescriptor.add_values();
+        Value->set_is_param(IsParam);
+        Value->set_type_id(TypeID);
       }
 
-      // Return value of str is rvalue, will be moved.
-      auto UID = this->AvailableUID;
-      this->AvailableUID += InstructionUIDMap::InstSize;
-      auto Inserted =
-          this->UIDInstDescriptorMap
-              .emplace(std::piecewise_construct, std::forward_as_tuple(UID),
-                       std::forward_as_tuple(
-                           std::string(Inst->getOpcodeName()),
-                           Inst->getFunction()->getName().str(),
-                           BBIter->getName().str(), PosInBB, std::move(Values)))
-              .second;
-      assert(Inserted && "Failed to create entry in uid descriptor map.");
+
       // Also insert into the InstUIDMap.
-      Inserted = this->InstUIDMap.emplace(Inst, UID).second;
+      auto Inserted = this->InstUIDMap.emplace(Inst, UID).second;
       assert(Inserted && "Failed to create entry in inst uid map.");
     }
   }
@@ -121,19 +126,25 @@ void InstructionUIDMap::allocateFunctionUID(const llvm::Function *Func) {
   }
 
   // Insert the FuncUID.
+  LLVM::TDG::FunctionDescriptor FuncDescriptor;
+  FuncDescriptor.set_func_name(Func->getName().str());
+  auto &FuncUIDMap = *(this->UIDMap.mutable_func_map());
+  FuncUIDMap.operator[](FuncUIDBase) = FuncDescriptor;
+
   this->FuncUIDMap.emplace(Func, FuncUIDBase);
 }
 
-void InstructionUIDMap::serializeTo(const std::string &FileName) const {
+void InstructionUIDMap::serializeToTxt(const std::string &FileName) const {
   std::ofstream O(FileName);
-  assert(O.is_open() && "Failed to open InstructionUIDMap serialization file.");
-  O << this->UIDInstDescriptorMap.size() << '\n';
-  for (const auto &Record : this->UIDInstDescriptorMap) {
-    O << Record.first << ' ' << Record.second.FuncName << ' '
-      << Record.second.BBName << ' ' << Record.second.PosInBB << ' '
-      << Record.second.OpName << ' ' << Record.second.Values.size();
-    for (const auto &Value : Record.second.Values) {
-      O << ' ' << Value.IsParam << ' ' << Value.TypeID;
+  assert(O.is_open() && "Failed to open InstructionUIDMap serialization txt file.");
+  const auto &UIDInstDescriptorMap = this->UIDMap.inst_map();
+  O << UIDInstDescriptorMap.size() << '\n';
+  for (const auto &Record : UIDInstDescriptorMap) {
+    O << Record.first << ' ' << Record.second.func() << ' '
+      << Record.second.bb() << ' ' << Record.second.pos_in_bb() << ' '
+      << Record.second.op() << ' ' << Record.second.values_size();
+    for (const auto &Value : Record.second.values()) {
+      O << ' ' << Value.is_param() << ' ' << Value.type_id();
     }
     O << '\n';
   }
@@ -141,56 +152,35 @@ void InstructionUIDMap::serializeTo(const std::string &FileName) const {
   for (const auto &FuncUID : this->FuncUIDMap) {
     O << FuncUID.second << '-' << FuncUID.first->getName().str() << '\n';
   }
+  O.close();
+}
+
+void InstructionUIDMap::serializeTo(const std::string &FileName) const {
+  std::ofstream O(FileName);
+  assert(O.is_open() && "Failed to open InstructionUIDMap serialization file.");
+  this->UIDMap.SerializeToOstream(&O);
+  O.close();
 }
 
 void InstructionUIDMap::parseFrom(const std::string &FileName,
                                   llvm::Module *Module) {
-  assert(this->UIDInstDescriptorMap.empty() &&
+  assert(this->UIDMap.inst_map().empty() &&
          "UIDMap is not empty when try to parse from some file.");
   std::ifstream I(FileName);
   assert(I.is_open() && "Failed to open InstructionUIDMap parse file.");
 
-  // Parse the inst uid.
-  size_t InstUIDSize;
-  assert((I >> InstUIDSize) && "Failed to read in the number of inst uids.");
-  for (size_t InstUIDLine = 0; InstUIDLine < InstUIDSize; ++InstUIDLine) {
+  this->UIDMap.ParseFromIstream(&I);
+  I.close();
 
-    InstructionUID UID;
-    std::string FuncName, BBName, OpName;
-    int PosInBB, NumValues;
-
-    bool IsParam;
-    unsigned TypeID;
-
-    assert((I >> UID >> FuncName >> BBName >> PosInBB >> OpName >> NumValues) &&
-           "Failed to read in the inst uid.");
-    std::vector<InstructionValueDescriptor> Values;
-    Values.reserve(NumValues);
-    for (int Idx = 0; Idx < NumValues; ++Idx) {
-      I >> IsParam >> TypeID;
-      Values.emplace_back(IsParam, static_cast<llvm::Type::TypeID>(TypeID));
-    }
-
-    // Local variables will be copied.
-    auto Inserted =
-        this->UIDInstDescriptorMap
-            .emplace(std::piecewise_construct, std::forward_as_tuple(UID),
-                     std::forward_as_tuple(OpName, FuncName, BBName, PosInBB,
-                                           Values))
-            .second;
-    assert(Inserted && "Failed to insert the record.");
-  }
-
-  // Parse the func uid.
-  size_t FuncUIDSize;
-  assert((I >> FuncUIDSize) && "Failed to read in the number of func uids.");
-  for (size_t FuncUIDLine = 0; FuncUIDLine < FuncUIDSize; ++FuncUIDLine) {
-    std::string FuncName, FuncUID;
-    std::getline(I, FuncUID, '-');
-    std::getline(I, FuncName);
+  // Find the real function in the module.
+  for (const auto &UIDFuncDescriptor : this->UIDMap.func_map()) {
+    const auto &FuncName = UIDFuncDescriptor.second.func_name();
     auto Func = Module->getFunction(FuncName);
+    if (Func == nullptr) {
+      llvm::errs() << "Failed to look up func " << FuncName << '\n';
+    }
     assert(Func && "Failed to look up func from FuncUID.");
-    auto Inserted = this->FuncUIDMap.emplace(Func, FuncUID).second;
+    auto Inserted = this->FuncUIDMap.emplace(Func, UIDFuncDescriptor.first).second;
     assert(Inserted && "Failed to insert FuncUID.");
   }
 
@@ -201,11 +191,11 @@ void InstructionUIDMap::parseFrom(const std::string &FileName,
       std::unordered_map<std::string, std::vector<llvm::Instruction *>>>
       MemorizedStaticInstMap;
 
-  for (const auto &UIDDescriptor : this->UIDInstDescriptorMap) {
+  for (const auto &UIDDescriptor : this->UIDMap.inst_map()) {
 
-    const auto &FuncName = UIDDescriptor.second.FuncName;
-    const auto &BBName = UIDDescriptor.second.BBName;
-    const auto &PosInBB = UIDDescriptor.second.PosInBB;
+    const auto &FuncName = UIDDescriptor.second.func();
+    const auto &BBName = UIDDescriptor.second.bb();
+    const auto &PosInBB = UIDDescriptor.second.pos_in_bb();
 
     llvm::Function *Func = Module->getFunction(FuncName);
     assert(Func && "Failed to look up traced function in module.");
@@ -259,10 +249,10 @@ void InstructionUIDMap::parseFrom(const std::string &FileName,
   }
 }
 
-const InstructionUIDMap::InstructionDescriptor &
+const LLVM::TDG::InstructionDescriptor &
 InstructionUIDMap::getDescriptor(const InstructionUID UID) const {
-  auto Iter = this->UIDInstDescriptorMap.find(UID);
-  assert(Iter != this->UIDInstDescriptorMap.end() && "Unrecognized UID.");
+  auto Iter = this->UIDMap.inst_map().find(UID);
+  assert(Iter != this->UIDMap.inst_map().end() && "Unrecognized UID.");
   return Iter->second;
 }
 

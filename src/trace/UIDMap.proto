@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package LLVM.TDG;
+
+message InstructionValueDescriptor {
+  bool is_param = 1;
+  uint32 type_id = 2;
+}
+
+message InstructionDescriptor {
+  string op = 2;
+  string func = 3;
+  string bb = 4;
+  uint32 pos_in_bb = 5;
+  repeated InstructionValueDescriptor values = 6;
+}
+
+message FunctionDescriptor {
+  string func_name = 2;
+}
+
+message UIDMap {
+  string module_name = 1;
+  map<uint64, InstructionDescriptor> inst_map = 2;
+  map<string, FunctionDescriptor> func_map = 3;
+}

@@ -49,6 +49,9 @@ class Gem5RegionStats:
                             self.regions[region_id] = Gem5Stats.Gem5Stats(
                                 self.benchmark, self.fn, stat_lines)
                             stat_lines = list()
+                        if len(fields) < 2:
+                            print(self.fn)
+                            print(line)
                         region_id = fields[1]
                     elif fields[0] == '-parent':
                         if len(fields) == 2:

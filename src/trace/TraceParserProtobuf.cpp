@@ -67,12 +67,12 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
 
   if (this->TraceEntry.inst().uid() != 0) {
     // Translate the UID back.
-    auto InstDescriptor =
+    const auto &InstDescriptor =
         this->InstUIDMap.getDescriptor(this->TraceEntry.inst().uid());
-    Parsed.Func = InstDescriptor.FuncName;
-    Parsed.BB = InstDescriptor.BBName;
-    Parsed.Id = InstDescriptor.PosInBB;
-    Parsed.Op = InstDescriptor.OpName;
+    Parsed.Func = InstDescriptor.func();
+    Parsed.BB = InstDescriptor.bb();
+    Parsed.Id = InstDescriptor.pos_in_bb();
+    Parsed.Op = InstDescriptor.op();
   } else {
     assert(false && "Failed to find instruction uid.");
   }
