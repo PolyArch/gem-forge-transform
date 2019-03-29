@@ -8,13 +8,15 @@ protobuf_generate_cpp(PROFILE_PROTOBUF_SRCS PROFILE_PROTOBUF_HDRS
     ProfileMessage.proto
 )
 
-message(STATUS "DONE BUILDING PROTOBUF")
-message(STATUS ${TRACE_PROTOBUF_SRCS})
-message(STATUS ${PROFILE_PROTOBUF_SRCS})
+protobuf_generate_cpp(UID_MAP_PROTOBUF_SRCS UID_MAP_PROTOBUF_HDRS
+    UIDMap.proto
+)
 
+# Add an object lib for parent folder to use.
 add_library(ProtobufTraceMessage OBJECT
     ${TRACE_PROTOBUF_SRCS}
     ${PROFILE_PROTOBUF_SRCS}
+    ${UID_MAP_PROTOBUF_SRCS}
 )
 set_target_properties(ProtobufTraceMessage PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fPIC -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
@@ -28,6 +30,7 @@ endif()
 add_library(TracerProtobuf STATIC 
     Tracer.cpp
     ProfileLogger.cpp
+    ${UID_MAP_PROTOBUF_SRCS}
     InstructionUIDMapReader.cpp
     ${PROFILE_PROTOBUF_SRCS}
     TracerProtobuf.cpp

@@ -297,7 +297,7 @@ void AddressDataGraph::translate(
  * 1. 
  */
 bool AddressDataGraph::isAbleToCoalesceWith(const AddressDataGraph& Other) const {
-
+  return false;
 
 
 }
