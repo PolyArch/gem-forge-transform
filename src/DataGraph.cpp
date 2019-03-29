@@ -32,6 +32,7 @@ AddrToMemAccessMap::getLastAccess(Address Addr) const {
 }
 
 void AddrToMemAccessMap::release() {
+  // llvm::errs() << "Log Size " << this->Log.size() << " Threshold " << AddrToMemAccessMap::LOG_THRESHOLD << '\n';
   while (this->Log.size() > AddrToMemAccessMap::LOG_THRESHOLD) {
     auto &Entry = this->Log.front();
     // Since we never erase entries in the map, this address should still be

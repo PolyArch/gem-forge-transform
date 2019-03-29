@@ -88,6 +88,7 @@ llvm_expand_dependencies(LLVM_DEP_LIBS ${LLVM_LIBS})
 # Inorder to use the actual header of interpreter, which is not part of the installed llvm headers.
 target_include_directories(LLVMTDGPass PUBLIC ${LLVM_SRC_LIB_DIR})
 
+message(STATUS ${PROTOBUF_LIBRARY})
 target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY} ${LLVM_DEP_LIBS})
 
 # Copy the generated python protobuf file to benchmark/Utils/.
