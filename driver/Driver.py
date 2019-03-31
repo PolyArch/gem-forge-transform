@@ -8,6 +8,7 @@ import Graph500
 import CortexSuite
 import SDVBS
 import VerticalSuite
+from BenchmarkDrivers import GemForgeMicroSuite
 import GenerateTestInputs
 
 import Util
@@ -139,6 +140,8 @@ class Driver:
                 suite = SDVBS.SDVBSSuite(benchmark_args)
             elif suite_name == 'vert':
                 suite = VerticalSuite.VerticalSuite(benchmark_args)
+            elif suite_name == 'gfm':
+                suite = GemForgeMicroSuite.GemForgeMicroSuite(benchmark_args)
             elif suite_name == 'test':
                 suite = GenerateTestInputs.TestInputSuite(benchmark_args)
             else:
