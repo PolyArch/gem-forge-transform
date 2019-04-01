@@ -65,13 +65,19 @@ make -j9
 make install
 ```
 
-### GLLVM
+### Python Environment
 
-We need to use [gllvm](https://github.com/SRI-CSL/gllvm) to extract bitcode for the SPEC2017 benchmark. When using it, make sure that you set `LLVM_COMPILER_PATH` to the correct place.
+We suggest using Anaconda to manager the environment. The driver is written in Python 2.7 and requires numpy and sklearn to perform simpoint. So after installing anaconda:
+
+```bash
+conda activate ENVIRONMENT
+conda install numpy
+conda install scikit-learn
+```
 
 ### Environment Variable
 
-This project relies on some environment variables to run.
+This project relies on some environment variables to run. You can add this to the activation script of your anaconda environment.
 
 ```bash
 export LLVM_DEBUG_INSTALL_PATH=/where/debug/llvm/installed
@@ -80,6 +86,7 @@ export LLVM_SRC_LIB_PATH=/where/llvm/source/tree/lib/is
 export LIBUNWIND_INC_PATH=/where/libunwind/include/dir/is
 export LIBUNWIND_LIB_PATH=/where/is/libunwind.a
 export LLVM_TDG_PATH=/where/this/project/is
+export LLVM_TDG_RESULT_PATH=/where/the/result/is
 ```
 
 ### Example
