@@ -99,20 +99,6 @@ class TestInputBenchmark(Benchmark):
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def transform(self, transform_config, trace, profile_file, tdg, debugs):
-        os.chdir(self.work_path)
-
-        self.build_replay(
-            transform_config=transform_config,
-            trace=trace,
-            profile_file=profile_file,
-            tdg_detail='standalone',
-            output_tdg=tdg,
-            debugs=debugs,
-        )
-
-        os.chdir(self.cwd)
-
     def clean(self):
         os.chdir(self.work_path)
         Util.call_helper([
@@ -128,8 +114,7 @@ class TestInputSuite:
     def __init__(self, benchmark_args):
 
         # Find all the test input c files.
-        myself = os.path.dirname(os.path.realpath(__file__))
-        test_folder = os.path.abspath(os.path.join(myself, '../build/test'))
+        test_folder = os.path.join(C.LLVM_TDG_BUILD_DIR, 'test')
         test_inputs = list()
         for root, dirs, files in os.walk(test_folder):
             for f in files:

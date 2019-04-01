@@ -187,21 +187,6 @@ class MachSuiteBenchmark(Benchmark):
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def transform(self, pass_name, trace, profile_file, tdg, debugs):
-        os.chdir(self.work_path)
-
-        self.build_replay(
-            pass_name=pass_name,
-            trace=trace,
-            profile_file=profile_file,
-            tdg_detail='integrated',
-            # tdg_detail='standalone',
-            output_tdg=tdg,
-            debugs=debugs,
-        )
-
-        os.chdir(self.cwd)
-
 
 class MachSuiteBenchmarks:
 

@@ -1,15 +1,15 @@
-import Benchmark
-import MultiProgramBenchmark
-import SPEC2017
-import MachSuite
-import TestHelloWorld
-import SPU
-import Graph500
-import CortexSuite
-import SDVBS
-import VerticalSuite
+from BenchmarkDrivers import Benchmark
+from BenchmarkDrivers import MultiProgramBenchmark
+from BenchmarkDrivers import SPEC2017
+from BenchmarkDrivers import MachSuite
+from BenchmarkDrivers import TestHelloWorld
+from BenchmarkDrivers import SPU
+from BenchmarkDrivers import Graph500
+from BenchmarkDrivers import CortexSuite
+from BenchmarkDrivers import SDVBS
+from BenchmarkDrivers import VerticalSuite
 from BenchmarkDrivers import GemForgeMicroSuite
-import GenerateTestInputs
+from BenchmarkDrivers import GenerateTestInputs
 
 import Util
 import StreamStatistics
@@ -63,8 +63,8 @@ def trace(benchmark):
     benchmark.trace()
 
 
-def transform(benchmark, transform_config, trace, profile_file, tdg, debugs):
-    benchmark.transform(transform_config, trace, profile_file, tdg, debugs)
+def transform(benchmark, transform_config, trace, tdg, debugs):
+    benchmark.transform(transform_config, trace, tdg, debugs)
 
 
 def simulate(benchmark, tdg, transform_config, simulation_config):
@@ -119,7 +119,7 @@ class Driver:
 
     def _init_benchmarks(self):
         benchmark_args = Benchmark.BenchmarkArgs(
-            self.transform_manager, self.simulation_manager
+            self.transform_manager, self.simulation_manager, self.options
         )
         benchmarks = list()
         for suite_name in self.options.suite:
@@ -227,7 +227,6 @@ class Driver:
     def schedule_transform(self, job_scheduler, benchmark):
         name = benchmark.get_name()
 
-        profile_file = benchmark.get_profile()
         traces = benchmark.get_traces()
 
         for transform_config in self.transform_manager.get_all_configs():
@@ -263,7 +262,6 @@ class Driver:
                             benchmark,
                             transform_config,
                             trace,
-                            profile_file,
                             tdgs[i],
                             transform_config.get_debugs(),
                         ),
@@ -492,7 +490,7 @@ if __name__ == '__main__':
     parser = optparse.OptionParser()
     parser.add_option('-j', '--cores', action='store',
                       type='int', dest='cores', default=8)
-    parser.add_option('-b', '--build', action='store_true',
+    parser.add_option('--build', action='store_true',
                       dest='build', default=False)
     parser.add_option('--perf', action='store_true',
                       dest='perf', default=False)
@@ -500,7 +498,7 @@ if __name__ == '__main__':
                       dest='profile', default=False)
     parser.add_option('--simpoint', action='store_true',
                       dest='simpoint', default=False)
-    parser.add_option('-t', '--trace', action='store_true',
+    parser.add_option('--trace', action='store_true',
                       dest='trace', default=False)
     parser.add_option('-d', '--build-datagraph', action='store_true',
                       dest='build_datagraph', default=False)
@@ -511,14 +509,16 @@ if __name__ == '__main__':
     parser.add_option('--clean', type='string', action='store',
                       dest='clean', default='')
 
-    parser.add_option('--trans-configs', type='string', action='callback', default='',
+    parser.add_option('-t', '--trans-configs', type='string', action='callback', default='',
                       dest='transforms', callback=parse_transform_configurations)
     parser.add_option('--sim-configs', type='string', action='callback', default='',
                       dest='simulations', callback=parse_simulate_configurations)
+    parser.add_option('--perf-command', action='store_true',
+                      dest='perf_command', default=False)
 
     parser.add_option('--suite', type='string', action='callback',
                       dest='suite', callback=parse_suites)
-    parser.add_option('--benchmark', type='string', action='callback',
+    parser.add_option('-b', '--benchmark', type='string', action='callback',
                       dest='benchmark', callback=parse_benchmarks)
     parser.add_option('--trace-id', type='string', action='callback',
                       dest='trace_id', callback=parse_trace_ids)

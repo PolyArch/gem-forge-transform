@@ -1,5 +1,5 @@
 
-from MultiProgramBenchmark import MultiProgramBenchmark
+from BenchmarkDrivers.MultiProgramBenchmark import MultiProgramBenchmark
 
 import Utils.Gem5Stats as Gem5Stats
 

@@ -88,20 +88,6 @@ class VerticalBenchmark(Benchmark):
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def transform(self, transform_config, trace, profile_file, tdg, debugs):
-        os.chdir(self.work_path)
-
-        self.build_replay(
-            transform_config=transform_config,
-            trace=trace,
-            profile_file=profile_file,
-            tdg_detail='standalone',
-            output_tdg=tdg,
-            debugs=debugs,
-        )
-
-        os.chdir(self.cwd)
-
     def get_additional_gem5_simulate_command(self):
         # For validation, we disable cache warm.
         return ['--gem-forge-cold-cache']

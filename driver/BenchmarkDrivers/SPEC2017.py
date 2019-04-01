@@ -307,18 +307,6 @@ class SPEC2017Benchmark(Benchmark):
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
-    def transform(self, transform_config, trace, profile_file, output_tdg, debugs):
-        os.chdir(self.get_run_path())
-        self.build_replay(
-            transform_config=transform_config,
-            trace=trace,
-            profile_file=profile_file,
-            tdg_detail='standalone',
-            output_tdg=output_tdg,
-            debugs=debugs,
-        )
-        os.chdir(self.cwd)
-
     def get_additional_gem5_simulate_command(self):
         if self.get_name() == 'spec.657.xz_s':
             # This benchmark requires significantly large memory.
@@ -392,20 +380,20 @@ class SPEC2017Benchmarks:
             'trace_func': 'global_opt',
             'lang': 'C',
         },
-        'xz_s': {
-            'name': '657.xz_s',
-            'links': [],
-            # I failed to find the pattern.
-            # To trace this, instrument the tracer twice, one with
-            # compressStream traced, the other with uncompressStream traced
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 1021e8,
-            'n_traces': 10,
-            'trace_func': 'uncompressStream',
-            'lang': 'C',
-        },
+        # 'xz_s': {
+        #     'name': '657.xz_s',
+        #     'links': [],
+        #     # I failed to find the pattern.
+        #     # To trace this, instrument the tracer twice, one with
+        #     # compressStream traced, the other with uncompressStream traced
+        #     'start_inst': 0,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 1021e8,
+        #     'n_traces': 10,
+        #     'trace_func': 'uncompressStream',
+        #     'lang': 'C',
+        # },
         'gcc_s': {
             'name': '602.gcc_s',
             'links': [],

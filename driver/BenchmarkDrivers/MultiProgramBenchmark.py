@@ -85,7 +85,7 @@ class MultiProgramBenchmark(Benchmark):
         raise NotImplementedError(
             "MultiProgramBenchmark only supports simulation.")
 
-    def transform(self, transform_config, trace, profile_file, tdg, debugs):
+    def transform(self, transform_config, trace, tdg, debugs):
         raise NotImplementedError(
             "MultiProgramBenchmark only supports simulation.")
 

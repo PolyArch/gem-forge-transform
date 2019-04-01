@@ -9,9 +9,10 @@ from Utils import SimPoint
 
 
 class BenchmarkArgs(object):
-    def __init__(self, transform_manager, simulation_manager):
+    def __init__(self, transform_manager, simulation_manager, options):
         self.transform_manager = transform_manager
         self.simulation_manager = simulation_manager
+        self.options = options
 
 
 class TraceObj(object):
@@ -124,8 +125,8 @@ class Benchmark(object):
 
         self.transform_manager = benchmark_args.transform_manager
         self.simulation_manager = benchmark_args.simulation_manager
+        self.options = benchmark_args.options
 
-        # Initialize the result directory.
         self.standalone = standalone
 
         self.pass_so = os.path.join(
@@ -521,7 +522,6 @@ class Benchmark(object):
     def build_replay(self,
                      transform_config,
                      trace,
-                     profile_file='llvm.profile',
                      tdg_detail='integrated',
                      output_tdg=None,
                      debugs=[]
@@ -541,7 +541,7 @@ class Benchmark(object):
             '-datagraph-inst-uid-file={inst_uid}'.format(
                 inst_uid=self.get_inst_uid()),
             '-tdg-profile-file={profile_file}'.format(
-                profile_file=profile_file),
+                profile_file=self.get_profile()),
             '-trace-format={format}'.format(format=self.trace_format),
             '-datagraph-detail={detail}'.format(detail=tdg_detail),
             self.get_raw_bc(),
@@ -567,6 +567,8 @@ class Benchmark(object):
         if debugs:
             opt_cmd.append(
                 '-debug-only={debugs}'.format(debugs=','.join(debugs)))
+        if self.options.perf_command:
+            opt_cmd = ['perf', 'record'] + opt_cmd
         print('# Processing trace...')
         Util.call_helper(opt_cmd)
         if tdg_detail == 'integrated':
@@ -583,6 +585,20 @@ class Benchmark(object):
             build_cmd += self.get_links()
             print('# Building replay binary...')
             Util.call_helper(build_cmd)
+
+    def transform(self, transform_config, trace, tdg, debugs):
+        cwd = os.getcwd()
+        os.chdir(self.get_run_path())
+
+        self.build_replay(
+            transform_config=transform_config,
+            trace=trace,
+            tdg_detail='standalone',
+            output_tdg=tdg,
+            debugs=debugs,
+        )
+
+        os.chdir(cwd)
 
     def get_additional_gem5_simulate_command(self):
         return []
