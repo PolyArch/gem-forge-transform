@@ -44,21 +44,3 @@ target_include_directories(TracerProtobuf PUBLIC
 set_target_properties(TracerProtobuf PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
-
-# GZip tracer library
-add_library(TracerGZip STATIC
-    Tracer.cpp
-    ProfileLogger.cpp
-    InstructionUIDMapReader.cpp
-    ${PROFILE_PROTOBUF_SRCS}
-    TracerGZip.cpp
-)
-
-target_include_directories(TracerGZip PUBLIC 
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${LIBUNWIND_INC_PATH}
-)
-
-set_target_properties(TracerGZip PROPERTIES
-    COMPILE_FLAGS "-std=c++14 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
-)

@@ -18,7 +18,6 @@
  */
 class InstructionUIDMap {
 public:
-
   using InstructionUID = uint64_t;
 
   InstructionUIDMap() : AvailableUID(TextSectionStart) {}
@@ -32,7 +31,6 @@ public:
   void serializeToTxt(const std::string &FileName) const;
   void parseFrom(const std::string &FileName, llvm::Module *Module);
 
-  const LLVM::TDG::InstructionDescriptor &getDescriptor(const InstructionUID UID) const;
   llvm::Instruction *getInst(const InstructionUID UID) const;
   InstructionUID getUID(const llvm::Instruction *Inst) const;
   const std::string &getFuncUID(const llvm::Function *Func) const;

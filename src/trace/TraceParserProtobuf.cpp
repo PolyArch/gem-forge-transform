@@ -10,8 +10,7 @@
 TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName,
                                          const InstructionUIDMap &_InstUIDMap)
     : TraceFile(TraceFileName, std::ios::in | std::ios::binary),
-      InstUIDMap(_InstUIDMap),
-      Count(0) {
+      InstUIDMap(_InstUIDMap), Count(0) {
   assert(this->TraceFile.is_open() && "Failed openning trace file.");
   this->IStream =
       new google::protobuf::io::IstreamInputStream(&this->TraceFile);
@@ -47,16 +46,16 @@ TraceParser::Type TraceParserProtobuf::getNextType() {
 std::string TraceParserProtobuf::parseLLVMDynamicValueToString(
     const ::LLVM::TDG::DynamicLLVMValue &Value) {
   switch (Value.value_case()) {
-    case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVInt: {
-      uint64_t v_int = Value.v_int();
-      return std::string(reinterpret_cast<char *>(&v_int), sizeof(v_int));
-      break;
-    }
-    case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVBytes: {
-      return Value.v_bytes();
-      break;
-    }
-    default: { return std::string(""); }
+  case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVInt: {
+    uint64_t v_int = Value.v_int();
+    return std::string(reinterpret_cast<char *>(&v_int), sizeof(v_int));
+    break;
+  }
+  case ::LLVM::TDG::DynamicLLVMValue::ValueCase::kVBytes: {
+    return Value.v_bytes();
+    break;
+  }
+  default: { return std::string(""); }
   }
 }
 
@@ -67,12 +66,7 @@ TraceParser::TracedInst TraceParserProtobuf::parseLLVMInstruction() {
 
   if (this->TraceEntry.inst().uid() != 0) {
     // Translate the UID back.
-    const auto &InstDescriptor =
-        this->InstUIDMap.getDescriptor(this->TraceEntry.inst().uid());
-    Parsed.Func = InstDescriptor.func();
-    Parsed.BB = InstDescriptor.bb();
-    Parsed.Id = InstDescriptor.pos_in_bb();
-    Parsed.Op = InstDescriptor.op();
+    Parsed.StaticInst = this->InstUIDMap.getInst(this->TraceEntry.inst().uid());
   } else {
     assert(false && "Failed to find instruction uid.");
   }

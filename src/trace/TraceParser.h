@@ -2,21 +2,20 @@
 #ifndef LLVM_TDG_TRACE_PARSER_H
 #define LLVM_TDG_TRACE_PARSER_H
 
+#include "llvm/IR/Instruction.h"
+
 #include <string>
 #include <vector>
 
 class TraceParser {
- public:
+public:
   enum Type {
     INST,
     FUNC_ENTER,
     END,
   };
   struct TracedInst {
-    std::string Func;
-    std::string BB;
-    unsigned Id;
-    std::string Op;
+    llvm::Instruction *StaticInst;
     std::vector<std::string> Operands;
     std::string Result;
   };

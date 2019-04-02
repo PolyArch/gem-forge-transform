@@ -1,6 +1,5 @@
 #include "DataGraph.h"
 #include "Utils.h"
-#include "trace/TraceParserGZip.h"
 #include "trace/TraceParserProtobuf.h"
 
 #include "llvm/Support/Debug.h"
@@ -32,7 +31,8 @@ AddrToMemAccessMap::getLastAccess(Address Addr) const {
 }
 
 void AddrToMemAccessMap::release() {
-  // llvm::errs() << "Log Size " << this->Log.size() << " Threshold " << AddrToMemAccessMap::LOG_THRESHOLD << '\n';
+  // llvm::errs() << "Log Size " << this->Log.size() << " Threshold " <<
+  // AddrToMemAccessMap::LOG_THRESHOLD << '\n';
   while (this->Log.size() > AddrToMemAccessMap::LOG_THRESHOLD) {
     auto &Entry = this->Log.front();
     // Since we never erase entries in the map, this address should still be
@@ -165,7 +165,7 @@ DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
 
   if (TraceFileFormat.getNumOccurrences() == 0 ||
       TraceFileFormat.getValue() == "gzip") {
-    this->Parser = new TraceParserGZip(TraceFileName);
+    assert(false && "GZip Trace is no longer supported.");
   } else if (TraceFileFormat.getValue() == "protobuf") {
     DEBUG(llvm::errs() << "Creating parser.\n");
     this->Parser =
@@ -279,23 +279,11 @@ DataGraph::insertDynamicInst(DynamicInstIter InsertBefore,
 bool DataGraph::parseDynamicInstruction(TraceParser::TracedInst &Parsed) {
   DEBUG(llvm::errs() << "Parsed dynamic instruction.\n");
 
-  llvm::Instruction *StaticInstruction =
-      this->getLLVMInstruction(Parsed.Func, Parsed.BB, Parsed.Id);
+  llvm::Instruction *StaticInstruction = this->getLLVMInstruction(Parsed);
 
   DEBUG(llvm::errs() << "Parsed dynamic instruction of ");
   DEBUG(this->printStaticInst(llvm::errs(), StaticInstruction));
   DEBUG(llvm::errs() << '\n');
-
-  if (Parsed.Op != StaticInstruction->getOpcodeName()) {
-    DEBUG(llvm::errs() << "Unmatched static "
-                       << StaticInstruction->getFunction()->getName()
-                       << "::" << StaticInstruction->getParent()->getName()
-                       << "::" << StaticInstruction->getOpcodeName()
-                       << " dynamic " << Parsed.Func << "::" << Parsed.BB
-                       << "::" << Parsed.Op << '\n');
-  }
-  assert(Parsed.Op == StaticInstruction->getOpcodeName() &&
-         "Unmatched opcode.\n");
 
   // Special case: Result of ret instruction.
   // This can only happen when we returned from a traced
@@ -732,47 +720,9 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed) {
 }
 
 llvm::Instruction *
-DataGraph::getLLVMInstruction(const std::string &FunctionName,
-                              const std::string &BasicBlockName,
-                              const int Index) {
-  llvm::Function *Func = this->Module->getFunction(FunctionName);
-  assert(Func && "Failed to look up traced function in module.");
-
-  auto FuncMapIter = this->MemorizedStaticInstMap.find(Func);
-  if (FuncMapIter == this->MemorizedStaticInstMap.end()) {
-    FuncMapIter =
-        this->MemorizedStaticInstMap
-            .emplace(std::piecewise_construct, std::forward_as_tuple(Func),
-                     std::forward_as_tuple())
-            .first;
-  }
-
-  auto &BBMap = FuncMapIter->second;
-  auto BBMapIter = BBMap.find(BasicBlockName);
-  if (BBMapIter == BBMap.end()) {
-    // Iterate through function's Basic blocks to create all the bbs.
-    for (auto BBIter = Func->begin(), BBEnd = Func->end(); BBIter != BBEnd;
-         ++BBIter) {
-      std::string BBName = BBIter->getName().str();
-      auto &InstVec =
-          BBMap
-              .emplace(std::piecewise_construct, std::forward_as_tuple(BBName),
-                       std::forward_as_tuple())
-              .first->second;
-      // After this point BBName is moved.
-      for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
-           InstIter != InstEnd; ++InstIter) {
-        InstVec.push_back(&*InstIter);
-      }
-    }
-    BBMapIter = BBMap.find(BasicBlockName);
-    assert(BBMapIter != BBMap.end() &&
-           "Failed to find the basic block in BBMap.");
-  }
-
-  const auto &InstVec = BBMapIter->second;
-  assert(Index >= 0 && Index < InstVec.size() && "Invalid Index.");
-  auto Inst = InstVec[Index];
+DataGraph::getLLVMInstruction(TraceParser::TracedInst &Parsed) {
+  auto Inst = Parsed.StaticInst;
+  auto Func = Inst->getFunction();
 
   /**
    * It's possible that we suddenly get instruction not from the current frame.
