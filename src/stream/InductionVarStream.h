@@ -98,9 +98,14 @@ class InductionVarStream : public Stream {
   /**
    * A phi node is an static candidate induction variable stream if:
    * 1. It is of type integer.
-   * 2. Its compute instructions or call/invoke.
+   * 2. Its compute instructions has no call/invoke.
    * 3. Contains at most one base load stream in the same inner most loop.
    */
   bool isCandidateStatic() const;
+
+  /**
+   * This is an initial attempt to analyze the stream pattern statically.
+   */
+  bool isStaticStream() const;
 };
 #endif

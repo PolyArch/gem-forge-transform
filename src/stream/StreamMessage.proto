@@ -3,63 +3,67 @@ syntax = "proto3";
 package LLVM.TDG;
 
 message StreamInfo {
+  string name = 1;
+  uint64 id = 2;
+  string type = 3;
+  uint32 loop_level = 4;
+  uint32 config_loop_level = 5;
+  int32 element_size = 6;
+  string pattern_path = 7;
+  string history_path = 8;
+  int32 coalesce_group = 9;
+
+  bool chosen = 10;
+
+  repeated StreamId base_streams = 16;
+  repeated StreamId back_base_streams = 17;
+  repeated StreamId chosen_base_streams = 18;
+
+  // repeated uint64 chosen_base_ids = 20;
+  // repeated uint64 chosen_base_step_ids = 21;
+  // repeated uint64 chosen_base_step_root_ids = 22;
+
+  // Mark if this is stream is statically qualifed without any dynamic
+  // information.
+  bool is_static_stream = 24;
+
+  message StreamId {
     string name = 1;
     uint64 id = 2;
-    string type = 3;
-    uint32 loop_level = 4;
-    uint32 config_loop_level = 5;
-    int32 element_size = 6;
-    string pattern_path = 7;
-    string history_path = 8;
-    int32 coalesce_group = 9;
-
-    bool chosen = 10;
-
-    repeated StreamId base_streams = 16;
-    repeated StreamId back_base_streams = 17;
-    repeated StreamId chosen_base_streams = 18;
-
-    // repeated uint64 chosen_base_ids = 20;
-    // repeated uint64 chosen_base_step_ids = 21;
-    // repeated uint64 chosen_base_step_root_ids = 22;
-
-    message StreamId {
-      string name = 1;
-      uint64 id = 2;
-    }
+  }
 }
 
 message StreamRegion {
-    string region = 1;
-    repeated StreamInfo streams = 8;
+  string region = 1;
+  repeated StreamInfo streams = 8;
 }
 
 message StreamPattern {
-    string val_pattern = 1;
-    string acc_pattern = 2;
-    uint64 iters = 3;
-    uint64 accesses = 4;
-    uint64 updates = 5;
-    uint64 base = 6;
-    int64 stride_i = 7;
-    uint64 ni = 8;
-    int64 stride_j = 9;
-    repeated HistoryEntry history = 10;
+  string val_pattern = 1;
+  string acc_pattern = 2;
+  uint64 iters = 3;
+  uint64 accesses = 4;
+  uint64 updates = 5;
+  uint64 base = 6;
+  int64 stride_i = 7;
+  uint64 ni = 8;
+  int64 stride_j = 9;
+  repeated HistoryEntry history = 10;
 
-    message HistoryEntry {
-        bool valid = 1;
-        uint64 value = 2;
-    }
+  message HistoryEntry {
+    bool valid = 1;
+    uint64 value = 2;
+  }
 }
 
 message StreamHistory {
-    message HistoryEntry {
-        bool valid = 1;
-        uint64 addr = 2;
-        bool used = 3;
-    }
-    uint64 id = 1;
-    repeated HistoryEntry history = 2;
-    uint64 num_cache_lines = 3;
-    uint64 num_accesses = 4;
+  message HistoryEntry {
+    bool valid = 1;
+    uint64 addr = 2;
+    bool used = 3;
+  }
+  uint64 id = 1;
+  repeated HistoryEntry history = 2;
+  uint64 num_cache_lines = 3;
+  uint64 num_accesses = 4;
 }

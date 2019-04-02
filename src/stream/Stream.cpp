@@ -19,6 +19,7 @@ Stream::Stream(TypeT _Type, const std::string &_Folder,
       HasMissingBaseStream(false),
       Qualified(false),
       Chosen(false),
+      IsStaticStream(false),
       CoalesceGroup(-1),
       TotalIters(0),
       TotalAccesses(0),
@@ -197,6 +198,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
   ProtobufInfo->set_coalesce_group(this->CoalesceGroup);
   ProtobufInfo->set_chosen(this->Chosen);
+  ProtobufInfo->set_is_static_stream(this->IsStaticStream);
 
 #define ADD_STREAM(SET, FIELD)                  \
   {                                             \
