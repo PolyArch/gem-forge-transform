@@ -266,18 +266,8 @@ private:
    * Find the static llvm instruction for an incoming dynamic instruction.
    ***************************************************************************/
 
-  // Memorized map to quickly locate the static instruction.
-  std::unordered_map<
-      llvm::Function *,
-      std::unordered_map<std::string, std::vector<llvm::Instruction *>>>
-      MemorizedStaticInstMap;
-
-  // Use MemorizedStaticInstMap to quickly locate the static instruction.
-  // May update the memorize map if this is the first time.
   // Also if the frame stack is empty, trys to allocate an empty frame for it.
-  llvm::Instruction *getLLVMInstruction(const std::string &FunctionName,
-                                        const std::string &BasicBlockName,
-                                        const int Index);
+  llvm::Instruction *getLLVMInstruction(TraceParser::TracedInst &Parsed);
 
   /***************************************************************************
    * Handle memory dependence.

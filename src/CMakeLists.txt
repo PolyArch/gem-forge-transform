@@ -17,7 +17,6 @@ protobuf_generate_python(TDG_PROTOBUF_PY TDGInstruction.proto)
 # The llvm pass shared library.
 add_library(LLVMTDGPass SHARED
     trace/TracePass.cpp
-    trace/TraceParserGZip.cpp
     trace/GZipUtil.cpp
     trace/TraceParserProtobuf.cpp
     trace/ProfileParser.cpp
