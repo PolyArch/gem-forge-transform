@@ -35,7 +35,7 @@
  */
 
 class Stream {
-public:
+ public:
   enum TypeT {
     IV,
     MEM,
@@ -141,11 +141,11 @@ public:
   virtual bool isAliased() const { return false; }
   std::string formatType() const {
     switch (this->Type) {
-    case IV:
-      return "IV";
-    case MEM:
-      return "MEM";
-    default: { llvm_unreachable("Illegal stream type to be formatted."); }
+      case IV:
+        return "IV";
+      case MEM:
+        return "MEM";
+      default: { llvm_unreachable("Illegal stream type to be formatted."); }
     }
   }
   std::string formatName() const {
@@ -158,27 +158,27 @@ public:
            Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
   }
 
-  virtual const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const = 0;
+  virtual const std::unordered_set<const llvm::Instruction *> &getComputeInsts()
+      const = 0;
 
-  virtual const std::unordered_set<const llvm::Instruction *> &
-  getStepInsts() const {
+  virtual const std::unordered_set<const llvm::Instruction *> &getStepInsts()
+      const {
     assert(false && "getStepInst only implemented for IVStream.");
   }
 
-  virtual const std::unordered_set<const llvm::LoadInst *> &
-  getBaseLoads() const = 0;
+  virtual const std::unordered_set<const llvm::LoadInst *> &getBaseLoads()
+      const = 0;
 
   static bool isStepInst(const llvm::Instruction *Inst) {
     auto Opcode = Inst->getOpcode();
     switch (Opcode) {
-    case llvm::Instruction::Add: {
-      return true;
-    }
-    case llvm::Instruction::GetElementPtr: {
-      return true;
-    }
-    default: { return false; }
+      case llvm::Instruction::Add: {
+        return true;
+      }
+      case llvm::Instruction::GetElementPtr: {
+        return true;
+      }
+      default: { return false; }
     }
   }
 
@@ -222,10 +222,10 @@ public:
 
   using GetChosenStreamFuncT =
       std::function<Stream *(const llvm::Instruction *)>;
-  virtual void
-  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) = 0;
+  virtual void buildChosenDependenceGraph(
+      GetChosenStreamFuncT GetChosenStream) = 0;
 
-protected:
+ protected:
   /**
    * Stores the information of the stream.
    */
@@ -267,6 +267,7 @@ protected:
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;
+  bool IsStaticStream;
 
   int CoalesceGroup;
   /**
