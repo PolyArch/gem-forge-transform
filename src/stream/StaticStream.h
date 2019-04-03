@@ -51,6 +51,8 @@ public:
   bool IsStream;
   LLVM::TDG::StreamAccessPattern AccPattern;
   LLVM::TDG::StreamValuePattern ValPattern;
+
+protected:
 };
 
 class StaticMemStream : public StaticStream {
@@ -63,7 +65,7 @@ public:
 
 class StaticIndVarStream : public StaticStream {
 public:
-  StaticIndVarStream(const llvm::PHINode *_PHINode,
+  StaticIndVarStream(llvm::PHINode *_PHINode,
                      const llvm::Loop *_ConfigureLoop,
                      const llvm::Loop *_InnerMostLoop,
                      llvm::ScalarEvolution *_SE)
@@ -124,7 +126,7 @@ public:
   void analyze();
 
 private:
-  const llvm::PHINode *PHINode;
+  llvm::PHINode *PHINode;
 
   std::unordered_set<const llvm::LoadInst *> LoadInputs;
   std::unordered_set<const llvm::Instruction *> CallInputs;
@@ -194,5 +196,8 @@ private:
   constructComputePathRecursive(ComputeMetaNode *ComputeMNode,
                                 ComputePath &CurrentPath,
                                 std::list<ComputePath> &AllComputePaths) const;
+
+  LLVM::TDG::StreamValuePattern
+  analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const;
 };
 #endif

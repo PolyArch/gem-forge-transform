@@ -18,7 +18,7 @@ static const uint32_t Gem5MagicNumber = 0x356d6567;
 
 ProtobufSerializer::ProtobufSerializer(const std::string &FileName,
                                        std::ios_base::openmode OpenMode) {
-  llvm::errs() << "Try to open protobuf serializer file " << FileName << '\n';
+  // llvm::errs() << "Try to open protobuf serializer file " << FileName << '\n';
   this->OutFileStream.open(FileName, OpenMode);
 
   assert(this->OutFileStream.is_open() &&

@@ -64,7 +64,7 @@ void StaticStreamRegionAnalyzer::initializeStreams() {
 }
 
 void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
-    const llvm::Instruction *StreamInst) {
+    llvm::Instruction *StreamInst) {
   auto InnerMostLoop = this->LI->getLoopFor(StreamInst->getParent());
   assert(InnerMostLoop != nullptr &&
          "Failed to get inner most loop for stream inst.");
