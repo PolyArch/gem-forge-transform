@@ -30,7 +30,7 @@ private:
   InstStaticStreamMapT InstStaticStreamMap;
 
   void initializeStreams();
-  void initializeStreamForAllLoops(const llvm::Instruction *StreamInst);
+  void initializeStreamForAllLoops(llvm::Instruction *StreamInst);
 };
 
 #endif

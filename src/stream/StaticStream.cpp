@@ -1,11 +1,51 @@
 #include "stream/StaticStream.h"
 
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Support/raw_ostream.h"
 
 void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   SSI.set_is_stream(this->IsStream);
   SSI.set_acc_pattern(this->AccPattern);
   SSI.set_val_pattern(this->ValPattern);
+}
+
+LLVM::TDG::StreamValuePattern
+StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
+  if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
+    if (AddRecSCEV->isAffine()) {
+      return LLVM::TDG::StreamValuePattern::LINEAR;
+    }
+  } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV)) {
+    /**
+     * If one of the operand is loop invariant, and the other one is our
+     * PHINode, then this is LINEAR.
+     */
+    auto NumOperands = AddSCEV->getNumOperands();
+    assert(NumOperands == 2 && "AddSCEV should have 2 operands.");
+    const llvm::SCEV *LoopVariantSCEV = nullptr;
+    for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
+      auto OpSCEV = AddSCEV->getOperand(OperandIdx);
+      if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
+        // Loop invariant.
+        continue;
+      }
+      if (LoopVariantSCEV == nullptr) {
+        LoopVariantSCEV = OpSCEV;
+      } else {
+        // More than one variant SCEV.
+        return LLVM::TDG::StreamValuePattern::RANDOM;
+      }
+    }
+    // Check if the other one is myself.
+    assert(this->SE->isSCEVable(this->PHINode->getType()) &&
+           "My PHINode should be SCEVable.");
+    auto PHINodeSCEV = this->SE->getSCEV(this->PHINode);
+    if (PHINodeSCEV == LoopVariantSCEV) {
+      return LLVM::TDG::StreamValuePattern::LINEAR;
+    }
+  }
+
+  return LLVM::TDG::StreamValuePattern::RANDOM;
 }
 
 bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
@@ -52,7 +92,7 @@ void StaticIndVarStream::analyze() {
    * 3. At most one "unique" non-empty compute path.
    * 4. In this unique non-empty compute path:
    *   a. All non-empty ComputeMNode has the SCEV.
-   *   b.
+   *   b. The first SCEV must be a recognizable ValuePattern.
    */
 
   // 1.
@@ -89,14 +129,34 @@ void StaticIndVarStream::analyze() {
     }
   }
 
-  // 4. Only add,sub are allowed so far. TODO.
+  // 4.
   if (CurrentNonEmptyComputePath != nullptr) {
     for (const auto &ComputeMNode :
          CurrentNonEmptyComputePath->ComputeMetaNodes) {
+      // 4a. No empty SCEV.
       if (ComputeMNode->SCEV == nullptr) {
         this->IsStream = false;
         return;
       }
+    }
+    // 4b. Check the ValuePattern from the first non-empty SCEV.
+    const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
+    for (const auto &ComputeMNode :
+         CurrentNonEmptyComputePath->ComputeMetaNodes) {
+      if (ComputeMNode->isEmpty()) {
+        continue;
+      }
+      FirstNonEmptyComputeMNode = ComputeMNode;
+      break;
+    }
+    auto ValPattern =
+        this->analyzeValuePatternFromSCEV(FirstNonEmptyComputeMNode->SCEV);
+    if (ValPattern == LLVM::TDG::StreamValuePattern::RANDOM) {
+      // This is not a recognizable pattern.
+      this->IsStream = false;
+      return;
+    } else {
+      this->ValPattern = ValPattern;
     }
   }
 
@@ -139,17 +199,20 @@ void StaticIndVarStream::handleFirstTimeComputeNode(
         DFSStack.pop_back();
       } else if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         // Another PHIMeta Node.
+        // We have to pop this before handleFirstTimePHIMetaNode emplace next
+        // compute nodes.
+        DFSStack.pop_back();
         if (ConstructedPHIMetaNodeMap.count(PHINode) == 0) {
           // First time encounter the phi node.
           this->PHIMetaNodes.emplace_back(PHINode);
           ConstructedPHIMetaNodeMap.emplace(PHINode,
                                             &this->PHIMetaNodes.back());
+          // This may modify the DFSStack.
           this->handleFirstTimePHIMetaNode(DFSStack, &this->PHIMetaNodes.back(),
                                            ConstructedComputeMetaNodeMap);
         }
         auto PHIMNode = ConstructedPHIMetaNodeMap.at(PHINode);
         ComputeMNode->PHIMetaNodes.insert(PHIMNode);
-        DFSStack.pop_back();
       } else {
         // Normal compute inst.
         for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
@@ -213,14 +276,17 @@ void StaticIndVarStream::constructMetaGraph() {
     if (DNode.VisitTimes == 0) {
       // First time.
       DNode.VisitTimes++;
+      // Notice that handleFirstTimeComputeNode may pop DFSStack!.
       this->handleFirstTimeComputeNode(DFSStack, DNode,
                                        ConstructedPHIMetaNodeMap,
                                        ConstructedComputeMetaNodeMap);
-    } else if (DNode.VisitTimes == 1) {
+    } else {
       // Second time. This must be a real compute inst.
       bool Inserted = false;
       auto Inst = llvm::dyn_cast<llvm::Instruction>(DNode.Value);
       assert(Inst && "Only compute inst will be handled twice.");
+      assert(!llvm::isa<llvm::PHINode>(Inst) &&
+             "No PHINode can be handled twice.");
       for (auto ComputeInst : DNode.ComputeMNode->ComputeInsts) {
         if (ComputeInst == Inst) {
           Inserted = true;
@@ -289,4 +355,16 @@ void StaticIndVarStream::constructComputePathRecursive(
 
 void StaticIndVarStream::ComputePath::debug() const {
   llvm::errs() << "ComputePath ";
+  for (const auto &ComputeMNode : this->ComputeMetaNodes) {
+    char Empty = ComputeMNode->isEmpty() ? 'E' : 'F';
+    llvm::errs() << Utils::formatLLVMValueWithoutFunc(ComputeMNode->RootValue)
+                 << Empty;
+    if (!ComputeMNode->isEmpty()) {
+      for (const auto &ComputeInst : ComputeMNode->ComputeInsts) {
+        llvm::errs() << Utils::formatLLVMInstWithoutFunc(ComputeInst) << ',';
+      }
+    }
+    llvm::errs() << ' ';
+  }
+  llvm::errs() << '\n';
 }

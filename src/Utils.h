@@ -156,6 +156,14 @@ public:
     }
   }
 
+  static std::string formatLLVMValueWithoutFunc(const llvm::Value *Value) {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      return Utils::formatLLVMInstWithoutFunc(Inst);
+    } else {
+      return Value->getName();
+    }
+  }
+
   /**
    * Split a string like a|b|c| into [a, b, c].
    */
