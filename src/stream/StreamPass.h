@@ -3,7 +3,7 @@
 
 #include "Replay.h"
 #include "Utils.h"
-#include "stream/InductionVarStream.h"
+#include "stream/IndVarStream.h"
 #include "stream/MemStream.h"
 #include "stream/StreamRegionAnalyzer.h"
 
@@ -127,7 +127,7 @@ protected:
 
   using ActiveIVStreamMapT = std::unordered_map<
       const llvm::Loop *,
-      std::unordered_map<const llvm::PHINode *, InductionVarStream *>>;
+      std::unordered_map<const llvm::PHINode *, IndVarStream *>>;
   using LoopStackT = std::list<llvm::Loop *>;
 
   std::unordered_map<const llvm::Loop *, std::unique_ptr<StreamRegionAnalyzer>>

@@ -350,7 +350,7 @@ void InlineContextStreamPass::dumpStats(std::ostream &O) {
       size_t Accesses = Stream.getTotalAccesses();
       size_t Updates = 0;
       size_t StreamCount = Stream.getTotalStreams();
-      size_t LoopLevel = Stream.getLoopLevel();
+      size_t LoopLevel = 0;
       size_t BaseLoads = Stream.getNumBaseLoads();
 
       std::string StreamClass = this->classifyStream(Stream);

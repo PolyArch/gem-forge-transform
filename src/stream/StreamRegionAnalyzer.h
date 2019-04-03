@@ -2,9 +2,12 @@
 #define LLVM_TDG_STREAM_REGION_ANALYZER_H
 
 #include "DataGraph.h"
+#include "LoopUtils.h"
 #include "Utils.h"
-#include "stream/InductionVarStream.h"
+
+#include "stream/IndVarStream.h"
 #include "stream/MemStream.h"
+#include "stream/StaticStreamRegionAnalyzer.h"
 #include "stream/StreamTransformPlan.h"
 #include "stream/ae/FunctionalStreamEngine.h"
 
@@ -13,9 +16,9 @@
 enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
 
 class StreamRegionAnalyzer {
- public:
-  StreamRegionAnalyzer(uint64_t _RegionIdx, llvm::Loop *_TopLoop,
-                       llvm::LoopInfo *_LI, llvm::DataLayout *_DataLayout,
+public:
+  StreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
+                       llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
                        const std::string &_RootPath);
 
   StreamRegionAnalyzer(const StreamRegionAnalyzer &Other) = delete;
@@ -44,24 +47,26 @@ class StreamRegionAnalyzer {
     return this->InstPlanMap;
   }
 
-  std::list<Stream *> getSortedChosenStreamsByConfiguredLoop(
-      const llvm::Loop *ConfiguredLoop);
+  std::list<Stream *>
+  getSortedChosenStreamsByConfiguredLoop(const llvm::Loop *ConfiguredLoop);
 
   Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
 
-  const StreamTransformPlan &getTransformPlanByInst(
-      const llvm::Instruction *Inst);
+  const StreamTransformPlan &
+  getTransformPlanByInst(const llvm::Instruction *Inst);
 
   FunctionalStreamEngine *getFuncSE();
 
- private:
+private:
   uint64_t RegionIdx;
+  CachedLoopInfo *CachedLI;
   llvm::Loop *TopLoop;
   llvm::LoopInfo *LI;
   llvm::DataLayout *DataLayout;
   std::string RootPath;
   std::string AnalyzeRelativePath;
   std::string AnalyzePath;
+  std::unique_ptr<StaticStreamRegionAnalyzer> StaticAnalyzer;
 
   /**
    * Key data structure, map from instruction to the list of streams.
@@ -97,10 +102,10 @@ class StreamRegionAnalyzer {
   std::unique_ptr<FunctionalStreamEngine> FuncSE;
 
   void initializeStreams();
-  void initializeStreamForAllLoops(const llvm::Instruction *StreamInst);
 
-  Stream *getStreamByInstAndConfiguredLoop(
-      const llvm::Instruction *Inst, const llvm::Loop *ConfiguredLoop) const;
+  Stream *
+  getStreamByInstAndConfiguredLoop(const llvm::Instruction *Inst,
+                                   const llvm::Loop *ConfiguredLoop) const;
   void buildStreamDependenceGraph();
 
   void markQualifiedStreams();

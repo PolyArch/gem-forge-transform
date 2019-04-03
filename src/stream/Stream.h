@@ -6,6 +6,7 @@
 #include "Gem5ProtobufSerializer.h"
 #include "LoopUtils.h"
 #include "Utils.h"
+#include "stream/StaticStream.h"
 #include "stream/StreamPattern.h"
 
 #include "llvm/Analysis/LoopInfo.h"
@@ -35,16 +36,10 @@
  */
 
 class Stream {
- public:
-  enum TypeT {
-    IV,
-    MEM,
-  };
-  const TypeT Type;
-  Stream(TypeT _Type, const std::string &_Folder,
-         const std::string &_RelativeFolder, const llvm::Instruction *_Inst,
-         const llvm::Loop *_Loop, const llvm::Loop *_InnerMostLoop,
-         size_t _LoopLevel, llvm::DataLayout *DataLayout);
+public:
+  const StaticStream *const SStream;
+  Stream(const std::string &_Folder, const std::string &_RelativeFolder,
+         const StaticStream *_SStream, llvm::DataLayout *DataLayout);
   virtual ~Stream() = default;
 
   using StreamSet = std::unordered_set<Stream *>;
@@ -74,9 +69,11 @@ class Stream {
     this->CoalesceGroup = CoalesceGroup;
   }
   int getCoalesceGroup() const { return this->CoalesceGroup; }
-  const llvm::Loop *getLoop() const { return this->Loop; }
-  const llvm::Loop *getInnerMostLoop() const { return this->InnerMostLoop; }
-  const llvm::Instruction *getInst() const { return this->Inst; }
+  const llvm::Loop *getLoop() const { return this->SStream->ConfigureLoop; }
+  const llvm::Loop *getInnerMostLoop() const {
+    return this->SStream->InnerMostLoop;
+  }
+  const llvm::Instruction *getInst() const { return this->SStream->Inst; }
   uint64_t getStreamId() const { return reinterpret_cast<uint64_t>(this); }
   std::string getPatternFullPath() const {
     return this->Folder + "/" + this->PatternFileName;
@@ -102,7 +99,6 @@ class Stream {
     return this->ProtobufPatterns;
   }
 
-  size_t getLoopLevel() const { return this->LoopLevel; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }
   size_t getTotalStreams() const { return this->TotalStreams; }
@@ -139,46 +135,29 @@ class Stream {
                               LLVM::TDG::StreamInfo *ProtobufInfo) const;
 
   virtual bool isAliased() const { return false; }
-  std::string formatType() const {
-    switch (this->Type) {
-      case IV:
-        return "IV";
-      case MEM:
-        return "MEM";
-      default: { llvm_unreachable("Illegal stream type to be formatted."); }
-    }
-  }
-  std::string formatName() const {
-    // We need a more compact encoding of a stream name. Since the function is
-    // always the same, let it be (type function loop_header_bb inst_bb
-    // inst_name)
-    return "(" + this->formatType() + " " +
-           Utils::formatLLVMFunc(this->Inst->getFunction()) + " " +
-           this->Loop->getHeader()->getName().str() + " " +
-           Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
-  }
+  std::string formatName() const { return this->SStream->formatName(); }
 
-  virtual const std::unordered_set<const llvm::Instruction *> &getComputeInsts()
-      const = 0;
+  virtual const std::unordered_set<const llvm::Instruction *> &
+  getComputeInsts() const = 0;
 
-  virtual const std::unordered_set<const llvm::Instruction *> &getStepInsts()
-      const {
+  virtual const std::unordered_set<const llvm::Instruction *> &
+  getStepInsts() const {
     assert(false && "getStepInst only implemented for IVStream.");
   }
 
-  virtual const std::unordered_set<const llvm::LoadInst *> &getBaseLoads()
-      const = 0;
+  virtual const std::unordered_set<const llvm::LoadInst *> &
+  getBaseLoads() const = 0;
 
   static bool isStepInst(const llvm::Instruction *Inst) {
     auto Opcode = Inst->getOpcode();
     switch (Opcode) {
-      case llvm::Instruction::Add: {
-        return true;
-      }
-      case llvm::Instruction::GetElementPtr: {
-        return true;
-      }
-      default: { return false; }
+    case llvm::Instruction::Add: {
+      return true;
+    }
+    case llvm::Instruction::GetElementPtr: {
+      return true;
+    }
+    default: { return false; }
     }
   }
 
@@ -222,10 +201,10 @@ class Stream {
 
   using GetChosenStreamFuncT =
       std::function<Stream *(const llvm::Instruction *)>;
-  virtual void buildChosenDependenceGraph(
-      GetChosenStreamFuncT GetChosenStream) = 0;
+  virtual void
+  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) = 0;
 
- protected:
+protected:
   /**
    * Stores the information of the stream.
    */
@@ -235,14 +214,6 @@ class Stream {
   std::string InfoFileName;
   std::string HistoryFileName;
   std::list<LLVM::TDG::StreamPattern> ProtobufPatterns;
-
-  /**
-   * Stores the instruction and loop.
-   */
-  const llvm::Instruction *Inst;
-  const llvm::Loop *Loop;
-  const llvm::Loop *InnerMostLoop;
-  const size_t LoopLevel;
 
   size_t ElementSize;
 

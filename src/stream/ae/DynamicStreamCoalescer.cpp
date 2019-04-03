@@ -126,11 +126,11 @@ int DynamicStreamCoalescer::findRoot(int A) const {
 
 bool DynamicStreamCoalescer::isDirectMemStream(FunctionalStream *FuncS) {
   auto S = FuncS->getStream();
-  if (S->Type != Stream::TypeT::MEM) {
+  if (S->SStream->Type != StaticStream::TypeT::MEM) {
     return false;
   }
   for (auto BaseS : S->getChosenBaseStepStreams()) {
-    if (BaseS->Type != Stream::TypeT::IV) {
+    if (BaseS->SStream->Type != StaticStream::TypeT::IV) {
       // Base on a mem stream.
       if (BaseS->getChosenBaseStepStreams().empty()) {
         // This is a constant load. Ignore it.

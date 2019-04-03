@@ -6,10 +6,10 @@ void MemStream::searchAddressComputeInstructions(
   std::list<llvm::Instruction *> Queue;
 
   llvm::Value *AddrValue = nullptr;
-  if (llvm::isa<llvm::LoadInst>(this->Inst)) {
-    AddrValue = this->Inst->getOperand(0);
+  if (llvm::isa<llvm::LoadInst>(this->getInst())) {
+    AddrValue = this->getInst()->getOperand(0);
   } else {
-    AddrValue = this->Inst->getOperand(1);
+    AddrValue = this->getInst()->getOperand(1);
   }
 
   if (auto AddrInst = llvm::dyn_cast<llvm::Instruction>(AddrValue)) {
@@ -23,7 +23,7 @@ void MemStream::searchAddressComputeInstructions(
       // We have already processed this one.
       continue;
     }
-    if (!this->Loop->contains(CurrentInst)) {
+    if (!this->getLoop()->contains(CurrentInst)) {
       // This instruction is out of our analysis level. ignore it.
       continue;
     }
@@ -62,12 +62,12 @@ void MemStream::searchAddressComputeInstructions(
 
 void MemStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
   for (const auto &BaseIV : this->BaseInductionVars) {
-    auto BaseIVStream = GetStream(BaseIV, this->Loop);
+    auto BaseIVStream = GetStream(BaseIV, this->getLoop());
     assert(BaseIVStream != nullptr && "Missing base IVStream.");
     this->addBaseStream(BaseIVStream);
   }
   for (const auto &BaseLoad : this->BaseLoads) {
-    auto BaseMStream = GetStream(BaseLoad, this->Loop);
+    auto BaseMStream = GetStream(BaseLoad, this->getLoop());
     assert(BaseMStream != nullptr && "Missing base MemStream.");
     this->addBaseStream(BaseMStream);
   }

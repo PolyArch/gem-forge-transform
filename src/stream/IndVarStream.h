@@ -4,33 +4,31 @@
 #include "stream/Stream.h"
 
 #include <sstream>
-class InductionVarStream : public Stream {
- public:
-  InductionVarStream(const std::string &_Folder,
-                     const std::string &_RelativeFolder,
-                     const llvm::PHINode *_PHIInst, const llvm::Loop *_Loop,
-                     const llvm::Loop *_InnerMostLoop, size_t _Level,
-                     llvm::DataLayout *DataLayout);
-  InductionVarStream(const InductionVarStream &Other) = delete;
-  InductionVarStream(InductionVarStream &&Other) = delete;
-  InductionVarStream &operator=(const InductionVarStream &Other) = delete;
-  InductionVarStream &operator=(InductionVarStream &&Other) = delete;
+class IndVarStream : public Stream {
+public:
+  IndVarStream(const std::string &_Folder, const std::string &_RelativeFolder,
+               const StaticStream *_SStream,
+               llvm::DataLayout *DataLayout);
+  IndVarStream(const IndVarStream &Other) = delete;
+  IndVarStream(IndVarStream &&Other) = delete;
+  IndVarStream &operator=(const IndVarStream &Other) = delete;
+  IndVarStream &operator=(IndVarStream &&Other) = delete;
 
   void buildBasicDependenceGraph(GetStreamFuncT GetStream) override;
-  void buildChosenDependenceGraph(
-      GetChosenStreamFuncT GetChosenStream) override;
+  void
+  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) override;
 
   const llvm::PHINode *getPHIInst() const { return this->PHIInst; }
-  const std::unordered_set<const llvm::Instruction *> &getComputeInsts()
-      const override {
+  const std::unordered_set<const llvm::Instruction *> &
+  getComputeInsts() const override {
     return this->ComputeInsts;
   }
-  const std::unordered_set<const llvm::LoadInst *> &getBaseLoads()
-      const override {
+  const std::unordered_set<const llvm::LoadInst *> &
+  getBaseLoads() const override {
     return this->BaseLoadInsts;
   }
-  const std::unordered_set<const llvm::Instruction *> &getStepInsts()
-      const override {
+  const std::unordered_set<const llvm::Instruction *> &
+  getStepInsts() const override {
     return this->StepInsts;
   }
 
@@ -54,8 +52,7 @@ class InductionVarStream : public Stream {
 
   std::string format() const {
     std::stringstream ss;
-    ss << "InductionVarStream " << LoopUtils::formatLLVMInst(this->PHIInst)
-       << '\n';
+    ss << "IndVarStream " << LoopUtils::formatLLVMInst(this->PHIInst) << '\n';
 
     ss << "ComputeInsts: ------\n";
     for (const auto &ComputeInst : this->ComputeInsts) {
@@ -66,7 +63,7 @@ class InductionVarStream : public Stream {
     return ss.str();
   }
 
- private:
+private:
   const llvm::PHINode *PHIInst;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
   std::unordered_set<const llvm::LoadInst *> BaseLoadInsts;
@@ -89,8 +86,8 @@ class InductionVarStream : public Stream {
   /**
    * Do a BFS on the PHINode and extract all the step instructions.
    */
-  static std::unordered_set<const llvm::Instruction *> searchStepInsts(
-      const llvm::PHINode *PHINode, const llvm::Loop *Loop);
+  static std::unordered_set<const llvm::Instruction *>
+  searchStepInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
 
   /**
    * Find the step instructions by looking at the possible in

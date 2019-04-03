@@ -2,12 +2,13 @@
 
 class StreamTransformPassStepInstDetectionTestFixture
     : public StreamTransformPassTestFixture {
- protected:
+protected:
   using ExpectedStepInstNameMapT =
       std::unordered_map<std::string, std::unordered_set<std::string>>;
 
-  void testStepInstDetection(
-      llvm::Loop *Loop, const ExpectedStepInstNameMapT &ExpectedStepInsts) {
+  void
+  testStepInstDetection(llvm::Loop *Loop,
+                        const ExpectedStepInstNameMapT &ExpectedStepInsts) {
     llvm::DataLayout DataLayout(this->Module.get());
 
     // Create the IVStreams for all the phi nodes.
@@ -20,8 +21,9 @@ class StreamTransformPassStepInstDetectionTestFixture
         // We do not expect this PHIInst to be an iv stream.
         continue;
       }
-      InductionVarStream IVStream(this->OutputExtraFolder, "", PHIInst, Loop,
-                                  Loop, 0, &DataLayout);
+      StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop);
+      IndVarStream IVStream(this->OutputExtraFolder, "", &StaticIVStream,
+                            &DataLayout);
       const auto &ExpectedStepInstNames = ExpectedStepInstsIter->second;
       std::unordered_set<std::string> ActualStepInstNames;
       for (auto StepInst : IVStream.getStepInsts()) {

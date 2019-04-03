@@ -47,11 +47,13 @@ add_library(LLVMTDGPass SHARED
     stream/InlineContextStreamPass.cpp
     stream/InlineContext.cpp
     stream/InlineContextStream.cpp
+    stream/StaticStream.cpp
     stream/Stream.cpp
-    stream/InductionVarStream.cpp
+    stream/IndVarStream.cpp
     stream/MemStream.cpp
     stream/StreamTransformPlan.cpp
     stream/StreamRegionAnalyzer.cpp
+    stream/StaticStreamRegionAnalyzer.cpp
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp
     stream/ae/AddressDataGraph.cpp
