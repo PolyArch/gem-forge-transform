@@ -2,6 +2,25 @@ syntax = "proto3";
 
 package LLVM.TDG;
 
+enum StreamAccessPattern {
+  UNKNOWN = 0;
+  UNCONDITIONAL = 1;
+  CONDITIONAL = 2;
+}
+
+enum StreamValuePattern {
+  RANDOM = 0;
+  CONSTANT = 1;
+  LINEAR = 2;
+  QUARDRIC = 3;
+}
+
+message StaticStreamInfo {
+  bool is_stream = 1;
+  StreamAccessPattern acc_pattern = 2;
+  StreamValuePattern val_pattern = 3; 
+}
+
 message StreamInfo {
   string name = 1;
   uint64 id = 2;
@@ -25,7 +44,7 @@ message StreamInfo {
 
   // Mark if this is stream is statically qualifed without any dynamic
   // information.
-  bool is_static_stream = 24;
+  StaticStreamInfo static_info = 24;
 
   message StreamId {
     string name = 1;

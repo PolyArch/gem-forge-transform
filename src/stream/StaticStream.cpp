@@ -1,5 +1,13 @@
 #include "stream/StaticStream.h"
 
+#include "llvm/Support/raw_ostream.h"
+
+void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
+  SSI.set_is_stream(this->IsStream);
+  SSI.set_acc_pattern(this->AccPattern);
+  SSI.set_val_pattern(this->ValPattern);
+}
+
 bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
     const ComputeMetaNode *Other) const {
   /**
@@ -36,33 +44,38 @@ bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
   return true;
 }
 
-bool StaticIndVarStream::isStaticStream() {
+void StaticIndVarStream::analyze() {
   /**
    * Start to check constraints:
    * 1. No call inputs.
    * 2. No ComputeMetaNode has more than one PHIMetaNode child.
    * 3. At most one "unique" non-empty compute path.
-   * 4. In this unique non-empty compute path, only special instructions are
-   * allowed.
+   * 4. In this unique non-empty compute path:
+   *   a. All non-empty ComputeMNode has the SCEV.
+   *   b.
    */
 
   // 1.
   if (!this->CallInputs.empty()) {
-    return false;
+    this->IsStream = false;
+    return;
   }
 
   // 2.
   for (const auto &ComputeMNode : this->ComputeMetaNodes) {
     if (ComputeMNode.PHIMetaNodes.size() > 1) {
-      return false;
+      this->IsStream = false;
+      return;
     }
   }
 
   // 3.
-  this->constructComputePath();
+  auto AllComputePaths = this->constructComputePath();
   const ComputePath *CurrentNonEmptyComputePath = nullptr;
-  for (const auto &Path : this->AllComputePaths) {
+  auto EmptyPathFound = false;
+  for (const auto &Path : AllComputePaths) {
     if (Path.isEmpty()) {
+      EmptyPathFound = true;
       continue;
     }
     if (CurrentNonEmptyComputePath == nullptr) {
@@ -70,16 +83,33 @@ bool StaticIndVarStream::isStaticStream() {
     } else {
       // We have to make sure that these two compute path are the same.
       if (!CurrentNonEmptyComputePath->isIdenticalTo(&Path)) {
-        return false;
+        this->IsStream = false;
+        return;
       }
     }
   }
 
   // 4. Only add,sub are allowed so far. TODO.
   if (CurrentNonEmptyComputePath != nullptr) {
+    for (const auto &ComputeMNode :
+         CurrentNonEmptyComputePath->ComputeMetaNodes) {
+      if (ComputeMNode->SCEV == nullptr) {
+        this->IsStream = false;
+        return;
+      }
+    }
   }
 
-  return true;
+  /**
+   * Set the access pattern by looking at empty compute path.
+   */
+  if (EmptyPathFound) {
+    this->AccPattern = LLVM::TDG::StreamAccessPattern::CONDITIONAL;
+  } else {
+    this->AccPattern = LLVM::TDG::StreamAccessPattern::UNCONDITIONAL;
+  }
+  this->IsStream = true;
+  return;
 }
 
 void StaticIndVarStream::handleFirstTimeComputeNode(
@@ -153,7 +183,11 @@ void StaticIndVarStream::handleFirstTimePHIMetaNode(
     // Check if there is a constructed compute node.
     if (ConstructedComputeMetaNodeMap.count(IncomingValue) == 0) {
       // First time.
-      this->ComputeMetaNodes.emplace_back();
+      const llvm::SCEV *SCEV = nullptr;
+      if (this->SE->isSCEVable(IncomingValue->getType())) {
+        SCEV = this->SE->getSCEV(IncomingValue);
+      }
+      this->ComputeMetaNodes.emplace_back(IncomingValue, SCEV);
       ConstructedComputeMetaNodeMap.emplace(IncomingValue,
                                             &this->ComputeMetaNodes.back());
       // Push to the stack.
@@ -203,20 +237,32 @@ void StaticIndVarStream::constructMetaGraph() {
   }
 }
 
-void StaticIndVarStream::constructComputePath() {
+std::list<StaticIndVarStream::ComputePath>
+StaticIndVarStream::constructComputePath() const {
   // Start from the root.
   assert(!this->PHIMetaNodes.empty() && "Failed to find the root PHIMetaNode.");
   auto &RootPHIMetaNode = this->PHIMetaNodes.front();
   assert(RootPHIMetaNode.PHINode == this->PHINode &&
          "Mismatched PHINode at root PHIMetaNode.");
   ComputePath CurrentPath;
+  std::list<ComputePath> AllComputePaths;
   for (auto &ComputeMNode : RootPHIMetaNode.ComputeMetaNodes) {
-    this->constructComputePathRecursive(ComputeMNode, CurrentPath);
+    // Remember to ignore the initial value compute node.
+    auto RootValue = ComputeMNode->RootValue;
+    if (auto RootInst = llvm::dyn_cast<llvm::Instruction>(RootValue)) {
+      if (this->InnerMostLoop->contains(RootInst)) {
+        // This should not be the ComputeMetaNode for initial value.
+        this->constructComputePathRecursive(ComputeMNode, CurrentPath,
+                                            AllComputePaths);
+      }
+    }
   }
+  return AllComputePaths;
 }
 
 void StaticIndVarStream::constructComputePathRecursive(
-    ComputeMetaNode *ComputeMNode, ComputePath &CurrentPath) {
+    ComputeMetaNode *ComputeMNode, ComputePath &CurrentPath,
+    std::list<ComputePath> &AllComputePaths) const {
   assert(ComputeMNode->PHIMetaNodes.size() <= 1 &&
          "Can not handle compute path for more than one PHIMetaNode child.");
   // Add myself to the path.
@@ -225,17 +271,22 @@ void StaticIndVarStream::constructComputePathRecursive(
   if (ComputeMNode->PHIMetaNodes.empty()) {
     // I am the end.
     // This will copy the current path.
-    this->AllComputePaths.push_back(CurrentPath);
+    AllComputePaths.push_back(CurrentPath);
   } else {
     // Recursively go to the children.
     auto &PHIMNode = *(ComputeMNode->PHIMetaNodes.begin());
     assert(!PHIMNode->ComputeMetaNodes.empty() &&
            "Every PHIMetaNode should have ComputeMetaNode child.");
     for (auto &ComputeMNodeChild : PHIMNode->ComputeMetaNodes) {
-      this->constructComputePathRecursive(ComputeMNodeChild, CurrentPath);
+      this->constructComputePathRecursive(ComputeMNodeChild, CurrentPath,
+                                          AllComputePaths);
     }
   }
 
   // Remove my self from the path.
   CurrentPath.ComputeMetaNodes.pop_back();
+}
+
+void StaticIndVarStream::ComputePath::debug() const {
+  llvm::errs() << "ComputePath ";
 }
