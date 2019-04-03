@@ -4,6 +4,8 @@
 #include "LoopUtils.h"
 #include "Utils.h"
 
+#include "stream/StreamMessage.pb.h"
+
 class StaticStream {
 public:
   enum TypeT {
@@ -14,13 +16,17 @@ public:
   const llvm::Instruction *const Inst;
   const llvm::Loop *const ConfigureLoop;
   const llvm::Loop *const InnerMostLoop;
+  llvm::ScalarEvolution *const SE;
 
   StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                const llvm::Loop *_ConfigureLoop,
-               const llvm::Loop *_InnerMostLoop)
+               const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
       : Type(_Type), Inst(_Inst), ConfigureLoop(_ConfigureLoop),
-        InnerMostLoop(_InnerMostLoop) {}
+        InnerMostLoop(_InnerMostLoop), SE(_SE), IsStream(false),
+        AccPattern(LLVM::TDG::StreamAccessPattern::UNKNOWN),
+        ValPattern(LLVM::TDG::StreamValuePattern::RANDOM) {}
   virtual ~StaticStream() {}
+  void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
 
   std::string formatType() const {
     switch (this->Type) {
@@ -41,24 +47,30 @@ public:
            this->ConfigureLoop->getHeader()->getName().str() + " " +
            Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
   }
+
+  bool IsStream;
+  LLVM::TDG::StreamAccessPattern AccPattern;
+  LLVM::TDG::StreamValuePattern ValPattern;
 };
 
 class StaticMemStream : public StaticStream {
 public:
   StaticMemStream(const llvm::Instruction *_Inst,
                   const llvm::Loop *_ConfigureLoop,
-                  const llvm::Loop *_InnerMostLoop)
-      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop) {}
+                  const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
+      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE) {}
 };
 
 class StaticIndVarStream : public StaticStream {
 public:
   StaticIndVarStream(const llvm::PHINode *_PHINode,
                      const llvm::Loop *_ConfigureLoop,
-                     const llvm::Loop *_InnerMostLoop)
-      : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop),
+                     const llvm::Loop *_InnerMostLoop,
+                     llvm::ScalarEvolution *_SE)
+      : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop, _SE),
         PHINode(_PHINode) {
     this->constructMetaGraph();
+    this->analyze();
   }
 
   struct MetaNode {
@@ -79,13 +91,25 @@ public:
   };
 
   struct ComputeMetaNode : public MetaNode {
-    ComputeMetaNode() { this->Type = ComputeMetaNodeEnum; }
+    ComputeMetaNode(const llvm::Value *_RootValue, const llvm::SCEV *_SCEV)
+        : RootValue(_RootValue), SCEV(_SCEV) {
+      this->Type = ComputeMetaNodeEnum;
+    }
     std::unordered_set<PHIMetaNode *> PHIMetaNodes;
     std::unordered_set<const llvm::LoadInst *> LoadInputs;
     std::unordered_set<const llvm::Instruction *> CallInputs;
     std::unordered_set<const llvm::Value *> LoopInvarianteInputs;
     std::unordered_set<const llvm::PHINode *> LoopHeaderPHIInputs;
     std::vector<const llvm::Instruction *> ComputeInsts;
+    /**
+     * Root (final result) of this meta node.
+     */
+    const llvm::Value *RootValue;
+    /**
+     * Represent the scalar evolution of the result value.
+     * nullptr if this is not SCEVable.
+     */
+    const llvm::SCEV *SCEV;
     bool isEmpty() const {
       /**
        * Check if this ComputeMNode does nothing.
@@ -97,7 +121,7 @@ public:
     bool isIdenticalTo(const ComputeMetaNode *Other) const;
   };
 
-  bool isStaticStream();
+  void analyze();
 
 private:
   const llvm::PHINode *PHINode;
@@ -137,9 +161,8 @@ private:
       }
       return true;
     }
+    void debug() const;
   };
-
-  std::list<ComputePath> AllComputePaths;
 
   struct DFSNode {
     ComputeMetaNode *ComputeMNode;
@@ -165,9 +188,11 @@ private:
 
   void constructMetaGraph();
 
-  void constructComputePath();
+  std::list<ComputePath> constructComputePath() const;
 
-  void constructComputePathRecursive(ComputeMetaNode *ComputeMNode,
-                                     ComputePath &CurrentPath);
+  void
+  constructComputePathRecursive(ComputeMetaNode *ComputeMNode,
+                                ComputePath &CurrentPath,
+                                std::list<ComputePath> &AllComputePaths) const;
 };
 #endif

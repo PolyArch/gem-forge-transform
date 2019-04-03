@@ -1,8 +1,6 @@
 #ifndef LLVM_TDG_STREAM_STREAM_H
 #define LLVM_TDG_STREAM_STREAM_H
 
-#include "stream/StreamMessage.pb.h"
-
 #include "Gem5ProtobufSerializer.h"
 #include "LoopUtils.h"
 #include "Utils.h"
@@ -238,7 +236,6 @@ protected:
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;
-  bool IsStaticStream;
 
   int CoalesceGroup;
   /**

@@ -14,7 +14,6 @@ IndVarStream::IndVarStream(const std::string &_Folder,
   this->StepInsts =
       IndVarStream::searchStepInsts(this->PHIInst, this->getInnerMostLoop());
   this->IsCandidateStatic = this->isCandidateStatic();
-  this->IsStaticStream = this->isStaticStream();
 }
 
 bool IndVarStream::isCandidateStatic() const {
@@ -244,10 +243,4 @@ void IndVarStream::buildChosenDependenceGraph(
     assert(BaseMStream != nullptr && "Failed to get chosen back-edge MStream.");
     this->addChosenBackEdgeBaseStream(BaseMStream);
   }
-}
-
-bool IndVarStream::isStaticStream() const {
-  // return StaticIVStreamAnalyzer(this->InnerMostLoop, this->PHIInst)
-  //     .isStaticStream();
-  return false;
 }

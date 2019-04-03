@@ -7,7 +7,7 @@ protected:
       std::unordered_map<std::string, std::unordered_set<std::string>>;
 
   void
-  testStepInstDetection(llvm::Loop *Loop,
+  testStepInstDetection(llvm::Loop *Loop, llvm::ScalarEvolution *SE,
                         const ExpectedStepInstNameMapT &ExpectedStepInsts) {
     llvm::DataLayout DataLayout(this->Module.get());
 
@@ -21,7 +21,7 @@ protected:
         // We do not expect this PHIInst to be an iv stream.
         continue;
       }
-      StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop);
+      StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop, SE);
       IndVarStream IVStream(this->OutputExtraFolder, "", &StaticIVStream,
                             &DataLayout);
       const auto &ExpectedStepInstNames = ExpectedStepInstsIter->second;
@@ -51,13 +51,13 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
   ASSERT_NE(nullptr, Func) << "Failed to get the foo testing function.";
 
   // Simply get the Loop and stream we want to test.
-  llvm::DominatorTree DT(*Func);
-  llvm::LoopInfo LI;
-  LI.analyze(DT);
+  CachedLoopInfo CachedLI(this->Module.get());
+  auto LI = CachedLI.getLoopInfo(Func);
+  auto SE = CachedLI.getScalarEvolution(Func);
 
   auto BBIter = Func->begin();
   ++BBIter;
-  auto Loop = LI.getLoopFor(&*BBIter);
+  auto Loop = LI->getLoopFor(&*BBIter);
   ASSERT_NE(nullptr, Loop) << "Failed to find the loop.";
   ASSERT_EQ("bb4", Loop->getHeader()->getName());
 
@@ -66,7 +66,7 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
       {"tmp5", {"tmp22", "tmp28"}},
   };
 
-  this->testStepInstDetection(Loop, ExpectedStepInstNameMap);
+  this->testStepInstDetection(Loop, SE, ExpectedStepInstNameMap);
 }
 
 TEST_F(StreamTransformPassStepInstDetectionTestFixture,
@@ -77,11 +77,10 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
   ASSERT_NE(nullptr, Func) << "Failed to get the foo testing function.";
 
   // Simply get the Loop and stream we want to test.
-  llvm::DominatorTree DT(*Func);
-  llvm::LoopInfo LI;
-  LI.analyze(DT);
-
-  auto Loop = *LI.begin();
+  CachedLoopInfo CachedLI(this->Module.get());
+  auto LI = CachedLI.getLoopInfo(Func);
+  auto SE = CachedLI.getScalarEvolution(Func);
+  auto Loop = *LI->begin();
   ASSERT_NE(nullptr, Loop) << "Failed to find the loop.";
   ASSERT_EQ("bb5", Loop->getHeader()->getName());
 
@@ -91,5 +90,5 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
       {"tmp8", {"tmp11"}},
   };
 
-  this->testStepInstDetection(Loop, ExpectedStepInstNameMap);
+  this->testStepInstDetection(Loop, SE, ExpectedStepInstNameMap);
 }

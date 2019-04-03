@@ -21,6 +21,7 @@ private:
   llvm::DataLayout *DataLayout;
   CachedLoopInfo *CachedLI;
   llvm::LoopInfo *LI;
+  llvm::ScalarEvolution *SE;
 
   /**
    * Key data structure, map from instruction to the list of streams.

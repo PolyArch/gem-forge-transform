@@ -6,7 +6,8 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
     llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
     CachedLoopInfo *_CachedLI)
     : TopLoop(_TopLoop), DataLayout(_DataLayout), CachedLI(_CachedLI),
-      LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())) {
+      LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
+      SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())) {
   this->initializeStreams();
 }
 
@@ -85,10 +86,10 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
     StaticStream *NewStream = nullptr;
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
       NewStream =
-          new StaticIndVarStream(PHIInst, ConfiguredLoop, InnerMostLoop);
+          new StaticIndVarStream(PHIInst, ConfiguredLoop, InnerMostLoop, SE);
     } else {
       NewStream =
-          new StaticMemStream(StreamInst, ConfiguredLoop, InnerMostLoop);
+          new StaticMemStream(StreamInst, ConfiguredLoop, InnerMostLoop, SE);
     }
     Streams.emplace_back(NewStream);
 
