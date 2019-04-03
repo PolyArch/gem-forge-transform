@@ -69,7 +69,7 @@ void FunctionalStream::step(DataGraph *DG) {
   /**
    * Add the memory footprint.
    */
-  if (this->S->Type == Stream::TypeT::MEM) {
+  if (this->S->SStream->Type == StaticStream::TypeT::MEM) {
     this->MemFootprint.access(this->CurrentAddress);
   }
 
@@ -122,7 +122,7 @@ void FunctionalStream::setValue(const DynamicValue &DynamicVal) {
 
 void FunctionalStream::endStream() {
   // Add footprint information.
-  if (this->S->Type == Stream::TypeT::MEM) {
+  if (this->S->SStream->Type == StaticStream::TypeT::MEM) {
     this->CurrentProtobufHistory->set_num_cache_lines(
         this->MemFootprint.getNumCacheLinesAccessed());
     this->CurrentProtobufHistory->set_num_accesses(
@@ -150,7 +150,7 @@ void FunctionalStream::endAll() {
 void FunctionalStream::update(DataGraph *DG) {
   if (!this->BaseStreams.empty()) {
     // We should compute the value from the base stream.
-    assert(this->S->Type == Stream::TypeT::MEM &&
+    assert(this->S->SStream->Type == StaticStream::TypeT::MEM &&
            "Only mem stream can have base streams.");
     auto ComputedAddress = this->computeAddress(DG);
     this->IsAddressValid = ComputedAddress.first;
@@ -165,7 +165,7 @@ void FunctionalStream::update(DataGraph *DG) {
   /**
    * Set the value valid flag.
    */
-  if (this->S->Type == Stream::TypeT::IV) {
+  if (this->S->SStream->Type == StaticStream::TypeT::IV) {
     // For IV stream the value is the address.
     this->CurrentValue = this->CurrentAddress;
     this->IsValueValid = this->IsAddressValid;

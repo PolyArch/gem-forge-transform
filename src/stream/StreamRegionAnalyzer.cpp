@@ -10,11 +10,12 @@
 #define DEBUG_TYPE "StreamRegionAnalyzer"
 
 StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
+                                           CachedLoopInfo *_CachedLI,
                                            llvm::Loop *_TopLoop,
-                                           llvm::LoopInfo *_LI,
                                            llvm::DataLayout *_DataLayout,
                                            const std::string &_RootPath)
-    : RegionIdx(_RegionIdx), TopLoop(_TopLoop), LI(_LI),
+    : RegionIdx(_RegionIdx), CachedLI(_CachedLI), TopLoop(_TopLoop),
+      LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       DataLayout(_DataLayout), RootPath(_RootPath) {
   // Initialize the folder for this region.
   std::stringstream ss;
@@ -34,6 +35,10 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
   }
   assert(!ErrCode && "Failed to create AnalyzePath.");
 
+  // Initialize the static analyzer.
+  this->StaticAnalyzer = std::make_unique<StaticStreamRegionAnalyzer>(
+      this->TopLoop, this->DataLayout, this->CachedLI);
+
   this->initializeStreams();
   this->buildStreamDependenceGraph();
 }
@@ -51,97 +56,49 @@ StreamRegionAnalyzer::~StreamRegionAnalyzer() {
 
 void StreamRegionAnalyzer::initializeStreams() {
   /**
-   * TODO: Consider memorizing this.
+   * Use the static streams as a template to initialize the dynamic streams.
    */
+  auto IsIVStream = [this](const llvm::PHINode *PHINode) -> bool {
+    return this->StaticAnalyzer->getInstStaticStreamMap().count(PHINode) != 0;
+  };
+  for (auto &InstStaticStream :
+       this->StaticAnalyzer->getInstStaticStreamMap()) {
+    auto StreamInst = InstStaticStream.first;
+    auto &Streams =
+        this->InstStreamMap
+            .emplace(std::piecewise_construct,
+                     std::forward_as_tuple(StreamInst), std::forward_as_tuple())
+            .first->second;
+    assert(Streams.empty() &&
+           "There is already streams initialized for the stream instruction.");
+    for (auto &StaticStream : InstStaticStream.second) {
+      if (!this->TopLoop->contains(StaticStream->ConfigureLoop)) {
+        break;
+      }
+      Stream *NewStream = nullptr;
+      if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
+        NewStream =
+            new IndVarStream(this->AnalyzePath, this->AnalyzeRelativePath,
+                             StaticStream, this->DataLayout);
+      } else {
+        NewStream = new MemStream(this->AnalyzePath, this->AnalyzeRelativePath,
+                                  StaticStream, this->DataLayout, IsIVStream);
+      }
+      Streams.emplace_back(NewStream);
 
-  {
-    /**
-     * Do a BFS to find all the IV streams in the header of both this loop and
-     * subloops.
-     */
-    std::list<llvm::Loop *> Queue;
-    Queue.emplace_back(this->TopLoop);
-    while (!Queue.empty()) {
-      auto CurrentLoop = Queue.front();
-      Queue.pop_front();
-      for (auto &SubLoop : CurrentLoop->getSubLoops()) {
-        Queue.emplace_back(SubLoop);
-      }
-      auto HeaderBB = CurrentLoop->getHeader();
-      auto PHINodes = HeaderBB->phis();
-      for (auto PHINodeIter = PHINodes.begin(), PHINodeEnd = PHINodes.end();
-           PHINodeIter != PHINodeEnd; ++PHINodeIter) {
-        auto PHINode = &*PHINodeIter;
-        this->initializeStreamForAllLoops(PHINode);
-      }
-    }
-
-    /**
-     * Find all the memory stream instructions.
-     */
-    for (auto BBIter = this->TopLoop->block_begin(),
-              BBEnd = this->TopLoop->block_end();
-         BBIter != BBEnd; ++BBIter) {
-      auto BB = *BBIter;
-      for (auto InstIter = BB->begin(), InstEnd = BB->end();
-           InstIter != InstEnd; ++InstIter) {
-        auto StaticInst = &*InstIter;
-        if (!Utils::isMemAccessInst(StaticInst)) {
-          continue;
-        }
-        this->initializeStreamForAllLoops(StaticInst);
-      }
+      // Update the ConfguredLoopStreamMap.
+      this->ConfiguredLoopStreamMap
+          .emplace(std::piecewise_construct,
+                   std::forward_as_tuple(StaticStream->ConfigureLoop),
+                   std::forward_as_tuple())
+          .first->second.insert(NewStream);
+      this->InnerMostLoopStreamMap
+          .emplace(std::piecewise_construct,
+                   std::forward_as_tuple(StaticStream->InnerMostLoop),
+                   std::forward_as_tuple())
+          .first->second.insert(NewStream);
     }
   }
-}
-
-void StreamRegionAnalyzer::initializeStreamForAllLoops(
-    const llvm::Instruction *StreamInst) {
-  auto InnerMostLoop = this->LI->getLoopFor(StreamInst->getParent());
-  assert(InnerMostLoop != nullptr &&
-         "Failed to get inner most loop for stream inst.");
-  assert(this->TopLoop->contains(InnerMostLoop) &&
-         "Stream inst is not within top loop.");
-
-  auto &Streams =
-      this->InstStreamMap
-          .emplace(std::piecewise_construct, std::forward_as_tuple(StreamInst),
-                   std::forward_as_tuple())
-          .first->second;
-  assert(Streams.empty() &&
-         "There is already streams initialized for the stream instruction.");
-
-  auto ConfiguredLoop = InnerMostLoop;
-  do {
-    auto LoopLevel =
-        ConfiguredLoop->getLoopDepth() - this->TopLoop->getLoopDepth();
-    Stream *NewStream = nullptr;
-    if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
-      NewStream = new InductionVarStream(
-          this->AnalyzePath, this->AnalyzeRelativePath, PHIInst, ConfiguredLoop,
-          InnerMostLoop, LoopLevel, this->DataLayout);
-    } else {
-      auto IsIVStream = [this](const llvm::PHINode *PHINode) -> bool {
-        return this->InstStreamMap.count(PHINode) != 0;
-      };
-      NewStream = new MemStream(this->AnalyzePath, this->AnalyzeRelativePath,
-                                StreamInst, ConfiguredLoop, InnerMostLoop,
-                                LoopLevel, this->DataLayout, IsIVStream);
-    }
-    Streams.emplace_back(NewStream);
-
-    // Update the ConfguredLoopStreamMap.
-    this->ConfiguredLoopStreamMap
-        .emplace(std::piecewise_construct,
-                 std::forward_as_tuple(ConfiguredLoop), std::forward_as_tuple())
-        .first->second.insert(NewStream);
-    this->InnerMostLoopStreamMap
-        .emplace(std::piecewise_construct, std::forward_as_tuple(InnerMostLoop),
-                 std::forward_as_tuple())
-        .first->second.insert(NewStream);
-
-    ConfiguredLoop = ConfiguredLoop->getParentLoop();
-  } while (this->TopLoop->contains(ConfiguredLoop));
 }
 
 void StreamRegionAnalyzer::buildStreamDependenceGraph() {
@@ -565,7 +522,7 @@ void StreamRegionAnalyzer::buildTransformPlan() {
                        << '\n');
 
     // Handle all the step instructions.
-    if (S->Type == Stream::TypeT::IV) {
+    if (S->SStream->Type == StaticStream::TypeT::IV) {
       for (const auto &StepInst : S->getStepInsts()) {
         this->InstPlanMap.at(StepInst).planToStep(S);
         DEBUG(llvm::errs() << "Select transform plan for inst "
@@ -900,7 +857,7 @@ void StreamRegionAnalyzer::dumpStats() const {
       size_t Accesses = Stream.getTotalAccesses();
       size_t Updates = 0;
       size_t StreamCount = Stream.getTotalStreams();
-      size_t LoopLevel = Stream.getLoopLevel();
+      size_t LoopLevel = 0;
       size_t BaseLoads = Stream.getNumBaseLoads();
 
       std::string StreamClass = this->classifyStream(Stream);
@@ -950,7 +907,7 @@ void StreamRegionAnalyzer::dumpStats() const {
       continue;
     }
     for (auto &S : InstStreamEntry.second) {
-      auto &IVStream = *reinterpret_cast<InductionVarStream *>(S);
+      auto &IVStream = *reinterpret_cast<IndVarStream *>(S);
       O << LoopUtils::getLoopId(IVStream.getLoop());
       O << ' ' << LoopUtils::formatLLVMInst(IVStream.getPHIInst());
 

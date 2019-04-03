@@ -43,7 +43,6 @@ public:
 
   const ContextLoop &getContextLoop() const { return this->CLoop; }
   const ContextInst &getContextInst() const { return this->CInst; }
-  size_t getLoopLevel() const { return this->LoopLevel; }
   const MemoryFootprint &getFootprint() const { return this->Footprint; }
   size_t getTotalIters() const { return this->TotalIters; }
   size_t getTotalAccesses() const { return this->TotalAccesses; }

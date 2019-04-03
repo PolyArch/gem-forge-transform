@@ -4,30 +4,13 @@
 
 #include "google/protobuf/util/json_util.h"
 
-Stream::Stream(TypeT _Type, const std::string &_Folder,
-               const std::string &_RelativeFolder,
-               const llvm::Instruction *_Inst, const llvm::Loop *_Loop,
-               const llvm::Loop *_InnerMostLoop, size_t _LoopLevel,
-               llvm::DataLayout *DataLayout)
-    : Type(_Type),
-      Folder(_Folder),
-      RelativeFolder(_RelativeFolder),
-      Inst(_Inst),
-      Loop(_Loop),
-      InnerMostLoop(_InnerMostLoop),
-      LoopLevel(_LoopLevel),
-      HasMissingBaseStream(false),
-      Qualified(false),
-      Chosen(false),
-      IsStaticStream(false),
-      CoalesceGroup(-1),
-      TotalIters(0),
-      TotalAccesses(0),
-      TotalStreams(0),
-      Iters(1),
-      LastAccessIters(0),
-      StartId(DynamicInstruction::InvalidId),
-      Pattern() {
+Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
+               const StaticStream *_SStream, llvm::DataLayout *DataLayout)
+    : SStream(_SStream), Folder(_Folder), RelativeFolder(_RelativeFolder),
+      HasMissingBaseStream(false), Qualified(false), Chosen(false),
+      IsStaticStream(false), CoalesceGroup(-1), TotalIters(0), TotalAccesses(0),
+      TotalStreams(0), Iters(1), LastAccessIters(0),
+      StartId(DynamicInstruction::InvalidId), Pattern() {
   this->ElementSize = this->getElementSize(DataLayout);
 
   auto PatternFolder = this->Folder + "/pattern";
@@ -53,7 +36,7 @@ void Stream::addBaseStream(Stream *Other) {
   if (Other != nullptr) {
     Other->DependentStreams.insert(this);
 
-    if (Other->getInnerMostLoop() == this->InnerMostLoop) {
+    if (Other->getInnerMostLoop() == this->getInnerMostLoop()) {
       // We are in the same loop level. This is also a step stream for me.
       this->BaseStepStreams.insert(Other);
     }
@@ -73,7 +56,7 @@ void Stream::addBackEdgeBaseStream(Stream *Other) {
  */
 void Stream::computeBaseStepRootStreams() {
   for (auto &BaseStepStream : this->BaseStepStreams) {
-    if (BaseStepStream->Type == Stream::TypeT::IV) {
+    if (BaseStepStream->SStream->Type == StaticStream::TypeT::IV) {
       // Induction variable is always a root stream.
       this->BaseStepRootStreams.insert(BaseStepStream);
       // No need to go deeper for IVStream.
@@ -97,9 +80,9 @@ void Stream::addChosenBaseStream(Stream *Other) {
          "Other should be chosen to build the chosen stream dependence graph.");
   this->ChosenBaseStreams.insert(Other);
   // Set the base stream as step stream if we share the same inner most level.
-  if (Other->InnerMostLoop == this->InnerMostLoop) {
+  if (Other->getInnerMostLoop() == this->getInnerMostLoop()) {
     this->ChosenBaseStepStreams.insert(Other);
-    if (Other->Type == Stream::TypeT::IV) {
+    if (Other->SStream->Type == StaticStream::TypeT::IV) {
       this->ChosenBaseStepRootStreams.insert(Other);
     }
   }
@@ -190,9 +173,9 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
                                     LLVM::TDG::StreamInfo *ProtobufInfo) const {
   ProtobufInfo->set_name(this->formatName());
   ProtobufInfo->set_id(this->getStreamId());
-  ProtobufInfo->set_type(this->Inst->getOpcodeName());
-  ProtobufInfo->set_loop_level(this->InnerMostLoop->getLoopDepth());
-  ProtobufInfo->set_config_loop_level(this->Loop->getLoopDepth());
+  ProtobufInfo->set_type(this->SStream->Inst->getOpcodeName());
+  ProtobufInfo->set_loop_level(this->getInnerMostLoop()->getLoopDepth());
+  ProtobufInfo->set_config_loop_level(this->getLoop()->getLoopDepth());
   ProtobufInfo->set_element_size(this->ElementSize);
   ProtobufInfo->set_pattern_path(this->getPatternRelativePath());
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
@@ -200,13 +183,13 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_chosen(this->Chosen);
   ProtobufInfo->set_is_static_stream(this->IsStaticStream);
 
-#define ADD_STREAM(SET, FIELD)                  \
-  {                                             \
-    for (const auto &S : SET) {                 \
-      auto Entry = ProtobufInfo->add_##FIELD(); \
-      Entry->set_name(S->formatName());         \
-      Entry->set_id(S->getStreamId());          \
-    }                                           \
+#define ADD_STREAM(SET, FIELD)                                                 \
+  {                                                                            \
+    for (const auto &S : SET) {                                                \
+      auto Entry = ProtobufInfo->add_##FIELD();                                \
+      Entry->set_name(S->formatName());                                        \
+      Entry->set_id(S->getStreamId());                                         \
+    }                                                                          \
   }
   ADD_STREAM(this->BaseStreams, base_streams);
   ADD_STREAM(this->BackMemBaseStreams, back_base_streams);
@@ -216,19 +199,19 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
 }
 
 int Stream::getElementSize(llvm::DataLayout *DataLayout) const {
-  if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(this->Inst)) {
+  if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(this->getInst())) {
     llvm::Type *StoredType =
         StoreInst->getPointerOperandType()->getPointerElementType();
     return DataLayout->getTypeStoreSize(StoredType);
   }
 
-  if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(this->Inst)) {
+  if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(this->getInst())) {
     llvm::Type *LoadedType =
         LoadInst->getPointerOperandType()->getPointerElementType();
     return DataLayout->getTypeStoreSize(LoadedType);
   }
 
-  if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(this->Inst)) {
+  if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(this->getInst())) {
     return DataLayout->getTypeStoreSize(PHINode->getType());
   }
 
