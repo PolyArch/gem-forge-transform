@@ -139,3 +139,47 @@ bool StaticMemStream::validateSCEVAsStreamDG(
   }
   return true;
 }
+
+bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
+  if (!this->isCandidate()) {
+    return false;
+  }
+  // Check all the base streams are qualified.
+  for (auto &BaseStream : this->BaseStreams) {
+    if (!BaseStream->isQualified()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool StaticMemStream::checkIsQualifiedWithBackEdgeDep() const {
+  // MemStream should have no back edge dependence.
+  assert(this->BackMemBaseStreams.empty() &&
+         "Memory stream should not have back edge base stream.");
+  return this->checkIsQualifiedWithoutBackEdgeDep();
+}
+
+void StaticMemStream::finalizePattern() {
+  // Copy the step pattern from the step root.
+  if (this->BaseStepRootStreams.empty()) {
+    this->StpPattern = LLVM::TDG::StreamStepPattern::NEVER;
+  } else {
+    assert(this->BaseStepRootStreams.size() == 1 &&
+           "More than one step root stream to finalize pattern.");
+    auto StepRootStream = *(this->BaseStepRootStreams.begin());
+    this->StpPattern = StepRootStream->StpPattern;
+  }
+  // Compute the value pattern.
+  this->ValPattern = LLVM::TDG::StreamValuePattern::CONSTANT;
+  for (auto &BaseStream : this->BaseStreams) {
+    if (BaseStream->Type == MEM) {
+      // This makes me indirect stream.
+      this->ValPattern = LLVM::TDG::StreamValuePattern::INDIRECT;
+      break;
+    } else {
+      // This is likely our step root, copy its value pattern.
+      this->ValPattern = BaseStream->ValPattern;
+    }
+  }
+}
