@@ -10,6 +10,8 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
       SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())) {
   this->initializeStreams();
   this->buildStreamDependenceGraph();
+  this->markQualifiedStreams();
+  this->enforceBackEdgeDependence();
 }
 
 StaticStreamRegionAnalyzer::~StaticStreamRegionAnalyzer() {
@@ -132,6 +134,92 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
       S->computeBaseStepRootStreams();
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::markQualifiedStreams() {
+  std::list<StaticStream *> Queue;
+  // First stage: ignore back-edge dependence.
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      auto IsQualified = S->checkIsQualifiedWithoutBackEdgeDep();
+      if (IsQualified) {
+        Queue.emplace_back(S);
+      }
+    }
+  }
+
+  /**
+   * BFS on the qualified streams to propagate the qualified signal.
+   */
+  while (!Queue.empty()) {
+    auto S = Queue.front();
+    Queue.pop_front();
+    if (S->isQualified()) {
+      // We have already processed this stream.
+      continue;
+    }
+    if (!S->checkIsQualifiedWithoutBackEdgeDep()) {
+      assert(false && "Stream should be qualified to be inserted into the "
+                      "qualifying queue.");
+    }
+    S->setIsQualified(true);
+    // Check all the dependent streams.
+    for (const auto &DependentStream : S->DependentStreams) {
+      if (DependentStream->checkIsQualifiedWithoutBackEdgeDep()) {
+        Queue.emplace_back(DependentStream);
+      }
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::enforceBackEdgeDependence() {
+  /**
+   * For IVStreams with back edge loads, we assume they are qualified from the
+   * beginning point. Now it's time to check if their base memory streams are
+   * actually qualified. If not, we need to propagate the dequalified signal
+   * along the dependence chain.
+   */
+  std::list<StaticStream *> DisqualifiedQueue;
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      if (S->isQualified()) {
+        if (!S->checkIsQualifiedWithBackEdgeDep()) {
+          DisqualifiedQueue.emplace_back(S);
+        }
+      }
+    }
+  }
+
+  /**
+   * Propagate the disqualfied signal.
+   */
+  while (!DisqualifiedQueue.empty()) {
+    auto S = DisqualifiedQueue.front();
+    DisqualifiedQueue.pop_front();
+    if (!S->isQualified()) {
+      // This stream is already disqualified.
+      continue;
+    }
+    S->setIsQualified(false);
+
+    // Propagate to dependent streams.
+    for (const auto &DependentStream : S->DependentStreams) {
+      if (DependentStream->isQualified()) {
+        if (!DependentStream->checkIsQualifiedWithBackEdgeDep()) {
+          DisqualifiedQueue.emplace_back(DependentStream);
+        }
+      }
+    }
+
+    // Also need to check back edges.
+    for (const auto &DependentStream : S->BackIVDependentStreams) {
+      if (DependentStream->isQualified()) {
+        if (!DependentStream->checkIsQualifiedWithBackEdgeDep()) {
+          DisqualifiedQueue.emplace_back(DependentStream);
+        }
+      }
     }
   }
 }

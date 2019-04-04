@@ -14,6 +14,9 @@ public:
   }
 
   void buildDependenceGraph(GetStreamFuncT GetStream) override;
+  bool checkIsQualifiedWithoutBackEdgeDep() const override;
+  bool checkIsQualifiedWithBackEdgeDep() const override;
+  void finalizePattern() override;
 
 private:
   /**

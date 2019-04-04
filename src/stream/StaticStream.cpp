@@ -6,7 +6,7 @@
 void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   SSI.set_is_candidate(this->IsCandidate);
   SSI.set_is_qualified(this->IsQualified);
-  SSI.set_acc_pattern(this->AccPattern);
+  SSI.set_stp_pattern(this->StpPattern);
   SSI.set_val_pattern(this->ValPattern);
 }
 

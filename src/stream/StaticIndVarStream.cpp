@@ -3,8 +3,8 @@
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Support/raw_ostream.h"
 
-LLVM::TDG::StreamValuePattern
-StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
+LLVM::TDG::StreamValuePattern StaticIndVarStream::analyzeValuePatternFromSCEV(
+    const llvm::SCEV *SCEV) const {
   if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
     if (AddRecSCEV->isAffine()) {
       return LLVM::TDG::StreamValuePattern::LINEAR;
@@ -161,9 +161,9 @@ void StaticIndVarStream::analyzeIsCandidate() {
      * Set the access pattern by looking at empty compute path.
      */
     if (EmptyPathFound) {
-      this->AccPattern = LLVM::TDG::StreamAccessPattern::CONDITIONAL;
+      this->StpPattern = LLVM::TDG::StreamStepPattern::CONDITIONAL;
     } else {
-      this->AccPattern = LLVM::TDG::StreamAccessPattern::UNCONDITIONAL;
+      this->StpPattern = LLVM::TDG::StreamStepPattern::UNCONDITIONAL;
     }
     this->IsCandidate = true;
     return;
@@ -253,5 +253,42 @@ void StaticIndVarStream::buildDependenceGraph(GetStreamFuncT GetStream) {
     auto BaseMStream = GetStream(LoadInput, this->ConfigureLoop);
     assert(BaseMStream != nullptr && "Failed to get back-edge MStream.");
     this->addBackEdgeBaseStream(BaseMStream);
+  }
+}
+
+bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
+  if (!this->isCandidate()) {
+    return false;
+  }
+  // Make sure we only has one back edge.
+  if (this->BackMemBaseStreams.size() > 1) {
+    return false;
+  }
+  return true;
+}
+
+bool StaticIndVarStream::checkIsQualifiedWithBackEdgeDep() const {
+  for (const auto &BackMemBaseStream : this->BackMemBaseStreams) {
+    if (!BackMemBaseStream->isQualified()) {
+      return false;
+    }
+  }
+  return this->checkIsQualifiedWithoutBackEdgeDep();
+}
+
+void StaticIndVarStream::finalizePattern() {
+  assert(this->BackMemBaseStreams.size() <= 1 &&
+         "More than 1 back edge dependencies.");
+  if (this->BackMemBaseStreams.empty()) {
+    // Without back edge dependency, the pattern is already computed.
+    return;
+  }
+  auto BackMemBaseStream = *(this->BackMemBaseStreams.begin());
+  // Check if I am its step root.
+  if (BackMemBaseStream->BaseStepRootStreams.count(this) == 0) {
+    // I am not its step root, which means this is not a pointer chase.
+    this->ValPattern = LLVM::TDG::StreamValuePattern::PREV_LOAD;
+  } else {
+    this->ValPattern = LLVM::TDG::StreamValuePattern::POINTER_CHASE;
   }
 }

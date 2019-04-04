@@ -2,10 +2,11 @@ syntax = "proto3";
 
 package LLVM.TDG;
 
-enum StreamAccessPattern {
+enum StreamStepPattern {
   UNKNOWN = 0;
   UNCONDITIONAL = 1;
   CONDITIONAL = 2;
+  NEVER = 3;
 }
 
 enum StreamValuePattern {
@@ -13,14 +14,17 @@ enum StreamValuePattern {
   CONSTANT = 1;
   LINEAR = 2;
   QUARDRIC = 3;
+  INDIRECT = 4;
+  POINTER_CHASE = 5;
+  PREV_LOAD = 6;
 }
 
 message StaticStreamInfo {
   bool is_candidate = 1;
   bool is_qualified = 2;
   bool is_chosen = 3;
-  StreamAccessPattern acc_pattern = 4;
-  StreamValuePattern val_pattern = 5; 
+  StreamStepPattern stp_pattern = 4;
+  StreamValuePattern val_pattern = 5;
 }
 
 message StreamInfo {

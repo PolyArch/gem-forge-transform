@@ -9,7 +9,7 @@
 #include <unordered_set>
 
 class StaticStream {
-public:
+ public:
   enum TypeT {
     IV,
     MEM,
@@ -23,21 +23,26 @@ public:
   StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
-      : Type(_Type), Inst(_Inst), ConfigureLoop(_ConfigureLoop),
-        InnerMostLoop(_InnerMostLoop), SE(_SE), IsCandidate(false),
-        IsQualified(false), IsStream(false),
-        AccPattern(LLVM::TDG::StreamAccessPattern::UNKNOWN),
+      : Type(_Type),
+        Inst(_Inst),
+        ConfigureLoop(_ConfigureLoop),
+        InnerMostLoop(_InnerMostLoop),
+        SE(_SE),
+        IsCandidate(false),
+        IsQualified(false),
+        IsStream(false),
+        StpPattern(LLVM::TDG::StreamStepPattern::UNKNOWN),
         ValPattern(LLVM::TDG::StreamValuePattern::RANDOM) {}
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
 
   std::string formatType() const {
     switch (this->Type) {
-    case StaticStream::IV:
-      return "IV";
-    case StaticStream::MEM:
-      return "MEM";
-    default: { llvm_unreachable("Illegal stream type to be formatted."); }
+      case StaticStream::IV:
+        return "IV";
+      case StaticStream::MEM:
+        return "MEM";
+      default: { llvm_unreachable("Illegal stream type to be formatted."); }
     }
   }
 
@@ -92,9 +97,19 @@ public:
    *   A stream is qualified if it is candidate and satisfies additional
    * constraints from the stream dependency graph, e.g. at most one step root
    * stream, base streams are qualified, etc.
-   *   This is set after constructing the StreamDependenceGraph. The value
-   * pattern and access pattern are also set in this stage. The manager is in
-   * charged of propagating the qualified signal.
+   *   This is further divided into 2 sub-stages:
+   *  a. checkIsQualifiedWithoutBackEdgeDep:
+   *    The stream will check the base streams and mark itself qualified if all
+   * the constraints are satisfied. Notice that in this stage the
+   * StaticIndVarStream will ignore the back edge dependence.
+   *  b. checkIsQualifiedWithBackEdgeDep:
+   *    Since in the previous stage we ignore the back edge dependence, now it's
+   * time to enforce it. This will mark some stream unqualified.
+   *
+   *  The reason why we need this is that pointer chase pattern forms a
+   * dependence cycle. We have to first break the cycle by ingoring the back
+   * edge dependence and propagate the qualified signal. And then enforce the
+   * constraint by disqualify some streams.
    *
    * 3. IsChosen:
    *   A stream is chosen if it is qualified and the stream choice strategy
@@ -103,13 +118,25 @@ public:
    *
    */
 
+  virtual bool checkIsQualifiedWithoutBackEdgeDep() const = 0;
+  virtual bool checkIsQualifiedWithBackEdgeDep() const = 0;
+  virtual void finalizePattern() = 0;
+  bool isCandidate() const { return this->IsCandidate; }
+  bool isQualified() const { return this->IsQualified; }
+  void setIsQualified(bool IsQualified) {
+    this->IsQualified = IsQualified;
+    if (this->IsQualified) {
+      this->finalizePattern();
+    }
+  }
+
   bool IsCandidate;
   bool IsQualified;
   bool IsStream;
-  LLVM::TDG::StreamAccessPattern AccPattern;
+  LLVM::TDG::StreamStepPattern StpPattern;
   LLVM::TDG::StreamValuePattern ValPattern;
 
-protected:
+ protected:
   struct MetaNode {
     enum TypeE {
       PHIMetaNodeEnum,

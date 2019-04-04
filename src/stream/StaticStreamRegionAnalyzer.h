@@ -37,6 +37,8 @@ private:
   void initializeStreams();
   void initializeStreamForAllLoops(llvm::Instruction *StreamInst);
   void buildStreamDependenceGraph();
+  void markQualifiedStreams();
+  void enforceBackEdgeDependence();
 };
 
 #endif
