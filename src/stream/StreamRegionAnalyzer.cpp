@@ -87,7 +87,7 @@ void StreamRegionAnalyzer::initializeStreams() {
       Streams.emplace_back(NewStream);
 
       // Update the ConfguredLoopStreamMap.
-      this->ConfiguredLoopStreamMap
+      this->ConfigureLoopStreamMap
           .emplace(std::piecewise_construct,
                    std::forward_as_tuple(StaticStream->ConfigureLoop),
                    std::forward_as_tuple())
@@ -103,8 +103,8 @@ void StreamRegionAnalyzer::initializeStreams() {
 
 void StreamRegionAnalyzer::buildStreamDependenceGraph() {
   auto GetStream = [this](const llvm::Instruction *Inst,
-                          const llvm::Loop *ConfiguredLoop) -> Stream * {
-    return this->getStreamByInstAndConfiguredLoop(Inst, ConfiguredLoop);
+                          const llvm::Loop *ConfigureLoop) -> Stream * {
+    return this->getStreamByInstAndConfigureLoop(Inst, ConfigureLoop);
   };
   for (auto &InstStream : this->InstStreamMap) {
     for (auto &S : InstStream.second) {
@@ -157,7 +157,7 @@ void StreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
 
     for (auto &S : Iter->second) {
       auto MStream = reinterpret_cast<MemStream *>(S);
-      const auto ConfiguredLoop = MStream->getLoop();
+      const auto ConfigureLoop = MStream->getLoop();
       const auto StartId = MStream->getStartId();
       if (StartId == DynamicInstruction::InvalidId) {
         // This stream is not even active (or more precisely, has not seen the
@@ -165,7 +165,7 @@ void StreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
         continue;
       }
       // Ignore those instruction not from our configuration loop.
-      if (!ConfiguredLoop->contains(MemDepStaticInst)) {
+      if (!ConfigureLoop->contains(MemDepStaticInst)) {
         continue;
       }
       // Check if they are older than the start id.
@@ -212,8 +212,8 @@ void StreamRegionAnalyzer::endIter(const llvm::Loop *Loop) {
 void StreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
   assert(this->TopLoop->contains(Loop) &&
          "End loop for loop outside of TopLoop.");
-  auto Iter = this->ConfiguredLoopStreamMap.find(Loop);
-  if (Iter != this->ConfiguredLoopStreamMap.end()) {
+  auto Iter = this->ConfigureLoopStreamMap.find(Loop);
+  if (Iter != this->ConfigureLoopStreamMap.end()) {
     for (auto &Stream : Iter->second) {
       Stream->endStream();
     }
@@ -254,15 +254,15 @@ void StreamRegionAnalyzer::endTransform() {
   }
 }
 
-Stream *StreamRegionAnalyzer::getStreamByInstAndConfiguredLoop(
-    const llvm::Instruction *Inst, const llvm::Loop *ConfiguredLoop) const {
+Stream *StreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
+    const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const {
   auto Iter = this->InstStreamMap.find(Inst);
   if (Iter == this->InstStreamMap.end()) {
     return nullptr;
   }
   const auto &Streams = Iter->second;
   for (const auto &S : Streams) {
-    if (S->getLoop() == ConfiguredLoop) {
+    if (S->getLoop() == ConfigureLoop) {
       return S;
     }
   }
@@ -686,7 +686,7 @@ void StreamRegionAnalyzer::dumpConfigurePlan() {
       Stack.emplace_back(Sub);
     }
     ss << LoopUtils::getLoopId(Loop) << '\n';
-    for (auto S : this->getSortedChosenStreamsByConfiguredLoop(Loop)) {
+    for (auto S : this->getSortedChosenStreamsByConfigureLoop(Loop)) {
       for (auto Level = this->TopLoop->getLoopDepth();
            Level < Loop->getLoopDepth(); ++Level) {
         ss << "  ";
@@ -703,16 +703,16 @@ void StreamRegionAnalyzer::dumpConfigurePlan() {
 }
 
 std::list<Stream *>
-StreamRegionAnalyzer::getSortedChosenStreamsByConfiguredLoop(
-    const llvm::Loop *ConfiguredLoop) {
-  assert(this->TopLoop->contains(ConfiguredLoop) &&
-         "ConfiguredLoop should be within TopLoop.");
+StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
+    const llvm::Loop *ConfigureLoop) {
+  assert(this->TopLoop->contains(ConfigureLoop) &&
+         "ConfigureLoop should be within TopLoop.");
 
   // Topological sort.
   std::stack<std::pair<Stream *, int>> ChosenStreams;
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
     auto &S = InstChosenStream.second;
-    if (S->getLoop() == ConfiguredLoop) {
+    if (S->getLoop() == ConfigureLoop) {
       ChosenStreams.emplace(S, 0);
     }
   }
@@ -725,7 +725,7 @@ StreamRegionAnalyzer::getSortedChosenStreamsByConfiguredLoop(
     if (Entry.second == 0) {
       Entry.second = 1;
       for (auto &ChosenBaseS : S->getChosenBaseStreams()) {
-        if (ChosenBaseS->getLoop() != ConfiguredLoop) {
+        if (ChosenBaseS->getLoop() != ConfigureLoop) {
           continue;
         }
         if (Inserted.count(ChosenBaseS) == 0) {
@@ -787,7 +787,7 @@ std::string StreamRegionAnalyzer::classifyStream(const MemStream &S) const {
 
   const auto &BaseIV = *BaseInductionVars.begin();
   auto BaseIVStream =
-      this->getStreamByInstAndConfiguredLoop(BaseIV, S.getLoop());
+      this->getStreamByInstAndConfigureLoop(BaseIV, S.getLoop());
   if (BaseIVStream == nullptr) {
     // This should not happen, but so far make it indirect.
     return "INDIRECT";

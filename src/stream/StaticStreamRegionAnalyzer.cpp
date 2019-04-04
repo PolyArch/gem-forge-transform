@@ -9,6 +9,7 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())) {
   this->initializeStreams();
+  this->buildStreamDependenceGraph();
 }
 
 StaticStreamRegionAnalyzer::~StaticStreamRegionAnalyzer() {
@@ -79,20 +80,58 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
   assert(Streams.empty() &&
          "There is already streams initialized for the stream instruction.");
 
-  auto ConfiguredLoop = InnerMostLoop;
+  auto ConfigureLoop = InnerMostLoop;
   do {
     auto LoopLevel =
-        ConfiguredLoop->getLoopDepth() - this->TopLoop->getLoopDepth();
+        ConfigureLoop->getLoopDepth() - this->TopLoop->getLoopDepth();
     StaticStream *NewStream = nullptr;
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
       NewStream =
-          new StaticIndVarStream(PHIInst, ConfiguredLoop, InnerMostLoop, SE);
+          new StaticIndVarStream(PHIInst, ConfigureLoop, InnerMostLoop, SE);
     } else {
       NewStream =
-          new StaticMemStream(StreamInst, ConfiguredLoop, InnerMostLoop, SE);
+          new StaticMemStream(StreamInst, ConfigureLoop, InnerMostLoop, SE);
     }
     Streams.emplace_back(NewStream);
 
-    ConfiguredLoop = ConfiguredLoop->getParentLoop();
-  } while (this->TopLoop->contains(ConfiguredLoop));
+    ConfigureLoop = ConfigureLoop->getParentLoop();
+  } while (this->TopLoop->contains(ConfigureLoop));
+}
+
+StaticStream *StaticStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
+    const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const {
+  auto Iter = this->InstStaticStreamMap.find(Inst);
+  if (Iter == this->InstStaticStreamMap.end()) {
+    return nullptr;
+  }
+  const auto &Streams = Iter->second;
+  for (const auto &S : Streams) {
+    if (S->ConfigureLoop == ConfigureLoop) {
+      return S;
+    }
+  }
+  llvm_unreachable("Failed to find the stream at specified loop level.");
+}
+
+void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
+  auto GetStream = [this](const llvm::Instruction *Inst,
+                          const llvm::Loop *ConfigureLoop) -> StaticStream * {
+    return this->getStreamByInstAndConfigureLoop(Inst, ConfigureLoop);
+  };
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      S->buildDependenceGraph(GetStream);
+    }
+  }
+  /**
+   * After add all the base streams, we are going to compute the base step root
+   * streams. The computeBaseStepRootStreams() is by itself recursive. This will
+   * result in some overhead, but hopefully the dependency chain is not very
+   * long.
+   */
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      S->computeBaseStepRootStreams();
+    }
+  }
 }

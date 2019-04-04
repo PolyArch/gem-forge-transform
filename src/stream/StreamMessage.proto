@@ -16,9 +16,11 @@ enum StreamValuePattern {
 }
 
 message StaticStreamInfo {
-  bool is_stream = 1;
-  StreamAccessPattern acc_pattern = 2;
-  StreamValuePattern val_pattern = 3; 
+  bool is_candidate = 1;
+  bool is_qualified = 2;
+  bool is_chosen = 3;
+  StreamAccessPattern acc_pattern = 4;
+  StreamValuePattern val_pattern = 5; 
 }
 
 message StreamInfo {
