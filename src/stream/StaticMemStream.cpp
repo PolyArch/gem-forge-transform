@@ -20,20 +20,28 @@ void StaticMemStream::initializeMetaGraphConstruction(
   DFSStack.emplace_back(&this->ComputeMetaNodes.back(), AddrValue);
 }
 
-void StaticMemStream::analyze() {
+void StaticMemStream::analyzeIsCandidate() {
+  /**
+   * So far only look at inner most loop.
+   */
+  if (this->ConfigureLoop != this->InnerMostLoop) {
+    this->IsCandidate = false;
+    return;
+  }
+
   /**
    * Start to check constraints:
    * 1. No PHIMetaNode.
    */
   if (!this->PHIMetaNodes.empty()) {
-    this->IsStream = false;
+    this->IsCandidate = false;
     return;
   }
   /**
    * At most one LoopHeaderPHIInput.
    */
   if (this->LoopHeaderPHIInputs.size() > 1) {
-    this->IsStream = false;
+    this->IsCandidate = false;
     return;
   }
   assert(this->ComputeMetaNodes.size() == 1 &&
@@ -45,10 +53,44 @@ void StaticMemStream::analyze() {
     // Constant stream.
     assert(this->LoopHeaderPHIInputs.empty() &&
            "Constant StaticMemStream should have no LoopHeaderPHIInput.");
-    this->IsStream = true;
+    this->IsCandidate = true;
     this->ValPattern = LLVM::TDG::StreamValuePattern::CONSTANT;
     return;
   }
+
+  /**
+   * Otherwise, we allow the following SCEV expr:
+   * 1. SCEV on LoopHeaderPHINode.
+   * 2. AddRecExpr.
+   * 3. AddExpr with one loop invariant and the other LoopHeaderPHINode.
+   */
+  assert(this->LoopHeaderPHIInputs.size() == 1 &&
+         "StaticMemStream should have one LoopHeaderPHIInput for the "
+         "LoopVariant SCEV.");
+  auto LoopHeaderPHINode =
+      const_cast<llvm::PHINode *>(*(this->LoopHeaderPHIInputs.begin()));
+  if (!this->SE->isSCEVable(LoopHeaderPHINode->getType())) {
+    this->IsCandidate = false;
+    return;
+  }
+  auto LoopHeaderPHINodeSCEV = this->SE->getSCEV(LoopHeaderPHINode);
+  if (LoopHeaderPHINodeSCEV == SCEV) {
+    // 1. Take the LoopHeaderPHINode directly.
+    this->IsCandidate = true;
+    return;
+  } else if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
+    // 2. AddRecExpr.
+    if (AddRecSCEV->isAffine()) {
+      this->IsCandidate = true;
+      this->ValPattern = LLVM::TDG::StreamValuePattern::LINEAR;
+      return;
+    }
+  } else if (this->validateSCEVAsStreamDG(SCEV, LoopHeaderPHINodeSCEV)) {
+    this->IsCandidate = true;
+    return;
+  }
+  this->IsCandidate = false;
+  return;
 }
 
 void StaticMemStream::buildDependenceGraph(GetStreamFuncT GetStream) {
@@ -62,4 +104,38 @@ void StaticMemStream::buildDependenceGraph(GetStreamFuncT GetStream) {
     assert(BaseMStream != nullptr && "Missing base MemStream.");
     this->addBaseStream(BaseMStream);
   }
+}
+
+bool StaticMemStream::validateSCEVAsStreamDG(
+    const llvm::SCEV *SCEV, const llvm::SCEV *PHINodeInputSCEV) {
+  assert(!this->SE->isLoopInvariant(SCEV, this->InnerMostLoop) &&
+         "Only validate LoopVariant SCEV.");
+  while (true) {
+    if (SCEV == PHINodeInputSCEV) {
+      break;
+    } else if (auto ComSCEV = llvm::dyn_cast<llvm::SCEVCommutativeExpr>(SCEV)) {
+      const llvm::SCEV *LoopVariantSCEV = nullptr;
+      for (size_t OperandIdx = 0, NumOperands = ComSCEV->getNumOperands();
+           OperandIdx < NumOperands; ++OperandIdx) {
+        auto OpSCEV = ComSCEV->getOperand(OperandIdx);
+        if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
+          // Loop invariant.
+          continue;
+        }
+        if (LoopVariantSCEV == nullptr) {
+          LoopVariantSCEV = OpSCEV;
+        } else {
+          // More than one LoopVariant SCEV operand.
+          return false;
+        }
+      }
+      assert(LoopVariantSCEV != nullptr && "Missing LoopVariant SCEV.");
+      SCEV = LoopVariantSCEV;
+    } else if (auto CastSCEV = llvm::dyn_cast<llvm::SCEVCastExpr>(SCEV)) {
+      SCEV = CastSCEV->getOperand();
+    } else {
+      return false;
+    }
+  }
+  return true;
 }
