@@ -6,6 +6,8 @@
 
 #include "stream/StreamMessage.pb.h"
 
+#include <unordered_set>
+
 class StaticStream {
 public:
   enum TypeT {
@@ -22,7 +24,8 @@ public:
                const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
       : Type(_Type), Inst(_Inst), ConfigureLoop(_ConfigureLoop),
-        InnerMostLoop(_InnerMostLoop), SE(_SE), IsStream(false),
+        InnerMostLoop(_InnerMostLoop), SE(_SE), IsCandidate(false),
+        IsQualified(false), IsStream(false),
         AccPattern(LLVM::TDG::StreamAccessPattern::UNKNOWN),
         ValPattern(LLVM::TDG::StreamValuePattern::RANDOM) {}
   virtual ~StaticStream() {}
@@ -48,33 +51,65 @@ public:
            Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
   }
 
+  /**
+   * This represents the bidirectional dependence graph between streams.
+   */
+  using StreamSet = std::unordered_set<StaticStream *>;
+  StreamSet BaseStreams;
+  StreamSet DependentStreams;
+  StreamSet BackMemBaseStreams;
+  StreamSet BackIVDependentStreams;
+  StreamSet BaseStepStreams;
+  StreamSet BaseStepRootStreams;
+
+  using GetStreamFuncT = std::function<StaticStream *(const llvm::Instruction *,
+                                                      const llvm::Loop *)>;
+  virtual void buildDependenceGraph(GetStreamFuncT GetStream) = 0;
+  void addBaseStream(StaticStream *Other) {
+    this->BaseStreams.insert(Other);
+    if (Other != nullptr) {
+      Other->DependentStreams.insert(this);
+      if (Other->InnerMostLoop == this->InnerMostLoop) {
+        this->BaseStepStreams.insert(Other);
+      }
+    }
+  }
+  void addBackEdgeBaseStream(StaticStream *Other) {
+    this->BackMemBaseStreams.insert(Other);
+    Other->BackIVDependentStreams.insert(this);
+  }
+  void computeBaseStepRootStreams();
+
+  /**
+   * We divide the detection of a stream by 3 stages:
+   * 1. IsCandidate:
+   *   A stream is candidate if it statisfies all the constraints that can be
+   * determined without knowing the stream dependence graph, e.g. illegal
+   * instruction in the datagraph, control dependencies, etc.
+   *   This is set after constructing the MetaGraph
+   *
+   * 2. IsQualified:
+   *   A stream is qualified if it is candidate and satisfies additional
+   * constraints from the stream dependency graph, e.g. at most one step root
+   * stream, base streams are qualified, etc.
+   *   This is set after constructing the StreamDependenceGraph. The value
+   * pattern and access pattern are also set in this stage. The manager is in
+   * charged of propagating the qualified signal.
+   *
+   * 3. IsChosen:
+   *   A stream is chosen if it is qualified and the stream choice strategy
+   * picks it up.
+   *   This is set by the caller, e.g. region analyzer.
+   *
+   */
+
+  bool IsCandidate;
+  bool IsQualified;
   bool IsStream;
   LLVM::TDG::StreamAccessPattern AccPattern;
   LLVM::TDG::StreamValuePattern ValPattern;
 
 protected:
-};
-
-class StaticMemStream : public StaticStream {
-public:
-  StaticMemStream(const llvm::Instruction *_Inst,
-                  const llvm::Loop *_ConfigureLoop,
-                  const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
-      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE) {}
-};
-
-class StaticIndVarStream : public StaticStream {
-public:
-  StaticIndVarStream(llvm::PHINode *_PHINode,
-                     const llvm::Loop *_ConfigureLoop,
-                     const llvm::Loop *_InnerMostLoop,
-                     llvm::ScalarEvolution *_SE)
-      : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop, _SE),
-        PHINode(_PHINode) {
-    this->constructMetaGraph();
-    this->analyze();
-  }
-
   struct MetaNode {
     enum TypeE {
       PHIMetaNodeEnum,
@@ -122,12 +157,6 @@ public:
     }
     bool isIdenticalTo(const ComputeMetaNode *Other) const;
   };
-
-  void analyze();
-
-private:
-  llvm::PHINode *PHINode;
-
   std::unordered_set<const llvm::LoadInst *> LoadInputs;
   std::unordered_set<const llvm::Instruction *> CallInputs;
   std::unordered_set<const llvm::Value *> LoopInvarianteInputs;
@@ -135,36 +164,6 @@ private:
 
   std::list<PHIMetaNode> PHIMetaNodes;
   std::list<ComputeMetaNode> ComputeMetaNodes;
-
-  struct ComputePath {
-    std::vector<ComputeMetaNode *> ComputeMetaNodes;
-    bool isEmpty() const {
-      for (const auto &ComputeMNode : this->ComputeMetaNodes) {
-        if (!ComputeMNode->isEmpty()) {
-          return false;
-        }
-      }
-      return true;
-    }
-    bool isIdenticalTo(const ComputePath *Other) const {
-      if (this->ComputeMetaNodes.size() != Other->ComputeMetaNodes.size()) {
-        return false;
-      }
-      for (size_t ComputeMetaNodeIdx = 0,
-                  NumComputeMetaNodes = this->ComputeMetaNodes.size();
-           ComputeMetaNodeIdx != NumComputeMetaNodes; ++ComputeMetaNodeIdx) {
-        const auto &ThisComputeMNode =
-            this->ComputeMetaNodes.at(ComputeMetaNodeIdx);
-        const auto &OtherComputeMNode =
-            this->ComputeMetaNodes.at(ComputeMetaNodeIdx);
-        if (!ThisComputeMNode->isIdenticalTo(OtherComputeMNode)) {
-          return false;
-        }
-      }
-      return true;
-    }
-    void debug() const;
-  };
 
   struct DFSNode {
     ComputeMetaNode *ComputeMNode;
@@ -179,25 +178,35 @@ private:
   using ConstructedComputeMetaNodeMapT =
       std::unordered_map<const llvm::Value *, ComputeMetaNode *>;
 
+  /**
+   * Handle the newly created PHIMetaNode.
+   * Notice: this may modify DFSStack!
+   */
   void handleFirstTimeComputeNode(
       std::list<DFSNode> &DFSStack, DFSNode &DNode,
       ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap);
 
+  /**
+   * Handle the newly created ComputeMetaNode.
+   * Notice: this may modify DFSStack!
+   */
   void handleFirstTimePHIMetaNode(
       std::list<DFSNode> &DFSStack, PHIMetaNode *PHIMNode,
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap);
 
+  /**
+   * Construct the MetaGraph.
+   */
   void constructMetaGraph();
 
-  std::list<ComputePath> constructComputePath() const;
-
-  void
-  constructComputePathRecursive(ComputeMetaNode *ComputeMNode,
-                                ComputePath &CurrentPath,
-                                std::list<ComputePath> &AllComputePaths) const;
-
-  LLVM::TDG::StreamValuePattern
-  analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const;
+  /**
+   * Initialize the DFSStack for MetaGraph construction.
+   */
+  virtual void initializeMetaGraphConstruction(
+      std::list<DFSNode> &DFSStack,
+      ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
+      ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) = 0;
 };
+
 #endif

@@ -253,7 +253,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
   LoopStack.emplace_back(NewLoop);
 
   auto SortedStreams =
-      this->CurrentStreamAnalyzer->getSortedChosenStreamsByConfiguredLoop(
+      this->CurrentStreamAnalyzer->getSortedChosenStreamsByConfigureLoop(
           NewLoop);
 
   auto NewDynamicInst = *NewInstIter;
@@ -318,7 +318,7 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
   }
 
   auto SortedStreams =
-      this->CurrentStreamAnalyzer->getSortedChosenStreamsByConfiguredLoop(
+      this->CurrentStreamAnalyzer->getSortedChosenStreamsByConfigureLoop(
           EndedLoop);
 
   auto EndInst = new StreamEndInst(EndedLoop, SortedStreams);

@@ -48,6 +48,8 @@ add_library(LLVMTDGPass SHARED
     stream/InlineContext.cpp
     stream/InlineContextStream.cpp
     stream/StaticStream.cpp
+    stream/StaticIndVarStream.cpp
+    stream/StaticMemStream.cpp
     stream/Stream.cpp
     stream/IndVarStream.cpp
     stream/MemStream.cpp

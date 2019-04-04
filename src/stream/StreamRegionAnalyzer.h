@@ -48,7 +48,7 @@ public:
   }
 
   std::list<Stream *>
-  getSortedChosenStreamsByConfiguredLoop(const llvm::Loop *ConfiguredLoop);
+  getSortedChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
 
   Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
 
@@ -91,7 +91,7 @@ private:
    * loop.
    */
   std::unordered_map<const llvm::Loop *, std::unordered_set<Stream *>>
-      ConfiguredLoopStreamMap;
+      ConfigureLoopStreamMap;
 
   /**
    * Map the instruction to the transform plan.
@@ -104,8 +104,8 @@ private:
   void initializeStreams();
 
   Stream *
-  getStreamByInstAndConfiguredLoop(const llvm::Instruction *Inst,
-                                   const llvm::Loop *ConfiguredLoop) const;
+  getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
+                                   const llvm::Loop *ConfigureLoop) const;
   void buildStreamDependenceGraph();
 
   void markQualifiedStreams();

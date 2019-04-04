@@ -1,7 +1,8 @@
 #ifndef LLVM_TDG_STATIC_STREAM_REGION_ANALYZER_H
 #define LLVM_TDG_STATIC_STREAM_REGION_ANALYZER_H
 
-#include "stream/StaticStream.h"
+#include "stream/StaticIndVarStream.h"
+#include "stream/StaticMemStream.h"
 
 class StaticStreamRegionAnalyzer {
 public:
@@ -29,8 +30,13 @@ private:
    */
   InstStaticStreamMapT InstStaticStreamMap;
 
+  StaticStream *
+  getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
+                                  const llvm::Loop *ConfigureLoop) const;
+
   void initializeStreams();
   void initializeStreamForAllLoops(llvm::Instruction *StreamInst);
+  void buildStreamDependenceGraph();
 };
 
 #endif
