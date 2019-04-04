@@ -80,6 +80,13 @@ bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
 
 void StaticIndVarStream::analyzeIsCandidate() {
   /**
+   * So far only consider inner most loop.
+   */
+  if (this->ConfigureLoop != this->InnerMostLoop) {
+    this->IsCandidate = false;
+    return;
+  }
+  /**
    * Start to check constraints:
    * 1. No call inputs.
    * 2. No ComputeMetaNode has more than one PHIMetaNode child.
