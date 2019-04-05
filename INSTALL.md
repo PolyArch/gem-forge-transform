@@ -75,6 +75,13 @@ conda install numpy
 conda install scikit-learn
 ```
 
+Remember to setup the python version of protobuf. If you are using Anaconda to manager the environment, type this:
+
+```bash
+cd PROTOBUF_SRC_ROOT/python
+python setup.py install --prefix ANACONDA/envs/YOUR_ENV
+```
+
 ### Environment Variable
 
 This project relies on some environment variables to run. You can add this to the activation script of your anaconda environment.
