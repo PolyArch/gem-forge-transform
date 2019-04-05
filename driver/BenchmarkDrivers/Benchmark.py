@@ -242,6 +242,9 @@ class Benchmark(object):
             trace_id=trace.get_trace_id()
         )
 
+    def get_tdg_extra_path(self, transform_config, trace):
+        return self.get_tdg(transform_config, trace) + '.extra'
+
     def init_transform_path(self, transform_id):
         transform_path = self.get_transform_path(transform_id)
         Util.mkdir_p(transform_path)

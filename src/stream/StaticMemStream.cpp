@@ -85,9 +85,21 @@ void StaticMemStream::analyzeIsCandidate() {
       this->ValPattern = LLVM::TDG::StreamValuePattern::LINEAR;
       return;
     }
-  } else if (this->validateSCEVAsStreamDG(SCEV, LoopHeaderPHINodeSCEV)) {
-    this->IsCandidate = true;
-    return;
+  } else {
+    std::unordered_set<const llvm::SCEV *> InputSCEVs;
+    InputSCEVs.insert(LoopHeaderPHINodeSCEV);
+    // Also insert the loads' SCEV.
+    for (auto &LoadInst : this->LoadInputs) {
+      if (this->SE->isSCEVable(LoadInst->getType())) {
+        auto LoadSCEV =
+            this->SE->getSCEV(const_cast<llvm::LoadInst *>(LoadInst));
+        InputSCEVs.insert(LoadSCEV);
+      }
+    }
+    if (this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
+      this->IsCandidate = true;
+      return;
+    }
   }
   this->IsCandidate = false;
   return;
@@ -107,11 +119,14 @@ void StaticMemStream::buildDependenceGraph(GetStreamFuncT GetStream) {
 }
 
 bool StaticMemStream::validateSCEVAsStreamDG(
-    const llvm::SCEV *SCEV, const llvm::SCEV *PHINodeInputSCEV) {
+    const llvm::SCEV *SCEV,
+    const std::unordered_set<const llvm::SCEV *> &InputSCEVs) {
   assert(!this->SE->isLoopInvariant(SCEV, this->InnerMostLoop) &&
          "Only validate LoopVariant SCEV.");
   while (true) {
-    if (SCEV == PHINodeInputSCEV) {
+    if (InputSCEVs.count(SCEV) != 0) {
+      break;
+    } else if (llvm::isa<llvm::SCEVAddRecExpr>(SCEV)) {
       break;
     } else if (auto ComSCEV = llvm::dyn_cast<llvm::SCEVCommutativeExpr>(SCEV)) {
       const llvm::SCEV *LoopVariantSCEV = nullptr;
@@ -122,14 +137,25 @@ bool StaticMemStream::validateSCEVAsStreamDG(
           // Loop invariant.
           continue;
         }
+        if (InputSCEVs.count(OpSCEV)) {
+          // Input SCEV.
+          continue;
+        }
+        if (llvm::isa<llvm::SCEVAddRecExpr>(OpSCEV)) {
+          // AddRec SCEV.
+          continue;
+        }
         if (LoopVariantSCEV == nullptr) {
           LoopVariantSCEV = OpSCEV;
         } else {
-          // More than one LoopVariant SCEV operand.
+          // More than one LoopVariant/Non-Input SCEV operand.
           return false;
         }
       }
-      assert(LoopVariantSCEV != nullptr && "Missing LoopVariant SCEV.");
+      if (LoopVariantSCEV == nullptr) {
+        // We are done.
+        break;
+      }
       SCEV = LoopVariantSCEV;
     } else if (auto CastSCEV = llvm::dyn_cast<llvm::SCEVCastExpr>(SCEV)) {
       SCEV = CastSCEV->getOperand();

@@ -2,6 +2,8 @@
 from BenchmarkDrivers.MultiProgramBenchmark import MultiProgramBenchmark
 
 import Utils.Gem5Stats as Gem5Stats
+import Utils.StreamMessage_pb2 as StreamMessage_pb2
+import json
 
 import os
 
@@ -11,11 +13,15 @@ class StreamExperiments(object):
         self.driver = driver
         self.stream_transform_config = self.driver.transform_manager.get_config(
             'stream')
-        self.replay_transform_config = self.driver.transform_manager.get_config(
-            'replay')
-
         self.stream_simulation_configs = self.driver.simulation_manager.get_configs(
             'stream')
+
+        for benchmark in self.driver.benchmarks:
+            if not isinstance(benchmark, MultiProgramBenchmark):
+                self.analyzeStaticStreamForBenchmark(benchmark)
+
+        self.replay_transform_config = self.driver.transform_manager.get_config(
+            'replay')
         self.replay_simulation_configs = self.driver.simulation_manager.get_configs(
             'replay')
 
@@ -23,8 +29,6 @@ class StreamExperiments(object):
         self.multi_program_speedup = dict()
 
         for benchmark in self.driver.benchmarks:
-            print('Start to analyze {benchmark}'.format(
-                benchmark=benchmark.get_name()))
             if isinstance(benchmark, MultiProgramBenchmark):
                 self.analyzeMultiProgramBenchmark(benchmark)
             else:
@@ -52,7 +56,6 @@ class StreamExperiments(object):
         prod = 1.0
         for x in all_speedup:
             prod *= x
-        print prod
         return prod ** (1./len(all_speedup))
 
     def get_single_program_time(self, benchmark, transform_config, simulation_config):
@@ -175,11 +178,40 @@ class StreamExperiments(object):
                         d=multi/single,
                     ))
 
-        # import pprint
-        # pprint.pprint(rp_single)
-        # pprint.pprint(rp_multi)
-        # pprint.pprint(st_single)
-        # pprint.pprint(st_multi)
+    def analyzeStaticStreamForBenchmark(self, benchmark):
+        print('Start static stream analysis for {b}'.format(
+            b=benchmark.get_name()))
+        for trace in benchmark.get_traces():
+            tdg_extra_path = benchmark.get_tdg_extra_path(
+                self.stream_transform_config, trace)
+            for item in os.listdir(tdg_extra_path):
+                if not os.path.isdir(os.path.join(tdg_extra_path, item)):
+                    continue
+                stream_region_path = os.path.join(
+                    tdg_extra_path, item, 'streams.info')
+                stream_region = StreamMessage_pb2.StreamRegion()
+                f = open(stream_region_path)
+                stream_region.ParseFromString(f.read())
+                f.close()
+                for s in stream_region.streams:
+                    if s.loop_level != s.config_loop_level:
+                        # So far ignore those configured outside.
+                        continue
+                    dynamic_info = s.dynamic_info
+                    static_info = s.static_info
+                    if dynamic_info.is_qualified != static_info.is_qualified:
+                        if dynamic_info.is_aliased:
+                            # Ignore the mismatch due to aliasing.
+                            continue
+                        if dynamic_info.total_accesses == 0:
+                            # Ignore the mismatch due to no accesses in the trace.
+                            continue
+                        print('Mismatch stream! trace {trace_id:2} dynamic {dynamic:5} static {static:5}: {s}'.format(
+                            trace_id=trace.get_trace_id(),
+                            dynamic=dynamic_info.is_qualified,
+                            static=static_info.is_qualified,
+                            s=s.name
+                        ))
 
 
 def analyze(driver):
