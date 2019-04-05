@@ -180,7 +180,14 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_pattern_path(this->getPatternRelativePath());
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
   ProtobufInfo->set_coalesce_group(this->CoalesceGroup);
-  ProtobufInfo->set_chosen(this->Chosen);
+  auto DynamicStreamInfo = ProtobufInfo->mutable_dynamic_info();
+  DynamicStreamInfo->set_is_candidate(this->isCandidate());
+  DynamicStreamInfo->set_is_qualified(this->isQualified());
+  DynamicStreamInfo->set_is_chosen(this->isChosen());
+  DynamicStreamInfo->set_is_aliased(this->isAliased());
+  DynamicStreamInfo->set_total_iters(this->TotalIters);
+  DynamicStreamInfo->set_total_accesses(this->TotalAccesses);
+  DynamicStreamInfo->set_total_configures(this->TotalAccesses);
   this->SStream->setStaticStreamInfo(*ProtobufInfo->mutable_static_info());
 
 #define ADD_STREAM(SET, FIELD)                                                 \

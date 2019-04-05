@@ -27,6 +27,16 @@ message StaticStreamInfo {
   StreamValuePattern val_pattern = 5;
 }
 
+message DynamicStreamInfo {
+  bool is_candidate = 1;
+  bool is_qualified = 2;
+  bool is_chosen = 3;
+  bool is_aliased = 4;
+  uint64 total_iters = 5;
+  uint64 total_accesses = 6;
+  uint64 total_configures = 7;
+}
+
 message StreamInfo {
   string name = 1;
   uint64 id = 2;
@@ -38,7 +48,7 @@ message StreamInfo {
   string history_path = 8;
   int32 coalesce_group = 9;
 
-  bool chosen = 10;
+  DynamicStreamInfo dynamic_info = 10;
 
   repeated StreamId base_streams = 16;
   repeated StreamId back_base_streams = 17;

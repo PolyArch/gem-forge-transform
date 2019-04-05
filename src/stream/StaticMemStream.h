@@ -30,20 +30,20 @@ private:
   void analyzeIsCandidate();
 
   /**
-   * Helper function to validate SCEV can be represented by as a stream
-   * datagraph. A SCEV is a valid StreamDG if it recursively:
-   * 1. SCEVAddExpr:
-   *   a. One of the operand is LoopInvariant.
+   * Helper function to validate SCEV can be represented by as a
+   * stream datagraph.
+   *
+   * A SCEV is a valid StreamDG if it recursively:
+   * 1. SCEVCommutativeExpr:
+   *   a. One of the operand is LoopInvariant or within the InputSCEVs.
    *   b. The other operand is StreamDG.
-   * 2. SCEVMulExpr:
-   *   a. One of the operand is LoopInvariant.
-   *   b. The other operand is StreamDG.
-   * 3. SCEVCastExpr:
-   *   a. The operand is StreamDG.
-   * 4. SCEV that equals the PHINodeInput.
+   * 2. SCEVCastExpr: The operand is StreamDG.
+   * 3. SCEV that within the InputSCEVs.
+   * 4. AddRecSCEV.
    */
-  bool validateSCEVAsStreamDG(const llvm::SCEV *SCEV,
-                              const llvm::SCEV *PHINodeInputSCEV);
+  bool validateSCEVAsStreamDG(
+      const llvm::SCEV *SCEV,
+      const std::unordered_set<const llvm::SCEV *> &InputSCEVs);
 };
 
 #endif

@@ -422,6 +422,12 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
                                                 &InfoJsonString);
     InfoTextFStream << InfoJsonString << '\n';
     InfoTextFStream.close();
+
+    std::ofstream InfoFStream(this->AnalyzePath + "/streams.info");
+    assert(InfoFStream.is_open() &&
+           "Failed to open the output info protobuf file.");
+    ProtobufStreamRegion.SerializeToOstream(&InfoFStream);
+    InfoFStream.close();
   }
 
   {
@@ -702,8 +708,7 @@ void StreamRegionAnalyzer::dumpConfigurePlan() {
   PlanFStream.close();
 }
 
-std::list<Stream *>
-StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
+std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
     const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
