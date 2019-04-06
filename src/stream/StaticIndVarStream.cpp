@@ -3,8 +3,8 @@
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Support/raw_ostream.h"
 
-LLVM::TDG::StreamValuePattern StaticIndVarStream::analyzeValuePatternFromSCEV(
-    const llvm::SCEV *SCEV) const {
+LLVM::TDG::StreamValuePattern
+StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
   if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
     if (AddRecSCEV->isAffine()) {
       return LLVM::TDG::StreamValuePattern::LINEAR;
@@ -15,7 +15,6 @@ LLVM::TDG::StreamValuePattern StaticIndVarStream::analyzeValuePatternFromSCEV(
      * PHINode, then this is LINEAR.
      */
     auto NumOperands = AddSCEV->getNumOperands();
-    assert(NumOperands == 2 && "AddSCEV should have 2 operands.");
     const llvm::SCEV *LoopVariantSCEV = nullptr;
     for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
       auto OpSCEV = AddSCEV->getOperand(OperandIdx);
@@ -111,7 +110,10 @@ void StaticIndVarStream::analyzeIsCandidate() {
   }
 
   // 3.
+  llvm::errs() << "Constructing compute path.\n";
   this->AllComputePaths = this->constructComputePath();
+  llvm::errs() << "Constructing compute path done.\n";
+
   auto EmptyPathFound = false;
   for (const auto &Path : AllComputePaths) {
     if (Path.isEmpty()) {
@@ -223,8 +225,19 @@ void StaticIndVarStream::constructComputePathRecursive(
     assert(!PHIMNode->ComputeMetaNodes.empty() &&
            "Every PHIMetaNode should have ComputeMetaNode child.");
     for (auto &ComputeMNodeChild : PHIMNode->ComputeMetaNodes) {
-      this->constructComputePathRecursive(ComputeMNodeChild, CurrentPath,
-                                          AllComputePaths);
+      // This is very hacky, but now let's ignore the compute node already in
+      // the path.
+      bool AlreadyInPath = false;
+      for (const auto &PathComputeMNode : CurrentPath.ComputeMetaNodes) {
+        if (PathComputeMNode == ComputeMNodeChild) {
+          AlreadyInPath = true;
+          break;
+        }
+      }
+      if (!AlreadyInPath) {
+        this->constructComputePathRecursive(ComputeMNodeChild, CurrentPath,
+                                            AllComputePaths);
+      }
     }
   }
 

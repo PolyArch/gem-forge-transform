@@ -181,6 +181,7 @@ class StreamExperiments(object):
     def analyzeStaticStreamForBenchmark(self, benchmark):
         print('Start static stream analysis for {b}'.format(
             b=benchmark.get_name()))
+        inner_most_streams = list()
         for trace in benchmark.get_traces():
             tdg_extra_path = benchmark.get_tdg_extra_path(
                 self.stream_transform_config, trace)
@@ -197,21 +198,30 @@ class StreamExperiments(object):
                     if s.loop_level != s.config_loop_level:
                         # So far ignore those configured outside.
                         continue
-                    dynamic_info = s.dynamic_info
-                    static_info = s.static_info
-                    if dynamic_info.is_qualified != static_info.is_qualified:
-                        if dynamic_info.is_aliased:
-                            # Ignore the mismatch due to aliasing.
-                            continue
-                        if dynamic_info.total_accesses == 0:
-                            # Ignore the mismatch due to no accesses in the trace.
-                            continue
-                        print('Mismatch stream! trace {trace_id:2} dynamic {dynamic:5} static {static:5}: {s}'.format(
-                            trace_id=trace.get_trace_id(),
-                            dynamic=dynamic_info.is_qualified,
-                            static=static_info.is_qualified,
-                            s=s.name
-                        ))
+                    inner_most_streams.append(s)
+        # Sort by the number of dynamic accesses.
+        inner_most_streams.sort(key=lambda x: x.dynamic_info.total_accesses)
+        total_accesses = sum(
+            [s.dynamic_info.total_accesses for s in inner_most_streams])
+        total_qualified_accesses = sum(
+            [s.dynamic_info.total_accesses for s in inner_most_streams if s.dynamic_info.is_qualified])
+        for s in inner_most_streams:
+            dynamic_info = s.dynamic_info
+            static_info = s.static_info
+            if dynamic_info.is_qualified != static_info.is_qualified:
+                if dynamic_info.is_aliased:
+                    # Ignore the mismatch due to aliasing.
+                    continue
+                if dynamic_info.total_accesses == 0:
+                    # Ignore the mismatch due to no accesses in the trace.
+                    continue
+                print('Mismatch stream! weight {weight:.2f} dynamic {dynamic:5} static {static:5}: {s}'.format(
+                    weight=dynamic_info.total_accesses /
+                    float(total_qualified_accesses),
+                    dynamic=dynamic_info.is_qualified,
+                    static=static_info.is_qualified,
+                    s=s.name
+                ))
 
 
 def analyze(driver):

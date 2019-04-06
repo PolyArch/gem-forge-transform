@@ -187,7 +187,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   DynamicStreamInfo->set_is_aliased(this->isAliased());
   DynamicStreamInfo->set_total_iters(this->TotalIters);
   DynamicStreamInfo->set_total_accesses(this->TotalAccesses);
-  DynamicStreamInfo->set_total_configures(this->TotalAccesses);
+  DynamicStreamInfo->set_total_configures(this->TotalStreams);
   this->SStream->setStaticStreamInfo(*ProtobufInfo->mutable_static_info());
 
 #define ADD_STREAM(SET, FIELD)                                                 \

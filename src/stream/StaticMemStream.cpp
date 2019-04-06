@@ -57,37 +57,45 @@ void StaticMemStream::analyzeIsCandidate() {
     this->ValPattern = LLVM::TDG::StreamValuePattern::CONSTANT;
     return;
   }
-
   /**
    * Otherwise, we allow the following SCEV expr:
    * 1. SCEV on LoopHeaderPHINode.
    * 2. AddRecExpr.
    * 3. AddExpr with one loop invariant and the other LoopHeaderPHINode.
    */
-  assert(this->LoopHeaderPHIInputs.size() == 1 &&
-         "StaticMemStream should have one LoopHeaderPHIInput for the "
-         "LoopVariant SCEV.");
-  auto LoopHeaderPHINode =
-      const_cast<llvm::PHINode *>(*(this->LoopHeaderPHIInputs.begin()));
-  if (!this->SE->isSCEVable(LoopHeaderPHINode->getType())) {
-    this->IsCandidate = false;
-    return;
-  }
-  auto LoopHeaderPHINodeSCEV = this->SE->getSCEV(LoopHeaderPHINode);
-  if (LoopHeaderPHINodeSCEV == SCEV) {
-    // 1. Take the LoopHeaderPHINode directly.
-    this->IsCandidate = true;
-    return;
-  } else if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
-    // 2. AddRecExpr.
-    if (AddRecSCEV->isAffine()) {
-      this->IsCandidate = true;
-      this->ValPattern = LLVM::TDG::StreamValuePattern::LINEAR;
+  if (this->LoopHeaderPHIInputs.size() == 1) {
+    auto LoopHeaderPHINode =
+        const_cast<llvm::PHINode *>(*(this->LoopHeaderPHIInputs.begin()));
+    if (!this->SE->isSCEVable(LoopHeaderPHINode->getType())) {
+      this->IsCandidate = false;
       return;
+    }
+    auto LoopHeaderPHINodeSCEV = this->SE->getSCEV(LoopHeaderPHINode);
+    if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
+      // 2. AddRecExpr.
+      if (AddRecSCEV->isAffine()) {
+        this->IsCandidate = true;
+        this->ValPattern = LLVM::TDG::StreamValuePattern::LINEAR;
+        return;
+      }
+    } else {
+      std::unordered_set<const llvm::SCEV *> InputSCEVs;
+      InputSCEVs.insert(LoopHeaderPHINodeSCEV);
+      // Also insert the loads' SCEV.
+      for (auto &LoadInst : this->LoadInputs) {
+        if (this->SE->isSCEVable(LoadInst->getType())) {
+          auto LoadSCEV =
+              this->SE->getSCEV(const_cast<llvm::LoadInst *>(LoadInst));
+          InputSCEVs.insert(LoadSCEV);
+        }
+      }
+      if (this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
+        this->IsCandidate = true;
+        return;
+      }
     }
   } else {
     std::unordered_set<const llvm::SCEV *> InputSCEVs;
-    InputSCEVs.insert(LoopHeaderPHINodeSCEV);
     // Also insert the loads' SCEV.
     for (auto &LoadInst : this->LoadInputs) {
       if (this->SE->isSCEVable(LoadInst->getType())) {
@@ -101,6 +109,7 @@ void StaticMemStream::analyzeIsCandidate() {
       return;
     }
   }
+
   this->IsCandidate = false;
   return;
 }

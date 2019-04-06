@@ -51,6 +51,10 @@ def perf(benchmark):
     benchmark.perf()
 
 
+def opt_analyze(benchmark):
+    benchmark.opt_analyze()
+
+
 def profile(benchmark):
     benchmark.profile()
 
@@ -96,6 +100,7 @@ class Driver:
             self.benchmarks = [b for b in self.benchmarks if b.get_name()
                                in self.options.benchmark]
         self.perf_jobs = dict()
+        self.opt_analyze_jobs = dict()
         self.profile_jobs = dict()
         self.simpoint_jobs = dict()
         self.trace_jobs = dict()
@@ -180,6 +185,8 @@ class Driver:
         for benchmark in self.benchmarks:
             if self.options.build:
                 benchmark.build_raw_bc()
+            if self.options.opt_analyze:
+                self.schedule_opt_analyze(job_scheduler, benchmark)
             if self.options.perf:
                 self.schedule_perf(job_scheduler, benchmark)
             if self.options.profile:
@@ -203,6 +210,11 @@ class Driver:
         name = benchmark.get_name()
         self.perf_jobs[name] = job_scheduler.add_job(name + '.perf', perf,
                                                      (benchmark, ), list())
+
+    def schedule_opt_analyze(self, job_scheduler, benchmark):
+        name = benchmark.get_name()
+        self.opt_analyze_jobs[name] = job_scheduler.add_job(name + '.opt_analyze', opt_analyze,
+                                                            (benchmark, ), list())
 
     def schedule_simpoint(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -508,6 +520,8 @@ if __name__ == '__main__':
                       dest='analyze', default='')
     parser.add_option('--clean', type='string', action='store',
                       dest='clean', default='')
+    parser.add_option('--opt-analyze', type='string',
+                      action='store', dest='opt_analyze', default='')
 
     parser.add_option('-t', '--trans-configs', type='string', action='callback', default='',
                       dest='transforms', callback=parse_transform_configurations)

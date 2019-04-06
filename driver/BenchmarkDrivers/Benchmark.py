@@ -326,6 +326,22 @@ class Benchmark(object):
         ])
 
     """
+    Run a specified opt analysis.
+    """
+
+    def opt_analyze(self):
+        os.chdir(self.get_run_path())
+        opt_cmd = [
+            C.OPT,
+            '-{opt_analyze}'.format(opt_analyze=self.options.opt_analyze),
+            self.get_raw_bc(),
+            '-analyze'
+        ]
+        with open('{opt_analyze}.txt'.format(opt_analyze=self.options.opt_analyze), 'w') as f:
+            Util.call_helper(opt_cmd, stdout=f)
+        os.chdir(self.cwd)
+
+    """
     Construct the profiled binary.
     """
 

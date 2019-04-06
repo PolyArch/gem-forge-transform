@@ -8,10 +8,14 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
     : TopLoop(_TopLoop), DataLayout(_DataLayout), CachedLI(_CachedLI),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())) {
+  llvm::errs() << "Constructing StaticStreamRegionAnalyzer for loop "
+               << LoopUtils::getLoopId(this->TopLoop) << '\n';
   this->initializeStreams();
+  llvm::errs() << "Initializing streams done.\n";
   this->buildStreamDependenceGraph();
   this->markQualifiedStreams();
   this->enforceBackEdgeDependence();
+  llvm::errs() << "Constructing StaticStreamRegionAnalyzer for loop done!\n";
 }
 
 StaticStreamRegionAnalyzer::~StaticStreamRegionAnalyzer() {
@@ -87,6 +91,9 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
     auto LoopLevel =
         ConfigureLoop->getLoopDepth() - this->TopLoop->getLoopDepth();
     StaticStream *NewStream = nullptr;
+    llvm::errs() << "Initializing stream " << Utils::formatLLVMInst(StreamInst)
+                 << " Config Loop " << LoopUtils::getLoopId(ConfigureLoop)
+                 << '\n';
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
       NewStream =
           new StaticIndVarStream(PHIInst, ConfigureLoop, InnerMostLoop, SE);
