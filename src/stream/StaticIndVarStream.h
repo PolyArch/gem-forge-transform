@@ -9,12 +9,8 @@ public:
                      const llvm::Loop *_InnerMostLoop,
                      llvm::ScalarEvolution *_SE)
       : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop, _SE),
-        PHINode(_PHINode), NonEmptyComputePath(nullptr) {
-    this->constructMetaGraph();
-    this->analyzeIsCandidate();
-  }
+        PHINode(_PHINode), NonEmptyComputePath(nullptr) {}
 
-  void buildDependenceGraph(GetStreamFuncT GetStream) override;
   bool checkIsQualifiedWithoutBackEdgeDep() const override;
   bool checkIsQualifiedWithBackEdgeDep() const override;
   void finalizePattern() override;
@@ -25,6 +21,9 @@ private:
   struct ComputePath {
     std::vector<ComputeMetaNode *> ComputeMetaNodes;
     bool isEmpty() const {
+      if (this->ComputeMetaNodes.empty()) {
+        return true;
+      }
       for (const auto &ComputeMNode : this->ComputeMetaNodes) {
         if (!ComputeMNode->isEmpty()) {
           return false;
@@ -60,7 +59,7 @@ private:
       ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) override;
 
-  void analyzeIsCandidate();
+  void analyzeIsCandidate() override;
 
   std::list<ComputePath> AllComputePaths;
   const ComputePath *NonEmptyComputePath;
@@ -74,5 +73,10 @@ private:
 
   LLVM::TDG::StreamValuePattern
   analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const;
+
+  LLVM::TDG::StreamStepPattern computeStepPattern() const override {
+    // No computation required.
+    return this->StaticStreamInfo.stp_pattern();
+  }
 };
 #endif

@@ -8,12 +8,8 @@ public:
   StaticMemStream(const llvm::Instruction *_Inst,
                   const llvm::Loop *_ConfigureLoop,
                   const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
-      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE) {
-    this->constructMetaGraph();
-    this->analyzeIsCandidate();
-  }
+      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE) {}
 
-  void buildDependenceGraph(GetStreamFuncT GetStream) override;
   bool checkIsQualifiedWithoutBackEdgeDep() const override;
   bool checkIsQualifiedWithBackEdgeDep() const override;
   void finalizePattern() override;
@@ -27,7 +23,7 @@ private:
       ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) override;
 
-  void analyzeIsCandidate();
+  void analyzeIsCandidate() override;
 
   /**
    * Helper function to validate SCEV can be represented by as a
@@ -44,6 +40,8 @@ private:
   bool validateSCEVAsStreamDG(
       const llvm::SCEV *SCEV,
       const std::unordered_set<const llvm::SCEV *> &InputSCEVs);
+
+  LLVM::TDG::StreamStepPattern computeStepPattern() const override;
 };
 
 #endif

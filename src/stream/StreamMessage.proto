@@ -25,6 +25,20 @@ message StaticStreamInfo {
   bool is_chosen = 3;
   StreamStepPattern stp_pattern = 4;
   StreamValuePattern val_pattern = 5;
+  StaticNotStreamReason not_stream_reason = 6;
+  enum StaticNotStreamReason {
+    UNKNOWN = 0;
+    // Not Candidate Reason.
+    BASE_STREAM_INNER_MOST_LOOP_NOT_CONTAIN_MINE = 1;
+    MULTI_PHIMNODE_FOR_COMPUTEMNODE = 2;
+    MULTI_NON_EMPTY_COMPUTE_PATH = 3;
+    NOT_SCEVABLE_COMPUTEMNODE = 4;
+    RANDOM_PATTERN = 5;
+    MULTI_STEP_ROOT = 6;
+    // Not Qualified Reason. 
+    BASE_STREAM_NOT_QUALIFIED = 8;
+    NO_STATIC_MAPPING = 9;
+  }
 }
 
 message DynamicStreamInfo {

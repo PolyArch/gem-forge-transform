@@ -4,53 +4,55 @@
 #include "llvm/Support/raw_ostream.h"
 
 void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
+  SSI.CopyFrom(this->StaticStreamInfo);
   SSI.set_is_candidate(this->IsCandidate);
   SSI.set_is_qualified(this->IsQualified);
-  SSI.set_stp_pattern(this->StpPattern);
-  SSI.set_val_pattern(this->ValPattern);
 }
 
 void StaticStream::handleFirstTimeComputeNode(
     std::list<DFSNode> &DFSStack, DFSNode &DNode,
     ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
-    ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) {
+    ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap,
+    GetStreamFuncT GetStream) {
   auto ComputeMNode = DNode.ComputeMNode;
 
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(DNode.Value)) {
-    if (this->InnerMostLoop->contains(Inst)) {
-      if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(Inst)) {
-        // Load input.
-        ComputeMNode->LoadInputs.insert(LoadInst);
-        this->LoadInputs.insert(LoadInst);
+    if (this->ConfigureLoop->contains(Inst)) {
+      if (llvm::isa<llvm::LoadInst>(Inst)) {
+        // LoadBaseStream.
+        auto LoadBaseStream = GetStream(Inst, this->ConfigureLoop);
+        assert(LoadBaseStream != nullptr && "Failed to find LoadBaseStream.");
+        ComputeMNode->LoadBaseStreams.insert(LoadBaseStream);
+        this->LoadBaseStreams.insert(LoadBaseStream);
         DFSStack.pop_back();
-      } else if (llvm::isa<llvm::PHINode>(Inst) &&
-                 this->InnerMostLoop->getHeader() == Inst->getParent()) {
-        // Loop header phi inputs.
-        auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst);
-        ComputeMNode->LoopHeaderPHIInputs.insert(PHINode);
-        this->LoopHeaderPHIInputs.insert(PHINode);
+      } else if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
+        // We have to pop this before handleFirstTimePHIMetaNode emplace next
+        // compute nodes.
         DFSStack.pop_back();
+        if (auto IndVarBaseStream = GetStream(Inst, this->ConfigureLoop)) {
+          // IndVarBaseStream.
+          ComputeMNode->IndVarBaseStreams.insert(IndVarBaseStream);
+          this->IndVarBaseStreams.insert(IndVarBaseStream);
+        } else {
+          // Another PHIMetaNode.
+          if (ConstructedPHIMetaNodeMap.count(PHINode) == 0) {
+            // First time encounter the phi node.
+            this->PHIMetaNodes.emplace_back(PHINode);
+            ConstructedPHIMetaNodeMap.emplace(PHINode,
+                                              &this->PHIMetaNodes.back());
+            // This may modify the DFSStack.
+            this->handleFirstTimePHIMetaNode(DFSStack,
+                                             &this->PHIMetaNodes.back(),
+                                             ConstructedComputeMetaNodeMap);
+          }
+          auto PHIMNode = ConstructedPHIMetaNodeMap.at(PHINode);
+          ComputeMNode->PHIMetaNodes.insert(PHIMNode);
+        }
       } else if (Utils::isCallOrInvokeInst(Inst)) {
         // Call input.
         ComputeMNode->CallInputs.insert(Inst);
         this->CallInputs.insert(Inst);
         DFSStack.pop_back();
-      } else if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
-        // Another PHIMeta Node.
-        // We have to pop this before handleFirstTimePHIMetaNode emplace next
-        // compute nodes.
-        DFSStack.pop_back();
-        if (ConstructedPHIMetaNodeMap.count(PHINode) == 0) {
-          // First time encounter the phi node.
-          this->PHIMetaNodes.emplace_back(PHINode);
-          ConstructedPHIMetaNodeMap.emplace(PHINode,
-                                            &this->PHIMetaNodes.back());
-          // This may modify the DFSStack.
-          this->handleFirstTimePHIMetaNode(DFSStack, &this->PHIMetaNodes.back(),
-                                           ConstructedComputeMetaNodeMap);
-        }
-        auto PHIMNode = ConstructedPHIMetaNodeMap.at(PHINode);
-        ComputeMNode->PHIMetaNodes.insert(PHIMNode);
       } else {
         // Normal compute inst.
         for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
@@ -100,7 +102,7 @@ void StaticStream::handleFirstTimePHIMetaNode(
   }
 }
 
-void StaticStream::constructMetaGraph() {
+void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
   // Create the first PHIMetaNode.
   ConstructedPHIMetaNodeMapT ConstructedPHIMetaNodeMap;
   ConstructedComputeMetaNodeMapT ConstructedComputeMetaNodeMap;
@@ -113,9 +115,9 @@ void StaticStream::constructMetaGraph() {
       // First time.
       DNode.VisitTimes++;
       // Notice that handleFirstTimeComputeNode may pop DFSStack!.
-      this->handleFirstTimeComputeNode(DFSStack, DNode,
-                                       ConstructedPHIMetaNodeMap,
-                                       ConstructedComputeMetaNodeMap);
+      this->handleFirstTimeComputeNode(
+          DFSStack, DNode, ConstructedPHIMetaNodeMap,
+          ConstructedComputeMetaNodeMap, GetStream);
     } else {
       // Second time. This must be a real compute inst.
       bool Inserted = false;
@@ -139,6 +141,53 @@ void StaticStream::constructMetaGraph() {
   }
 }
 
+void StaticStream::addBaseStream(StaticStream *Other) {
+  this->BaseStreams.insert(Other);
+  if (Other != nullptr) {
+    Other->DependentStreams.insert(this);
+    if (Other->InnerMostLoop == this->InnerMostLoop) {
+      this->BaseStepStreams.insert(Other);
+    }
+  }
+}
+
+void StaticStream::addBackEdgeBaseStream(StaticStream *Other) {
+  this->BackMemBaseStreams.insert(Other);
+  Other->BackIVDependentStreams.insert(this);
+}
+
+void StaticStream::constructStreamGraph() {
+  // Basically translate from what we found in LoadBaseStreams and
+  // IndVarBaseStreams during the construction of the MetaGraph to BaseStreams
+  // and BackMemBaseStreams.
+  for (auto LoadBaseStream : this->LoadBaseStreams) {
+    if (LoadBaseStream == this) {
+      // No circle dependency in stream graph.
+      continue;
+    }
+    if (LoadBaseStream->InnerMostLoop == this->InnerMostLoop &&
+        this->Type == TypeT::IV) {
+      // This is a back edge dependence.
+      this->addBackEdgeBaseStream(LoadBaseStream);
+    } else {
+      this->addBaseStream(LoadBaseStream);
+    }
+  }
+  for (auto IndVarBaseStream : this->IndVarBaseStreams) {
+    if (IndVarBaseStream == this) {
+      // No circle dependency in stream graph.
+      continue;
+    }
+    this->addBaseStream(IndVarBaseStream);
+  }
+}
+
+void StaticStream::constructGraph(GetStreamFuncT GetStream) {
+  // Construct the two graphs.
+  this->constructMetaGraph(GetStream);
+  this->constructStreamGraph();
+}
+
 /**
  * This must happen after all the calls to addBaseStream.
  */
@@ -158,4 +207,69 @@ void StaticStream::computeBaseStepRootStreams() {
       this->BaseStepRootStreams.insert(BaseStepRootStream);
     }
   }
+}
+
+bool StaticStream::checkBaseStreamInnerMostLoopContainsMine() const {
+  for (const auto &BaseStream : this->BaseStreams) {
+    if (!BaseStream->InnerMostLoop->contains(this->InnerMostLoop)) {
+      return false;
+    }
+  }
+  for (const auto &BackMemBaseStream : this->BackMemBaseStreams) {
+    if (!BackMemBaseStream->InnerMostLoop->contains(this->InnerMostLoop)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
+  // Noo need to worry about back edge base streams, cause they are guaranteed
+  // to be not in a parent loop.
+  assert(this->isCandidate() &&
+         "Should not check static mapping for non-candidate stream.");
+  auto MyStpPattern = this->computeStepPattern();
+  for (const auto &BaseStream : this->BaseStreams) {
+    assert(BaseStream->InnerMostLoop->contains(this->InnerMostLoop) &&
+           "This should not happen for a candidate stream.");
+    assert(BaseStream->isQualified() && "Can not check static mapping when "
+                                        "base streams are not qualified yet.");
+    if (BaseStream->InnerMostLoop == this->InnerMostLoop) {
+      // With in the same inner most loop.
+      continue;
+    }
+    // Parent loop base stream.
+    auto BaseStpPattern = BaseStream->StaticStreamInfo.stp_pattern();
+    if (BaseStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
+        BaseStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
+      // Illegal base stream step pattern.
+      return false;
+    }
+    // Check my step pattern.
+    if (MyStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
+        MyStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
+      return false;
+    }
+    // Most difficult part, check step count ratio is static.
+    auto CurrentLoop = this->InnerMostLoop;
+    while (CurrentLoop != BaseStream->InnerMostLoop) {
+      if (!this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
+        return false;
+      }
+      auto BackEdgeTakenSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
+      if (llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV)) {
+        return false;
+      }
+      // The back edge should be invariant at ConfigureLoop.
+      if (!this->SE->isLoopInvariant(BackEdgeTakenSCEV, this->ConfigureLoop)) {
+        return false;
+      }
+      /**
+       * TODO: We should also check that this loop is guaranteed to entry.
+       */
+      CurrentLoop = CurrentLoop->getParentLoop();
+      assert(CurrentLoop != nullptr && "Should have a parent loop.");
+    }
+  }
+  return true;
 }
