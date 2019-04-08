@@ -5,6 +5,7 @@
 
 LLVM::TDG::StreamValuePattern
 StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
+  llvm::errs() << (SCEV == nullptr) << '\n';
   if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
     if (AddRecSCEV->isAffine()) {
       return LLVM::TDG::StreamValuePattern::LINEAR;
@@ -61,7 +62,7 @@ bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
     }
   }
   // We need to be more careful to check the inputs.
-  if (this->LoadInputs != Other->LoadInputs) {
+  if (this->LoadBaseStreams != Other->LoadBaseStreams) {
     return false;
   }
   if (this->CallInputs != Other->CallInputs) {
@@ -70,7 +71,7 @@ bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
   if (this->LoopInvarianteInputs != Other->LoopInvarianteInputs) {
     return false;
   }
-  if (this->LoopHeaderPHIInputs != Other->LoopHeaderPHIInputs) {
+  if (this->IndVarBaseStreams != Other->IndVarBaseStreams) {
     return false;
   }
 
@@ -81,10 +82,16 @@ void StaticIndVarStream::analyzeIsCandidate() {
   /**
    * So far only consider inner most loop.
    */
-  if (this->ConfigureLoop != this->InnerMostLoop) {
+  llvm::errs() << this->formatName() << '\n';
+
+  if (!this->checkBaseStreamInnerMostLoopContainsMine()) {
     this->IsCandidate = false;
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::
+            BASE_STREAM_INNER_MOST_LOOP_NOT_CONTAIN_MINE);
     return;
   }
+
   /**
    * Start to check constraints:
    * 1. No call inputs.
@@ -105,14 +112,14 @@ void StaticIndVarStream::analyzeIsCandidate() {
   for (const auto &ComputeMNode : this->ComputeMetaNodes) {
     if (ComputeMNode.PHIMetaNodes.size() > 1) {
       this->IsCandidate = false;
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::MULTI_PHIMNODE_FOR_COMPUTEMNODE);
       return;
     }
   }
 
   // 3.
-  llvm::errs() << "Constructing compute path.\n";
   this->AllComputePaths = this->constructComputePath();
-  llvm::errs() << "Constructing compute path done.\n";
 
   auto EmptyPathFound = false;
   for (const auto &Path : AllComputePaths) {
@@ -126,6 +133,8 @@ void StaticIndVarStream::analyzeIsCandidate() {
       // We have to make sure that these two compute path are the same.
       if (!this->NonEmptyComputePath->isIdenticalTo(&Path)) {
         this->IsCandidate = false;
+        this->StaticStreamInfo.set_not_stream_reason(
+            LLVM::TDG::StaticStreamInfo::MULTI_NON_EMPTY_COMPUTE_PATH);
         return;
       }
     }
@@ -138,6 +147,8 @@ void StaticIndVarStream::analyzeIsCandidate() {
       // 4a. No empty SCEV.
       if (ComputeMNode->SCEV == nullptr) {
         this->IsCandidate = false;
+        this->StaticStreamInfo.set_not_stream_reason(
+            LLVM::TDG::StaticStreamInfo::NOT_SCEVABLE_COMPUTEMNODE);
         return;
       }
     }
@@ -151,11 +162,14 @@ void StaticIndVarStream::analyzeIsCandidate() {
       FirstNonEmptyComputeMNode = ComputeMNode;
       break;
     }
-    this->ValPattern =
-        this->analyzeValuePatternFromSCEV(FirstNonEmptyComputeMNode->SCEV);
-    if (this->ValPattern == LLVM::TDG::StreamValuePattern::RANDOM) {
+    this->StaticStreamInfo.set_val_pattern(
+        this->analyzeValuePatternFromSCEV(FirstNonEmptyComputeMNode->SCEV));
+    if (this->StaticStreamInfo.val_pattern() ==
+        LLVM::TDG::StreamValuePattern::RANDOM) {
       // This is not a recognizable pattern.
       this->IsCandidate = false;
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::RANDOM_PATTERN);
       return;
     }
 
@@ -163,13 +177,17 @@ void StaticIndVarStream::analyzeIsCandidate() {
      * Set the access pattern by looking at empty compute path.
      */
     if (EmptyPathFound) {
-      this->StpPattern = LLVM::TDG::StreamStepPattern::CONDITIONAL;
+      this->StaticStreamInfo.set_stp_pattern(
+          LLVM::TDG::StreamStepPattern::CONDITIONAL);
     } else {
-      this->StpPattern = LLVM::TDG::StreamStepPattern::UNCONDITIONAL;
+      this->StaticStreamInfo.set_stp_pattern(
+          LLVM::TDG::StreamStepPattern::UNCONDITIONAL);
     }
     this->IsCandidate = true;
     return;
   }
+
+  llvm::errs() << "Done\n";
 
   this->IsCandidate = true;
 }
@@ -261,20 +279,27 @@ void StaticIndVarStream::ComputePath::debug() const {
   llvm::errs() << '\n';
 }
 
-void StaticIndVarStream::buildDependenceGraph(GetStreamFuncT GetStream) {
-  for (const auto &LoadInput : this->LoadInputs) {
-    auto BaseMStream = GetStream(LoadInput, this->ConfigureLoop);
-    assert(BaseMStream != nullptr && "Failed to get back-edge MStream.");
-    this->addBackEdgeBaseStream(BaseMStream);
-  }
-}
-
 bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->isCandidate()) {
     return false;
   }
   // Make sure we only has one back edge.
   if (this->BackMemBaseStreams.size() > 1) {
+    return false;
+  }
+  // Check all the base streams are qualified.
+  for (auto &BaseStream : this->BaseStreams) {
+    if (!BaseStream->isQualified()) {
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::BASE_STREAM_NOT_QUALIFIED);
+      return false;
+    }
+  }
+  // All the base streams are qualified, and thus know their StepPattern. We can
+  // check the constraints on static mapping.
+  if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
     return false;
   }
   return true;
@@ -300,8 +325,10 @@ void StaticIndVarStream::finalizePattern() {
   // Check if I am its step root.
   if (BackMemBaseStream->BaseStepRootStreams.count(this) == 0) {
     // I am not its step root, which means this is not a pointer chase.
-    this->ValPattern = LLVM::TDG::StreamValuePattern::PREV_LOAD;
+    this->StaticStreamInfo.set_val_pattern(
+        LLVM::TDG::StreamValuePattern::PREV_LOAD);
   } else {
-    this->ValPattern = LLVM::TDG::StreamValuePattern::POINTER_CHASE;
+    this->StaticStreamInfo.set_val_pattern(
+        LLVM::TDG::StreamValuePattern::POINTER_CHASE);
   }
 }

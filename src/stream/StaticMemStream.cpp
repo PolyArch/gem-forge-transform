@@ -24,8 +24,12 @@ void StaticMemStream::analyzeIsCandidate() {
   /**
    * So far only look at inner most loop.
    */
-  if (this->ConfigureLoop != this->InnerMostLoop) {
+
+  if (!this->checkBaseStreamInnerMostLoopContainsMine()) {
     this->IsCandidate = false;
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::
+            BASE_STREAM_INNER_MOST_LOOP_NOT_CONTAIN_MINE);
     return;
   }
 
@@ -38,10 +42,12 @@ void StaticMemStream::analyzeIsCandidate() {
     return;
   }
   /**
-   * At most one LoopHeaderPHIInput.
+   * At most one StepRootStream.
    */
-  if (this->LoopHeaderPHIInputs.size() > 1) {
+  if (this->BaseStepRootStreams.size() > 1) {
     this->IsCandidate = false;
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::MULTI_STEP_ROOT);
     return;
   }
   assert(this->ComputeMetaNodes.size() == 1 &&
@@ -49,89 +55,46 @@ void StaticMemStream::analyzeIsCandidate() {
   const auto &ComputeMNode = this->ComputeMetaNodes.front();
   auto SCEV = ComputeMNode.SCEV;
   assert(SCEV != nullptr && "StaticMemStream should always has SCEV.");
-  if (this->SE->isLoopInvariant(SCEV, this->InnerMostLoop)) {
-    // Constant stream.
-    assert(this->LoopHeaderPHIInputs.empty() &&
-           "Constant StaticMemStream should have no LoopHeaderPHIInput.");
-    this->IsCandidate = true;
-    this->ValPattern = LLVM::TDG::StreamValuePattern::CONSTANT;
-    return;
-  }
   /**
-   * Otherwise, we allow the following SCEV expr:
-   * 1. SCEV on LoopHeaderPHINode.
-   * 2. AddRecExpr.
-   * 3. AddExpr with one loop invariant and the other LoopHeaderPHINode.
+   * Validate the AddressComputeSCEV with InputSCEVs.
    */
-  if (this->LoopHeaderPHIInputs.size() == 1) {
-    auto LoopHeaderPHINode =
-        const_cast<llvm::PHINode *>(*(this->LoopHeaderPHIInputs.begin()));
-    if (!this->SE->isSCEVable(LoopHeaderPHINode->getType())) {
+  std::unordered_set<const llvm::SCEV *> InputSCEVs;
+  for (auto &LoadBaseStream : this->LoadBaseStreams) {
+    auto Inst = const_cast<llvm::Instruction *>(LoadBaseStream->Inst);
+    if (!this->SE->isSCEVable(Inst->getType())) {
       this->IsCandidate = false;
       return;
     }
-    auto LoopHeaderPHINodeSCEV = this->SE->getSCEV(LoopHeaderPHINode);
-    if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
-      // 2. AddRecExpr.
-      if (AddRecSCEV->isAffine()) {
-        this->IsCandidate = true;
-        this->ValPattern = LLVM::TDG::StreamValuePattern::LINEAR;
-        return;
-      }
-    } else {
-      std::unordered_set<const llvm::SCEV *> InputSCEVs;
-      InputSCEVs.insert(LoopHeaderPHINodeSCEV);
-      // Also insert the loads' SCEV.
-      for (auto &LoadInst : this->LoadInputs) {
-        if (this->SE->isSCEVable(LoadInst->getType())) {
-          auto LoadSCEV =
-              this->SE->getSCEV(const_cast<llvm::LoadInst *>(LoadInst));
-          InputSCEVs.insert(LoadSCEV);
-        }
-      }
-      if (this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
-        this->IsCandidate = true;
-        return;
-      }
-    }
-  } else {
-    std::unordered_set<const llvm::SCEV *> InputSCEVs;
-    // Also insert the loads' SCEV.
-    for (auto &LoadInst : this->LoadInputs) {
-      if (this->SE->isSCEVable(LoadInst->getType())) {
-        auto LoadSCEV =
-            this->SE->getSCEV(const_cast<llvm::LoadInst *>(LoadInst));
-        InputSCEVs.insert(LoadSCEV);
-      }
-    }
-    if (this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
-      this->IsCandidate = true;
+    InputSCEVs.insert(this->SE->getSCEV(Inst));
+  }
+  for (auto &IndVarBaseStream : this->IndVarBaseStreams) {
+    auto Inst = const_cast<llvm::Instruction *>(IndVarBaseStream->Inst);
+    if (!this->SE->isSCEVable(Inst->getType())) {
+      this->IsCandidate = false;
       return;
     }
+    InputSCEVs.insert(this->SE->getSCEV(Inst));
+  }
+  for (auto &LoopInvariantInput : this->LoopInvarianteInputs) {
+    if (!this->SE->isSCEVable(LoopInvariantInput->getType())) {
+      this->IsCandidate = false;
+      return;
+    }
+    InputSCEVs.insert(
+        this->SE->getSCEV(const_cast<llvm::Value *>(LoopInvariantInput)));
+  }
+  if (this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
+    this->IsCandidate = true;
+    return;
   }
 
   this->IsCandidate = false;
   return;
 }
 
-void StaticMemStream::buildDependenceGraph(GetStreamFuncT GetStream) {
-  for (const auto &LoopHeaderPHIInputs : this->LoopHeaderPHIInputs) {
-    auto BaseIVStream = GetStream(LoopHeaderPHIInputs, this->ConfigureLoop);
-    assert(BaseIVStream != nullptr && "Missing base IVStream.");
-    this->addBaseStream(BaseIVStream);
-  }
-  for (const auto &LoadInput : this->LoadInputs) {
-    auto BaseMStream = GetStream(LoadInput, this->ConfigureLoop);
-    assert(BaseMStream != nullptr && "Missing base MemStream.");
-    this->addBaseStream(BaseMStream);
-  }
-}
-
 bool StaticMemStream::validateSCEVAsStreamDG(
     const llvm::SCEV *SCEV,
     const std::unordered_set<const llvm::SCEV *> &InputSCEVs) {
-  assert(!this->SE->isLoopInvariant(SCEV, this->InnerMostLoop) &&
-         "Only validate LoopVariant SCEV.");
   while (true) {
     if (InputSCEVs.count(SCEV) != 0) {
       break;
@@ -142,7 +105,7 @@ bool StaticMemStream::validateSCEVAsStreamDG(
       for (size_t OperandIdx = 0, NumOperands = ComSCEV->getNumOperands();
            OperandIdx < NumOperands; ++OperandIdx) {
         auto OpSCEV = ComSCEV->getOperand(OperandIdx);
-        if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
+        if (this->SE->isLoopInvariant(OpSCEV, this->ConfigureLoop)) {
           // Loop invariant.
           continue;
         }
@@ -182,8 +145,17 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
   // Check all the base streams are qualified.
   for (auto &BaseStream : this->BaseStreams) {
     if (!BaseStream->isQualified()) {
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::BASE_STREAM_NOT_QUALIFIED);
       return false;
     }
+  }
+  // All the base streams are qualified, and thus know their StepPattern. We can
+  // check the constraints on static mapping.
+  if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
+    return false;
   }
   return true;
 }
@@ -195,26 +167,33 @@ bool StaticMemStream::checkIsQualifiedWithBackEdgeDep() const {
   return this->checkIsQualifiedWithoutBackEdgeDep();
 }
 
-void StaticMemStream::finalizePattern() {
+LLVM::TDG::StreamStepPattern StaticMemStream::computeStepPattern() const {
   // Copy the step pattern from the step root.
   if (this->BaseStepRootStreams.empty()) {
-    this->StpPattern = LLVM::TDG::StreamStepPattern::NEVER;
+    return LLVM::TDG::StreamStepPattern::NEVER;
   } else {
     assert(this->BaseStepRootStreams.size() == 1 &&
            "More than one step root stream to finalize pattern.");
     auto StepRootStream = *(this->BaseStepRootStreams.begin());
-    this->StpPattern = StepRootStream->StpPattern;
+    return StepRootStream->StaticStreamInfo.stp_pattern();
   }
+}
+
+void StaticMemStream::finalizePattern() {
+  this->StaticStreamInfo.set_stp_pattern(this->computeStepPattern());
   // Compute the value pattern.
-  this->ValPattern = LLVM::TDG::StreamValuePattern::CONSTANT;
+  this->StaticStreamInfo.set_val_pattern(
+      LLVM::TDG::StreamValuePattern::CONSTANT);
   for (auto &BaseStream : this->BaseStreams) {
     if (BaseStream->Type == MEM) {
       // This makes me indirect stream.
-      this->ValPattern = LLVM::TDG::StreamValuePattern::INDIRECT;
+      this->StaticStreamInfo.set_val_pattern(
+          LLVM::TDG::StreamValuePattern::INDIRECT);
       break;
     } else {
       // This is likely our step root, copy its value pattern.
-      this->ValPattern = BaseStream->ValPattern;
+      this->StaticStreamInfo.set_val_pattern(
+          BaseStream->StaticStreamInfo.val_pattern());
     }
   }
 }

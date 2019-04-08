@@ -129,7 +129,7 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
   };
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
-      S->buildDependenceGraph(GetStream);
+      S->constructGraph(GetStream);
     }
   }
   /**
@@ -141,6 +141,15 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
       S->computeBaseStepRootStreams();
+    }
+  }
+  /**
+   * After construct step root streams, we can analyze if the stream is a
+   * candidate.
+   */
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      S->analyzeIsCandidate();
     }
   }
 }

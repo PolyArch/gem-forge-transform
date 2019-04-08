@@ -8,8 +8,20 @@
 
 #include <unordered_set>
 
+/**
+ * A stream maintains two graphs:
+ *
+ * MetaGraph: Nodes can be ComputeMetaNode or PHIMetaNode. Leaf can be base
+ * streams or inputs.
+ *
+ * StreamGraph:
+ *   Nodes are StaticStream. Encode the dependence between streams. BackEdge
+ * dependence from IndVarStream to MemStream within the same InnerMostLoop is
+ * separate in BackMemBaseStreams.
+ *
+ */
 class StaticStream {
- public:
+public:
   enum TypeT {
     IV,
     MEM,
@@ -20,29 +32,28 @@ class StaticStream {
   const llvm::Loop *const InnerMostLoop;
   llvm::ScalarEvolution *const SE;
 
+  /**
+   * The constructor just creates the object and does not perform any analysis.
+   *
+   * After creating all the streams, the manager should call constructGraph() to
+   * initialize the MetaGraph and StreamGraph.
+   */
   StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
-      : Type(_Type),
-        Inst(_Inst),
-        ConfigureLoop(_ConfigureLoop),
-        InnerMostLoop(_InnerMostLoop),
-        SE(_SE),
-        IsCandidate(false),
-        IsQualified(false),
-        IsStream(false),
-        StpPattern(LLVM::TDG::StreamStepPattern::UNKNOWN),
-        ValPattern(LLVM::TDG::StreamValuePattern::RANDOM) {}
+      : Type(_Type), Inst(_Inst), ConfigureLoop(_ConfigureLoop),
+        InnerMostLoop(_InnerMostLoop), SE(_SE), IsCandidate(false),
+        IsQualified(false), IsStream(false) {}
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
 
   std::string formatType() const {
     switch (this->Type) {
-      case StaticStream::IV:
-        return "IV";
-      case StaticStream::MEM:
-        return "MEM";
-      default: { llvm_unreachable("Illegal stream type to be formatted."); }
+    case StaticStream::IV:
+      return "IV";
+    case StaticStream::MEM:
+      return "MEM";
+    default: { llvm_unreachable("Illegal stream type to be formatted."); }
     }
   }
 
@@ -69,20 +80,15 @@ class StaticStream {
 
   using GetStreamFuncT = std::function<StaticStream *(const llvm::Instruction *,
                                                       const llvm::Loop *)>;
-  virtual void buildDependenceGraph(GetStreamFuncT GetStream) = 0;
-  void addBaseStream(StaticStream *Other) {
-    this->BaseStreams.insert(Other);
-    if (Other != nullptr) {
-      Other->DependentStreams.insert(this);
-      if (Other->InnerMostLoop == this->InnerMostLoop) {
-        this->BaseStepStreams.insert(Other);
-      }
-    }
-  }
-  void addBackEdgeBaseStream(StaticStream *Other) {
-    this->BackMemBaseStreams.insert(Other);
-    Other->BackIVDependentStreams.insert(this);
-  }
+
+  /**
+   * After all streams are created, this function should be called on every
+   * stream to create the graphs.
+   */
+  void constructGraph(GetStreamFuncT GetStream);
+  void addBaseStream(StaticStream *Other);
+  void addBackEdgeBaseStream(StaticStream *Other);
+
   void computeBaseStepRootStreams();
 
   /**
@@ -117,7 +123,7 @@ class StaticStream {
    *   This is set by the caller, e.g. region analyzer.
    *
    */
-
+  virtual void analyzeIsCandidate() = 0;
   virtual bool checkIsQualifiedWithoutBackEdgeDep() const = 0;
   virtual bool checkIsQualifiedWithBackEdgeDep() const = 0;
   virtual void finalizePattern() = 0;
@@ -126,6 +132,7 @@ class StaticStream {
   void setIsQualified(bool IsQualified) {
     this->IsQualified = IsQualified;
     if (this->IsQualified) {
+      this->StaticStreamInfo.clear_not_stream_reason();
       this->finalizePattern();
     }
   }
@@ -133,10 +140,10 @@ class StaticStream {
   bool IsCandidate;
   bool IsQualified;
   bool IsStream;
-  LLVM::TDG::StreamStepPattern StpPattern;
-  LLVM::TDG::StreamValuePattern ValPattern;
+  // Some bookkeeping information.
+  mutable LLVM::TDG::StaticStreamInfo StaticStreamInfo;
 
- protected:
+protected:
   struct MetaNode {
     enum TypeE {
       PHIMetaNodeEnum,
@@ -160,10 +167,10 @@ class StaticStream {
       this->Type = ComputeMetaNodeEnum;
     }
     std::unordered_set<PHIMetaNode *> PHIMetaNodes;
-    std::unordered_set<const llvm::LoadInst *> LoadInputs;
+    StreamSet LoadBaseStreams;
+    StreamSet IndVarBaseStreams;
     std::unordered_set<const llvm::Instruction *> CallInputs;
     std::unordered_set<const llvm::Value *> LoopInvarianteInputs;
-    std::unordered_set<const llvm::PHINode *> LoopHeaderPHIInputs;
     std::vector<const llvm::Instruction *> ComputeInsts;
     /**
      * Root (final result) of this meta node.
@@ -184,10 +191,11 @@ class StaticStream {
     }
     bool isIdenticalTo(const ComputeMetaNode *Other) const;
   };
-  std::unordered_set<const llvm::LoadInst *> LoadInputs;
   std::unordered_set<const llvm::Instruction *> CallInputs;
   std::unordered_set<const llvm::Value *> LoopInvarianteInputs;
-  std::unordered_set<const llvm::PHINode *> LoopHeaderPHIInputs;
+
+  StreamSet LoadBaseStreams;
+  StreamSet IndVarBaseStreams;
 
   std::list<PHIMetaNode> PHIMetaNodes;
   std::list<ComputeMetaNode> ComputeMetaNodes;
@@ -212,7 +220,8 @@ class StaticStream {
   void handleFirstTimeComputeNode(
       std::list<DFSNode> &DFSStack, DFSNode &DNode,
       ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
-      ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap);
+      ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap,
+      GetStreamFuncT GetStream);
 
   /**
    * Handle the newly created ComputeMetaNode.
@@ -223,17 +232,42 @@ class StaticStream {
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap);
 
   /**
-   * Construct the MetaGraph.
-   */
-  void constructMetaGraph();
-
-  /**
    * Initialize the DFSStack for MetaGraph construction.
    */
   virtual void initializeMetaGraphConstruction(
       std::list<DFSNode> &DFSStack,
       ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) = 0;
-};
 
+  void constructMetaGraph(GetStreamFuncT GetStream);
+  void constructStreamGraph();
+
+  /**
+   * Helper function to check that all base streams' InnerMostLoop contains
+   * my InnerMostLoop.
+   */
+  bool checkBaseStreamInnerMostLoopContainsMine() const;
+
+  /**
+   * Helper function to check that there exists a static mapping from base
+   * stream's element in a parent loop to my element, i.e. base stream's
+   * InnerMostLoop > my InnerMostLoop.
+   *
+   * This basically requires that:
+   * 1. such base stream is unconditionally stepped.
+   * 2. I am also unconditionally stepped.
+   * 3. The ratio between my step times and the base stream's is static, i.e.
+   * the base stream steps every N times I step.
+   *
+   * Notice that this should only be checked when all the base streams are
+   * qualified, because only qualified streams knows the StepPattern.
+   */
+  bool checkStaticMapFromBaseStreamInParentLoop() const;
+
+  /**
+   * Compute the step pattern. Should only be called when all base streams are
+   * qualified.
+   */
+  virtual LLVM::TDG::StreamStepPattern computeStepPattern() const = 0;
+};
 #endif

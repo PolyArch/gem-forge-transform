@@ -16,9 +16,22 @@ class StreamExperiments(object):
         self.stream_simulation_configs = self.driver.simulation_manager.get_configs(
             'stream')
 
+        mismatches = None
+        n_single_benchmarks = 0
         for benchmark in self.driver.benchmarks:
             if not isinstance(benchmark, MultiProgramBenchmark):
-                self.analyzeStaticStreamForBenchmark(benchmark)
+                ret = self.analyzeStaticStreamForBenchmark(benchmark)
+                n_single_benchmarks += 1
+                if mismatches is None:
+                    mismatches = ret
+                else:
+                    for i in range(len(mismatches)):
+                        mismatches[i] += ret[i]
+        for i in range(len(mismatches)):
+            mismatches[i] /= n_single_benchmarks
+            print('Average mismatch rate at level {level} is {mismatch}'.format(
+                level=i,
+                mismatch=mismatches[i]))
 
         self.replay_transform_config = self.driver.transform_manager.get_config(
             'replay')
@@ -181,47 +194,146 @@ class StreamExperiments(object):
     def analyzeStaticStreamForBenchmark(self, benchmark):
         print('Start static stream analysis for {b}'.format(
             b=benchmark.get_name()))
-        inner_most_streams = list()
-        for trace in benchmark.get_traces():
-            tdg_extra_path = benchmark.get_tdg_extra_path(
-                self.stream_transform_config, trace)
+        ssa = StaticStreamAnalyzer(benchmark, self.stream_transform_config)
+        return ssa.mismatches
+
+
+class StaticStreamAnalyzer(object):
+
+    class RegionAnalyzer(object):
+        def __init__(self, trace, fn):
+            self.trace = trace
+            self.streams = dict()
+            self.analyze(fn)
+
+        def analyze(self, fn):
+            stream_region = StreamMessage_pb2.StreamRegion()
+            f = open(fn)
+            stream_region.ParseFromString(f.read())
+            f.close()
+            for s in stream_region.streams:
+                stream_name = s.name.split()[3]
+                if stream_name not in self.streams:
+                    self.streams[stream_name] = [s]
+                else:
+                    inserted = False
+                    for i in range(len(self.streams[stream_name])):
+                        if self.streams[stream_name][i].config_loop_level > s.config_loop_level:
+                            continue
+                        self.streams[stream_name].insert(i, s)
+                        inserted = True
+                        break
+                    if not inserted:
+                        self.streams[stream_name].append(s)
+
+        def get_mismatch_streams_at_level(self, level):
+            mismatch_streams = list()
+            for stream_name in self.streams:
+                streams = self.streams[stream_name]
+                if len(streams) <= level:
+                    continue
+                s = streams[level]
+                if s.dynamic_info.is_qualified != s.static_info.is_qualified:
+                    mismatch_streams.append(s)
+            return mismatch_streams
+
+        def get_total_qualified_mem_accesses(self):
+            total = 0
+            for stream_name in self.streams:
+                s = self.streams[stream_name][0]
+                if s.type == 'phi':
+                    continue
+                if not s.dynamic_info.is_qualified:
+                    continue
+                total += s.dynamic_info.total_accesses
+            return total
+
+        def get_total_loop_mem_accesses(self):
+            total = 0
+            for stream_name in self.streams:
+                s = self.streams[stream_name][0]
+                if s.type == 'phi':
+                    continue
+                total += s.dynamic_info.total_accesses
+            return total
+
+    class TraceAnalyzer(object):
+        def __init__(self, parent, trace):
+            self.parent = parent
+            self.trace = trace
+            self.regions = list()
+            self.analyze()
+            self.total_qualified_accesses = float(sum(
+                [r.get_total_qualified_mem_accesses() for r in self.regions]))
+            self.total_loop_accesses = float(sum(
+                [r.get_total_loop_mem_accesses() for r in self.regions]))
+
+        def analyze(self):
+            tdg_extra_path = self.parent.benchmark.get_tdg_extra_path(
+                self.parent.stream_transform_config, self.trace)
             for item in os.listdir(tdg_extra_path):
                 if not os.path.isdir(os.path.join(tdg_extra_path, item)):
                     continue
                 stream_region_path = os.path.join(
                     tdg_extra_path, item, 'streams.info')
-                stream_region = StreamMessage_pb2.StreamRegion()
-                f = open(stream_region_path)
-                stream_region.ParseFromString(f.read())
-                f.close()
-                for s in stream_region.streams:
-                    if s.loop_level != s.config_loop_level:
-                        # So far ignore those configured outside.
+                self.regions.append(StaticStreamAnalyzer.RegionAnalyzer(
+                    self.trace, stream_region_path))
+
+        def analyze_mismatch_at_level(self, level):
+            total_mismatch_mem_accesses = 0
+            for r in self.regions:
+                mismatch_streams = r.get_mismatch_streams_at_level(level)
+                for s in mismatch_streams:
+                    dynamic_info = s.dynamic_info
+                    static_info = s.static_info
+                    if dynamic_info.is_aliased:
+                        # Ignore the mismatch due to aliasing.
                         continue
-                    inner_most_streams.append(s)
-        # Sort by the number of dynamic accesses.
-        inner_most_streams.sort(key=lambda x: x.dynamic_info.total_accesses)
-        total_accesses = sum(
-            [s.dynamic_info.total_accesses for s in inner_most_streams])
-        total_qualified_accesses = sum(
-            [s.dynamic_info.total_accesses for s in inner_most_streams if s.dynamic_info.is_qualified])
-        for s in inner_most_streams:
-            dynamic_info = s.dynamic_info
-            static_info = s.static_info
-            if dynamic_info.is_qualified != static_info.is_qualified:
-                if dynamic_info.is_aliased:
-                    # Ignore the mismatch due to aliasing.
-                    continue
-                if dynamic_info.total_accesses == 0:
-                    # Ignore the mismatch due to no accesses in the trace.
-                    continue
-                print('Mismatch stream! weight {weight:.2f} dynamic {dynamic:5} static {static:5}: {s}'.format(
-                    weight=dynamic_info.total_accesses /
-                    float(total_qualified_accesses),
-                    dynamic=dynamic_info.is_qualified,
-                    static=static_info.is_qualified,
-                    s=s.name
-                ))
+                    if dynamic_info.total_accesses == 0:
+                        # Ignore the mismatch due to no accesses in the trace.
+                        continue
+                    if not dynamic_info.is_qualified:
+                        # Ingore the case where static reports stream but dynamic doesn't
+                        continue
+                    self.print_mismatch(s)
+                    if s.type != 'phi':
+                        total_mismatch_mem_accesses += dynamic_info.total_accesses
+            if self.total_qualified_accesses != 0:
+                total_mismatch_mem_accesses /= self.total_qualified_accesses
+            return total_mismatch_mem_accesses
+
+        def print_mismatch(self, s):
+            print('Mismatch stream! weight {weight:.2f} lv {lv:1} dynamic {dynamic:1} static {static:1} reason {reason:20}: {s}'.format(
+                weight=(s.dynamic_info.total_accesses /
+                        self.total_qualified_accesses *
+                        self.trace.get_weight()) if self.total_qualified_accesses != 0 else 0.0,
+                lv=s.loop_level - s.config_loop_level,
+                dynamic=s.dynamic_info.is_qualified,
+                static=s.static_info.is_qualified,
+                reason=StreamMessage_pb2.StaticStreamInfo.StaticNotStreamReason.Name(
+                    s.static_info.not_stream_reason),
+                s=s.name
+            ))
+
+    def __init__(self, benchmark, stream_transform_config):
+        self.benchmark = benchmark
+        self.stream_transform_config = stream_transform_config
+        self.analyze()
+
+    def analyze(self):
+        self.traces = list()
+        self.mismatches = list()
+        for trace in self.benchmark.get_traces():
+            self.traces.append(StaticStreamAnalyzer.TraceAnalyzer(self, trace))
+        for level in xrange(1):
+            total_mismatch_mem_accesses = 0.0
+            for trace in self.traces:
+                trace_mismatch_mem_accesses = trace.analyze_mismatch_at_level(
+                    level)
+                total_mismatch_mem_accesses += trace_mismatch_mem_accesses * trace.trace.get_weight()
+            print('========= Analyzing Loop Level {level} Mismatch MemAccesses {weight:.3f}'.format(
+                level=level, weight=total_mismatch_mem_accesses))
+            self.mismatches.append(total_mismatch_mem_accesses)
 
 
 def analyze(driver):

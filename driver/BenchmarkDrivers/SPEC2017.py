@@ -380,20 +380,20 @@ class SPEC2017Benchmarks:
             'trace_func': 'global_opt',
             'lang': 'C',
         },
-        'xz_s': {
-            'name': '657.xz_s',
-            'links': [],
-            # I failed to find the pattern.
-            # To trace this, instrument the tracer twice, one with
-            # compressStream traced, the other with uncompressStream traced
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 1021e8,
-            'n_traces': 10,
-            'trace_func': 'uncompressStream',
-            'lang': 'C',
-        },
+        # 'xz_s': {
+        #     'name': '657.xz_s',
+        #     'links': [],
+        #     # I failed to find the pattern.
+        #     # To trace this, instrument the tracer twice, one with
+        #     # compressStream traced, the other with uncompressStream traced
+        #     'start_inst': 0,
+        #     'max_inst': 1e8,
+        #     'skip_inst': 9e8,
+        #     'end_inst': 1021e8,
+        #     'n_traces': 10,
+        #     'trace_func': 'uncompressStream',
+        #     'lang': 'C',
+        # },
         'gcc_s': {
             'name': '602.gcc_s',
             'links': [],
@@ -406,17 +406,17 @@ class SPEC2017Benchmarks:
             'trace_func': '',
             'lang': 'C',
         },
-        'perlbench_s': {
-            'name': '600.perlbench_s',
-            'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 10,
-            'trace_func': '',
-            'lang': 'C',
-        },
+        # 'perlbench_s': {
+        #     'name': '600.perlbench_s',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        #     'lang': 'C',
+        # },
         # C++ Benchmark
         'deepsjeng_s': {
             'name': '631.deepsjeng_s',
