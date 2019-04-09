@@ -13,7 +13,9 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   this->initializeStreams();
   llvm::errs() << "Initializing streams done.\n";
   this->buildStreamDependenceGraph();
+  llvm::errs() << "Building stream dependence graph done.\n";
   this->markQualifiedStreams();
+  llvm::errs() << "Marking qualified streams done.\n";
   this->enforceBackEdgeDependence();
   llvm::errs() << "Constructing StaticStreamRegionAnalyzer for loop done!\n";
 }
@@ -129,9 +131,11 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
   };
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
+      llvm::errs() << "Construct Graph for " << S->formatName() << '\n';
       S->constructGraph(GetStream);
     }
   }
+  llvm::errs() << "constructGraph done.\n";
   /**
    * After add all the base streams, we are going to compute the base step root
    * streams. The computeBaseStepRootStreams() is by itself recursive. This will
@@ -143,6 +147,7 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
       S->computeBaseStepRootStreams();
     }
   }
+  llvm::errs() << "computeBaseStepRootStreams done.\n";
   /**
    * After construct step root streams, we can analyze if the stream is a
    * candidate.
@@ -152,6 +157,7 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
       S->analyzeIsCandidate();
     }
   }
+  llvm::errs() << "analyzeIsCandidate done.\n";
 }
 
 void StaticStreamRegionAnalyzer::markQualifiedStreams() {
