@@ -10,7 +10,11 @@
 llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy(
     "stream-pass-choose-strategy",
     llvm::cl::desc("Choose how to choose the configure loop level:"),
-    llvm::cl::values(clEnumValN(StreamPassChooseStrategyE::OUTER_MOST, "outer",
+    llvm::cl::values(clEnumValN(StreamPassChooseStrategyE::DYNAMIC_OUTER_MOST,
+                                "dynamic-outer",
+                                "Always pick the outer most loop level."),
+                     clEnumValN(StreamPassChooseStrategyE::STATIC_OUTER_MOST,
+                                "static-outer",
                                 "Always pick the outer most loop level."),
                      clEnumValN(StreamPassChooseStrategyE::INNER_MOST, "inner",
                                 "Always pick the inner most loop level.")));
@@ -26,7 +30,6 @@ bool StreamPass::finalize(llvm::Module &Module) {
 }
 
 void StreamPass::dumpStats(std::ostream &O) {
-
   O << "--------------- Stats -----------------\n";
 #define print(value) (O << #value << ": " << this->value << '\n')
   print(DynInstCount);
@@ -40,8 +43,8 @@ void StreamPass::dumpStats(std::ostream &O) {
   }
 }
 
-StreamRegionAnalyzer *
-StreamPass::getAnalyzerByLoop(const llvm::Loop *Loop) const {
+StreamRegionAnalyzer *StreamPass::getAnalyzerByLoop(
+    const llvm::Loop *Loop) const {
   if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
     return nullptr;
   }
@@ -138,7 +141,6 @@ bool StreamPass::isLoopContinuous(const llvm::Loop *Loop) {
 }
 
 void StreamPass::analyzeStream() {
-
   DEBUG(llvm::errs() << "Stream: Start analysis.\n");
 
   LoopStackT LoopStack;
@@ -146,7 +148,6 @@ void StreamPass::analyzeStream() {
   this->RegionIdx = 0;
 
   while (true) {
-
     auto NewInstIter = this->Trace->loadOneDynamicInst();
 
     llvm::Instruction *NewStaticInst = nullptr;
@@ -240,7 +241,6 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     LoopStackT &LoopStack, llvm::Loop *NewLoop,
     DataGraph::DynamicInstIter NewInstIter,
     ActiveStreamInstMapT &ActiveStreamInstMap) {
-
   if (LoopStack.empty()) {
     // We entering a new region.
     assert(this->LoopStreamAnalyzerMap.count(NewLoop) != 0 &&
@@ -278,7 +278,6 @@ void StreamPass::pushLoopStackAndConfigureStreams(
   this->ConfigInstCount++;
 
   for (auto &S : SortedStreams) {
-
     // Inform the stream engine.
     DEBUG(llvm::errs() << "Configure stream " << S->formatName() << '\n');
     this->CurrentStreamAnalyzer->getFuncSE()->configure(S, this->Trace);
@@ -509,7 +508,6 @@ void StreamPass::transformStream() {
         NeedToHandleUseInformation = false;
 
       } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
-
         /**
          * A step transform plan means that this instructions is deleted, and
          * one or more step instructions are inserted.
@@ -563,7 +561,6 @@ void StreamPass::transformStream() {
         NeedToHandleUseInformation = false;
 
       } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STORE) {
-
         assert(llvm::isa<llvm::StoreInst>(NewStaticInst) &&
                "STORE plan for non store instruction.");
 

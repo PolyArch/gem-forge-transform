@@ -13,10 +13,14 @@
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
 
-enum StreamPassChooseStrategyE { OUTER_MOST, INNER_MOST };
+enum StreamPassChooseStrategyE {
+  DYNAMIC_OUTER_MOST,
+  STATIC_OUTER_MOST,
+  INNER_MOST
+};
 
 class StreamRegionAnalyzer {
-public:
+ public:
   StreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
                        llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
                        const std::string &_RootPath);
@@ -47,17 +51,17 @@ public:
     return this->InstPlanMap;
   }
 
-  std::list<Stream *>
-  getSortedChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
+  std::list<Stream *> getSortedChosenStreamsByConfigureLoop(
+      const llvm::Loop *ConfigureLoop);
 
   Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
 
-  const StreamTransformPlan &
-  getTransformPlanByInst(const llvm::Instruction *Inst);
+  const StreamTransformPlan &getTransformPlanByInst(
+      const llvm::Instruction *Inst);
 
   FunctionalStreamEngine *getFuncSE();
 
-private:
+ private:
   uint64_t RegionIdx;
   CachedLoopInfo *CachedLI;
   llvm::Loop *TopLoop;
@@ -103,16 +107,16 @@ private:
 
   void initializeStreams();
 
-  Stream *
-  getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
-                                   const llvm::Loop *ConfigureLoop) const;
+  Stream *getStreamByInstAndConfigureLoop(
+      const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const;
   void buildStreamDependenceGraph();
 
   void markQualifiedStreams();
   void disqualifyStreams();
 
   void chooseStreamAtInnerMost();
-  void chooseStreamAtOuterMost();
+  void chooseStreamAtDynamicOuterMost();
+  void chooseStreamAtStaticOuterMost();
 
   void buildChosenStreamDependenceGraph();
 

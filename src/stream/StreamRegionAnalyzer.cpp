@@ -14,9 +14,12 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            llvm::Loop *_TopLoop,
                                            llvm::DataLayout *_DataLayout,
                                            const std::string &_RootPath)
-    : RegionIdx(_RegionIdx), CachedLI(_CachedLI), TopLoop(_TopLoop),
+    : RegionIdx(_RegionIdx),
+      CachedLI(_CachedLI),
+      TopLoop(_TopLoop),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
-      DataLayout(_DataLayout), RootPath(_RootPath) {
+      DataLayout(_DataLayout),
+      RootPath(_RootPath) {
   // Initialize the folder for this region.
   std::stringstream ss;
   ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
@@ -232,8 +235,12 @@ void StreamRegionAnalyzer::endRegion(
 
   this->markQualifiedStreams();
   this->disqualifyStreams();
-  if (StreamPassChooseStrategy == StreamPassChooseStrategyE::OUTER_MOST) {
-    this->chooseStreamAtOuterMost();
+  if (StreamPassChooseStrategy ==
+      StreamPassChooseStrategyE::DYNAMIC_OUTER_MOST) {
+    this->chooseStreamAtDynamicOuterMost();
+  } else if (StreamPassChooseStrategy ==
+             StreamPassChooseStrategyE::STATIC_OUTER_MOST) {
+    this->chooseStreamAtStaticOuterMost();
   } else {
     this->chooseStreamAtInnerMost();
   }
@@ -290,8 +297,9 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
       continue;
     }
     if (!S->isQualifySeed()) {
-      assert(false && "Stream should be a qualify seed to be inserted into the "
-                      "qualifying queue.");
+      assert(false &&
+             "Stream should be a qualify seed to be inserted into the "
+             "qualifying queue.");
       continue;
     }
     S->markQualified();
@@ -373,12 +381,29 @@ void StreamRegionAnalyzer::chooseStreamAtInnerMost() {
   }
 }
 
-void StreamRegionAnalyzer::chooseStreamAtOuterMost() {
+void StreamRegionAnalyzer::chooseStreamAtDynamicOuterMost() {
   for (auto &InstStream : this->InstStreamMap) {
     auto Inst = InstStream.first;
     Stream *ChosenStream = nullptr;
     for (auto &S : InstStream.second) {
       if (S->isQualified()) {
+        // This will make sure we get the outer most qualified stream.
+        ChosenStream = S;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      this->InstChosenStreamMap.emplace(Inst, ChosenStream);
+      ChosenStream->markChosen();
+    }
+  }
+}
+
+void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
+  for (auto &InstStream : this->InstStreamMap) {
+    auto Inst = InstStream.first;
+    Stream *ChosenStream = nullptr;
+    for (auto &S : InstStream.second) {
+      if (S->isQualified() && S->SStream->isQualified()) {
         // This will make sure we get the outer most qualified stream.
         ChosenStream = S;
       }
@@ -636,11 +661,11 @@ void StreamRegionAnalyzer::buildTransformPlan() {
         // Actually mark this one as delete if we have no other plan for it.
         auto &Plan = this->InstPlanMap.at(NewlyDeletingOperandInst);
         switch (Plan.Plan) {
-        case StreamTransformPlan::PlanT::NOTHING:
-        case StreamTransformPlan::PlanT::DELETE: {
-          Plan.planToDelete();
-          break;
-        }
+          case StreamTransformPlan::PlanT::NOTHING:
+          case StreamTransformPlan::PlanT::DELETE: {
+            Plan.planToDelete();
+            break;
+          }
         }
         // Add all the uses to NewlyDeletingQueue.
         for (unsigned OperandIdx = 0,
@@ -749,8 +774,8 @@ std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
   return SortedStreams;
 }
 
-Stream *
-StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
+Stream *StreamRegionAnalyzer::getChosenStreamByInst(
+    const llvm::Instruction *Inst) {
   if (!this->TopLoop->contains(Inst)) {
     return nullptr;
   }
@@ -762,8 +787,8 @@ StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
   }
 }
 
-const StreamTransformPlan &
-StreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
+const StreamTransformPlan &StreamRegionAnalyzer::getTransformPlanByInst(
+    const llvm::Instruction *Inst) {
   assert(this->TopLoop->contains(Inst) && "Inst should be within the TopLoop.");
   return this->InstPlanMap.at(Inst);
 }

@@ -1,0 +1,7 @@
+{
+    "id": "stream.static-outer",
+    "options": [
+        "-stream-pass",
+        "-stream-pass-choose-strategy=static-outer"
+    ]
+}

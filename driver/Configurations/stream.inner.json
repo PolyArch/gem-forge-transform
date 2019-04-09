@@ -1,7 +1,7 @@
 {
-    "id": "stream-prefetch.inner",
+    "id": "stream.inner",
     "options": [
-        "-stream-prefetch-pass",
+        "-stream-pass",
         "-stream-pass-choose-strategy=inner"
     ]
 }
