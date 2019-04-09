@@ -54,10 +54,23 @@ void StaticStream::handleFirstTimeComputeNode(
         this->CallInputs.insert(Inst);
         DFSStack.pop_back();
       } else {
-        // Normal compute inst.
-        for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
-             OperandIdx != NumOperands; ++OperandIdx) {
-          DFSStack.emplace_back(ComputeMNode, Inst->getOperand(OperandIdx));
+        // Normal compute inst. Ignore if I am already processed.
+        bool Inserted = false;
+        for (const auto &ComputeInst : ComputeMNode->ComputeInsts) {
+          if (ComputeInst == Inst) {
+            Inserted = true;
+            break;
+          }
+        }
+        if (!Inserted) {
+          for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
+               OperandIdx != NumOperands; ++OperandIdx) {
+            DFSStack.emplace_back(ComputeMNode, Inst->getOperand(OperandIdx));
+            llvm::errs() << "Pushing DFSNode "
+                         << Utils::formatLLVMValue(ComputeMNode->RootValue)
+                         << Utils::formatLLVMValue(Inst->getOperand(OperandIdx))
+                         << '\n';
+          }
         }
       }
     } else {
@@ -95,6 +108,10 @@ void StaticStream::handleFirstTimePHIMetaNode(
                                             &this->ComputeMetaNodes.back());
       // Push to the stack.
       DFSStack.emplace_back(&this->ComputeMetaNodes.back(), IncomingValue);
+      llvm::errs() << "Pushing DFSNode "
+                   << Utils::formatLLVMValue(
+                          this->ComputeMetaNodes.back().RootValue)
+                   << Utils::formatLLVMValue(IncomingValue) << '\n';
     }
     // Add to my children.
     PHIMNode->ComputeMetaNodes.insert(
@@ -111,6 +128,10 @@ void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
                                         ConstructedComputeMetaNodeMap);
   while (!DFSStack.empty()) {
     auto &DNode = DFSStack.back();
+    llvm::errs() << "Processing DFSNode "
+                 << Utils::formatLLVMValue(DNode.ComputeMNode->RootValue)
+                 << Utils::formatLLVMValue(DNode.Value) << " Visit time "
+                 << DNode.VisitTimes << '\n';
     if (DNode.VisitTimes == 0) {
       // First time.
       DNode.VisitTimes++;
@@ -185,6 +206,7 @@ void StaticStream::constructStreamGraph() {
 void StaticStream::constructGraph(GetStreamFuncT GetStream) {
   // Construct the two graphs.
   this->constructMetaGraph(GetStream);
+  llvm::errs() << "Construct metagraph done.\n";
   this->constructStreamGraph();
 }
 
