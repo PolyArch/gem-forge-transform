@@ -17,6 +17,8 @@
         "--gem-forge-stream-engine-max-run-ahead-length=10"
     ],
     "support-transform-ids": [
-        "stream"
+        "stream",
+		"stream.inner",
+		"stream.static-outer"
     ]
 }

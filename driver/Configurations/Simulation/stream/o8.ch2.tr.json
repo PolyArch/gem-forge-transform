@@ -18,6 +18,8 @@
         "--gem-forge-stream-engine-throttling=dynamic"
     ],
     "support-transform-ids": [
-        "stream"
+        "stream",
+		"stream.inner",
+		"stream.static-outer"
     ]
 }

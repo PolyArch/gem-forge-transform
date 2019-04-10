@@ -85,7 +85,8 @@ class Gem5ReplayConfigureManager(object):
             config = Gem5ReplayConfig(fn)
             support_transforms = config.get_support_transform_ids()
             for t in support_transforms:
-                self.configs[t].append(config)
+                if t in self.configs:
+                    self.configs[t].append(config)
             if not support_transforms:
                 # For empty support transform list, we assume it can support all
                 # transformation.
