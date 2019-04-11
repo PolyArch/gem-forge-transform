@@ -15,7 +15,7 @@
 
 class FunctionalStreamEngine;
 class FunctionalStream {
-public:
+ public:
   FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE);
 
   FunctionalStream(const FunctionalStream &Other) = delete;
@@ -24,11 +24,12 @@ public:
   FunctionalStream &operator=(FunctionalStream &&Other) = delete;
 
   Stream *getStream() { return this->S; }
+  const Stream *getStream() const { return this->S; }
 
   void addBaseStream(FunctionalStream *BaseStream);
 
-  const std::unordered_set<FunctionalStream *> &
-  getDependentFunctionalStreams() const {
+  const std::unordered_set<FunctionalStream *> &getDependentFunctionalStreams()
+      const {
     return this->DependentStreams;
   }
 
@@ -51,7 +52,7 @@ public:
    */
   void endAll();
 
-private:
+ private:
   Stream *S;
   FunctionalStreamEngine *SE;
   MemoryFootprint MemFootprint;
@@ -67,7 +68,7 @@ private:
   /**
    * For IVStream these two fields should always be the same.
    */
-  uint64_t CurrentIdx; // 0 is reseved for the first empty state.
+  uint64_t CurrentIdx;  // 0 is reseved for the first empty state.
   static constexpr uint64_t InvalidIdx = 0;
   uint64_t CurrentAddress;
   uint64_t CurrentValue;

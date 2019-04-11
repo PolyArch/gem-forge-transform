@@ -15,8 +15,6 @@ public:
   IndVarStream &operator=(IndVarStream &&Other) = delete;
 
   void buildBasicDependenceGraph(GetStreamFuncT GetStream) override;
-  void
-  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) override;
 
   const llvm::PHINode *getPHIInst() const { return this->PHIInst; }
   const std::unordered_set<const llvm::Instruction *> &

@@ -234,13 +234,3 @@ bool IndVarStream::isQualifySeed() const {
   }
   return false;
 }
-
-void IndVarStream::buildChosenDependenceGraph(
-    GetChosenStreamFuncT GetChosenStream) {
-  // Check the back edge.
-  for (const auto &BaseLoad : this->BaseLoadInsts) {
-    auto BaseMStream = GetChosenStream(BaseLoad);
-    assert(BaseMStream != nullptr && "Failed to get chosen back-edge MStream.");
-    this->addChosenBackEdgeBaseStream(BaseMStream);
-  }
-}

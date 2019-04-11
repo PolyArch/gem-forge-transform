@@ -6,10 +6,19 @@
 
 Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
                const StaticStream *_SStream, llvm::DataLayout *DataLayout)
-    : SStream(_SStream), Folder(_Folder), RelativeFolder(_RelativeFolder),
-      HasMissingBaseStream(false), Qualified(false), Chosen(false),
-      CoalesceGroup(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
-      Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
+    : SStream(_SStream),
+      Folder(_Folder),
+      RelativeFolder(_RelativeFolder),
+      HasMissingBaseStream(false),
+      Qualified(false),
+      Chosen(false),
+      CoalesceGroup(-1),
+      TotalIters(0),
+      TotalAccesses(0),
+      TotalStreams(0),
+      Iters(1),
+      LastAccessIters(0),
+      StartId(DynamicInstruction::InvalidId),
       Pattern() {
   this->ElementSize = this->getElementSize(DataLayout);
 
@@ -72,36 +81,24 @@ void Stream::computeBaseStepRootStreams() {
   }
 }
 
-void Stream::addChosenBaseStream(Stream *Other) {
-  assert(Other != this && "Self dependent chosen streams is not allowed.");
-  assert(this->isChosen() &&
-         "This should be chosen to build the chosen stream dependence graph.");
-  assert(Other->isChosen() &&
-         "Other should be chosen to build the chosen stream dependence graph.");
-  this->ChosenBaseStreams.insert(Other);
-  // Set the base stream as step stream if we share the same inner most level.
-  if (Other->getInnerMostLoop() == this->getInnerMostLoop()) {
-    this->ChosenBaseStepStreams.insert(Other);
-    if (Other->SStream->Type == StaticStream::TypeT::IV) {
-      this->ChosenBaseStepRootStreams.insert(Other);
+void Stream::buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) {
+  auto TranslateBasicToChosen = [&GetChosenStream](
+                                    const StreamSet &BasicSet,
+                                    StreamSet &ChosenSet) -> void {
+    for (const auto &BaseS : BasicSet) {
+      const auto &BaseInst = BaseS->SStream->Inst;
+      auto ChosenBaseS = GetChosenStream(BaseInst);
+      assert(ChosenBaseS != nullptr && "Missing chosen base stream.");
+      ChosenSet.insert(ChosenBaseS);
     }
-  }
-}
-
-void Stream::addChosenBackEdgeBaseStream(Stream *Other) {
-  this->ChosenBackMemBaseStreams.insert(Other);
-  Other->ChosenBackIVDependentStreams.insert(this);
-}
-
-void Stream::addAllChosenBaseStream(Stream *Other) {
-  assert(Other != this && "Self dependent chosen streams is not allowed.");
-  assert(this->isChosen() &&
-         "This should be chosen to build the chosen stream dependence graph.");
-  assert(Other->isChosen() &&
-         "Other should be chosen to build the chosen stream dependence graph.");
-  this->AllChosenBaseStreams.insert(Other);
-  // Register myself at other's all chosen dependent streams.
-  Other->AllChosenDependentStreams.insert(this);
+  };
+  // Also for the other types.
+  TranslateBasicToChosen(this->BaseStreams, this->ChosenBaseStreams);
+  TranslateBasicToChosen(this->BackMemBaseStreams,
+                         this->ChosenBackMemBaseStreams);
+  TranslateBasicToChosen(this->BaseStepStreams, this->ChosenBaseStepStreams);
+  TranslateBasicToChosen(this->BaseStepRootStreams,
+                         this->ChosenBaseStepRootStreams);
 }
 
 void Stream::endStream() {
@@ -190,13 +187,13 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   DynamicStreamInfo->set_total_configures(this->TotalStreams);
   this->SStream->setStaticStreamInfo(*ProtobufInfo->mutable_static_info());
 
-#define ADD_STREAM(SET, FIELD)                                                 \
-  {                                                                            \
-    for (const auto &S : SET) {                                                \
-      auto Entry = ProtobufInfo->add_##FIELD();                                \
-      Entry->set_name(S->formatName());                                        \
-      Entry->set_id(S->getStreamId());                                         \
-    }                                                                          \
+#define ADD_STREAM(SET, FIELD)                  \
+  {                                             \
+    for (const auto &S : SET) {                 \
+      auto Entry = ProtobufInfo->add_##FIELD(); \
+      Entry->set_name(S->formatName());         \
+      Entry->set_id(S->getStreamId());          \
+    }                                           \
   }
   ADD_STREAM(this->BaseStreams, base_streams);
   ADD_STREAM(this->BackMemBaseStreams, back_base_streams);

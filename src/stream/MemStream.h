@@ -26,8 +26,6 @@ public:
   }
 
   void buildBasicDependenceGraph(GetStreamFuncT GetStream) override;
-  void
-  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) override;
 
   void addAccess(uint64_t Addr,
                  DynamicInstruction::DynamicId DynamicId) override {

@@ -2,7 +2,6 @@
 
 void MemStream::searchAddressComputeInstructions(
     std::function<bool(const llvm::PHINode *)> IsInductionVar) {
-
   std::list<llvm::Instruction *> Queue;
 
   llvm::Value *AddrValue = nullptr;
@@ -123,18 +122,4 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
 void MemStream::generateComputeFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   this->AddrDG.generateComputeFunction(this->AddressFunctionName, Module);
-}
-
-void MemStream::buildChosenDependenceGraph(
-    GetChosenStreamFuncT GetChosenStream) {
-  for (const auto &BaseIV : this->BaseInductionVars) {
-    auto BaseIVStream = GetChosenStream(BaseIV);
-    assert(BaseIVStream != nullptr && "Missing chosen base IVStream.");
-    this->addChosenBaseStream(BaseIVStream);
-  }
-  for (const auto &BaseLoad : this->BaseLoads) {
-    auto BaseMStream = GetChosenStream(BaseLoad);
-    assert(BaseMStream != nullptr && "Missing chosen base MemStream.");
-    this->addChosenBaseStream(BaseMStream);
-  }
 }
