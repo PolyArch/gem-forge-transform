@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 class FunctionalStreamEngine {
-public:
+ public:
   FunctionalStreamEngine(std::unique_ptr<llvm::Interpreter> &_Interpreter,
                          const std::unordered_set<Stream *> &_ChosenStreams);
 
@@ -28,14 +28,12 @@ public:
     return this->Interpreter;
   }
 
-private:
+ private:
   std::unique_ptr<llvm::Interpreter> &Interpreter;
-  std::unordered_map<Stream *, FunctionalStream> StreamMap;
-  std::unordered_map<FunctionalStream *, DynamicStreamCoalescer>
+  std::unordered_map<const Stream *, FunctionalStream> StreamMap;
+  std::unordered_map<const FunctionalStream *,
+                     std::list<DynamicStreamCoalescer>>
       DynamicStreamCoalescerMap;
-
-  DynamicStreamCoalescer *
-  getOrInitializeDynamicStreamCoalescer(FunctionalStream *FS);
 };
 
 #endif

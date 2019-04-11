@@ -34,7 +34,7 @@
  */
 
 class Stream {
-public:
+ public:
   const StaticStream *const SStream;
   Stream(const std::string &_Folder, const std::string &_RelativeFolder,
          const StaticStream *_SStream, llvm::DataLayout *DataLayout);
@@ -135,27 +135,27 @@ public:
   virtual bool isAliased() const { return false; }
   std::string formatName() const { return this->SStream->formatName(); }
 
-  virtual const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const = 0;
+  virtual const std::unordered_set<const llvm::Instruction *> &getComputeInsts()
+      const = 0;
 
-  virtual const std::unordered_set<const llvm::Instruction *> &
-  getStepInsts() const {
+  virtual const std::unordered_set<const llvm::Instruction *> &getStepInsts()
+      const {
     assert(false && "getStepInst only implemented for IVStream.");
   }
 
-  virtual const std::unordered_set<const llvm::LoadInst *> &
-  getBaseLoads() const = 0;
+  virtual const std::unordered_set<const llvm::LoadInst *> &getBaseLoads()
+      const = 0;
 
   static bool isStepInst(const llvm::Instruction *Inst) {
     auto Opcode = Inst->getOpcode();
     switch (Opcode) {
-    case llvm::Instruction::Add: {
-      return true;
-    }
-    case llvm::Instruction::GetElementPtr: {
-      return true;
-    }
-    default: { return false; }
+      case llvm::Instruction::Add: {
+        return true;
+      }
+      case llvm::Instruction::GetElementPtr: {
+        return true;
+      }
+      default: { return false; }
     }
   }
 
@@ -174,20 +174,35 @@ public:
   const StreamSet &getBaseStepRootStreams() const {
     return this->BaseStepRootStreams;
   }
+  const Stream *getSingleStepRootStream() const {
+    assert(this->BaseStepRootStreams.size() <= 1 &&
+           "Multiple StepRootStreams.");
+    if (this->BaseStepRootStreams.empty()) {
+      return nullptr;
+    } else {
+      return *(this->BaseStepRootStreams.begin());
+    }
+  }
   const StreamSet &getChosenBaseStreams() const {
     return this->ChosenBaseStreams;
   }
   const StreamSet &getChosenBaseStepStreams() const {
     return this->ChosenBaseStepStreams;
   }
-  const StreamSet &getAllChosenBaseStreams() const {
-    return this->AllChosenBaseStreams;
+  const Stream *getSingleChosenStepRootStream() const {
+    assert(this->ChosenBaseStepRootStreams.size() <= 1 &&
+           "Multiple chosen StepRootStreams.");
+    if (this->ChosenBaseStepRootStreams.empty()) {
+      return nullptr;
+    } else {
+      return *(this->ChosenBaseStepRootStreams.begin());
+    }
+  }
+  const StreamSet &getChosenBaseStepRootStreams() const {
+    return this->ChosenBaseStepRootStreams;
   }
   const StreamSet &getDependentStreams() const {
     return this->DependentStreams;
-  }
-  const StreamSet &getAllChosenDependentStreams() const {
-    return this->AllChosenDependentStreams;
   }
 
   /**
@@ -199,10 +214,9 @@ public:
 
   using GetChosenStreamFuncT =
       std::function<Stream *(const llvm::Instruction *)>;
-  virtual void
-  buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) = 0;
+  void buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream);
 
-protected:
+ protected:
   /**
    * Stores the information of the stream.
    */
@@ -224,15 +238,11 @@ protected:
   StreamSet BaseStepRootStreams;
 
   StreamSet ChosenBaseStreams;
-  StreamSet ChosenDependentStreams;
   StreamSet ChosenBackMemBaseStreams;
-  StreamSet ChosenBackIVDependentStreams;
 
   StreamSet ChosenBaseStepStreams;
   StreamSet ChosenBaseStepRootStreams;
 
-  StreamSet AllChosenBaseStreams;
-  StreamSet AllChosenDependentStreams;
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;
@@ -276,10 +286,6 @@ protected:
 
   void addBaseStream(Stream *Other);
   void addBackEdgeBaseStream(Stream *Other);
-
-  void addChosenBaseStream(Stream *Other);
-  void addChosenBackEdgeBaseStream(Stream *Other);
-  void addAllChosenBaseStream(Stream *Other);
 };
 
 #endif

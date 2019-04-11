@@ -248,7 +248,6 @@ void StreamRegionAnalyzer::endRegion(
   this->buildAddressModule();
   this->buildTransformPlan();
 
-  this->dumpStreamInfos();
   this->dumpTransformPlan();
   this->dumpConfigurePlan();
 }
@@ -259,6 +258,8 @@ void StreamRegionAnalyzer::endTransform() {
     auto &ChosenStream = InstChosenStream.second;
     ChosenStream->finalizeInfo(this->DataLayout);
   }
+  // Only after this point can we know the CoalesceGroup in the info.
+  this->dumpStreamInfos();
 }
 
 Stream *StreamRegionAnalyzer::getStreamByInstAndConfigureLoop(

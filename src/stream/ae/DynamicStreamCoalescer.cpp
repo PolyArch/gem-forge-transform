@@ -1,25 +1,24 @@
 #include "DynamicStreamCoalescer.h"
 
-DynamicStreamCoalescer::DynamicStreamCoalescer(FunctionalStream *_RootStream)
-    : RootStream(_RootStream), TotalSteps(0) {
+int DynamicStreamCoalescer::AllocatedGlobalCoalesceGroup = 0;
 
-  // assert(this->RootStream->isStepRoot() &&
-  //        "Should only try to coalesce for step root streams.");
+int DynamicStreamCoalescer::allocateGlobalCoalesceGroup() {
+  // Make the coalesce group starts from 1.
+  return ++AllocatedGlobalCoalesceGroup;
+}
 
-  // const auto &AllDependentStepStreams =
-  //     this->RootStream->getAllDependentStepStreamsSorted();
+DynamicStreamCoalescer::DynamicStreamCoalescer(
+    const std::unordered_set<FunctionalStream *> &FuncStreams)
+    : TotalSteps(0) {
+  // Initialize the Id map.
+  for (const auto &FS : FuncStreams) {
+    // Let's skip those indirect memory stream.
+    assert(DynamicStreamCoalescer::isDirectMemStream(FS) &&
+           "Only coalescing for direct memory stream.");
 
-  // // Initialize the Id map.
-  // for (const auto &DependentStepStream : AllDependentStepStreams) {
-
-  //   // Let's skip those indirect memory stream.
-  //   if (!DynamicStreamCoalescer::isDirectMemStream(DependentStepStream)) {
-  //     continue;
-  //   }
-
-  //   auto FSId = this->FSIdMap.size();
-  //   this->FSIdMap.emplace(DependentStepStream, FSId);
-  // }
+    auto FSId = this->FSIdMap.size();
+    this->FSIdMap.emplace(FS, FSId);
+  }
 
   // Initialize the coalesce matrix and the UFArray.
   this->CoalescerMatrix.reserve(this->FSIdMap.size());
@@ -35,7 +34,7 @@ DynamicStreamCoalescer::~DynamicStreamCoalescer() {}
 namespace {
 const size_t CacheLineSize = 64;
 const size_t CacheLineDiff = 1;
-} // namespace
+}  // namespace
 #define CacheLineAddr(addr) (addr & (~(64 - 1)))
 
 void DynamicStreamCoalescer::updateCoalesceMatrix() {
@@ -57,7 +56,6 @@ void DynamicStreamCoalescer::updateCoalesceMatrix() {
 }
 
 void DynamicStreamCoalescer::finalize() {
-
   if (this->TotalSteps == 0) {
     return;
   }
@@ -72,22 +70,30 @@ void DynamicStreamCoalescer::finalize() {
     for (auto &Col : this->FSIdMap) {
       auto CoalescedCount = this->CoalescerMatrix[Row.second][Col.second];
       // llvm::errs() << "Total " << this->TotalSteps << " Coalesced "
-      //              << CoalescedCount << '\n';
+      //              << CoalescedCount << ' '
+      //              << Row.first->getStream()->formatName() << ' '
+      //              << Col.first->getStream()->formatName() << '\n';
       auto CoalescedPercentage = static_cast<float>(CoalescedCount) /
                                  static_cast<float>(this->TotalSteps);
       if (CoalescedPercentage > Threshold) {
+        // llvm::errs() << "Coalescing " << Row.first->getStream()->formatName()
+        //              << ' ' << Col.first->getStream()->formatName() << '\n';
         this->coalesce(Row.second, Col.second);
       }
     }
   }
-}
 
-int DynamicStreamCoalescer::getCoalesceGroup(FunctionalStream *FS) const {
-  auto FSIdMapIter = this->FSIdMap.find(FS);
-  if (FSIdMapIter == this->FSIdMap.end()) {
-    return -1;
-  } else {
-    return this->findRoot(FSIdMapIter->second);
+  // Allocate all the global coalesce group id.
+  for (auto &FSId : this->FSIdMap) {
+    auto LocalGroup = this->findRoot(FSId.second);
+    if (this->LocalToGlobalCoalesceGroupMap.count(LocalGroup) == 0) {
+      this->LocalToGlobalCoalesceGroupMap.emplace(
+          LocalGroup, DynamicStreamCoalescer::allocateGlobalCoalesceGroup());
+    }
+    auto GlobalGroup = this->LocalToGlobalCoalesceGroupMap.at(LocalGroup);
+    FSId.first->getStream()->setCoalesceGroup(GlobalGroup);
+    // llvm::errs() << "Setting Coalesce group " << GlobalGroup << " of "
+    //              << FSId.first->getStream()->formatName() << '\n';
   }
 }
 

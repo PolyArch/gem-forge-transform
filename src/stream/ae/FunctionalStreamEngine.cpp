@@ -6,7 +6,6 @@ FunctionalStreamEngine::FunctionalStreamEngine(
     std::unique_ptr<llvm::Interpreter> &_Interpreter,
     const std::unordered_set<Stream *> &_ChosenStreams)
     : Interpreter(_Interpreter) {
-
   // Initialize all functional streams.
   for (auto &S : _ChosenStreams) {
     this->StreamMap.emplace(std::piecewise_construct, std::forward_as_tuple(S),
@@ -22,6 +21,65 @@ FunctionalStreamEngine::FunctionalStreamEngine(
       FS.addBaseStream(&BaseFS);
     }
   }
+
+  /**
+   * Group FunctionalStream into potential coalescing group based on:
+   * 1. Direct memory streams.
+   * 2. Same configure loop.
+   * 3. Same step root stream.
+   *
+   * Usually the number pair of <configure_loop, step_root_stream> is small, so
+   * we do not bother defining a hash function for std::unordered_map. Instead
+   * we use std::map.
+   */
+  std::map<std::pair<const llvm::Loop *, const Stream *>,
+           std::unordered_set<FunctionalStream *>>
+      PotentialCoalescingGroups;
+  auto IsDirectMemWithStepStream = [](const Stream *S) -> bool {
+    if (S->SStream->Type != StaticStream::TypeT::MEM) {
+      return false;
+    }
+    for (auto BaseS : S->getChosenBaseStepStreams()) {
+      if (BaseS->SStream->Type != StaticStream::TypeT::IV) {
+        // Base on a mem stream.
+        if (BaseS->getChosenBaseStepStreams().empty()) {
+          // This is a constant load. Ignore it.
+          continue;
+        }
+        // Indirect stream.
+        return false;
+      }
+    }
+    if (S->getSingleChosenStepRootStream() == nullptr) {
+      // This stream will never step.
+      return false;
+    }
+    return true;
+  };
+  for (auto &StreamFunctionalStream : this->StreamMap) {
+    auto &FS = StreamFunctionalStream.second;
+    auto &S = StreamFunctionalStream.first;
+    if (!IsDirectMemWithStepStream(S)) {
+      continue;
+    }
+    // Add to our potential coalescing group map.
+    PotentialCoalescingGroups
+        .emplace(std::piecewise_construct,
+                 std::forward_as_tuple(S->getLoop(),
+                                       S->getSingleChosenStepRootStream()),
+                 std::forward_as_tuple())
+        .first->second.insert(&FS);
+  }
+  // Create the coalescer.
+  for (const auto &PotentialCoalesceGroup : PotentialCoalescingGroups) {
+    auto RootS = PotentialCoalesceGroup.first.second;
+    auto RootFS = &this->StreamMap.at(RootS);
+    this->DynamicStreamCoalescerMap
+        .emplace(std::piecewise_construct, std::forward_as_tuple(RootFS),
+                 std::forward_as_tuple())
+        .first->second.emplace_back(PotentialCoalesceGroup.second);
+    // llvm::errs() << "Create coalescer for " << RootS->formatName() << '\n';
+  }
 }
 
 void FunctionalStreamEngine::configure(Stream *S, DataGraph *DG) {
@@ -30,7 +88,6 @@ void FunctionalStreamEngine::configure(Stream *S, DataGraph *DG) {
 }
 
 void FunctionalStreamEngine::step(Stream *S, DataGraph *DG) {
-
   /**
    * Propagate the step signal along the dependence chain, BFS.
    */
@@ -62,10 +119,14 @@ void FunctionalStreamEngine::step(Stream *S, DataGraph *DG) {
     }
   }
 
-  // // Update the coalesce information for this stream root.
-  // auto DynamicStreamCoalescer =
-  //     this->getOrInitializeDynamicStreamCoalescer(&FS);
-  // DynamicStreamCoalescer->updateCoalesceMatrix();
+  // Update the coalesce information for this stream root.
+  if (this->DynamicStreamCoalescerMap.count(&FS) != 0) {
+    for (auto &Coalescer : this->DynamicStreamCoalescerMap.at(&FS)) {
+      Coalescer.updateCoalesceMatrix();
+    }
+    // llvm::errs() << "Update coalescer for stream "
+    //              << FS.getStream()->formatName() << '\n';
+  }
 }
 
 void FunctionalStreamEngine::updateWithValue(Stream *S, DataGraph *DG,
@@ -119,32 +180,15 @@ void FunctionalStreamEngine::access(Stream *S) {
   FS.access();
 }
 
-DynamicStreamCoalescer *
-FunctionalStreamEngine::getOrInitializeDynamicStreamCoalescer(
-    FunctionalStream *FS) {
-  auto Iter = this->DynamicStreamCoalescerMap.find(FS);
-  if (Iter == this->DynamicStreamCoalescerMap.end()) {
-    Iter = this->DynamicStreamCoalescerMap
-               .emplace(std::piecewise_construct, std::forward_as_tuple(FS),
-                        std::forward_as_tuple(FS))
-               .first;
-  }
-  return &(Iter->second);
-}
-
 void FunctionalStreamEngine::finalizeCoalesceInfo() {
-  // for (auto &DynamicStreamCoalescerPair : this->DynamicStreamCoalescerMap) {
-  //   auto &Coalescer = DynamicStreamCoalescerPair.second;
-  //   Coalescer.finalize();
-
-  //   for (auto DependentStepFS :
-  //        DynamicStreamCoalescerPair.first->getAllDependentStepStreamsSorted())
-  //        {
-  //     auto CoalesceGroup = Coalescer.getCoalesceGroup(DependentStepFS);
-  //     // Update the coalesce group.
-  //     DependentStepFS->getStream()->setCoalesceGroup(CoalesceGroup);
-  //   }
-  // }
+  for (auto &StepRootStreamCoalescers : this->DynamicStreamCoalescerMap) {
+    for (auto &Coalescer : StepRootStreamCoalescers.second) {
+      Coalescer.finalize();
+    }
+    // llvm::errs() << "Finalize coalescer for stream "
+    //              << StepRootStreamCoalescers.first->getStream()->formatName()
+    //              << '\n';
+  }
 }
 
 #undef DEBUG_TYPE

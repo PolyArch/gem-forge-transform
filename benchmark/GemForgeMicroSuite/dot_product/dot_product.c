@@ -5,6 +5,11 @@ __attribute__((noinline)) float foo(float *a, float *b, int N) {
   for (int i = 0; i < N; ++i) {
     c += a[i] * b[i];
   }
+  // Unroll by 2 to check coalesce.
+  for (int i = 0; i < N; i += 2) {
+    c += a[i] * b[i];
+    c += a[i + 1] * b[i + 1];
+  }
   return c;
 }
 
