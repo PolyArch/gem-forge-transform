@@ -135,11 +135,15 @@ void Stream::endStream() {
 void Stream::finalizePattern() {
   this->Pattern.finalizePattern();
 
+  Gem5ProtobufSerializer PatternSerializer(this->getPatternFullPath());
+  LLVM::TDG::StreamInfo ProtobufInfo;
+
   std::ofstream PatternTextFStream(
       this->getTextPath(this->getPatternFullPath()));
   assert(PatternTextFStream.is_open() && "Failed to open output stream file.");
 
   for (auto &ProtobufPattern : this->ProtobufPatterns) {
+    PatternSerializer.serialize(ProtobufPattern);
     std::string PatternJsonString;
     // For the json file, we do not log history.
     ProtobufPattern.clear_history();
