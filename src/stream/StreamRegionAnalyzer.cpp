@@ -14,12 +14,9 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            llvm::Loop *_TopLoop,
                                            llvm::DataLayout *_DataLayout,
                                            const std::string &_RootPath)
-    : RegionIdx(_RegionIdx),
-      CachedLI(_CachedLI),
-      TopLoop(_TopLoop),
+    : RegionIdx(_RegionIdx), CachedLI(_CachedLI), TopLoop(_TopLoop),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
-      DataLayout(_DataLayout),
-      RootPath(_RootPath) {
+      DataLayout(_DataLayout), RootPath(_RootPath) {
   // Initialize the folder for this region.
   std::stringstream ss;
   ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
@@ -298,9 +295,8 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
       continue;
     }
     if (!S->isQualifySeed()) {
-      assert(false &&
-             "Stream should be a qualify seed to be inserted into the "
-             "qualifying queue.");
+      assert(false && "Stream should be a qualify seed to be inserted into the "
+                      "qualifying queue.");
       continue;
     }
     S->markQualified();
@@ -662,11 +658,11 @@ void StreamRegionAnalyzer::buildTransformPlan() {
         // Actually mark this one as delete if we have no other plan for it.
         auto &Plan = this->InstPlanMap.at(NewlyDeletingOperandInst);
         switch (Plan.Plan) {
-          case StreamTransformPlan::PlanT::NOTHING:
-          case StreamTransformPlan::PlanT::DELETE: {
-            Plan.planToDelete();
-            break;
-          }
+        case StreamTransformPlan::PlanT::NOTHING:
+        case StreamTransformPlan::PlanT::DELETE: {
+          Plan.planToDelete();
+          break;
+        }
         }
         // Add all the uses to NewlyDeletingQueue.
         for (unsigned OperandIdx = 0,
@@ -739,7 +735,14 @@ std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
 
-  // Topological sort.
+  /**
+   * Topological sort is not enough for this problem, as some streams may be
+   * coalesced. Instead, we define the dependenceDepth of a stream as:
+   * 1. A stream with no base stream in the same ConfigureLoop has
+   * dependenceDepth 0;
+   * 2. Otherwiese, a stream has dependenceDepth =
+   * max(BaseStreamWithSameConfigureLoop.dependenceDepth) + 1.
+   */
   std::stack<std::pair<Stream *, int>> ChosenStreams;
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
     auto &S = InstChosenStream.second;
@@ -748,7 +751,7 @@ std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
     }
   }
 
-  std::unordered_set<Stream *> Inserted;
+  std::unordered_map<Stream *, int> StreamDepDepthMap;
   std::list<Stream *> SortedStreams;
   while (!ChosenStreams.empty()) {
     auto &Entry = ChosenStreams.top();
@@ -759,14 +762,45 @@ std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
         if (ChosenBaseS->getLoop() != ConfigureLoop) {
           continue;
         }
-        if (Inserted.count(ChosenBaseS) == 0) {
+        if (StreamDepDepthMap.count(ChosenBaseS) == 0) {
           ChosenStreams.emplace(ChosenBaseS, 0);
         }
       }
     } else {
-      if (Inserted.count(S) == 0) {
-        SortedStreams.emplace_back(S);
-        Inserted.insert(S);
+      if (StreamDepDepthMap.count(S) == 0) {
+        // Determine my dependenceDepth.
+        auto DependenceDepth = 0;
+        for (auto &ChosenBaseS : S->getChosenBaseStreams()) {
+          if (ChosenBaseS->getLoop() != ConfigureLoop) {
+            continue;
+          }
+          assert(
+              (StreamDepDepthMap.count(ChosenBaseS) != 0) &&
+              "ChosenBaseStream should already be assigned a dependenceDepth.");
+          auto ChosenBaseStreamDependenceDepth =
+              StreamDepDepthMap.at(ChosenBaseS);
+          if (ChosenBaseStreamDependenceDepth + 1 > DependenceDepth) {
+            DependenceDepth = ChosenBaseStreamDependenceDepth + 1;
+          }
+        }
+        // Insert myself into the stack.
+        // Common case for append at the back.
+        // Iterate starting from the back should be a little more efficient.
+        bool Inserted = false;
+        for (auto SortedStreamIter = SortedStreams.rbegin(),
+                  SortedStreamEnd = SortedStreams.rend();
+             SortedStreamIter != SortedStreamEnd; ++SortedStreamIter) {
+          auto SortedDependenceDepth = StreamDepDepthMap.at(*SortedStreamIter);
+          if (SortedDependenceDepth <= DependenceDepth) {
+            SortedStreams.insert(SortedStreamIter.base(), S);
+            Inserted = true;
+            break;
+          }
+        }
+        if (!Inserted) {
+          SortedStreams.emplace_front(S);
+        }
+        StreamDepDepthMap.emplace(S, DependenceDepth);
       }
       ChosenStreams.pop();
     }
@@ -775,8 +809,8 @@ std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
   return SortedStreams;
 }
 
-Stream *StreamRegionAnalyzer::getChosenStreamByInst(
-    const llvm::Instruction *Inst) {
+Stream *
+StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
   if (!this->TopLoop->contains(Inst)) {
     return nullptr;
   }
@@ -788,8 +822,8 @@ Stream *StreamRegionAnalyzer::getChosenStreamByInst(
   }
 }
 
-const StreamTransformPlan &StreamRegionAnalyzer::getTransformPlanByInst(
-    const llvm::Instruction *Inst) {
+const StreamTransformPlan &
+StreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
   assert(this->TopLoop->contains(Inst) && "Inst should be within the TopLoop.");
   return this->InstPlanMap.at(Inst);
 }
