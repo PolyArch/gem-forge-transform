@@ -45,6 +45,9 @@ class TransformManager(object):
             config = TransformConfig(fn)
             self.configs[config.get_transform_id()] = config
 
+    def has_config(self, transform_id):
+        return transform_id in self.configs
+
     def get_config(self, transform_id):
         return self.configs[transform_id]
 

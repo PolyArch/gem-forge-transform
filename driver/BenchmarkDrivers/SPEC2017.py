@@ -406,17 +406,17 @@ class SPEC2017Benchmarks:
             'trace_func': '',
             'lang': 'C',
         },
-        'perlbench_s': {
-            'name': '600.perlbench_s',
-            'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 10,
-            'trace_func': '',
-            'lang': 'C',
-        },
+        # 'perlbench_s': {
+        #     'name': '600.perlbench_s',
+        #     'links': [],
+        #     'start_inst': 1e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 100e8,
+        #     'n_traces': 10,
+        #     'trace_func': '',
+        #     'lang': 'C',
+        # },
         # C++ Benchmark
         'deepsjeng_s': {
             'name': '631.deepsjeng_s',
@@ -468,17 +468,17 @@ class SPEC2017Benchmarks:
         # Throws exception.
         # Need to fix a comparison between integer and pointer error.
         # Only been able to trace the first one.
-        'parest_r': {
-            'name': '510.parest_r',
-            'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 110e8,
-            'n_traces': 2,
-            'trace_func': '',
-            'lang': 'CPP',
-        },
+        # 'parest_r': {
+        #     'name': '510.parest_r',
+        #     'links': [],
+        #     'start_inst': 10e8,
+        #     'max_inst': 1e7,
+        #     'skip_inst': 10e8,
+        #     'end_inst': 110e8,
+        #     'n_traces': 2,
+        #     'trace_func': '',
+        #     'lang': 'CPP',
+        # },
 
         # Does not work with ellcc as it uses linux header.
         # Does not throw.

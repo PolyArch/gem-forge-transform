@@ -60,7 +60,7 @@ void DynamicStreamCoalescer::finalize() {
     return;
   }
 
-  const float Threshold = 0.9;
+  const float Threshold = 0.95;
 
   /**
    * Standard union-find to coalesce streams.

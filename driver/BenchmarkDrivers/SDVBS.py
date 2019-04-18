@@ -16,7 +16,7 @@ class SDVBSBenchmark(Benchmark):
         'stitch': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
         'svm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
         'texture_synthesis': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        # 'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
     }
 
     # Stream experiments.

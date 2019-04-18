@@ -12,7 +12,7 @@ class CortexBenchmark(Benchmark):
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
         'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sphinx': ['O2'],
+        # 'sphinx': ['O2'],
         'srr': ['O2'],
         'lda': ['O2'],
         'svd3': ['O2'],

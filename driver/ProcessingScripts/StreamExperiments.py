@@ -11,13 +11,24 @@ import os
 class StreamExperiments(object):
     def __init__(self, driver):
         self.driver = driver
-        self.stream_transform_config = self.driver.transform_manager.get_config(
-            'stream')
+        stream_transforms = [
+            'stream',
+            'stream.inner',
+            'stream.static-outer'
+        ]
+        self.stream_transform_config = None
+        for s in stream_transforms:
+            if self.driver.transform_manager.has_config(s):
+                self.stream_transform_config = self.driver.transform_manager.get_config(
+                    s)
+
+        assert(self.stream_transform_config is not None)
         self.stream_simulation_configs = self.driver.simulation_manager.get_configs(
-            'stream')
+            self.stream_transform_config.get_transform_id())
 
         mismatches = None
         n_single_benchmarks = 0
+        self.static_stream_analyzer = dict()
         for benchmark in self.driver.benchmarks:
             if not isinstance(benchmark, MultiProgramBenchmark):
                 ret = self.analyzeStaticStreamForBenchmark(benchmark)
@@ -32,6 +43,17 @@ class StreamExperiments(object):
             print('Average mismatch rate at level {level} is {mismatch}'.format(
                 level=i,
                 mismatch=mismatches[i]))
+
+        total_average_stream_length = 0.0
+        for benchmark in self.driver.benchmarks:
+            if benchmark not in self.static_stream_analyzer:
+                continue
+            ssa = self.static_stream_analyzer[benchmark]
+            average_stream_length = ssa.analyze_chosen_stream_length()
+            print('{b} has chosen stream length {l}'.format(
+                b=benchmark.get_name(), l=average_stream_length))
+            total_average_stream_length += average_stream_length
+        print('Average stream length is {l}'.format(l=total_average_stream_length/len(self.static_stream_analyzer)))
 
         self.replay_transform_config = self.driver.transform_manager.get_config(
             'replay')
@@ -108,7 +130,6 @@ class StreamExperiments(object):
 
     def getAllTimeForMultiProgramBenchmark(self,
                                            multi_program_benchmark, multi_program_tdgs, simulation_configs):
-
         benchmark_single_time = dict()
         benchmark_multi_time = dict()
         for benchmark in multi_program_benchmark.benchmarks:
@@ -195,6 +216,7 @@ class StreamExperiments(object):
         print('Start static stream analysis for {b}'.format(
             b=benchmark.get_name()))
         ssa = StaticStreamAnalyzer(benchmark, self.stream_transform_config)
+        self.static_stream_analyzer[benchmark] = ssa
         return ssa.mismatches
 
 
@@ -204,9 +226,6 @@ class StaticStreamAnalyzer(object):
         def __init__(self, trace, fn):
             self.trace = trace
             self.streams = dict()
-            self.analyze(fn)
-
-        def analyze(self, fn):
             stream_region = StreamMessage_pb2.StreamRegion()
             f = open(fn)
             stream_region.ParseFromString(f.read())
@@ -257,6 +276,15 @@ class StaticStreamAnalyzer(object):
                 total += s.dynamic_info.total_accesses
             return total
 
+        def get_chosen_streams(self):
+            chosen_streams = list()
+            for stream_name in self.streams:
+                for s in self.streams[stream_name]:
+                    if s.dynamic_info.is_chosen:
+                        chosen_streams.append(s)
+                        break
+            return chosen_streams
+
     class TraceAnalyzer(object):
         def __init__(self, parent, trace):
             self.parent = parent
@@ -302,6 +330,24 @@ class StaticStreamAnalyzer(object):
                 total_mismatch_mem_accesses /= self.total_qualified_accesses
             return total_mismatch_mem_accesses
 
+        def analyze_chosen_stream_length(self):
+            total_stream_accesses = 0.0
+            total_stream_length = 0.0
+            for r in self.regions:
+                chosen_streams = r.get_chosen_streams()
+                for s in chosen_streams:
+                    if s.type == 'phi':
+                        # Ignore IndVarStreams.
+                        continue
+                    dynamic_info = s.dynamic_info
+                    average_length = dynamic_info.total_accesses / dynamic_info.total_configures
+                    total_stream_accesses += dynamic_info.total_accesses
+                    total_stream_length += dynamic_info.total_accesses * average_length
+            if total_stream_accesses != 0:
+                return total_stream_length / total_stream_accesses
+            else:
+                return total_stream_length
+
         def print_mismatch(self, s):
             print('Mismatch stream! weight {weight:.2f} lv {lv:1} dynamic {dynamic:1} static {static:1} reason {reason:20}: {s}'.format(
                 weight=(s.dynamic_info.total_accesses /
@@ -325,7 +371,7 @@ class StaticStreamAnalyzer(object):
         self.mismatches = list()
         for trace in self.benchmark.get_traces():
             self.traces.append(StaticStreamAnalyzer.TraceAnalyzer(self, trace))
-        for level in xrange(1):
+        for level in xrange(3):
             total_mismatch_mem_accesses = 0.0
             for trace in self.traces:
                 trace_mismatch_mem_accesses = trace.analyze_mismatch_at_level(
@@ -334,6 +380,13 @@ class StaticStreamAnalyzer(object):
             print('========= Analyzing Loop Level {level} Mismatch MemAccesses {weight:.3f}'.format(
                 level=level, weight=total_mismatch_mem_accesses))
             self.mismatches.append(total_mismatch_mem_accesses)
+
+    def analyze_chosen_stream_length(self):
+        average_stream_length = 0.0
+        for trace in self.traces:
+            average_stream_length += trace.analyze_chosen_stream_length() * \
+                trace.trace.get_weight()
+        return average_stream_length
 
 
 def analyze(driver):
