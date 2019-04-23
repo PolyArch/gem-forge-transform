@@ -540,6 +540,10 @@ if __name__ == '__main__':
     parser.add_option('--multi-program', type='int',
                       action='store', dest='multi_programs', default=1)
 
+    # Parse gem5 debug flag.
+    parser.add_option('--gem5-debug', type='string',
+                      action='store', dest='gem5_debug', default=None)
+
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)

@@ -1,5 +1,5 @@
 {
-    "id": "stream.o8.ch2.l3",
+    "id": "stream.o8.ch2.l3.coalesce.tr.cache",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
@@ -10,15 +10,19 @@
         "--l1_5d_size=256kB",
         "--l1_5d_assoc=16",
         "--l1_5d_mshrs=16",
-        "--l2_size=8MB",
+        "--l2_size=1MB",
         "--l2_lat=20",
-        "--l2_mshrs=20",
+        "--l2_mshrs=32",
         "--l2_assoc=8",
-        "--l2bus_width=16",
+        "--l2bus_width=32",
         "--mem-channels=2",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2",
-        "--gem-forge-stream-engine-max-run-ahead-length=10"
+        "--gem-forge-cold-cache",
+        "--gem-forge-stream-engine-max-run-ahead-length=10",
+        "--gem-forge-stream-engine-throttling=dynamic",
+        "--gem-forge-stream-engine-enable-coalesce",
+        "--gem-forge-stream-engine-placement=placement-expr-fp#imm.sub.rst"
     ],
     "support-transform-ids": [
         "stream",

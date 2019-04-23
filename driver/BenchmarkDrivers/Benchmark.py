@@ -636,7 +636,6 @@ class Benchmark(object):
         gem5_args = [
             C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
             '--outdir={outdir}'.format(outdir=outdir),
-            # "--debug-flags=LLVMTraceCPU",
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=binary),
             '--llvm-issue-width={ISSUE_WIDTH}'.format(
@@ -651,6 +650,10 @@ class Benchmark(object):
             '--l1d_size={l1d_size}'.format(l1d_size=C.GEM5_L1D_SIZE),
             '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
         ]
+        if self.options.gem5_debug is not None:
+            gem5_args.insert(
+                1, '--debug-flags={debug}'.format(debug=self.options.gem5_debug))
+
         if standalone:
             gem5_args.append('--llvm-standalone')
 

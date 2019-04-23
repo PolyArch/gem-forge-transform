@@ -1,5 +1,5 @@
 {
-    "id": "stream.o8.ch2.coalese.late",
+    "id": "stream.o8.ch2.coalese.tr.cache",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
@@ -15,9 +15,13 @@
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2",
         "--gem-forge-stream-engine-max-run-ahead-length=10",
-        "--gem-forge-stream-engine-enable-coalesce=1",
-        "--gem-forge-stream-engine-enable-merge=1",
-        "--gem-forge-stream-engine-throttling=late"
+        "--gem-forge-stream-engine-throttling=dynamic",
+        "--gem-forge-stream-engine-enable-coalesce",
+        "--gem-forge-stream-engine-placement=placement-expr#imm.sub.rst"
     ],
-    "support-transform-ids": ["stream"]
+    "support-transform-ids": [
+        "stream",
+		"stream.inner",
+		"stream.static-outer"
+    ]
 }

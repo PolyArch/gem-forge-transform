@@ -6,15 +6,16 @@ __attribute__((noinline)) float foo(float *a, float *b, int N) {
     c += a[i] * b[i];
   }
   // Unroll by 2 to check coalesce.
-  for (int i = 0; i < N; i += 2) {
-    c += a[i] * b[i];
-    c += a[i + 1] * b[i + 1];
-  }
+  // for (int i = 0; i < N; i += 2) {
+  //   c += a[i] * b[i];
+  //   c += a[i + 1] * b[i + 1];
+  // }
   return c;
 }
 
 int main() {
-  const int N = 32;
+  // 65536*4 is 256kB.
+  const int N = 65536 * 2;
   float a[N];
   float b[N];
   volatile float c;
