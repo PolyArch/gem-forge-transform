@@ -653,6 +653,9 @@ class Benchmark(object):
         if self.options.gem5_debug is not None:
             gem5_args.insert(
                 1, '--debug-flags={debug}'.format(debug=self.options.gem5_debug))
+        if self.options.gem5_max_insts is not None:
+            gem5_args.append(
+                '--maxinsts={max_insts}'.format(max_insts=self.options.gem5_max_insts))
 
         if standalone:
             gem5_args.append('--llvm-standalone')
