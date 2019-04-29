@@ -53,7 +53,21 @@ class StreamExperiments(object):
             print('{b} has chosen stream length {l}'.format(
                 b=benchmark.get_name(), l=average_stream_length))
             total_average_stream_length += average_stream_length
-        print('Average stream length is {l}'.format(l=total_average_stream_length/len(self.static_stream_analyzer)))
+        print('Average stream length is {l}'.format(
+            l=total_average_stream_length/len(self.static_stream_analyzer)))
+
+        total_aliased_accesses = 0.0
+        for benchmark in self.driver.benchmarks:
+            if benchmark not in self.static_stream_analyzer:
+                continue
+            ssa = self.static_stream_analyzer[benchmark]
+            alias_stream_access = ssa.analyze_aliase_stream_access()
+            print('{b} has {v} loop accesses aliased.'.format(
+                b=benchmark.get_name(), v=alias_stream_access
+            ))
+            total_aliased_accesses += alias_stream_access
+        print('Average alias stream accesses is {v}'.format(
+            v=total_aliased_accesses / len(self.static_stream_analyzer)))
 
         self.replay_transform_config = self.driver.transform_manager.get_config(
             'replay')
@@ -267,6 +281,17 @@ class StaticStreamAnalyzer(object):
                 total += s.dynamic_info.total_accesses
             return total
 
+        def get_total_aliased_loop_mem_accesses(self):
+            total = 0
+            for stream_name in self.streams:
+                s = self.streams[stream_name][0]
+                if s.type == 'phi':
+                    continue
+                if not s.dynamic_info.is_aliased:
+                    continue
+                total += s.dynamic_info.total_accesses
+            return total
+
         def get_total_loop_mem_accesses(self):
             total = 0
             for stream_name in self.streams:
@@ -295,6 +320,8 @@ class StaticStreamAnalyzer(object):
                 [r.get_total_qualified_mem_accesses() for r in self.regions]))
             self.total_loop_accesses = float(sum(
                 [r.get_total_loop_mem_accesses() for r in self.regions]))
+            self.total_alise_accesses = float(sum(
+                [r.get_total_aliased_loop_mem_accesses() for r in self.regions]))
 
         def analyze(self):
             tdg_extra_path = self.parent.benchmark.get_tdg_extra_path(
@@ -387,6 +414,14 @@ class StaticStreamAnalyzer(object):
             average_stream_length += trace.analyze_chosen_stream_length() * \
                 trace.trace.get_weight()
         return average_stream_length
+
+    def analyze_aliase_stream_access(self):
+        total_aliased_accesses = 0.0
+        total_loop_accesses = 0.0
+        for trace in self.traces:
+            total_aliased_accesses += trace.total_alise_accesses * trace.trace.get_weight()
+            total_loop_accesses += trace.total_loop_accesses
+        return total_aliased_accesses / total_loop_accesses
 
 
 def analyze(driver):
