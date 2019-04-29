@@ -1,5 +1,9 @@
 #include "stream/MemStream.h"
 
+llvm::cl::opt<bool> StreamPassAllowAliasedStream(
+    "stream-pass-allow-aliased-stream",
+    llvm::cl::desc("Allow aliased streams to be specialized."));
+
 void MemStream::searchAddressComputeInstructions(
     std::function<bool(const llvm::PHINode *)> IsInductionVar) {
   std::list<llvm::Instruction *> Queue;
@@ -91,7 +95,7 @@ bool MemStream::isQualifySeed() const {
   if (!this->isCandidate()) {
     return false;
   }
-  if (this->isAliased()) {
+  if (this->isAliased() && (!StreamPassAllowAliasedStream)) {
     return false;
   }
   if (this->BaseStreams.empty()) {

@@ -25,6 +25,7 @@
     ],
     "support-transform-ids": [
         "stream",
+        "stream.alias",
 		"stream.inner",
 		"stream.static-outer"
     ]

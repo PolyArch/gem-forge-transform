@@ -15,5 +15,8 @@
         "--gem-forge-cache-store-ports=2",
         "--gem-forge-stream-engine-max-run-ahead-length=10"
     ],
-    "support-transform-ids": ["stream"]
+    "support-transform-ids": [
+        "stream",
+        "stream.alias"
+    ]
 }
