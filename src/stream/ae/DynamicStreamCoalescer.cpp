@@ -34,7 +34,7 @@ DynamicStreamCoalescer::~DynamicStreamCoalescer() {}
 namespace {
 const size_t CacheLineSize = 64;
 const size_t CacheLineDiff = 1;
-}  // namespace
+} // namespace
 #define CacheLineAddr(addr) (addr & (~(64 - 1)))
 
 void DynamicStreamCoalescer::updateCoalesceMatrix() {
@@ -75,7 +75,15 @@ void DynamicStreamCoalescer::finalize() {
       //              << Col.first->getStream()->formatName() << '\n';
       auto CoalescedPercentage = static_cast<float>(CoalescedCount) /
                                  static_cast<float>(this->TotalSteps);
-      if (CoalescedPercentage > Threshold) {
+      auto RowStream = Row.first->getStream();
+      auto ColStream = Col.first->getStream();
+      /**
+       * ! Only coalesce when they are the same type of streams with high
+       * ! coalesce percentage.
+       */
+      if (CoalescedPercentage > Threshold &&
+          (RowStream->SStream->Inst->getOpcode() ==
+           ColStream->SStream->Inst->getOpcode())) {
         // llvm::errs() << "Coalescing " << Row.first->getStream()->formatName()
         //              << ' ' << Col.first->getStream()->formatName() << '\n';
         this->coalesce(Row.second, Col.second);
