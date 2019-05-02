@@ -78,8 +78,8 @@ void DynamicStreamCoalescer::finalize() {
       auto RowStream = Row.first->getStream();
       auto ColStream = Col.first->getStream();
       /**
-       * ! Only coalesce when they are the same type of streams with high
-       * ! coalesce percentage.
+       * Only coalesce when they are the same type of streams with high
+       * coalesce percentage.
        */
       if (CoalescedPercentage > Threshold &&
           (RowStream->SStream->Inst->getOpcode() ==
