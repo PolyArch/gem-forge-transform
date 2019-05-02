@@ -14,7 +14,8 @@ class StreamExperiments(object):
         stream_transforms = [
             'stream',
             'stream.inner',
-            'stream.static-outer'
+            'stream.static-outer',
+            'stream.alias',
         ]
         self.stream_transform_config = None
         for s in stream_transforms:
