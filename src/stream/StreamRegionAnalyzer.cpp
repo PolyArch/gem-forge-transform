@@ -12,18 +12,14 @@
 StreamConfigureLoopInfo::StreamConfigureLoopInfo(
     const std::string &_Folder, const std::string &_RelativeFolder,
     const llvm::Loop *_Loop, std::list<Stream *> _SortedStreams)
-    : TotalConfiguredStreams(-1),
-      TotalConfiguredCoalescedStreams(-1),
-      TotalSubLoopStreams(-1),
-      TotalSubLoopCoalescedStreams(-1),
-      TotalAliveStreams(-1),
-      TotalAliveCoalescedStreams(-1),
+    : TotalConfiguredStreams(-1), TotalConfiguredCoalescedStreams(-1),
+      TotalSubLoopStreams(-1), TotalSubLoopCoalescedStreams(-1),
+      TotalAliveStreams(-1), TotalAliveCoalescedStreams(-1),
       Path(_Folder + "/" + LoopUtils::getLoopId(_Loop) + ".info"),
       JsonPath(_Folder + "/" + LoopUtils::getLoopId(_Loop) + ".json"),
       RelativePath(_RelativeFolder + "/" + LoopUtils::getLoopId(_Loop) +
                    ".info"),
-      Loop(_Loop),
-      SortedStreams(std::move(_SortedStreams)) {}
+      Loop(_Loop), SortedStreams(std::move(_SortedStreams)) {}
 
 void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   LLVM::TDG::StreamRegion ProtobufStreamRegion;
@@ -54,12 +50,9 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            llvm::Loop *_TopLoop,
                                            llvm::DataLayout *_DataLayout,
                                            const std::string &_RootPath)
-    : RegionIdx(_RegionIdx),
-      CachedLI(_CachedLI),
-      TopLoop(_TopLoop),
+    : RegionIdx(_RegionIdx), CachedLI(_CachedLI), TopLoop(_TopLoop),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
-      DataLayout(_DataLayout),
-      RootPath(_RootPath) {
+      DataLayout(_DataLayout), RootPath(_RootPath) {
   // Initialize the folder for this region.
   std::stringstream ss;
   ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
@@ -410,9 +403,8 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
       continue;
     }
     if (!S->isQualifySeed()) {
-      assert(false &&
-             "Stream should be a qualify seed to be inserted into the "
-             "qualifying queue.");
+      assert(false && "Stream should be a qualify seed to be inserted into the "
+                      "qualifying queue.");
       continue;
     }
     S->markQualified();
@@ -560,6 +552,12 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
                                                 &InfoJsonString);
     InfoTextFStream << InfoJsonString << '\n';
     InfoTextFStream.close();
+
+    std::ofstream InfoFStream(this->AnalyzePath + "/streams.info");
+    assert(InfoFStream.is_open() &&
+           "Failed to open the output info protobuf file.");
+    ProtobufStreamRegion.SerializeToOstream(&InfoFStream);
+    InfoFStream.close();
   }
 
   {
@@ -768,11 +766,11 @@ void StreamRegionAnalyzer::buildTransformPlan() {
         // Actually mark this one as delete if we have no other plan for it.
         auto &Plan = this->InstPlanMap.at(NewlyDeletingOperandInst);
         switch (Plan.Plan) {
-          case StreamTransformPlan::PlanT::NOTHING:
-          case StreamTransformPlan::PlanT::DELETE: {
-            Plan.planToDelete();
-            break;
-          }
+        case StreamTransformPlan::PlanT::NOTHING:
+        case StreamTransformPlan::PlanT::DELETE: {
+          Plan.planToDelete();
+          break;
+        }
         }
         // Add all the uses to NewlyDeletingQueue.
         for (unsigned OperandIdx = 0,
@@ -857,8 +855,8 @@ void StreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
   }
 }
 
-const StreamConfigureLoopInfo &StreamRegionAnalyzer::getConfigureLoopInfo(
-    const llvm::Loop *ConfigureLoop) {
+const StreamConfigureLoopInfo &
+StreamRegionAnalyzer::getConfigureLoopInfo(const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
   assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) != 0 &&
@@ -989,8 +987,8 @@ int StreamRegionAnalyzer::getTotalCoalescedStreamsWithinLoop(
   return 0;
 }
 
-Stream *StreamRegionAnalyzer::getChosenStreamByInst(
-    const llvm::Instruction *Inst) {
+Stream *
+StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
   if (!this->TopLoop->contains(Inst)) {
     return nullptr;
   }
@@ -1002,8 +1000,8 @@ Stream *StreamRegionAnalyzer::getChosenStreamByInst(
   }
 }
 
-const StreamTransformPlan &StreamRegionAnalyzer::getTransformPlanByInst(
-    const llvm::Instruction *Inst) {
+const StreamTransformPlan &
+StreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
   assert(this->TopLoop->contains(Inst) && "Inst should be within the TopLoop.");
   return this->InstPlanMap.at(Inst);
 }
