@@ -35,7 +35,7 @@ message StaticStreamInfo {
     NOT_SCEVABLE_COMPUTEMNODE = 4;
     RANDOM_PATTERN = 5;
     MULTI_STEP_ROOT = 6;
-    // Not Qualified Reason. 
+    // Not Qualified Reason.
     BASE_STREAM_NOT_QUALIFIED = 8;
     NO_STATIC_MAPPING = 9;
   }
@@ -84,10 +84,12 @@ message StreamInfo {
 
 message StreamRegion {
   string region = 1;
-  // How many streams may coexist with this region (including parent/sub-region).
+  // How many streams may coexist with this region (including
+  // parent/sub-region).
   int32 total_alive_streams = 2;
   int32 total_alive_coalesced_streams = 3;
   repeated StreamInfo streams = 8;
+  repeated uint64 coalesced_stream_ids = 9;
 }
 
 message StreamPattern {
