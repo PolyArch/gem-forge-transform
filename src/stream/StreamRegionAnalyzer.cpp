@@ -9,6 +9,39 @@
 
 #define DEBUG_TYPE "StreamRegionAnalyzer"
 
+StreamConfigureLoopInfo::StreamConfigureLoopInfo(
+    const std::string &_Folder, const std::string &_RelativeFolder,
+    const llvm::Loop *_Loop, std::list<Stream *> _SortedStreams)
+    : TotalConfiguredStreams(-1), TotalConfiguredCoalescedStreams(-1),
+      TotalSubLoopStreams(-1), TotalSubLoopCoalescedStreams(-1),
+      TotalAliveStreams(-1), TotalAliveCoalescedStreams(-1),
+      Path(_Folder + "/" + LoopUtils::getLoopId(_Loop) + ".info"),
+      JsonPath(_Folder + "/" + LoopUtils::getLoopId(_Loop) + ".json"),
+      RelativePath(_RelativeFolder + "/" + LoopUtils::getLoopId(_Loop) +
+                   ".info"),
+      Loop(_Loop), SortedStreams(std::move(_SortedStreams)) {}
+
+void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
+  LLVM::TDG::StreamRegion ProtobufStreamRegion;
+  ProtobufStreamRegion.set_total_alive_streams(this->TotalAliveStreams);
+  ProtobufStreamRegion.set_total_alive_coalesced_streams(
+      this->TotalAliveCoalescedStreams);
+  for (auto &S : this->SortedStreams) {
+    auto Info = ProtobufStreamRegion.add_streams();
+    S->fillProtobufStreamInfo(DataLayout, Info);
+  }
+  Gem5ProtobufSerializer Serializer(this->Path);
+  Serializer.serialize(ProtobufStreamRegion);
+  std::ofstream InfoTextFStream(this->JsonPath);
+  assert(InfoTextFStream.is_open() &&
+         "Failed to open the output info text file.");
+  std::string InfoJsonString;
+  ::google::protobuf::util::MessageToJsonString(ProtobufStreamRegion,
+                                                &InfoJsonString);
+  InfoTextFStream << InfoJsonString;
+  InfoTextFStream.close();
+}
+
 StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
                                            CachedLoopInfo *_CachedLI,
                                            llvm::Loop *_TopLoop,
@@ -244,19 +277,76 @@ void StreamRegionAnalyzer::endRegion(
   this->buildChosenStreamDependenceGraph();
   this->buildAddressModule();
   this->buildTransformPlan();
+  this->buildStreamConfigureLoopInfoMap(this->TopLoop);
 
   this->dumpTransformPlan();
   this->dumpConfigurePlan();
 }
 
 void StreamRegionAnalyzer::endTransform() {
+  // This will set all the coalesce information.
   this->FuncSE->endAll();
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
     auto &ChosenStream = InstChosenStream.second;
     ChosenStream->finalizeInfo(this->DataLayout);
   }
+  // Finalize the StreamConfigureLoopInfo.
+  this->finalizeStreamConfigureLoopInfo(this->TopLoop);
   // Only after this point can we know the CoalesceGroup in the info.
   this->dumpStreamInfos();
+  // Dump all the StreamConfigureLoopInfo.
+  for (const auto &StreamConfigureLoop : this->ConfigureLoopInfoMap) {
+    StreamConfigureLoop.second.dump(this->DataLayout);
+  }
+}
+
+/**
+ * This function recursively compute the information for this configure loop.
+ * 1. Compute TotalConfiguredStreams.
+ * 2. Recursively compute TotalSubLoopStreams.
+ * 3. Compute TotalAliveStreams.
+ */
+void StreamRegionAnalyzer::finalizeStreamConfigureLoopInfo(
+    const llvm::Loop *ConfigureLoop) {
+  assert(this->TopLoop->contains(ConfigureLoop) &&
+         "Should only finalize loops within TopLoop.");
+  auto &Info = this->ConfigureLoopInfoMap.at(ConfigureLoop);
+  // 1.
+  auto &SortedStreams = Info.getSortedStreams();
+  int ConfiguredStreams = SortedStreams.size();
+  int ConfiguredCoalescedStreams = SortedStreams.size();
+  Info.TotalConfiguredStreams = ConfiguredStreams;
+  Info.TotalConfiguredCoalescedStreams = ConfiguredCoalescedStreams;
+  auto ParentLoop = ConfigureLoop->getParentLoop();
+  if (this->TopLoop->contains(ParentLoop)) {
+    const auto &ParentInfo = this->ConfigureLoopInfoMap.at(ParentLoop);
+    Info.TotalConfiguredStreams += ParentInfo.TotalConfiguredStreams;
+    Info.TotalConfiguredCoalescedStreams +=
+        ParentInfo.TotalConfiguredCoalescedStreams;
+  }
+  // 2.
+  int MaxSubLoopStreams = 0;
+  int MaxSubLoopCoalescedStreams = 0;
+  for (auto &SubLoop : *ConfigureLoop) {
+    this->finalizeStreamConfigureLoopInfo(SubLoop);
+    const auto &SubInfo = this->ConfigureLoopInfoMap.at(SubLoop);
+    if (SubInfo.TotalSubLoopStreams > MaxSubLoopStreams) {
+      MaxSubLoopStreams = SubInfo.TotalSubLoopStreams;
+    }
+    if (SubInfo.TotalSubLoopCoalescedStreams > MaxSubLoopCoalescedStreams) {
+      MaxSubLoopCoalescedStreams = SubInfo.TotalSubLoopCoalescedStreams;
+    }
+  }
+  Info.TotalSubLoopStreams = MaxSubLoopStreams + ConfiguredStreams;
+  Info.TotalSubLoopCoalescedStreams =
+      MaxSubLoopCoalescedStreams + ConfiguredCoalescedStreams;
+
+  // 3.
+  Info.TotalAliveStreams = Info.TotalConfiguredStreams +
+                           Info.TotalSubLoopStreams - ConfiguredStreams;
+  Info.TotalAliveCoalescedStreams = Info.TotalConfiguredCoalescedStreams +
+                                    Info.TotalSubLoopCoalescedStreams -
+                                    ConfiguredCoalescedStreams;
 }
 
 Stream *StreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
@@ -444,12 +534,6 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
                                                 &InfoJsonString);
     InfoTextFStream << InfoJsonString << '\n';
     InfoTextFStream.close();
-
-    std::ofstream InfoFStream(this->AnalyzePath + "/streams.info");
-    assert(InfoFStream.is_open() &&
-           "Failed to open the output info protobuf file.");
-    ProtobufStreamRegion.SerializeToOstream(&InfoFStream);
-    InfoFStream.close();
   }
 
   {
@@ -714,7 +798,8 @@ void StreamRegionAnalyzer::dumpConfigurePlan() {
       Stack.emplace_back(Sub);
     }
     ss << LoopUtils::getLoopId(Loop) << '\n';
-    for (auto S : this->getSortedChosenStreamsByConfigureLoop(Loop)) {
+    const auto &Info = this->getConfigureLoopInfo(Loop);
+    for (auto S : Info.getSortedStreams()) {
       for (auto Level = this->TopLoop->getLoopDepth();
            Level < Loop->getLoopDepth(); ++Level) {
         ss << "  ";
@@ -730,11 +815,35 @@ void StreamRegionAnalyzer::dumpConfigurePlan() {
   PlanFStream.close();
 }
 
-std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
+void StreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
     const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
+  assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) == 0 &&
+         "This StreamConfigureLoopInfo has already been built.");
+  auto SortedStreams = this->sortChosenStreamsByConfigureLoop(ConfigureLoop);
+  this->ConfigureLoopInfoMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(ConfigureLoop),
+      std::forward_as_tuple(this->AnalyzePath, this->AnalyzeRelativePath,
+                            ConfigureLoop, SortedStreams));
+  for (auto &SubLoop : *ConfigureLoop) {
+    this->buildStreamConfigureLoopInfoMap(SubLoop);
+  }
+}
 
+const StreamConfigureLoopInfo &
+StreamRegionAnalyzer::getConfigureLoopInfo(const llvm::Loop *ConfigureLoop) {
+  assert(this->TopLoop->contains(ConfigureLoop) &&
+         "ConfigureLoop should be within TopLoop.");
+  assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) != 0 &&
+         "Failed to find the loop info.");
+  return this->ConfigureLoopInfoMap.at(ConfigureLoop);
+}
+
+std::list<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
+    const llvm::Loop *ConfigureLoop) {
+  assert(this->TopLoop->contains(ConfigureLoop) &&
+         "ConfigureLoop should be within TopLoop.");
   /**
    * Topological sort is not enough for this problem, as some streams may be
    * coalesced. Instead, we define the dependenceDepth of a stream as:
@@ -807,6 +916,51 @@ std::list<Stream *> StreamRegionAnalyzer::getSortedChosenStreamsByConfigureLoop(
   }
 
   return SortedStreams;
+}
+
+int StreamRegionAnalyzer::getTotalStreamsWithinLoop(
+    const llvm::Loop *ConfigureLoop) {
+  // if (this->ConfigureLoopTotalStreamsMap.count(ConfigureLoop) != 0) {
+  //   return this->ConfigureLoopTotalStreamsMap.at(ConfigureLoop);
+  // }
+  // auto TotalStreams =
+  //     this->getSortedChosenStreamsByConfigureLoop(ConfigureLoop).size();
+  // // Check all the subloops.
+  // auto MaxTotalStreamsInSubLoop = 0;
+  // for (const auto &SubLoop : *ConfigureLoop) {
+  //   auto TotalStreamsInSubLoop = this->getTotalStreamsWithinLoop(SubLoop);
+  //   if (TotalStreamsInSubLoop > MaxTotalStreamsInSubLoop) {
+  //     MaxTotalStreamsInSubLoop = TotalStreamsInSubLoop;
+  //   }
+  // }
+  // TotalStreams += MaxTotalStreamsInSubLoop;
+  // this->ConfigureLoopTotalStreamsMap.emplace(ConfigureLoop, TotalStreams);
+  // return TotalStreams;
+  return 0;
+}
+
+int StreamRegionAnalyzer::getTotalCoalescedStreamsWithinLoop(
+    const llvm::Loop *ConfigureLoop) {
+  // if (this->ConfigureLoopTotalCoalescedStreamsMap.count(ConfigureLoop) != 0)
+  // {
+  //   return this->ConfigureLoopTotalCoalescedStreamsMap.at(ConfigureLoop);
+  // }
+  // auto TotalStreams =
+  //     this->getSortedChosenStreamsByConfigureLoop(ConfigureLoop).size();
+  // // Check all the subloops.
+  // auto MaxTotalStreamsInSubLoop = 0;
+  // for (const auto &SubLoop : *ConfigureLoop) {
+  //   auto TotalStreamsInSubLoop =
+  //       this->getTotalCoalescedStreamsWithinLoop(SubLoop);
+  //   if (TotalStreamsInSubLoop > MaxTotalStreamsInSubLoop) {
+  //     MaxTotalStreamsInSubLoop = TotalStreamsInSubLoop;
+  //   }
+  // }
+  // TotalStreams += MaxTotalStreamsInSubLoop;
+  // this->ConfigureLoopTotalCoalescedStreamsMap.emplace(ConfigureLoop,
+  //                                                     TotalStreams);
+  // return TotalStreams;
+  return 0;
 }
 
 Stream *

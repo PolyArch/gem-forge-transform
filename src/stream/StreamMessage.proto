@@ -84,6 +84,9 @@ message StreamInfo {
 
 message StreamRegion {
   string region = 1;
+  // How many streams may coexist with this region (including parent/sub-region).
+  int32 total_alive_streams = 2;
+  int32 total_alive_coalesced_streams = 3;
   repeated StreamInfo streams = 8;
 }
 

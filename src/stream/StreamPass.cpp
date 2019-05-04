@@ -43,8 +43,8 @@ void StreamPass::dumpStats(std::ostream &O) {
   }
 }
 
-StreamRegionAnalyzer *StreamPass::getAnalyzerByLoop(
-    const llvm::Loop *Loop) const {
+StreamRegionAnalyzer *
+StreamPass::getAnalyzerByLoop(const llvm::Loop *Loop) const {
   if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
     return nullptr;
   }
@@ -252,9 +252,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
 
   LoopStack.emplace_back(NewLoop);
 
-  auto SortedStreams =
-      this->CurrentStreamAnalyzer->getSortedChosenStreamsByConfigureLoop(
-          NewLoop);
+  const auto &Info = this->CurrentStreamAnalyzer->getConfigureLoopInfo(NewLoop);
 
   auto NewDynamicInst = *NewInstIter;
 
@@ -263,7 +261,11 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     InitDepIds.insert(RegDep.second);
   }
 
-  auto ConfigInst = new StreamConfigInst(NewLoop, SortedStreams);
+  auto TotalStreams =
+      this->CurrentStreamAnalyzer->getTotalStreamsWithinLoop(NewLoop);
+  auto TotalCoalescedStreams =
+      this->CurrentStreamAnalyzer->getTotalCoalescedStreamsWithinLoop(NewLoop);
+  auto ConfigInst = new StreamConfigInst(Info);
   auto ConfigInstId = ConfigInst->getId();
   this->Trace->insertDynamicInst(NewInstIter, ConfigInst);
 
@@ -277,6 +279,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
 
   this->ConfigInstCount++;
 
+  const auto &SortedStreams = Info.getSortedStreams();
   for (auto &S : SortedStreams) {
     // Inform the stream engine.
     DEBUG(llvm::errs() << "Configure stream " << S->formatName() << '\n');
@@ -316,11 +319,10 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
     }
   }
 
-  auto SortedStreams =
-      this->CurrentStreamAnalyzer->getSortedChosenStreamsByConfigureLoop(
-          EndedLoop);
+  const auto &Info =
+      this->CurrentStreamAnalyzer->getConfigureLoopInfo(EndedLoop);
 
-  auto EndInst = new StreamEndInst(EndedLoop, SortedStreams);
+  auto EndInst = new StreamEndInst(Info);
   auto EndInstId = EndInst->getId();
 
   this->Trace->insertDynamicInst(NewInstIter, EndInst);
@@ -334,6 +336,7 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
   }
 
   // Unconfigure in reverse order.
+  const auto &SortedStreams = Info.getSortedStreams();
   for (auto StreamIter = SortedStreams.rbegin(),
             StreamEnd = SortedStreams.rend();
        StreamIter != StreamEnd; ++StreamIter) {
