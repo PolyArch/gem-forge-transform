@@ -19,8 +19,56 @@ enum StreamPassChooseStrategyE {
   INNER_MOST
 };
 
+/**
+ * Aggreate all the information for a stream configure loop.
+ */
+class StreamConfigureLoopInfo {
+public:
+  StreamConfigureLoopInfo(const std::string &_Folder,
+                          const std::string &_RelativeFolder,
+                          const llvm::Loop *_Loop,
+                          std::list<Stream *> _SortedStreams);
+
+  const std::string &getRelativePath() const { return this->RelativePath; }
+  const llvm::Loop *getLoop() const { return this->Loop; }
+  const std::list<Stream *> getSortedStreams() const {
+    return this->SortedStreams;
+  }
+
+  /**
+   * TotalConfiguredStreams: Sum of all configured streams in this loop and
+   * parent loops.
+   * TotalSubLoopStreams: Maximum number of possible streams configured in
+   * this loop and sub-loops.
+   * TotalPeerStreams: Maximum number of possible streams be alive the
+   * same time with streams configured in this loop.
+   *
+   * Formula:
+   * * TotalConfiguredStreams = Sum(ConfiguredStreams, ThisAndParentLoop)
+   * * TotalSubLoopStreams = \
+   * *   (Max(TotalSubLoopStreams, SubLoop) or 0) + ConfiguredStreams
+   * * TotalAliveStreams = TotalConfiguredStreams + \
+   * *   TotalSubLoopStreams - COnfiguredStreams
+   */
+  int TotalConfiguredStreams;
+  int TotalConfiguredCoalescedStreams;
+  int TotalSubLoopStreams;
+  int TotalSubLoopCoalescedStreams;
+  int TotalAliveStreams;
+  int TotalAliveCoalescedStreams;
+
+  void dump(llvm::DataLayout *DataLayout) const;
+
+private:
+  const std::string Path;
+  const std::string RelativePath;
+  const std::string JsonPath;
+  const llvm::Loop *Loop;
+  std::list<Stream *> SortedStreams;
+};
+
 class StreamRegionAnalyzer {
- public:
+public:
   StreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
                        llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
                        const std::string &_RootPath);
@@ -51,17 +99,28 @@ class StreamRegionAnalyzer {
     return this->InstPlanMap;
   }
 
-  std::list<Stream *> getSortedChosenStreamsByConfigureLoop(
-      const llvm::Loop *ConfigureLoop);
+  const StreamConfigureLoopInfo &
+  getConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
+
+  /**
+   * Get the total number of streams within this loop (including nested loop).
+   */
+  int getTotalStreamsWithinLoop(const llvm::Loop *ConfigureLoop);
+
+  /**
+   * Get the total number of coalesced streams within this loop (including
+   * nested loop).
+   */
+  int getTotalCoalescedStreamsWithinLoop(const llvm::Loop *ConfigureLoop);
 
   Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
 
-  const StreamTransformPlan &getTransformPlanByInst(
-      const llvm::Instruction *Inst);
+  const StreamTransformPlan &
+  getTransformPlanByInst(const llvm::Instruction *Inst);
 
   FunctionalStreamEngine *getFuncSE();
 
- private:
+private:
   uint64_t RegionIdx;
   CachedLoopInfo *CachedLI;
   llvm::Loop *TopLoop;
@@ -98,6 +157,23 @@ class StreamRegionAnalyzer {
       ConfigureLoopStreamMap;
 
   /**
+   * Map from a configure loop to the aggregated structure
+   * StreamConfigureLoopInfo.
+   */
+  std::unordered_map<const llvm::Loop *, StreamConfigureLoopInfo>
+      ConfigureLoopInfoMap;
+
+  /**
+   * Map from a loop to total number of (coalesced) streams within this loop.
+   * Memorization for getTotal(Coalesced)StreamsWithinLoop().
+   * TODO: Consider merging these per configure loop information into one
+   * TODO: structure.
+   */
+  std::unordered_map<const llvm::Loop *, int> ConfigureLoopTotalStreamsMap;
+  std::unordered_map<const llvm::Loop *, int>
+      ConfigureLoopTotalCoalescedStreamsMap;
+
+  /**
    * Map the instruction to the transform plan.
    */
   InstTransformPlanMapT InstPlanMap;
@@ -107,8 +183,9 @@ class StreamRegionAnalyzer {
 
   void initializeStreams();
 
-  Stream *getStreamByInstAndConfigureLoop(
-      const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const;
+  Stream *
+  getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
+                                  const llvm::Loop *ConfigureLoop) const;
   void buildStreamDependenceGraph();
 
   void markQualifiedStreams();
@@ -123,6 +200,18 @@ class StreamRegionAnalyzer {
   void buildAddressModule();
 
   void buildTransformPlan();
+
+  void buildStreamConfigureLoopInfoMap(const llvm::Loop *ConfigureLoop);
+
+  std::list<Stream *>
+  sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
+
+  /**
+   * Finalize the StreamConfigureLoopInfo after the transformation.
+   * Mainly compute the number of peer streams and peer coalesced streams.
+   * Coalesce information is only available after transformation.
+   */
+  void finalizeStreamConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
 
   void dumpTransformPlan();
   void dumpConfigurePlan();

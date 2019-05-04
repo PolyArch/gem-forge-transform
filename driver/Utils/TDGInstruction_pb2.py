@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='TDGInstruction.proto',
   package='LLVM.TDG',
   syntax='proto3',
-  serialized_pb=_b('\n\x14TDGInstruction.proto\x12\x08LLVM.TDG\"3\n\x06Region\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06parent\x18\x02 \x01(\t\x12\x0b\n\x03\x62\x62s\x18\x03 \x03(\x04\"F\n\x11StaticInformation\x12\x0e\n\x06module\x18\x01 \x01(\t\x12!\n\x07regions\x18\x02 \x03(\x0b\x32\x10.LLVM.TDG.Region\"\x9c\x02\n\x18TDGInstructionDependence\x12?\n\x04type\x18\x01 \x01(\x0e\x32\x31.LLVM.TDG.TDGInstructionDependence.DependenceType\x12\x14\n\x0c\x64\x65pendent_id\x18\x02 \x01(\x04\"\xa8\x01\n\x0e\x44\x65pendenceType\x12\x0c\n\x08REGISTER\x10\x00\x12\n\n\x06MEMORY\x10\x01\x12\x0b\n\x07\x43ONTROL\x10\x02\x12\x1b\n\x17POST_DOMINANCE_FRONTIER\x10\x03\x12\x16\n\x12INDUCTION_VARIABLE\x10\x04\x12\x16\n\x12REDUCTION_VARIABLE\x10\x05\x12\n\n\x06STREAM\x10\x06\x12\x16\n\x12UNROLLABLE_CONTROL\x10\x07\"\x82\x0c\n\x0eTDGInstruction\x12\n\n\x02op\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\x04\x12\n\n\x02\x62\x62\x18\x03 \x01(\x04\x12\n\n\x02pc\x18\x04 \x01(\x04\x12\x30\n\x04\x64\x65ps\x18\x08 \x03(\x0b\x32\".LLVM.TDG.TDGInstructionDependence\x12\x34\n\x05store\x18  \x01(\x0b\x32#.LLVM.TDG.TDGInstruction.StoreExtraH\x00\x12\x32\n\x04load\x18! \x01(\x0b\x32\".LLVM.TDG.TDGInstruction.LoadExtraH\x00\x12\x34\n\x05\x61lloc\x18\" \x01(\x0b\x32#.LLVM.TDG.TDGInstruction.AllocExtraH\x00\x12\x36\n\x06\x62ranch\x18# \x01(\x0b\x32$.LLVM.TDG.TDGInstruction.BranchExtraH\x00\x12?\n\x0b\x61\x64\x66\x61_config\x18$ \x01(\x0b\x32(.LLVM.TDG.TDGInstruction.ADFAConfigExtraH\x00\x12\x43\n\rstream_config\x18% \x01(\x0b\x32*.LLVM.TDG.TDGInstruction.StreamConfigExtraH\x00\x12?\n\x0bstream_step\x18& \x01(\x0b\x32(.LLVM.TDG.TDGInstruction.StreamStepExtraH\x00\x12\x41\n\x0cstream_store\x18\' \x01(\x0b\x32).LLVM.TDG.TDGInstruction.StreamStoreExtraH\x00\x12=\n\nstream_end\x18( \x01(\x0b\x32\'.LLVM.TDG.TDGInstruction.StreamEndExtraH\x00\x12G\n\x0fspecpre_trigger\x18) \x01(\x0b\x32,.LLVM.TDG.TDGInstruction.SpecPreTriggerExtraH\x00\x1aU\n\nStoreExtra\x12\x0c\n\x04\x61\x64\x64r\x18\x01 \x01(\x04\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x0c\n\x04\x62\x61se\x18\x03 \x01(\t\x12\x0e\n\x06offset\x18\x04 \x01(\x04\x12\r\n\x05value\x18\x05 \x01(\x0c\x1aW\n\tLoadExtra\x12\x0c\n\x04\x61\x64\x64r\x18\x01 \x01(\x04\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x0c\n\x04\x62\x61se\x18\x03 \x01(\t\x12\x0e\n\x06offset\x18\x04 \x01(\x04\x12\x10\n\x08new_base\x18\x05 \x01(\t\x1a:\n\nAllocExtra\x12\x0c\n\x04\x61\x64\x64r\x18\x01 \x01(\x04\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x10\n\x08new_base\x18\x03 \x01(\t\x1ak\n\x0b\x42ranchExtra\x12\x16\n\x0estatic_next_pc\x18\x01 \x01(\x04\x12\x17\n\x0f\x64ynamic_next_pc\x18\x02 \x01(\x04\x12\x16\n\x0eis_conditional\x18\x03 \x01(\x08\x12\x13\n\x0bis_indirect\x18\x04 \x01(\x08\x1a\x46\n\x0f\x41\x44\x46\x41\x43onfigExtra\x12\x11\n\tdata_flow\x18\x01 \x01(\t\x12\x10\n\x08start_pc\x18\x02 \x01(\x04\x12\x0e\n\x06region\x18\x03 \x01(\t\x1a\xb6\x01\n\x11StreamConfigExtra\x12\x0c\n\x04loop\x18\x01 \x01(\t\x12H\n\x07\x63onfigs\x18\x02 \x03(\x0b\x32\x37.LLVM.TDG.TDGInstruction.StreamConfigExtra.SingleConfig\x1aI\n\x0cSingleConfig\x12\x13\n\x0bstream_name\x18\x01 \x01(\t\x12\x11\n\tstream_id\x18\x02 \x01(\x04\x12\x11\n\tinfo_path\x18\x03 \x01(\t\x1a$\n\x0fStreamStepExtra\x12\x11\n\tstream_id\x18\x01 \x01(\x04\x1a%\n\x10StreamStoreExtra\x12\x11\n\tstream_id\x18\x01 \x01(\x04\x1a\x32\n\x0eStreamEndExtra\x12\x0c\n\x04loop\x18\x01 \x01(\t\x12\x12\n\nstream_ids\x18\x02 \x03(\x04\x1a@\n\x13SpecPreTriggerExtra\x12\x14\n\x0cslice_stream\x18\x01 \x01(\t\x12\x13\n\x0b\x63ritical_pc\x18\x02 \x01(\x04\x42\x07\n\x05\x65xtra\"5\n\x03TDG\x12.\n\x0cinstructions\x18\x01 \x03(\x0b\x32\x18.LLVM.TDG.TDGInstructionb\x06proto3')
+  serialized_pb=_b('\n\x14TDGInstruction.proto\x12\x08LLVM.TDG\"3\n\x06Region\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06parent\x18\x02 \x01(\t\x12\x0b\n\x03\x62\x62s\x18\x03 \x03(\x04\"F\n\x11StaticInformation\x12\x0e\n\x06module\x18\x01 \x01(\t\x12!\n\x07regions\x18\x02 \x03(\x0b\x32\x10.LLVM.TDG.Region\"\x9c\x02\n\x18TDGInstructionDependence\x12?\n\x04type\x18\x01 \x01(\x0e\x32\x31.LLVM.TDG.TDGInstructionDependence.DependenceType\x12\x14\n\x0c\x64\x65pendent_id\x18\x02 \x01(\x04\"\xa8\x01\n\x0e\x44\x65pendenceType\x12\x0c\n\x08REGISTER\x10\x00\x12\n\n\x06MEMORY\x10\x01\x12\x0b\n\x07\x43ONTROL\x10\x02\x12\x1b\n\x17POST_DOMINANCE_FRONTIER\x10\x03\x12\x16\n\x12INDUCTION_VARIABLE\x10\x04\x12\x16\n\x12REDUCTION_VARIABLE\x10\x05\x12\n\n\x06STREAM\x10\x06\x12\x16\n\x12UNROLLABLE_CONTROL\x10\x07\"\xff\n\n\x0eTDGInstruction\x12\n\n\x02op\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\x04\x12\n\n\x02\x62\x62\x18\x03 \x01(\x04\x12\n\n\x02pc\x18\x04 \x01(\x04\x12\x30\n\x04\x64\x65ps\x18\x08 \x03(\x0b\x32\".LLVM.TDG.TDGInstructionDependence\x12\x34\n\x05store\x18  \x01(\x0b\x32#.LLVM.TDG.TDGInstruction.StoreExtraH\x00\x12\x32\n\x04load\x18! \x01(\x0b\x32\".LLVM.TDG.TDGInstruction.LoadExtraH\x00\x12\x34\n\x05\x61lloc\x18\" \x01(\x0b\x32#.LLVM.TDG.TDGInstruction.AllocExtraH\x00\x12\x36\n\x06\x62ranch\x18# \x01(\x0b\x32$.LLVM.TDG.TDGInstruction.BranchExtraH\x00\x12?\n\x0b\x61\x64\x66\x61_config\x18$ \x01(\x0b\x32(.LLVM.TDG.TDGInstruction.ADFAConfigExtraH\x00\x12\x43\n\rstream_config\x18% \x01(\x0b\x32*.LLVM.TDG.TDGInstruction.StreamConfigExtraH\x00\x12?\n\x0bstream_step\x18& \x01(\x0b\x32(.LLVM.TDG.TDGInstruction.StreamStepExtraH\x00\x12\x41\n\x0cstream_store\x18\' \x01(\x0b\x32).LLVM.TDG.TDGInstruction.StreamStoreExtraH\x00\x12=\n\nstream_end\x18( \x01(\x0b\x32\'.LLVM.TDG.TDGInstruction.StreamEndExtraH\x00\x12G\n\x0fspecpre_trigger\x18) \x01(\x0b\x32,.LLVM.TDG.TDGInstruction.SpecPreTriggerExtraH\x00\x1aU\n\nStoreExtra\x12\x0c\n\x04\x61\x64\x64r\x18\x01 \x01(\x04\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x0c\n\x04\x62\x61se\x18\x03 \x01(\t\x12\x0e\n\x06offset\x18\x04 \x01(\x04\x12\r\n\x05value\x18\x05 \x01(\x0c\x1aW\n\tLoadExtra\x12\x0c\n\x04\x61\x64\x64r\x18\x01 \x01(\x04\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x0c\n\x04\x62\x61se\x18\x03 \x01(\t\x12\x0e\n\x06offset\x18\x04 \x01(\x04\x12\x10\n\x08new_base\x18\x05 \x01(\t\x1a:\n\nAllocExtra\x12\x0c\n\x04\x61\x64\x64r\x18\x01 \x01(\x04\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x10\n\x08new_base\x18\x03 \x01(\t\x1ak\n\x0b\x42ranchExtra\x12\x16\n\x0estatic_next_pc\x18\x01 \x01(\x04\x12\x17\n\x0f\x64ynamic_next_pc\x18\x02 \x01(\x04\x12\x16\n\x0eis_conditional\x18\x03 \x01(\x08\x12\x13\n\x0bis_indirect\x18\x04 \x01(\x08\x1a\x46\n\x0f\x41\x44\x46\x41\x43onfigExtra\x12\x11\n\tdata_flow\x18\x01 \x01(\t\x12\x10\n\x08start_pc\x18\x02 \x01(\x04\x12\x0e\n\x06region\x18\x03 \x01(\t\x1a\x34\n\x11StreamConfigExtra\x12\x0c\n\x04loop\x18\x01 \x01(\t\x12\x11\n\tinfo_path\x18\x02 \x01(\t\x1a$\n\x0fStreamStepExtra\x12\x11\n\tstream_id\x18\x01 \x01(\x04\x1a%\n\x10StreamStoreExtra\x12\x11\n\tstream_id\x18\x01 \x01(\x04\x1a\x32\n\x0eStreamEndExtra\x12\x0c\n\x04loop\x18\x01 \x01(\t\x12\x12\n\nstream_ids\x18\x02 \x03(\x04\x1a@\n\x13SpecPreTriggerExtra\x12\x14\n\x0cslice_stream\x18\x01 \x01(\t\x12\x13\n\x0b\x63ritical_pc\x18\x02 \x01(\x04\x42\x07\n\x05\x65xtra\"5\n\x03TDG\x12.\n\x0cinstructions\x18\x01 \x03(\x0b\x32\x18.LLVM.TDG.TDGInstructionb\x06proto3')
 )
 
 
@@ -448,30 +448,23 @@ _TDGINSTRUCTION_ADFACONFIGEXTRA = _descriptor.Descriptor(
   serialized_end=1596,
 )
 
-_TDGINSTRUCTION_STREAMCONFIGEXTRA_SINGLECONFIG = _descriptor.Descriptor(
-  name='SingleConfig',
-  full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.SingleConfig',
+_TDGINSTRUCTION_STREAMCONFIGEXTRA = _descriptor.Descriptor(
+  name='StreamConfigExtra',
+  full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   fields=[
     _descriptor.FieldDescriptor(
-      name='stream_name', full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.SingleConfig.stream_name', index=0,
+      name='loop', full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.loop', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='stream_id', full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.SingleConfig.stream_id', index=1,
-      number=2, type=4, cpp_type=4, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None, file=DESCRIPTOR),
-    _descriptor.FieldDescriptor(
-      name='info_path', full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.SingleConfig.info_path', index=2,
-      number=3, type=9, cpp_type=9, label=1,
+      name='info_path', full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.info_path', index=1,
+      number=2, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -488,45 +481,8 @@ _TDGINSTRUCTION_STREAMCONFIGEXTRA_SINGLECONFIG = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1708,
-  serialized_end=1781,
-)
-
-_TDGINSTRUCTION_STREAMCONFIGEXTRA = _descriptor.Descriptor(
-  name='StreamConfigExtra',
-  full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='loop', full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.loop', index=0,
-      number=1, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=_b("").decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None, file=DESCRIPTOR),
-    _descriptor.FieldDescriptor(
-      name='configs', full_name='LLVM.TDG.TDGInstruction.StreamConfigExtra.configs', index=1,
-      number=2, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None, file=DESCRIPTOR),
-  ],
-  extensions=[
-  ],
-  nested_types=[_TDGINSTRUCTION_STREAMCONFIGEXTRA_SINGLECONFIG, ],
-  enum_types=[
-  ],
-  options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1599,
-  serialized_end=1781,
+  serialized_start=1598,
+  serialized_end=1650,
 )
 
 _TDGINSTRUCTION_STREAMSTEPEXTRA = _descriptor.Descriptor(
@@ -555,8 +511,8 @@ _TDGINSTRUCTION_STREAMSTEPEXTRA = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1783,
-  serialized_end=1819,
+  serialized_start=1652,
+  serialized_end=1688,
 )
 
 _TDGINSTRUCTION_STREAMSTOREEXTRA = _descriptor.Descriptor(
@@ -585,8 +541,8 @@ _TDGINSTRUCTION_STREAMSTOREEXTRA = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1821,
-  serialized_end=1858,
+  serialized_start=1690,
+  serialized_end=1727,
 )
 
 _TDGINSTRUCTION_STREAMENDEXTRA = _descriptor.Descriptor(
@@ -622,8 +578,8 @@ _TDGINSTRUCTION_STREAMENDEXTRA = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1860,
-  serialized_end=1910,
+  serialized_start=1729,
+  serialized_end=1779,
 )
 
 _TDGINSTRUCTION_SPECPRETRIGGEREXTRA = _descriptor.Descriptor(
@@ -659,8 +615,8 @@ _TDGINSTRUCTION_SPECPRETRIGGEREXTRA = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1912,
-  serialized_end=1976,
+  serialized_start=1781,
+  serialized_end=1845,
 )
 
 _TDGINSTRUCTION = _descriptor.Descriptor(
@@ -791,7 +747,7 @@ _TDGINSTRUCTION = _descriptor.Descriptor(
       index=0, containing_type=None, fields=[]),
   ],
   serialized_start=447,
-  serialized_end=1985,
+  serialized_end=1854,
 )
 
 
@@ -821,8 +777,8 @@ _TDG = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1987,
-  serialized_end=2040,
+  serialized_start=1856,
+  serialized_end=1909,
 )
 
 _STATICINFORMATION.fields_by_name['regions'].message_type = _REGION
@@ -833,8 +789,6 @@ _TDGINSTRUCTION_LOADEXTRA.containing_type = _TDGINSTRUCTION
 _TDGINSTRUCTION_ALLOCEXTRA.containing_type = _TDGINSTRUCTION
 _TDGINSTRUCTION_BRANCHEXTRA.containing_type = _TDGINSTRUCTION
 _TDGINSTRUCTION_ADFACONFIGEXTRA.containing_type = _TDGINSTRUCTION
-_TDGINSTRUCTION_STREAMCONFIGEXTRA_SINGLECONFIG.containing_type = _TDGINSTRUCTION_STREAMCONFIGEXTRA
-_TDGINSTRUCTION_STREAMCONFIGEXTRA.fields_by_name['configs'].message_type = _TDGINSTRUCTION_STREAMCONFIGEXTRA_SINGLECONFIG
 _TDGINSTRUCTION_STREAMCONFIGEXTRA.containing_type = _TDGINSTRUCTION
 _TDGINSTRUCTION_STREAMSTEPEXTRA.containing_type = _TDGINSTRUCTION
 _TDGINSTRUCTION_STREAMSTOREEXTRA.containing_type = _TDGINSTRUCTION
@@ -948,13 +902,6 @@ TDGInstruction = _reflection.GeneratedProtocolMessageType('TDGInstruction', (_me
   ,
 
   StreamConfigExtra = _reflection.GeneratedProtocolMessageType('StreamConfigExtra', (_message.Message,), dict(
-
-    SingleConfig = _reflection.GeneratedProtocolMessageType('SingleConfig', (_message.Message,), dict(
-      DESCRIPTOR = _TDGINSTRUCTION_STREAMCONFIGEXTRA_SINGLECONFIG,
-      __module__ = 'TDGInstruction_pb2'
-      # @@protoc_insertion_point(class_scope:LLVM.TDG.TDGInstruction.StreamConfigExtra.SingleConfig)
-      ))
-    ,
     DESCRIPTOR = _TDGINSTRUCTION_STREAMCONFIGEXTRA,
     __module__ = 'TDGInstruction_pb2'
     # @@protoc_insertion_point(class_scope:LLVM.TDG.TDGInstruction.StreamConfigExtra)
@@ -999,7 +946,6 @@ _sym_db.RegisterMessage(TDGInstruction.AllocExtra)
 _sym_db.RegisterMessage(TDGInstruction.BranchExtra)
 _sym_db.RegisterMessage(TDGInstruction.ADFAConfigExtra)
 _sym_db.RegisterMessage(TDGInstruction.StreamConfigExtra)
-_sym_db.RegisterMessage(TDGInstruction.StreamConfigExtra.SingleConfig)
 _sym_db.RegisterMessage(TDGInstruction.StreamStepExtra)
 _sym_db.RegisterMessage(TDGInstruction.StreamStoreExtra)
 _sym_db.RegisterMessage(TDGInstruction.StreamEndExtra)

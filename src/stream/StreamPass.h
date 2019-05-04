@@ -63,8 +63,8 @@ private:
 
 class StreamConfigInst : public DynamicInstruction {
 public:
-  StreamConfigInst(const llvm::Loop *_Loop, std::list<Stream *> _Streams)
-      : DynamicInstruction(), Loop(_Loop), Streams(std::move(_Streams)) {}
+  StreamConfigInst(const StreamConfigureLoopInfo &_Info)
+      : DynamicInstruction(), Info(_Info) {}
   std::string getOpName() const override { return "stream-config"; }
 
 protected:
@@ -73,24 +73,18 @@ protected:
     auto ConfigExtra = ProtobufEntry->mutable_stream_config();
     assert(ProtobufEntry->has_stream_config() &&
            "The protobuf entry should have stream config extra struct.");
-    ConfigExtra->set_loop(LoopUtils::getLoopId(this->Loop));
-    for (auto S : this->Streams) {
-      auto Config = ConfigExtra->add_configs();
-      Config->set_stream_name(S->formatName());
-      Config->set_stream_id(S->getStreamId());
-      Config->set_info_path(S->getInfoRelativePath());
-    }
+    ConfigExtra->set_loop(LoopUtils::getLoopId(this->Info.getLoop()));
+    ConfigExtra->set_info_path(this->Info.getRelativePath());
   }
 
 private:
-  const llvm::Loop *Loop;
-  std::list<Stream *> Streams;
+  const StreamConfigureLoopInfo &Info;
 };
 
 class StreamEndInst : public DynamicInstruction {
 public:
-  StreamEndInst(const llvm::Loop *_Loop, std::list<Stream *> _Streams)
-      : DynamicInstruction(), Loop(_Loop), Streams(std::move(_Streams)) {}
+  StreamEndInst(const StreamConfigureLoopInfo &_Info)
+      : DynamicInstruction(), Info(_Info) {}
   std::string getOpName() const override { return "stream-end"; }
 
 protected:
@@ -99,15 +93,14 @@ protected:
     auto EndExtra = ProtobufEntry->mutable_stream_end();
     assert(ProtobufEntry->has_stream_end() &&
            "The protobuf entry should have stream end extra struct.");
-    EndExtra->set_loop(LoopUtils::getLoopId(this->Loop));
-    for (auto S : this->Streams) {
+    EndExtra->set_loop(LoopUtils::getLoopId(this->Info.getLoop()));
+    for (auto S : this->Info.getSortedStreams()) {
       EndExtra->add_stream_ids(S->getStreamId());
     }
   }
 
 private:
-  const llvm::Loop *Loop;
-  std::list<Stream *> Streams;
+  const StreamConfigureLoopInfo &Info;
 };
 
 class StreamPass : public ReplayTrace {
