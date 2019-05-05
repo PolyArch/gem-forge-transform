@@ -81,12 +81,15 @@ void DynamicStreamCoalescer::finalize() {
        * Only coalesce when they are the same type of streams with high
        * coalesce percentage.
        */
-      if (CoalescedPercentage > Threshold &&
-          (RowStream->SStream->Inst->getOpcode() ==
-           ColStream->SStream->Inst->getOpcode())) {
-        // llvm::errs() << "Coalescing " << Row.first->getStream()->formatName()
-        //              << ' ' << Col.first->getStream()->formatName() << '\n';
-        this->coalesce(Row.second, Col.second);
+      if (CoalescedPercentage > Threshold) {
+        if ((RowStream->SStream->Inst->getOpcode() ==
+             ColStream->SStream->Inst->getOpcode())) {
+          // llvm::errs() << "Coalescing " <<
+          // Row.first->getStream()->formatName()
+          //              << ' ' << Col.first->getStream()->formatName() <<
+          //              '\n';
+          this->coalesce(Row.second, Col.second);
+        }
       }
     }
   }

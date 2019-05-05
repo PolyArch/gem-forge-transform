@@ -87,6 +87,10 @@ bool MemStream::isCandidate() const {
   if (this->AddrDG.hasCallInstInComputeInsts()) {
     return false;
   }
+  // Also ignore myself if I have no accesses.
+  if (this->TotalAccesses == 0) {
+    return false;
+  }
   if (this->BaseStepRootStreams.size() > 1) {
     // More than 1 step streams.
     return false;
