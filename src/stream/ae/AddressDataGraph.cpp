@@ -20,7 +20,9 @@ AddressDataGraph::AddressDataGraph(
   for (const auto &ComputeInst : this->ComputeInsts) {
     if (llvm::isa<llvm::PHINode>(ComputeInst)) {
       this->HasPHINodeInComputeInsts = true;
-      break;
+    }
+    if (Utils::isCallOrInvokeInst(ComputeInst)) {
+      this->HasCallInstInComputeInsts = true;
     }
   }
 }
@@ -291,13 +293,11 @@ void AddressDataGraph::translate(
   ValueMap.emplace(Inst, NewInst);
 }
 
-
 /**
  * Two address datagraphs can be coalesce iff.
- * 1. 
+ * 1.
  */
-bool AddressDataGraph::isAbleToCoalesceWith(const AddressDataGraph& Other) const {
+bool AddressDataGraph::isAbleToCoalesceWith(
+    const AddressDataGraph &Other) const {
   return false;
-
-
 }
