@@ -701,6 +701,8 @@ class Benchmark(object):
         gem5_args.append(
             '--llvm-trace-file={trace_file}'.format(trace_file=tdg)
         )
+        if self.options.perf_command:
+            gem5_args = ['perf', 'record'] + gem5_args
         Util.call_helper(gem5_args)
 
     """
