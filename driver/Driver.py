@@ -12,6 +12,7 @@ from BenchmarkDrivers import GemForgeMicroSuite
 from BenchmarkDrivers import GenerateTestInputs
 
 import Util
+import JobScheduler
 import StreamStatistics
 import Constants as C
 
@@ -180,7 +181,7 @@ class Driver:
         return benchmarks
 
     def _schedule_and_run(self):
-        job_scheduler = Util.JobScheduler(
+        job_scheduler = JobScheduler.JobScheduler(
             self.get_unique_id(), self.options.cores, 1)
         for benchmark in self.benchmarks:
             if self.options.build:
