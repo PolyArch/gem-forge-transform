@@ -84,6 +84,9 @@ bool MemStream::isCandidate() const {
   if (this->AddrDG.hasPHINodeInComputeInsts()) {
     return false;
   }
+  if (this->AddrDG.hasCallInstInComputeInsts()) {
+    return false;
+  }
   if (this->BaseStepRootStreams.size() > 1) {
     // More than 1 step streams.
     return false;

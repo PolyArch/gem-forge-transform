@@ -36,6 +36,9 @@ public:
   bool hasPHINodeInComputeInsts() const {
     return this->HasPHINodeInComputeInsts;
   }
+  bool hasCallInstInComputeInsts() const {
+    return this->HasCallInstInComputeInsts;
+  }
 
   const std::list<const llvm::Value *> &getInputs() const {
     return this->Inputs;
@@ -61,6 +64,7 @@ private:
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
   bool HasCircle;
   bool HasPHINodeInComputeInsts;
+  bool HasCallInstInComputeInsts;
 
   void
   constructDataGraph(std::function<bool(const llvm::PHINode *)> IsInductionVar);
