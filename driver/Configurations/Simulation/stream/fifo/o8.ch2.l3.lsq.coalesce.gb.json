@@ -32,22 +32,22 @@
     ],
     "design_space": [
         {
-            "init_size": 3
-        },
-        {
-            "init_size": 4
-        },
-        {
-            "init_size": 5
-        },
-        {
-            "init_size": 6
+            "init_size": 10
         },
         {
             "init_size": 8
         },
         {
-            "init_size": 10
+            "init_size": 6
+        },
+        {
+            "init_size": 5
+        },
+        {
+            "init_size": 4
+        },
+        {
+            "init_size": 3
         }
     ]
 }
