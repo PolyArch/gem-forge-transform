@@ -13,7 +13,7 @@ AddressDataGraph::AddressDataGraph(
     const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
     std::function<bool(const llvm::PHINode *)> IsInductionVar)
     : Loop(_Loop), AddrValue(_AddrValue), HasCircle(false),
-      HasPHINodeInComputeInsts(false) {
+      HasPHINodeInComputeInsts(false), HasCallInstInComputeInsts(false) {
   this->constructDataGraph(IsInductionVar);
   this->HasCircle = this->detectCircle();
 
