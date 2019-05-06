@@ -45,13 +45,15 @@ class JobScheduler:
     the parameter.
     """
     STATE_INIT = 1
+    STATE_READY = 2
     STATE_STARTED = 3
     STATE_FINISHED = 4
     STATE_FAILED = 5
     STATE_TIMEOUTED = STATE_FAILED + 1
 
     class Job:
-        def __init__(self, name, job, args, timeout=None):
+        def __init__(self, job_id, name, job, args, timeout=None):
+            self.job_id = job_id
             self.name = name
             self.job = job
             self.args = args
@@ -69,6 +71,8 @@ class JobScheduler:
         self.jobs = dict()
         self.job_children = dict()
         self.job_deps = dict()
+        self.running_jobs = 0
+        self.ready_jobs = list()
 
         multiprocessing.log_to_stderr()
 
@@ -82,7 +86,7 @@ class JobScheduler:
             assert(dep in self.jobs)
             self.job_children[dep].append(new_job_id)
         self.job_children[new_job_id] = list()
-        self.jobs[new_job_id] = self.Job(name, job, args, timeout)
+        self.jobs[new_job_id] = self.Job(new_job_id, name, job, args, timeout)
         return new_job_id
 
     # Caller should hold the locker.
@@ -97,14 +101,8 @@ class JobScheduler:
                 ready = False
                 break
         if ready:
-            # Do we actually need to use nested lambda to capture job_id?
-            job.status = JobScheduler.STATE_STARTED
-            print('{job} started'.format(job=job_id))
-            job.res = self.pool.apply_async(
-                func=LogExceptions(job.job, job.timeout),
-                args=job.args,
-                callback=(lambda i: lambda _: self.call_back(i))(job_id)
-            )
+            job.status = JobScheduler.STATE_READY
+            self.ready_jobs.append(job)
 
     def call_back(self, job_id):
         """
@@ -123,6 +121,7 @@ class JobScheduler:
                    JobScheduler.STATE_FAILED)
             self.kick(child)
         self.dump(self.log_f)
+        self.running_jobs -= 1
         self.lock.release()
 
     def failed(self, job_id):
@@ -163,7 +162,23 @@ class JobScheduler:
                 stack.append(child_id)
         self.dump(self.log_f)
         self.dump_failed(self.log_failed_f)
+        self.running_jobs -= 1
         self.lock.release()
+
+    def start_ready_jobs(self):
+        # Caller should hold the lock.
+        while self.running_jobs < self.cores and self.ready_jobs:
+            job = self.ready_jobs[0]
+            self.ready_jobs.pop(0)
+            self.running_jobs += 1
+            # Do we actually need to use nested lambda to capture job_id?
+            job.status = JobScheduler.STATE_STARTED
+            print('{job} started'.format(job=job.job_id))
+            job.res = self.pool.apply_async(
+                func=LogExceptions(job.job, job.timeout),
+                args=job.args,
+                callback=(lambda i: lambda _: self.call_back(i))(job.job_id)
+            )
 
     def str_status(self, status):
         if status == JobScheduler.STATE_INIT:
@@ -234,6 +249,7 @@ class JobScheduler:
         self.lock.acquire()
         for job_id in self.job_deps:
             self.kick(job_id)
+        self.start_ready_jobs()
         self.lock.release()
         # Poll every n seconds.
         while True:
@@ -255,6 +271,7 @@ class JobScheduler:
                         self.failed(job_id)
 
             self.lock.acquire()
+            self.start_ready_jobs()
             for job_id in self.jobs:
                 job = self.jobs[job_id]
                 if job.status < JobScheduler.STATE_FINISHED:
@@ -383,6 +400,20 @@ class TestJobScheduler(unittest.TestCase):
             self.assert_job_status(scheduler, JobScheduler.STATE_FAILED, i)
         for i in xrange(9, 17):
             self.assert_job_status(scheduler, JobScheduler.STATE_FINISHED, i)
+
+    def test_massive_jobs(self):
+        scheduler = JobScheduler('test', 4, 1)
+        n_jobs = 1000
+        # The first 4 jobs are 30 second timeout
+        for i in xrange(4):
+            scheduler.add_job(
+                'test_job_timeout', test_job_timeout, (i, 30), list())
+        # Push in the rest jobs.
+        for i in xrange(5, n_jobs):
+            scheduler.add_job(
+                'test_job', test_job, (i,), list())
+        scheduler.run()
+        self.assert_all_jobs_status(scheduler, JobScheduler.STATE_FINISHED)
 
 
 if __name__ == '__main__':
