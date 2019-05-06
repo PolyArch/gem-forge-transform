@@ -5,6 +5,7 @@ import unittest
 import tempfile
 import time
 import traceback
+import threading
 import sys
 
 
@@ -16,19 +17,21 @@ def error(msg, *args):
 
 
 class LogExceptions(object):
-    def __init__(self, callable):
+    def __init__(self, callable, timeout=None):
         self.__callable = callable
+        self.__timeout = timeout
 
     def __call__(self, *args, **kwargs):
+        pool = multiprocessing.dummy.Pool(1)
+        result = pool.apply_async(self.__callable, args=args, kwds=kwargs)
         try:
-            result = self.__callable(*args, **kwargs)
-
+            result.get(self.__timeout)
+        except multiprocessing.TimeoutError as e:
+            raise e
         except Exception as e:
             error(traceback.format_exc())
             # Reraise the original exception so the Pool worker can clean up
             raise ValueError('Job Failed.')
-
-        return result
 
 
 class JobScheduler:
@@ -42,16 +45,18 @@ class JobScheduler:
     the parameter.
     """
     STATE_INIT = 1
-    STATE_STARTED = 2
-    STATE_FINISHED = 3
-    STATE_FAILED = 4
+    STATE_STARTED = 3
+    STATE_FINISHED = 4
+    STATE_FAILED = 5
+    STATE_TIMEOUTED = STATE_FAILED + 1
 
     class Job:
-        def __init__(self, name, job, args):
+        def __init__(self, name, job, args, timeout=None):
             self.name = name
             self.job = job
             self.args = args
             self.status = JobScheduler.STATE_INIT
+            self.timeout = timeout
 
     def __init__(self, name, cores, poll_seconds):
         self.state = JobScheduler.STATE_INIT
@@ -68,7 +73,7 @@ class JobScheduler:
         multiprocessing.log_to_stderr()
 
     # Add a job and set the dependence graph.
-    def add_job(self, name, job, args, deps):
+    def add_job(self, name, job, args, deps, timeout=None):
         assert(self.state == JobScheduler.STATE_INIT)
         new_job_id = self.current_job_id
         self.current_job_id += 1
@@ -77,7 +82,7 @@ class JobScheduler:
             assert(dep in self.jobs)
             self.job_children[dep].append(new_job_id)
         self.job_children[new_job_id] = list()
-        self.jobs[new_job_id] = self.Job(name, job, args)
+        self.jobs[new_job_id] = self.Job(name, job, args, timeout)
         return new_job_id
 
     # Caller should hold the locker.
@@ -96,7 +101,7 @@ class JobScheduler:
             job.status = JobScheduler.STATE_STARTED
             print('{job} started'.format(job=job_id))
             job.res = self.pool.apply_async(
-                func=LogExceptions(job.job),
+                func=LogExceptions(job.job, job.timeout),
                 args=job.args,
                 callback=(lambda i: lambda _: self.call_back(i))(job_id)
             )
@@ -128,12 +133,30 @@ class JobScheduler:
         self.lock.acquire()
         assert(job_id in self.jobs)
         job = self.jobs[job_id]
+        assert(job.res.ready() and (not job.res.successful()))
         assert(job.status == JobScheduler.STATE_STARTED)
+
+        # Try to get the exception.
+        new_status = JobScheduler.STATE_FAILED
+        try:
+            job.res.get(timeout=1)
+        except multiprocessing.TimeoutError:
+            # This is a timeout error.
+            new_status = JobScheduler.STATE_TIMEOUTED
+        except Exception:
+            # Normal failed job.
+            new_status = JobScheduler.STATE_FAILED
+        else:
+            print("Should reraise an exception for unsuccessful job.")
+            assert(False)
+
+        job.status = new_status
         stack = list()
-        stack.append(job_id)
+        for child_id in self.job_children[job_id]:
+            stack.append(job_id)
         while stack:
             job_id = stack.pop()
-            print('{job} failed'.format(job=job_id))
+            print('{job} unsucceeded'.format(job=job_id))
             job = self.jobs[job_id]
             job.status = JobScheduler.STATE_FAILED
             for child_id in self.job_children[job_id]:
@@ -151,6 +174,8 @@ class JobScheduler:
             return 'STARTED'
         if status == JobScheduler.STATE_FINISHED:
             return 'FINISHED'
+        if status == JobScheduler.STATE_TIMEOUTED:
+            return 'TIMEOUTED'
         return 'UNKNOWN'
 
     def dump(self, f):
@@ -183,7 +208,8 @@ class JobScheduler:
         while stack:
             job_id, level = stack.pop()
             job = self.jobs[job_id]
-            if self.jobs[job_id].status != JobScheduler.STATE_FINISHED:
+            status = self.jobs[job_id].status
+            if status > JobScheduler.STATE_STARTED and status != JobScheduler.STATE_FINISHED:
                 f.write('{tab}{job_id} {job_name} {status}\n'.format(
                     tab='  '*level,
                     job_id=job_id,
@@ -226,14 +252,12 @@ class JobScheduler:
                 job = self.jobs[job_id]
                 if job.status == JobScheduler.STATE_STARTED:
                     if job.res.ready() and (not job.res.successful()):
-                        # The job failed.
                         self.failed(job_id)
 
             self.lock.acquire()
             for job_id in self.jobs:
                 job = self.jobs[job_id]
-                if (job.status != JobScheduler.STATE_FINISHED and job.status != JobScheduler.STATE_FAILED):
-                    # print('{job} is not finished'.format(job=job_id))
+                if job.status < JobScheduler.STATE_FINISHED:
                     finished = False
                     break
             self.lock.release()
@@ -261,7 +285,14 @@ def test_job_fail(id):
 
 def test_job_fail_bash(id):
     print('job {job} failed in bash'.format(job=id))
-    call_helper(['false'])
+    import subprocess
+    print('job {job} failed in bash'.format(job=id))
+    subprocess.check_call(['false'])
+
+
+def test_job_timeout(id, seconds):
+    print('job {job} sleeps {s} seconds.'.format(job=id, s=seconds))
+    time.sleep(5)
 
 
 class TestJobScheduler(unittest.TestCase):
@@ -282,7 +313,7 @@ class TestJobScheduler(unittest.TestCase):
 
     # Simple test case to test linear dependence.
     def test_linear(self):
-        scheduler = JobScheduler(4, 1)
+        scheduler = JobScheduler('test', 4, 1)
         deps = []
         for i in xrange(8):
             new_job_id = scheduler.add_job('test_job', test_job, (i,), deps)
@@ -294,7 +325,7 @@ class TestJobScheduler(unittest.TestCase):
 
     # Simple linear dependence when everything failed.
     def test_linear_fail(self):
-        scheduler = JobScheduler(4, 1)
+        scheduler = JobScheduler('test', 4, 1)
         deps = []
         for i in xrange(8):
             new_job_id = scheduler.add_job(
@@ -307,7 +338,7 @@ class TestJobScheduler(unittest.TestCase):
 
     # Simple linear dependence when the middle one failed in bash.
     def test_linear_fail_bash(self):
-        scheduler = JobScheduler(4, 1)
+        scheduler = JobScheduler('test', 4, 1)
         deps = []
         job_ids = list()
         failed_id = 0
@@ -330,6 +361,28 @@ class TestJobScheduler(unittest.TestCase):
                 self.assert_job_status(
                     scheduler, JobScheduler.STATE_FINISHED, i)
         self.assertEqual(scheduler.state, JobScheduler.STATE_FINISHED)
+
+    def test_timeout_basic(self):
+        scheduler = JobScheduler('test', 4, 1)
+        scheduler.add_job(
+            'test_job_timeout', test_job_timeout, (0, 5), list(), timeout=1)
+        scheduler.run()
+        self.assert_all_jobs_status(scheduler, JobScheduler.STATE_TIMEOUTED)
+
+    def test_thread_not_quit(self):
+        scheduler = JobScheduler('test', 4, 1)
+        for i in xrange(8):
+            scheduler.add_job(
+                'test_job_fail_bash', test_job_fail_bash, (i,), list())
+        for i in xrange(8, 16):
+            scheduler.add_job(
+                'test_job', test_job, (i,), list())
+        scheduler.run()
+        # Job id starts from 1.
+        for i in xrange(1, 9):
+            self.assert_job_status(scheduler, JobScheduler.STATE_FAILED, i)
+        for i in xrange(9, 17):
+            self.assert_job_status(scheduler, JobScheduler.STATE_FINISHED, i)
 
 
 if __name__ == '__main__':

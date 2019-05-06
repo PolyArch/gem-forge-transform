@@ -223,8 +223,11 @@ class Driver:
         deps = list()
         if name in self.profile_jobs:
             deps.append(self.profile_jobs[name])
-        self.simpoint_jobs[name] = job_scheduler.add_job(name + '.simpoint', simpoint,
-                                                         (benchmark, ), deps)
+        self.simpoint_jobs[name] = job_scheduler.add_job(
+            name=name + '.simpoint', 
+            job=simpoint,
+            args=(benchmark, ), 
+            deps=deps)
 
     def schedule_trace(self, job_scheduler, benchmark):
         name = benchmark.get_name()
@@ -266,19 +269,19 @@ class Driver:
                 # Schedule the job.
                 self.transform_jobs[name][transform_id][trace_id] = (
                     job_scheduler.add_job(
-                        '{name}.{transform_id}.transform'.format(
+                        name='{name}.{transform_id}.transform'.format(
                             name=name,
                             transform_id=transform_id
                         ),
-                        transform,
-                        (
+                        job=transform,
+                        args=(
                             benchmark,
                             transform_config,
                             trace,
                             tdgs[i],
                             transform_config.get_debugs(),
                         ),
-                        deps
+                        deps=deps
                     )
                 )
 
@@ -307,19 +310,21 @@ class Driver:
             )
             for simulation_config in simulation_configs:
                 job_scheduler.add_job(
-                    '{name}.{transform_id}.{simulation_id}'.format(
+                    name='{name}.{transform_id}.{simulation_id}'.format(
                         name=name,
                         transform_id=transform_id,
                         simulation_id=simulation_config.get_simulation_id()
                     ),
-                    simulate,
-                    (
+                    job=simulate,
+                    args=(
                         benchmark,
                         tdgs[i],
                         transform_config,
                         simulation_config,
                     ),
-                    deps
+                    deps=deps,
+                    # Use a 2 hour timeout for simulation to avoid deadlock.
+                    timeout=2*60*60
                 )
 
     def load_simulation_results(self):

@@ -1,16 +1,14 @@
 import Constants as C
 import os
 import json
+import re
+import copy
 
 
 class Gem5ReplayConfig(object):
 
-    def __init__(self, fn):
-        self.fn = fn
-        with open(fn, 'r') as f:
-            self.json = json.load(f)
-            assert('options' in self.json)
-            assert('id' in self.json)
+    def __init__(self, json):
+        self.json = json
 
     def get_simulation_id(self):
         return self.json['id']
@@ -76,22 +74,52 @@ class Gem5ReplayConfigureManager(object):
     def __init__(self, simulation_fns, transform_manager):
         self.transform_manager = transform_manager
         self.configs = dict()
+        self.field_re = re.compile('\{[^\{\}]+\}')
 
         # Allocate a list for every transform configuration.
         for t in self.transform_manager.get_transforms():
             self.configs[t] = list()
 
         for fn in simulation_fns:
-            config = Gem5ReplayConfig(fn)
-            support_transforms = config.get_support_transform_ids()
-            for t in support_transforms:
-                if t in self.configs:
-                    self.configs[t].append(config)
-            if not support_transforms:
-                # For empty support transform list, we assume it can support all
-                # transformation.
-                for t in self.configs:
-                    self.configs[t].append(config)
+            with open(fn, 'r') as f:
+                json_obj = json.load(f)
+                assert('options' in json_obj)
+                assert('id' in json_obj)
+            if 'design_space' in json_obj:
+                configs = self.generate_config_for_design_space(json_obj)
+            else:
+                configs = [Gem5ReplayConfig(json_obj)]
+            for config in configs:
+                support_transforms = config.get_support_transform_ids()
+                for t in support_transforms:
+                    if t in self.configs:
+                        self.configs[t].append(config)
+                if not support_transforms:
+                    # For empty support transform list, we assume it can support all
+                    # transformation.
+                    for t in self.configs:
+                        self.configs[t].append(config)
+
+    def replace_field(self, match, design):
+        expression = match.group(0)[1:-1]
+        evaluated = eval(expression, dict(), design)
+        return str(evaluated)
+
+    def generate_config_for_design_space(self, json):
+        design_space = json['design_space']
+        configs = list()
+        for design in design_space:
+            expanded_json = copy.deepcopy(json)
+            expanded_json['id'] = self.field_re.sub(
+                lambda match: self.replace_field(match, design),
+                expanded_json['id'])
+            for option_i in range(len(expanded_json['options'])):
+                expanded_json['options'][option_i] = self.field_re.sub(
+                    lambda match: self.replace_field(match, design),
+                    expanded_json['options'][option_i]
+                )
+            configs.append(Gem5ReplayConfig(expanded_json))
+        return configs
 
     def get_configs(self, transform_id):
         return self.configs[transform_id]
