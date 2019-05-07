@@ -25,13 +25,16 @@ class LogExceptions(object):
         pool = multiprocessing.dummy.Pool(1)
         result = pool.apply_async(self.__callable, args=args, kwds=kwargs)
         try:
-            result.get(self.__timeout)
+            out = result.get(self.__timeout)
         except multiprocessing.TimeoutError as e:
+            pool.terminate()
             raise e
         except Exception as e:
             error(traceback.format_exc())
             # Reraise the original exception so the Pool worker can clean up
             raise ValueError('Job Failed.')
+        else:
+            return out
 
 
 class JobScheduler:
