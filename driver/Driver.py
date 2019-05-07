@@ -8,6 +8,7 @@ from BenchmarkDrivers import Graph500
 from BenchmarkDrivers import CortexSuite
 from BenchmarkDrivers import SDVBS
 from BenchmarkDrivers import VerticalSuite
+from BenchmarkDrivers import MediaBench
 from BenchmarkDrivers import GemForgeMicroSuite
 from BenchmarkDrivers import GenerateTestInputs
 
@@ -146,6 +147,8 @@ class Driver:
                 suite = SDVBS.SDVBSSuite(benchmark_args)
             elif suite_name == 'vert':
                 suite = VerticalSuite.VerticalSuite(benchmark_args)
+            elif suite_name == 'mb':
+                suite = MediaBench.MediaBenchSuite(benchmark_args)
             elif suite_name == 'gfm':
                 suite = GemForgeMicroSuite.GemForgeMicroSuite(benchmark_args)
             elif suite_name == 'test':
@@ -224,9 +227,9 @@ class Driver:
         if name in self.profile_jobs:
             deps.append(self.profile_jobs[name])
         self.simpoint_jobs[name] = job_scheduler.add_job(
-            name=name + '.simpoint', 
+            name=name + '.simpoint',
             job=simpoint,
-            args=(benchmark, ), 
+            args=(benchmark, ),
             deps=deps)
 
     def schedule_trace(self, job_scheduler, benchmark):
