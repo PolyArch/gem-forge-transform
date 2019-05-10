@@ -62,6 +62,7 @@ protected:
    * Statistics.
    */
   uint64_t StatsDynamicInsts;
+  std::unordered_map<llvm::Function *, uint64_t> StatsCalledFunctions;
 
   /**
    * Static Informatin.

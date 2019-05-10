@@ -682,8 +682,14 @@ void ReplayTrace::transform() {
       this->Serializer->serialize(*Iter, this->Trace);
 
       // Special case for the memory access instruction to handle cache warmer.
-      if (Utils::isMemAccessInst((*Iter)->getStaticInstruction())) {
+      auto StaticInst = (*Iter)->getStaticInstruction();
+      if (Utils::isMemAccessInst(StaticInst)) {
         this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*Iter));
+      }
+      if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
+        // Collect the called function stats.
+        auto Callee = CallInst->getCalledFunction();
+        this->StatsCalledFunctions.emplace(Callee, 0).first->second++;
       }
       this->StatsDynamicInsts++;
       Count--;
@@ -731,6 +737,23 @@ void ReplayTrace::registerFunction(llvm::Module &Module) {
 void ReplayTrace::dumpStats(std::ostream &O) {
   O << "----------- Replay ------------\n";
   O << "Dynamic Instructions " << this->StatsDynamicInsts << '\n';
+  std::vector<std::pair<llvm::Function *, uint64_t>> CalledFunctions;
+  for (const auto &CalledFuncStats : this->StatsCalledFunctions) {
+    CalledFunctions.emplace_back(CalledFuncStats.first, CalledFuncStats.second);
+  }
+  std::sort(CalledFunctions.begin(), CalledFunctions.end(),
+            [](const std::pair<llvm::Function *, uint64_t> &A,
+               const std::pair<llvm::Function *, uint64_t> &B) -> bool {
+              return A.second > B.second;
+            });
+  for (const auto &CalledFunc : CalledFunctions) {
+    if (CalledFunc.first && CalledFunc.first->hasName()) {
+      O << CalledFunc.second << ' ' << CalledFunc.first->getName().str()
+        << '\n';
+    } else {
+      O << CalledFunc.second << ' ' << "Annoymous Function" << '\n';
+    }
+  }
 }
 
 #undef DEBUG_TYPE
