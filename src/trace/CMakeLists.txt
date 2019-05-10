@@ -11,6 +11,7 @@ protobuf_generate_cpp(PROFILE_PROTOBUF_SRCS PROFILE_PROTOBUF_HDRS
 protobuf_generate_cpp(UID_MAP_PROTOBUF_SRCS UID_MAP_PROTOBUF_HDRS
     UIDMap.proto
 )
+protobuf_generate_python(UID_MAP_PROTOBUF_PY UIDMap.proto)
 
 # Add an object lib for parent folder to use.
 add_library(ProtobufTraceMessage OBJECT
@@ -44,3 +45,8 @@ target_include_directories(TracerProtobuf PUBLIC
 set_target_properties(TracerProtobuf PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
+
+# Copy the generated python protobuf file to benchmark/Utils/.
+add_custom_target(PyUIDMapProtobufSrc ALL
+    cp ${UID_MAP_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/driver/Utils/
+    DEPENDS ${UID_MAP_PROTOBUF_PY})
