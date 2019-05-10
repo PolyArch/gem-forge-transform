@@ -4,7 +4,7 @@
 #include "randArr.h"
 #include "common.h"
 
-#define ASIZE 2048
+#define ASIZE 1*1024*1024
 #define STEP   128
 #define ITERS    4
 #define LEN   2048
@@ -43,6 +43,12 @@ int main(int argc, char* argv[]) {
    }
    cur->val=100;
    cur->_next=NULL;
+
+   // Iterate through the array to flush the cache.
+   volatile int no_use;
+   for (i = 0; i < ASIZE; ++i) {
+     no_use = arr[i];
+   }
 
    DETAILED_SIM_START(); 
    int t=loop(argc,n);
