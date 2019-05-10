@@ -16,7 +16,7 @@ class MediaBenchmark(Benchmark):
         'cjpeg': {
             'src_folder': 'jpeg/jpeg-6a',
             'input_folder': 'jpeg/data',
-            'input_data': 'testimg.ppm',
+            'input_data': ['testimg.ppm'],
             'srcs': [
                 'jcapimin.c',
                 'jcapistd.c',
@@ -86,7 +86,72 @@ class MediaBenchmark(Benchmark):
                 '-outfile',
                 '/tmp/cjpeg-testout.jpeg',
             ]
+        },
+        'mpeg2enc': {
+            'src_folder': 'mpeg2/src/mpeg2enc',
+            'input_folder': 'mpeg2/data',
+            'input_data': ['options.par', 'out.m2v'],
+            'srcs': [
+                'motion.c',
+                'mpeg2enc.c',
+                'predict.c',
+                'puthdr.c',
+                'putmpg.c',
+                'putpic.c',
+                'putseq.c',
+                'putvlc.c',
+                'quantize.c',
+                'ratectl.c',
+                'readpic.c',
+                'transfrm.c',
+                'writepic.c',
+                'conform.c',
+                'idct.c',
+                'putbits.c',
+                'fdctref.c',
+                'stats.c',
+            ],
+            'flags': [
+                'O3',
+            ],
+            'trace_func': 'putseq',
+            'args': []
+        },
+        'mpeg2dec': {
+            'src_folder': 'mpeg2/src/mpeg2dec',
+            'input_folder': 'mpeg2/data',
+            'input_data': ['options.par', 'out.m2v'],
+            'srcs': [
+                'display.c',
+                'getbits.c',
+                'getblk.c',
+                'gethdr.c',
+                'getpic.c',
+                'getvlc.c',
+                'idct.c',
+                'idctref.c',
+                'motion.c',
+                'mpeg2dec.c',
+                'recon.c',
+                'spatscal.c',
+                'store.c',
+                'subspic.c',
+                'systems.c',
+            ],
+            'flags': [
+                'O3',
+                'fno-vectorize',
+                'fno-slp-vectorize',
+            ],
+            'trace_func': 'gem_forge_work',
+            'args': [
+                '-r',
+                '-f',
+                '-o0',
+            ]
         }
+
+
     }
 
     def __init__(self,
@@ -128,7 +193,8 @@ class MediaBenchmark(Benchmark):
         # Create the args.
         self.args = self.macro.args
         # Add the input
-        self.args.append(os.path.join(self.input_dir, self.macro.input_data))
+        self.args += [os.path.join(self.input_dir, i)
+                      for i in self.macro.input_data]
 
         super(MediaBenchmark, self).__init__(
             benchmark_args
@@ -142,9 +208,18 @@ class MediaBenchmark(Benchmark):
     def get_links(self):
         # Link the empty implementation of the gem5 pseudo instructions.
         gem5_pseudo = os.path.join(self.top_folder, 'gem5_pseudo.cpp')
-        return [gem5_pseudo]
+        return [gem5_pseudo, '-lm']
 
     def get_args(self):
+        if self.get_name() == 'mb.mpeg2dec':
+            return [
+                '-b',
+                '{data}/mei16v2.m2v'.format(data=self.input_dir),
+                '-r',
+                '-f',
+                '-o0',
+                '{data}/tmp\%d'.format(data=self.input_dir),
+            ]
         return self.args
 
     def get_trace_func(self):
@@ -240,7 +315,11 @@ class MediaBenchmark(Benchmark):
 
     def get_additional_gem5_simulate_command(self):
         # For validation, we disable cache warm.
-        return ['--gem-forge-cold-cache']
+        args = ['--gem-forge-cold-cache']
+        if self.get_name() == 'mb.mpeg2enc':
+            # This benchmark requires significantly large memory.
+            args.append('--mem-size=2GB')
+        return args
 
     def build_validation(self, transform_config, trace, output_tdg):
         # Build the validation binary.
@@ -255,6 +334,7 @@ class MediaBenchmark(Benchmark):
             # Link with gem5.
             '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
             C.GEM5_M5OPS_X86,
+            '-lm',
             '-o',
             binary
         ]

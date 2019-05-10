@@ -6,7 +6,9 @@ from BenchmarkDrivers import TestHelloWorld
 from BenchmarkDrivers import SPU
 from BenchmarkDrivers import Graph500
 from BenchmarkDrivers import CortexSuite
+from BenchmarkDrivers import CortexSuiteValid
 from BenchmarkDrivers import SDVBS
+from BenchmarkDrivers import SDVBSValid
 from BenchmarkDrivers import VerticalSuite
 from BenchmarkDrivers import MediaBench
 from BenchmarkDrivers import GemForgeMicroSuite
@@ -143,8 +145,12 @@ class Driver:
                 suite = Graph500.Graph500Benchmarks(benchmark_args)
             elif suite_name == 'cortex':
                 suite = CortexSuite.CortexSuite(benchmark_args)
+            elif suite_name == 'cortex.valid':
+                suite = CortexSuiteValid.CortexValidSuite(benchmark_args)
             elif suite_name == 'sdvbs':
                 suite = SDVBS.SDVBSSuite(benchmark_args)
+            elif suite_name == 'sdvbs.valid':
+                suite = SDVBSValid.SDVBSValidSuite(benchmark_args)
             elif suite_name == 'vert':
                 suite = VerticalSuite.VerticalSuite(benchmark_args)
             elif suite_name == 'mb':

@@ -94,10 +94,12 @@ class SDVBSBenchmark(Benchmark):
 
     def __init__(self,
                  benchmark_args,
-                 folder, benchmark_name, input_name):
+                 folder, benchmark_name, input_name,
+                 suite='sdvbs'):
         self.top_folder = folder
         self.benchmark_name = benchmark_name
         self.input_name = input_name
+        self.suite = suite
 
         # Find the directories.
         self.benchmark_dir = os.path.join(
@@ -111,7 +113,7 @@ class SDVBSBenchmark(Benchmark):
 
         # Create the result directory out side of the source tree.
         self.work_path = os.path.join(
-            C.LLVM_TDG_RESULT_DIR, 'sdvbs', self.benchmark_name, input_name)
+            C.LLVM_TDG_RESULT_DIR, self.suite, self.benchmark_name, input_name)
         Util.mkdir_chain(self.work_path)
 
         self.source_bc_dir = os.path.join(self.work_path, 'obj')
@@ -145,7 +147,8 @@ class SDVBSBenchmark(Benchmark):
         )
 
     def get_name(self):
-        return 'sdvbs.{benchmark_name}.{input_name}'.format(
+        return '{suite}.{benchmark_name}.{input_name}'.format(
+            suite=self.suite,
             benchmark_name=self.benchmark_name,
             input_name=self.input_name,
         )
@@ -176,7 +179,7 @@ class SDVBSBenchmark(Benchmark):
         if 'multi_ncut' in self.get_name():
             return 1
         else:
-            return 100
+            return 63500
 
     def find_all_sources(self, folder):
         sources = list()

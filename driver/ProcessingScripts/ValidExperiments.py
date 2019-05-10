@@ -15,6 +15,9 @@ class Record(object):
         self.stores = 0.0
         self.dcache_reads = 0.0
         self.dcache_writes = 0.0
+        self.dcache_miss_lat = 0.0
+        self.llc_demmands = 0.0
+        self.llc_misses = 0.0
         self.branches = 0.0
         self.miss_branches = 0.0
         self.alus = 0.0
@@ -30,6 +33,12 @@ class Record(object):
             'system.cpu.dcache.ReadReq_accesses::total', 0)
         self.dcache_writes += result.stats.get_default(
             'system.cpu.dcache.WriteReq_accesses::total', 0)
+        self.dcache_miss_lat += result.stats.get_default(
+            'system.cpu.dcache.overall_miss_latency::total', 0) 
+        self.llc_demmands += result.stats.get_default(
+            'system.l2.demand_accesses::total', 0)
+        self.llc_misses += result.stats.get_default(
+            'system.l2.demand_misses::total', 0)
 
     def updateDerivedFields(self):
         if self.cycles != 0:

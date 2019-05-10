@@ -12,7 +12,7 @@ class CortexBenchmark(Benchmark):
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
         'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'sphinx': ['O2'],
+        'sphinx': ['O2'],
         'srr': ['O2'],
         'lda': ['O2'],
         'svd3': ['O2'],
@@ -203,15 +203,17 @@ class CortexBenchmark(Benchmark):
         'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     }
 
-    def __init__(self, benchmark_args, folder, benchmark_name, input_size):
+    def __init__(self, benchmark_args,
+                 folder, benchmark_name, input_size, suite='cortex'):
         self.benchmark_name = benchmark_name
         self.input_size = input_size
+        self.suite = suite
         self.top_folder = folder
 
         self.src_dir = os.path.join(self.top_folder, benchmark_name)
 
         self.work_path = os.path.join(
-            C.LLVM_TDG_RESULT_DIR, 'cortex', self.benchmark_name, input_size)
+            C.LLVM_TDG_RESULT_DIR, self.suite, self.benchmark_name, input_size)
         Util.mkdir_chain(self.work_path)
 
         # Create a symbolic link for everything in the source dir.
@@ -243,7 +245,8 @@ class CortexBenchmark(Benchmark):
         super(CortexBenchmark, self).__init__(benchmark_args)
 
     def get_name(self):
-        return 'cortex.{benchmark_name}.{input_size}'.format(
+        return '{suite}.{benchmark_name}.{input_size}'.format(
+            suite=self.suite,
             benchmark_name=self.benchmark_name,
             input_size=self.input_size,
         )
