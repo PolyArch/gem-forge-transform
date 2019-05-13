@@ -91,6 +91,10 @@ bool MemStream::isCandidate() const {
   if (this->TotalAccesses == 0) {
     return false;
   }
+  if (this->TotalIters < 10) {
+    // Such a short stream.
+    return false;
+  }
   if (this->BaseStepRootStreams.size() > 1) {
     // More than 1 step streams.
     return false;
