@@ -1,5 +1,5 @@
 {
-    "id": "o8.ch2.l3.imp",
+    "id": "o8.ch2.l3.isb",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
@@ -17,7 +17,7 @@
         "--l2bus_width=32",
         "--mem-channels=2",
 		"--llvm-prefetch=1",
-		"--gem-forge-prefetcher=imp",
+		"--gem-forge-prefetcher=isb",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2"
     ],
