@@ -95,6 +95,22 @@ bool MemStream::isCandidate() const {
     // Such a short stream.
     return false;
   }
+  /**
+   * Hack to reduce number of streams.
+   */
+  auto AverageItersPerConfig = static_cast<double>(this->TotalIters) /
+                               static_cast<double>(this->TotalStreams);
+
+  if (AverageItersPerConfig < 5) {
+    // Hack for gcc.
+    llvm::errs() << AverageItersPerConfig << " LoopId for short streams "
+                 << LoopUtils::getLoopId(this->SStream->ConfigureLoop) << '\n';
+    if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+        "et-forest.c::302(et_splay)::bb10") {
+      llvm::errs() << "Not a candidate.\n";
+      return false;
+    }
+  }
   if (this->BaseStepRootStreams.size() > 1) {
     // More than 1 step streams.
     return false;
