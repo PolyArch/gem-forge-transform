@@ -11,7 +11,7 @@ __attribute__((noinline)) Value foo(volatile Value *a, int N) {
 }
 
 // 65536*4 is 512kB.
-const int N = 32;
+const int N = 65536;
 Value a[N];
 
 int main() {
