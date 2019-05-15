@@ -17,6 +17,8 @@ class GemForgeMicroBenchmark(Benchmark):
         self.src_path = src_path
         self.benchmark_name = os.path.basename(self.src_path)
         self.source = self.benchmark_name + '.c'
+        self.gem5_pseudo_source = os.path.join(
+            self.src_path, '../gem5_pseudo.cpp')
 
         # Create the result dir out of the source tree.
         self.cwd = os.getcwd()
@@ -31,7 +33,7 @@ class GemForgeMicroBenchmark(Benchmark):
         return 'gfm.{b}'.format(b=self.benchmark_name)
 
     def get_links(self):
-        return ['-lm']
+        return [self.gem5_pseudo_source, '-lm']
 
     def get_args(self):
         return None
@@ -87,6 +89,49 @@ class GemForgeMicroBenchmark(Benchmark):
         os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
+
+    def build_validation(self, transform_config, trace, output_tdg):
+        # Build the validation binary.
+        output_dir = os.path.dirname(output_tdg)
+        binary = os.path.join(output_dir, self.get_valid_bin())
+        build_cmd = [
+            C.CC,
+            '-static',
+            '-O3',
+            self.get_raw_bc(),
+            # Link with gem5.
+            '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
+            C.GEM5_M5OPS_X86,
+            '-lm',
+            '-o',
+            binary
+        ]
+        Util.call_helper(build_cmd)
+        asm = os.path.join(output_dir, self.get_name() + '.asm')
+        with open(asm, 'w') as f:
+            disasm_cmd = [
+                'objdump',
+                '-d',
+                binary
+            ]
+            Util.call_helper(disasm_cmd, stdout=f)
+
+    def simulate_valid(self, tdg, transform_config, simulation_config):
+        print("# Simulating the validation binary.")
+        gem5_out_dir = simulation_config.get_gem5_dir(tdg)
+        tdg_dir = os.path.dirname(tdg)
+        binary = os.path.join(tdg_dir, self.get_valid_bin())
+        gem5_args = self.get_gem5_simulate_command(
+            simulation_config=simulation_config,
+            binary=binary,
+            outdir=gem5_out_dir,
+            standalone=False,
+        )
+        # Exit immediately when we are done.
+        gem5_args.append('--work-end-exit-count=1')
+        # Do not add the fake tdg file, so that the script in gem5 will
+        # actually simulate the valid bin.
+        Util.call_helper(gem5_args)
 
 
 class GemForgeMicroSuite:

@@ -16,9 +16,12 @@
         "--l2_assoc=8",
         "--l2bus_width=32",
         "--mem-channels=2",
-		"--llvm-prefetch=1",
+        "--llvm-prefetch=1",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2"
     ],
-    "support-transform-ids": ["replay"]
+    "support-transform-ids": [
+        "replay",
+        "valid"
+    ]
 }

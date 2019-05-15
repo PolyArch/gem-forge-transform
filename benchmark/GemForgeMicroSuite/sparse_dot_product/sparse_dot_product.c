@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 __attribute__((noinline)) float foo(float *a, float *b, int *ia, int *ib,
                                     int N) {
   int x = 0;
@@ -16,11 +18,11 @@ __attribute__((noinline)) float foo(float *a, float *b, int *ia, int *ib,
   }
   return c;
 }
+const int N = 5;
+float a[N];
+float b[N];
 
 int main() {
-  const int N = 5;
-  float a[N];
-  float b[N];
   int ia[] = {0, 2, 4, 6, 8};
   int ib[] = {1, 2, 3, 8, 9};
   volatile float c;
