@@ -37,7 +37,8 @@ class Gem5Stats:
             return default
 
     def get_sim_seconds(self):
-        return self['sim_seconds']
+        return self.get_cpu_cycles()
+        # return self['sim_seconds']
 
     def get_cpu_cycles(self):
         return self['system.cpu.numCycles']
