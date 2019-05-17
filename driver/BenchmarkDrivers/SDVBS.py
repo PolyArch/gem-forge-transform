@@ -111,7 +111,7 @@ class SDVBSBenchmark(Benchmark):
 
         self.cwd = os.getcwd()
 
-        # Create the result directory out side of the source tree.
+        # Create the result directory outside of the source tree.
         self.work_path = os.path.join(
             C.LLVM_TDG_RESULT_DIR, self.suite, self.benchmark_name, input_name)
         Util.mkdir_chain(self.work_path)

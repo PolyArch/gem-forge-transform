@@ -28,7 +28,9 @@
         "stream",
         "stream.alias",
         "stream.inner",
-        "stream.static-outer"
+        "stream.static-outer",
+        "stream.prefetch",
+        "stream.prefetch.alias"
     ],
     "design_space": [
         {

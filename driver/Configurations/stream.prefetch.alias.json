@@ -1,0 +1,7 @@
+{
+    "id": "stream.prefetch.alias",
+    "options": [
+        "-stream-prefetch-pass",
+        "-stream-pass-allow-aliased-stream"
+    ]
+}
