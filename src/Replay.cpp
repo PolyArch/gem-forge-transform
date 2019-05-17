@@ -186,7 +186,8 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
   this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
   this->Serializer = new TDGSerializer(
       this->OutTraceName, GemForgeOutputDataGraphTextMode.getValue());
-  this->CacheWarmerPtr = new CacheWarmer(this->OutTraceName + ".cache");
+  this->CacheWarmerPtr = new CacheWarmer(this->OutputExtraFolderPath,
+                                         this->OutTraceName + ".cache");
 
   this->CachedLI = new CachedLoopInfo(this->Module);
 
@@ -684,7 +685,7 @@ void ReplayTrace::transform() {
       // Special case for the memory access instruction to handle cache warmer.
       auto StaticInst = (*Iter)->getStaticInstruction();
       if (Utils::isMemAccessInst(StaticInst)) {
-        this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*Iter));
+        this->CacheWarmerPtr->addAccess(*Iter, this->Trace->DataLayout);
       }
       if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
         // Collect the called function stats.

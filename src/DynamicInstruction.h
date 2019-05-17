@@ -38,6 +38,10 @@ public:
     return *(reinterpret_cast<const double *>(this->Value.data()));
   }
   float getFloat() const { return this->getDouble(); }
+  /**
+   * ! The DynamicValue::Value size is not the real size of the loaded value.
+   * ! For example, for int32_t, I always store 8 bytes here for simplicity.
+   */
   std::string Value;
   // Base/Offset of memory address.
   std::string MemBase;

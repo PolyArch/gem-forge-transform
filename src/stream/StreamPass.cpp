@@ -225,7 +225,8 @@ void StreamPass::analyzeStream() {
         this->CurrentStreamAnalyzer->addMemAccess(NewDynamicInst, this->Trace);
       }
 
-      this->CacheWarmerPtr->addAccess(Utils::getMemAddr(NewDynamicInst));
+      // Remember to update the CacheWarmer.
+      this->CacheWarmerPtr->addAccess(NewDynamicInst, this->Trace->DataLayout);
     }
 
     /**

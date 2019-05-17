@@ -38,7 +38,8 @@ void SpeculativePrecomputationPass::transform() {
 
       // Handle the cache warmer.
       if (Utils::isMemAccessInst(NewStaticInst)) {
-        this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*NewDynInstIter));
+        this->CacheWarmerPtr->addAccess(*NewDynInstIter,
+                                        this->Trace->DataLayout);
       }
       InstCount++;
     } else {
