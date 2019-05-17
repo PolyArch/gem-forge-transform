@@ -49,21 +49,51 @@ void CacheWarmer::addAccess(DynamicInstruction *DynInst,
     auto TypeSize = DataLayout->getTypeStoreSize(StaticInst->getType());
     assert(TypeSize <= LoadedValue.size() &&
            "LoadedValue's size is too small.");
-    auto &Snapshot = *(this->InitialMemorySnapshot.mutable_snapshot());
+    auto &Snapshot = this->InitialMemorySnapshot;
     for (int Offset = 0; Offset < TypeSize; ++Offset) {
       auto ByteAddr = Addr + Offset;
       if (Snapshot.count(ByteAddr) == 0) {
         // This is a new initial byte.
-        const uint64_t interestingAddr = 0x88707c;
         Snapshot[ByteAddr] = LoadedValue[Offset];
-        if (ByteAddr >= interestingAddr && ByteAddr < interestingAddr + 4) {
-          llvm::errs() << ByteAddr << ' ' << (uint32_t)(LoadedValue[Offset])
-                       << ' ' << Snapshot[ByteAddr] << ' '
-                       << DynInst->DynamicResult->getInt() << '\n';
-        }
+        // const uint64_t interestingAddr = 0x88707c;
+        // if (ByteAddr >= interestingAddr && ByteAddr < interestingAddr + 4) {
+        //   llvm::errs() << ByteAddr << ' ' << (uint32_t)(LoadedValue[Offset])
+        //                << ' ' << Snapshot[ByteAddr] << ' '
+        //                << DynInst->DynamicResult->getInt() << '\n';
+        // }
       }
     }
   }
+}
+
+LLVM::TDG::MemorySnapshot CacheWarmer::generateSnapshot() const {
+  std::vector<uint64_t> ByteAddrs;
+  ByteAddrs.reserve(this->InitialMemorySnapshot.size());
+  for (const auto &AddrByte : this->InitialMemorySnapshot) {
+    ByteAddrs.push_back(AddrByte.first);
+  }
+  std::sort(ByteAddrs.begin(), ByteAddrs.end());
+  LLVM::TDG::MemorySnapshot Snapshot;
+
+  auto PreviousEntryIter = Snapshot.mutable_snapshot()->end();
+
+  for (const auto &ByteAddr : ByteAddrs) {
+    if (PreviousEntryIter != Snapshot.mutable_snapshot()->end()) {
+      if (PreviousEntryIter->first + PreviousEntryIter->second.size() ==
+          ByteAddr) {
+        // Continuous.
+        PreviousEntryIter->second.push_back(
+            this->InitialMemorySnapshot.at(ByteAddr));
+        continue;
+      }
+    }
+    // All other cases, add an new entry.
+    Snapshot.mutable_snapshot()->operator[](ByteAddr) = "";
+    PreviousEntryIter = Snapshot.mutable_snapshot()->find(ByteAddr);
+    PreviousEntryIter->second.push_back(
+        this->InitialMemorySnapshot.at(ByteAddr));
+  }
+  return Snapshot;
 }
 
 void CacheWarmer::dumpToFile() const {
@@ -75,5 +105,5 @@ void CacheWarmer::dumpToFile() const {
   WarmerFile.close();
   // Dump the memory snap file.
   Gem5ProtobufSerializer SnapshotSerializer(this->SnapshotFileName);
-  SnapshotSerializer.serialize(this->InitialMemorySnapshot);
+  SnapshotSerializer.serialize(this->generateSnapshot());
 }

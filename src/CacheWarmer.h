@@ -41,9 +41,11 @@ private:
   RecordListT Record;
   std::unordered_map<uint64_t, RecordListT::iterator> AddrToRecordMap;
 
-  LLVM::TDG::MemorySnapshot InitialMemorySnapshot;
+  std::unordered_map<uint64_t, uint8_t> InitialMemorySnapshot;
 
   void addAccess(uint64_t Addr);
+
+  LLVM::TDG::MemorySnapshot generateSnapshot() const;
 };
 
 #endif
