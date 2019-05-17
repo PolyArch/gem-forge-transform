@@ -35,11 +35,6 @@ void StreamPrefetchPass::transformStream() {
 
     while (this->Trace->DynamicInstructionList.size() > 10) {
       auto DynamicInst = this->Trace->DynamicInstructionList.front();
-      // Debug a certain range of transformed instructions.
-      // if (DynamicInst->getId() > 19923000 && DynamicInst->getId() < 19923700)
-      // {
-      //   DEBUG(this->DEBUG_TRANSFORMED_STREAM(DynamicInst));
-      // }
       this->Serializer->serialize(DynamicInst, this->Trace);
       this->Trace->commitOneDynamicInst();
     }
