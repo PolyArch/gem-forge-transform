@@ -118,5 +118,5 @@ message CacheWarmUp {
 
 // Message for initial memory snapshot.
 message MemorySnapshot {
-  map<uint64, uint32> snapshot = 1;
+  map<uint64, bytes> snapshot = 1;
 }
