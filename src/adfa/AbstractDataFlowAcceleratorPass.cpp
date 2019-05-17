@@ -118,7 +118,8 @@ void AbstractDataFlowAcceleratorPass::transform() {
 
       // Handle the cache warmer.
       if (Utils::isMemAccessInst(NewStaticInst)) {
-        this->CacheWarmerPtr->addAccess(Utils::getMemAddr(*NewDynamicInst));
+        this->CacheWarmerPtr->addAccess(*NewDynamicInst,
+                                        this->Trace->DataLayout);
       }
 
       auto LI = this->CachedLI->getLoopInfo(NewStaticInst->getFunction());
