@@ -112,6 +112,7 @@ message CacheWarmUp {
     uint64 addr = 1;
     uint32 size = 2;
     uint64 pc = 3;
+    uint32 seq = 4;
   }
   repeated CacheWarmUpRequest requests = 1;
 }

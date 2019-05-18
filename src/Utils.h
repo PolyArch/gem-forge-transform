@@ -5,6 +5,7 @@
 #include "trace/InstructionUIDMap.h"
 
 #include "llvm/Demangle/Demangle.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instruction.h"
 
 class Utils {
@@ -39,6 +40,18 @@ public:
       return DynamicInst->DynamicOperands[1]->getAddr();
     } else {
       return DynamicInst->DynamicOperands[0]->getAddr();
+    }
+  }
+
+  static uint64_t getMemTypeSize(const DynamicInstruction *DynamicInst,
+                                 llvm::DataLayout *DataLayout) {
+    auto StaticInst = DynamicInst->getStaticInstruction();
+    assert(Utils::isMemAccessInst(StaticInst) &&
+           "This is not a memory access inst to get memory type size.");
+    if (llvm::isa<llvm::StoreInst>(StaticInst)) {
+      return DataLayout->getTypeStoreSize(StaticInst->getOperand(0)->getType());
+    } else {
+      return DataLayout->getTypeStoreSize(StaticInst->getType());
     }
   }
 

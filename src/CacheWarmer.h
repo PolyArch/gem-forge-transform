@@ -7,7 +7,6 @@
 
 #include "llvm/IR/DataLayout.h"
 
-#include <list>
 #include <string>
 #include <unordered_map>
 
@@ -35,15 +34,14 @@ private:
   const size_t CacheLineSize;
   const size_t CacheSize;
 
-  using RecordT = uint64_t;
-  using RecordListT = std::list<RecordT>;
-
-  RecordListT Record;
-  std::unordered_map<uint64_t, RecordListT::iterator> AddrToRecordMap;
+  /**
+   * Stores basically the memory request history.
+   */
+  LLVM::TDG::CacheWarmUp CacheWarmUpProto;
 
   std::unordered_map<uint64_t, uint8_t> InitialMemorySnapshot;
 
-  void addAccess(uint64_t Addr);
+  // void addAccess(uint64_t Addr);
 
   LLVM::TDG::MemorySnapshot generateSnapshot() const;
 };

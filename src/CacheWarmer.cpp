@@ -15,38 +15,53 @@ CacheWarmer::CacheWarmer(const std::string &_ExtraFolder,
          "Cache line size must be a power of 2.");
 }
 
-void CacheWarmer::addAccess(uint64_t Addr) {
-  auto MaskedAddr = Addr & (~(this->CacheLineSize - 1));
-  auto RecordIter = this->Record.insert(this->Record.end(), MaskedAddr);
-  auto RecordMapIter = this->AddrToRecordMap.find(MaskedAddr);
-  if (RecordMapIter == this->AddrToRecordMap.end()) {
-    this->AddrToRecordMap.emplace(MaskedAddr, RecordIter);
-  } else {
-    this->Record.erase(RecordMapIter->second);
-    RecordMapIter->second = RecordIter;
-  }
-  while (this->CacheSize / this->CacheLineSize < this->AddrToRecordMap.size()) {
-    assert(!this->Record.empty() &&
-           "Empty record list when there is address record.");
-    auto OldestAddr = this->Record.front();
-    this->Record.pop_front();
-    this->AddrToRecordMap.erase(OldestAddr);
-  }
-}
+// void CacheWarmer::addAccess(uint64_t Addr) {
+//   auto MaskedAddr = Addr & (~(this->CacheLineSize - 1));
+//   auto RecordIter = this->Record.insert(this->Record.end(), MaskedAddr);
+//   auto RecordMapIter = this->AddrToRecordMap.find(MaskedAddr);
+//   if (RecordMapIter == this->AddrToRecordMap.end()) {
+//     this->AddrToRecordMap.emplace(MaskedAddr, RecordIter);
+//   } else {
+//     this->Record.erase(RecordMapIter->second);
+//     RecordMapIter->second = RecordIter;
+//   }
+//   while (this->CacheSize / this->CacheLineSize < this->AddrToRecordMap.size()) {
+//     assert(!this->Record.empty() &&
+//            "Empty record list when there is address record.");
+//     auto OldestAddr = this->Record.front();
+//     this->Record.pop_front();
+//     this->AddrToRecordMap.erase(OldestAddr);
+//   }
+// }
 
 void CacheWarmer::addAccess(DynamicInstruction *DynInst,
                             llvm::DataLayout *DataLayout) {
   auto StaticInst = DynInst->getStaticInstruction();
   assert(Utils::isMemAccessInst(StaticInst) &&
          "Non-MemAccessInst passed to CacheWarmer.");
-  auto Addr = Utils::getMemAddr(DynInst);
+  const auto Addr = Utils::getMemAddr(DynInst);
+  const auto TypeSize = Utils::getMemTypeSize(DynInst, DataLayout);
   // Normal cache warmup request.
-  this->addAccess(Addr);
-  // Check for the initial memory snapshot.
+  // this->addAccess(Addr);
+
+  /**
+   * * Add the cache warmup request history.
+   */
+  auto Request = this->CacheWarmUpProto.add_requests();
+  Request->set_addr(Addr);
+  Request->set_size(TypeSize);
+  Request->set_pc(Utils::getInstUIDMap().getUID(StaticInst));
+
+  // ! Use the InstId as the sequence id.
+  // ! Which is at least linear increasing in ReplayPass.
+  Request->set_seq(DynInst->getId());
+
+  /**
+   * * Check for the initial memory snapshot.
+   */
   if (llvm::isa<llvm::LoadInst>(StaticInst)) {
     // This is a load, check for any first accessed byte.
     const auto &LoadedValue = DynInst->DynamicResult->Value;
-    auto TypeSize = DataLayout->getTypeStoreSize(StaticInst->getType());
     assert(TypeSize <= LoadedValue.size() &&
            "LoadedValue's size is too small.");
     auto &Snapshot = this->InitialMemorySnapshot;
@@ -97,12 +112,15 @@ LLVM::TDG::MemorySnapshot CacheWarmer::generateSnapshot() const {
 }
 
 void CacheWarmer::dumpToFile() const {
-  std::ofstream WarmerFile(this->FileName);
-  assert(WarmerFile.is_open() && "Failed to open cache warmer file.");
-  for (const auto &Addr : this->Record) {
-    WarmerFile << std::hex << Addr << '\n';
-  }
-  WarmerFile.close();
+  // Dump the cache warm up.
+  Gem5ProtobufSerializer CacheWarmUpSerializer(this->FileName);
+  CacheWarmUpSerializer.serialize(this->CacheWarmUpProto);
+  // std::ofstream WarmerFile(this->FileName);
+  // assert(WarmerFile.is_open() && "Failed to open cache warmer file.");
+  // for (const auto &Addr : this->Record) {
+  //   WarmerFile << std::hex << Addr << '\n';
+  // }
+  // WarmerFile.close();
   // Dump the memory snap file.
   Gem5ProtobufSerializer SnapshotSerializer(this->SnapshotFileName);
   SnapshotSerializer.serialize(this->generateSnapshot());
