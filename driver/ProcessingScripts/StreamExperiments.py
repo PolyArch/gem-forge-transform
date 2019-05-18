@@ -57,18 +57,20 @@ class StreamExperiments(object):
         print('Average stream length is {l}'.format(
             l=total_average_stream_length/len(self.static_stream_analyzer)))
 
-        total_aliased_accesses = 0.0
-        for benchmark in self.driver.benchmarks:
-            if benchmark not in self.static_stream_analyzer:
-                continue
-            ssa = self.static_stream_analyzer[benchmark]
-            alias_stream_access = ssa.analyze_aliase_stream_access()
-            print('{b} has {v} loop accesses aliased.'.format(
-                b=benchmark.get_name(), v=alias_stream_access
-            ))
-            total_aliased_accesses += alias_stream_access
-        print('Average alias stream accesses is {v}'.format(
-            v=total_aliased_accesses / len(self.static_stream_analyzer)))
+        # total_aliased_accesses = 0.0
+        # for benchmark in self.driver.benchmarks:
+        #     if benchmark not in self.static_stream_analyzer:
+        #         continue
+        #     ssa = self.static_stream_analyzer[benchmark]
+        #     alias_stream_access = ssa.analyze_aliase_stream_access()
+        #     print('{b} has {v} loop accesses aliased.'.format(
+        #         b=benchmark.get_name(), v=alias_stream_access
+        #     ))
+        #     total_aliased_accesses += alias_stream_access
+        # print('Average alias stream accesses is {v}'.format(
+        #     v=total_aliased_accesses / len(self.static_stream_analyzer)))
+
+        self.analyze_stream_type()
 
         self.replay_transform_config = self.driver.transform_manager.get_config(
             'replay')
@@ -97,6 +99,30 @@ class StreamExperiments(object):
                     m=multi_geomean,
                     d=multi_geomean/single_geomean,
                 ))
+
+    def dump(self):
+        from Stream import StreamBenchmarkStats
+        stream_csv = open('stream.csv', 'w')
+        header_dumped = False
+        for benchmark in self.driver.benchmarks:
+            if isinstance(benchmark, MultiProgramBenchmark):
+                # So far ignore this.
+                continue
+            sbs = StreamBenchmarkStats.StreamBenchmarkStats(
+                self.driver, benchmark)
+            if not header_dumped:
+                header_dumped = True
+                sbs.dump_header(stream_csv)
+            sbs.dump(stream_csv)
+        stream_csv.close() 
+
+    def analyze_stream_type(self):
+        total_average_stream_length = 0.0
+        for benchmark in self.driver.benchmarks:
+            if benchmark not in self.static_stream_analyzer:
+                continue
+            ssa = self.static_stream_analyzer[benchmark]
+            ssa.analyze_stream_type()
 
     def geomean(self, replay_simulation_config, stream_simulation_config, spd):
         all_speedup = [spd[b][replay_simulation_config]
@@ -311,6 +337,12 @@ class StaticStreamAnalyzer(object):
                         break
             return chosen_streams
 
+        def get_inner_most_streams(self):
+            streams = list()
+            for stream_name in self.streams:
+                streams.append(self.streams[stream_name][0])
+            return streams
+
     class TraceAnalyzer(object):
         def __init__(self, parent, trace):
             self.parent = parent
@@ -334,6 +366,16 @@ class StaticStreamAnalyzer(object):
                     tdg_extra_path, item, 'streams.info')
                 self.regions.append(StaticStreamAnalyzer.RegionAnalyzer(
                     self.trace, stream_region_path))
+            tdg_stats_fn = self.parent.benchmark.get_tdg(
+                self.parent.stream_transform_config, self.trace) + '.stats.txt'
+            with open(tdg_stats_fn) as f:
+                count = 0
+                for line in f:
+                    count += 1
+                    if count == 3:
+                        fields = line.split()
+                        self.total_mem_accesses = float(fields[1])
+                        break
 
         def analyze_mismatch_at_level(self, level):
             total_mismatch_mem_accesses = 0
@@ -375,6 +417,21 @@ class StaticStreamAnalyzer(object):
                 return total_stream_length / total_stream_accesses
             else:
                 return total_stream_length
+
+        def analyze_stream_type(self):
+            stream_types = dict()
+            for r in self.regions:
+                for s in r.get_inner_most_streams():
+                    if s.type == 'phi':
+                        # Ignore IndVarStreams.
+                        continue
+                    dynamic_info = s.dynamic_info
+                    static_info = s.static_info
+                    val_pattern = static_info.val_pattern
+                    if val_pattern not in stream_types:
+                        stream_types[val_pattern] = 0.0
+                    stream_types[val_pattern] += dynamic_info.total_accesses
+            return stream_types
 
         def print_mismatch(self, s):
             print('Mismatch stream! weight {weight:.2f} lv {lv:1} dynamic {dynamic:1} static {static:1} reason {reason:20}: {s}'.format(
@@ -421,9 +478,26 @@ class StaticStreamAnalyzer(object):
         total_loop_accesses = 0.0
         for trace in self.traces:
             total_aliased_accesses += trace.total_alise_accesses * trace.trace.get_weight()
-            total_loop_accesses += trace.total_loop_accesses
+            total_loop_accesses += trace.total_loop_accesses * trace.trace.get_weight()
         return total_aliased_accesses / total_loop_accesses
+
+    def analyze_stream_type(self):
+        total_types = dict()
+        total_mem_accesses = 0.0
+        for trace in self.traces:
+            stream_types = trace.analyze_stream_type()
+            for stream_type in stream_types:
+                if stream_type not in total_types:
+                    total_types[stream_type] = 0.0
+                total_types[stream_type] += stream_types[stream_type] * \
+                    trace.trace.get_weight()
+            total_mem_accesses += trace.total_mem_accesses * trace.trace.get_weight()
+        for stream_type in total_types:
+            total_types[stream_type] /= total_mem_accesses
+        print total_types
+        print total_mem_accesses
 
 
 def analyze(driver):
-    StreamExperiments(driver)
+    se = StreamExperiments(driver)
+    se.dump()

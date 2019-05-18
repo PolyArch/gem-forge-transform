@@ -41,6 +41,12 @@ class SimulationResult:
         # Load stream engine energy.
         self.se_energy = StreamEngineEnergy.StreamEngineEnergy(self.stats)
 
+    def get_energy(self):
+        system_power = self.mcpat.get_system_power()
+        time = self.stats.get_sim_seconds()
+        energy = system_power * time
+        return energy
+
 
 class Attribute:
     def __init__(self, name, func):
