@@ -64,6 +64,12 @@ void StreamPrefetchPass::transformStream() {
                                     this->Trace);
         this->Trace->commitOneDynamicInst();
       }
+      /**
+       * Notify all region analyzer to wrap up.
+       */
+      for (auto &LoopStreamAnalyzer : this->LoopStreamAnalyzerMap) {
+        LoopStreamAnalyzer.second->getFuncSE()->finalizeCoalesceInfo();
+      }
       break;
     }
 
