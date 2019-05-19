@@ -101,13 +101,22 @@ bool MemStream::isCandidate() const {
   auto AverageItersPerConfig = static_cast<double>(this->TotalIters) /
                                static_cast<double>(this->TotalStreams);
 
-  if (AverageItersPerConfig < 5) {
-    // Hack for gcc.
+  if (AverageItersPerConfig < 25) {
+    /**
+     * ! Manually hack to disable some regions as there are too many streams.
+     */
     llvm::errs() << AverageItersPerConfig << " LoopId for short streams "
                  << LoopUtils::getLoopId(this->SStream->ConfigureLoop) << '\n';
     if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
         "et-forest.c::302(et_splay)::bb10") {
-      llvm::errs() << "Not a candidate.\n";
+      return false;
+    }
+    if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+        "SystemMatrices.c::285(CalculateA)::bb5689") {
+      return false;
+    }
+    if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+        "SystemMatrices.c::285(CalculateA)::bb5980") {
       return false;
     }
   }
