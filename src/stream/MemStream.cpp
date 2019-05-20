@@ -108,6 +108,7 @@ bool MemStream::isCandidate() const {
     llvm::errs() << AverageItersPerConfig << " LoopId for short streams "
                  << LoopUtils::getLoopId(this->SStream->ConfigureLoop) << '\n';
     if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+        // ! gcc_s
         "et-forest.c::302(et_splay)::bb10") {
       return false;
     }
@@ -119,6 +120,41 @@ bool MemStream::isCandidate() const {
         "SystemMatrices.c::285(CalculateA)::bb5980") {
       return false;
     }
+    if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+        "lattice.c::427(calc_latt_deform)::bb206") {
+      // ! blender_r
+      // ! Do not allow configure at this level, force configuration at inner
+      // loop.
+      return false;
+    }
+    if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+        "lattice.c::427(calc_latt_deform)::bb239") {
+      // ! blender_r
+      // ! Do not allow configure at this level, force configuration at inner
+      // loop.
+      return false;
+    }
+  }
+  // ! parest_r
+  if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+      "forward.cc::25(void "
+      "METomography::ForwardSolver::block_build_matrix_and_rhs_threaded<3>)::"
+      "bb624") {
+    return false;
+  }
+  // ! leela_s
+  if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+      "_ZN9FastState16play_random_moveEv::bb1002") {
+    return false;
+  }
+  if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+      "_ZN9FastState16play_random_moveEv::bb189") {
+    return false;
+  }
+  // ! mser
+  if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+      "mser.c::68(mser)::bb233") {
+    return false;
   }
   if (this->BaseStepRootStreams.size() > 1) {
     // More than 1 step streams.

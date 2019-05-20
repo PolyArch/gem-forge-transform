@@ -26,6 +26,8 @@ message StaticStreamInfo {
   StreamStepPattern stp_pattern = 4;
   StreamValuePattern val_pattern = 5;
   StaticNotStreamReason not_stream_reason = 6;
+  uint32 loop_possible_path = 7;
+  uint32 config_loop_possible_path = 8;
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
@@ -67,10 +69,6 @@ message StreamInfo {
   repeated StreamId base_streams = 16;
   repeated StreamId back_base_streams = 17;
   repeated StreamId chosen_base_streams = 18;
-
-  // repeated uint64 chosen_base_ids = 20;
-  // repeated uint64 chosen_base_step_ids = 21;
-  // repeated uint64 chosen_base_step_root_ids = 22;
 
   // Mark if this is stream is statically qualifed without any dynamic
   // information.
