@@ -23,6 +23,7 @@ StreamConfigureLoopInfo::StreamConfigureLoopInfo(
 
 void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   LLVM::TDG::StreamRegion ProtobufStreamRegion;
+  ProtobufStreamRegion.set_region(LoopUtils::getLoopId(this->Loop));
   ProtobufStreamRegion.set_total_alive_streams(this->TotalAliveStreams);
   ProtobufStreamRegion.set_total_alive_coalesced_streams(
       this->TotalAliveCoalescedStreams);
