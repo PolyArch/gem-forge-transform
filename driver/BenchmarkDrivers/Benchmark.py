@@ -6,6 +6,7 @@ import abc
 import Constants as C
 import Util
 from Utils import SimPoint
+from Utils import Gem5McPAT
 
 
 class BenchmarkArgs(object):
@@ -197,6 +198,13 @@ class Benchmark(object):
 
     def get_traces(self):
         return self.traces
+
+    def get_hard_exit_in_billion(self):
+        """
+        Get the number of billion instructions for hard exit limit
+        for both profile and simulation.
+        """
+        return 10
 
     def get_trace_fn(self, trace_id):
         trace_fn = '{run_path}/{name}.{i}.trace'.format(
@@ -407,6 +415,8 @@ class Benchmark(object):
         os.putenv('LLVM_TDG_WORK_MODE', '0')
         os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
         os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
+        os.putenv('LLVM_TDG_HARD_EXIT_IN_BILLION',
+                  str(self.get_hard_exit_in_billion()))
         run_cmd = [
             './' + self.get_profile_bin(),
         ]
@@ -704,6 +714,16 @@ class Benchmark(object):
         if self.options.perf_command:
             gem5_args = ['perf', 'record'] + gem5_args
         Util.call_helper(gem5_args)
+
+    """
+    Run McPAT for simulated results.
+    """
+
+    def mcpat(self, tdg, transform_config, simulation_config):
+        if transform_config.get_transform_id() == 'valid':
+            assert(False)
+        gem5_out_dir = simulation_config.get_gem5_dir(tdg)
+        gem5_mcpat = Gem5McPAT.Gem5McPAT(gem5_out_dir)
 
     """
     Clean the results.
