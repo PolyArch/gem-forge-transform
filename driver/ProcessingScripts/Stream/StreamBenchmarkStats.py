@@ -15,6 +15,18 @@ class StreamBenchmarkSimStats(object):
         self.transform_config = transform_config
         self.simulation_config = simulation_config
 
+    def is_loaded(self):
+        for trace in self.benchmark.get_traces():
+            result = self.driver.get_simulation_result(
+                self.benchmark,
+                trace,
+                self.transform_config,
+                self.simulation_config,
+            )
+            if not result.is_loaded():
+                return False
+        return True
+
     def weighted_by_trace(self, func):
         value = 0.0
         for trace in self.benchmark.get_traces():
@@ -69,10 +81,12 @@ class StreamBenchmarkStats(object):
         self.sim_stats = list()
         transform_ids = [
             'replay',
-            # 'stream.prefetch.alias',
+            'stream.prefetch.alias',
             'stream.alias'
         ]
         for transform_id in transform_ids:
+            if not self.driver.transform_manager.has_config(transform_id):
+                continue
             transform_config = self.driver.transform_manager.get_config(
                 transform_id)
             simulation_configs = self.driver.simulation_manager.get_configs(
@@ -80,12 +94,16 @@ class StreamBenchmarkStats(object):
             simulation_configs.sort(key=lambda x: x.get_simulation_id())
             for simulation_config in simulation_configs:
                 simulation_id = simulation_config.get_simulation_id()
-                self.sim_stats.append(StreamBenchmarkSimStats(
+                sbss = StreamBenchmarkSimStats(
                     self.driver,
                     self.benchmark,
                     transform_config,
                     simulation_config
-                ))
+                )
+                if not sbss.is_loaded():
+                    # Ignore unloaded sbss
+                    continue
+                self.sim_stats.append(sbss)
                 if transform_id == 'replay' and simulation_id == 'o8.ch2.l3':
                     self.baseline_sim_stats = self.sim_stats[-1]
 

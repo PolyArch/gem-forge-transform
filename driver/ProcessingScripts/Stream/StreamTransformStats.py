@@ -45,16 +45,80 @@ class StreamTransformStats(object):
                     mismatch_streams.append(s)
             return mismatch_streams
 
-        def get_total_stream_accesses(self):
-            total = 0
+        def sum_mem_stream_at_inner_most(self, func):
+            value = 0
             for stream_name in self.streams:
                 s = self.streams[stream_name][0]
                 if s.type == 'phi':
                     continue
+                value += func(s)
+            return value
+
+        def sum_mem_stream_at_qualified_outer_most(self, func):
+            value = 0
+            for stream_name in self.streams:
+                qualified = None
+                for s in self.streams[stream_name]:
+                    if s.type == 'phi':
+                        continue
+                    if s.dynamic_info.is_qualified:
+                        qualified = s
+                if qualified is not None:
+                    value += func(s)
+            return value
+
+        def get_total_stream_accesses(self):
+            def count_if_qualified(s):
                 if not s.dynamic_info.is_qualified:
-                    continue
-                total += s.dynamic_info.total_accesses
-            return total
+                    return 0
+                return s.dynamic_info.total_accesses
+            return self.sum_mem_stream_at_inner_most(count_if_qualified)
+
+        def get_total_inline_loop_mem_accesses(self):
+            def count_if_qualified(s):
+                return s.dynamic_info.total_accesses
+            return self.sum_mem_stream_at_inner_most(count_if_qualified)
+
+        def get_total_stream_accesses_by_type(self, pattern):
+            # ! Be careful about the pattern.
+            def count_if_qualified(s):
+                if not s.dynamic_info.is_qualified:
+                    return 0
+                if s.static_info.val_pattern != pattern:
+                    return 0
+                return s.dynamic_info.total_accesses
+            return self.sum_mem_stream_at_inner_most(count_if_qualified)
+
+        def get_stream_accesses_longer_than(self, length):
+            def count_if_longer_than(s):
+                total_accesses = s.dynamic_info.total_accesses
+                total_configs = s.dynamic_info.total_configures
+                avg_length = float(total_accesses) / float(total_configs)
+                if avg_length <= length:
+                    return 0
+                return s.dynamic_info.total_accesses
+            return self.sum_mem_stream_at_qualified_outer_most(count_if_longer_than)
+
+        def get_stream_accesses_with_control(self, pattern):
+            # * pattern:
+            # * 0: No control. 1: CondStep. 2: CondUse. 3: CondBoth.
+            def count_if_control(s):
+                total_accesses = s.dynamic_info.total_accesses
+                total_iters = s.dynamic_info.total_iters
+                cond_use = float(total_accesses) < float(total_iters) * 0.99
+                cond_step = \
+                    s.static_info.stp_pattern == StreamMessage_pb2.StreamStepPattern.Value(
+                        'CONDITIONAL')
+                if pattern == 0 and (not cond_use) and (not cond_step):
+                    return s.dynamic_info.total_accesses
+                if pattern == 1 and (not cond_use) and cond_step:
+                    return s.dynamic_info.total_accesses
+                if pattern == 2 and cond_use and (not cond_step):
+                    return s.dynamic_info.total_accesses
+                if pattern == 3 and cond_use and cond_step:
+                    return s.dynamic_info.total_accesses
+                return 0
+            return self.sum_mem_stream_at_qualified_outer_most(count_if_control)
 
         def get_total_qualified_mem_accesses(self):
             total = 0
@@ -155,9 +219,25 @@ class StreamTransformStats(object):
         def get_total_mem_accesses(self):
             return self.total_mem_accesses
 
+        def get_total_inline_loop_mem_accesses(self):
+            return float(sum([
+                r.get_total_inline_loop_mem_accesses() for r in self.regions]))
+
         def get_total_stream_accesses(self):
-            return float(sum([r.get_total_stream_accesses() for r in self.regions]))
-            
+            return float(sum([
+                r.get_total_stream_accesses() for r in self.regions]))
+
+        def get_total_stream_accesses_by_type(self, pattern):
+            return float(sum([
+                r.get_total_stream_accesses_by_type(pattern) for r in self.regions]))
+
+        def get_stream_accesses_longer_than(self, length):
+            return float(sum([
+                r.get_stream_accesses_longer_than(length) for r in self.regions]))
+
+        def get_stream_accesses_with_control(self, pattern):
+            return float(sum([
+                r.get_stream_accesses_with_control(pattern) for r in self.regions]))
 
         def analyze_mismatch_at_level(self, level):
             total_mismatch_mem_accesses = 0
@@ -223,15 +303,6 @@ class StreamTransformStats(object):
         self.mismatches = list()
         for trace in self.benchmark.get_traces():
             self.traces.append(StreamTransformStats.TraceAnalyzer(self, trace))
-        # for level in xrange(3):
-        #     total_mismatch_mem_accesses = 0.0
-        #     for trace in self.traces:
-        #         trace_mismatch_mem_accesses = trace.analyze_mismatch_at_level(
-        #             level)
-        #         total_mismatch_mem_accesses += trace_mismatch_mem_accesses * trace.trace.get_weight()
-        #     print('========= Analyzing Loop Level {level} Mismatch MemAccesses {weight:.3f}'.format(
-        #         level=level, weight=total_mismatch_mem_accesses))
-        #     self.mismatches.append(total_mismatch_mem_accesses)
 
     def analyze_chosen_stream_length(self):
         average_stream_length = 0.0
@@ -264,7 +335,25 @@ class StreamTransformStats(object):
         return self.weighted_by_trace(lambda trace: trace.get_total_removed_insts())
 
     def get_total_mem_accesses(self):
-        return self.weighted_by_trace(lambda trace: trace.get_total_mem_accesses())
+        return self.weighted_by_trace(
+            lambda trace: trace.get_total_mem_accesses())
+
+    def get_total_inline_loop_mem_accesses(self):
+        return self.weighted_by_trace(
+            lambda trace: trace.get_total_inline_loop_mem_accesses())
 
     def get_total_stream_accesses(self):
-        return self.weighted_by_trace(lambda trace: trace.get_total_stream_accesses())
+        return self.weighted_by_trace(
+            lambda trace: trace.get_total_stream_accesses())
+
+    def get_total_stream_accesses_by_type(self, pattern):
+        return self.weighted_by_trace(
+            lambda trace: trace.get_total_stream_accesses_by_type(pattern))
+
+    def get_stream_accesses_longer_than(self, length):
+        return self.weighted_by_trace(
+            lambda trace: trace.get_stream_accesses_longer_than(length))
+
+    def get_stream_accesses_with_control(self, pattern):
+        return self.weighted_by_trace(
+            lambda trace: trace.get_stream_accesses_with_control(pattern))
