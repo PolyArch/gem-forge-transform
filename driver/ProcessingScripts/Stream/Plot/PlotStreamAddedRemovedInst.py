@@ -7,31 +7,24 @@ import Util
 import PlotUtil
 
 
-class PlotStreamControl(object):
+class PlotStreamAddedRemovedInst(object):
     def __init__(self, benchmark_stats):
         self.benchmark_stats = benchmark_stats
         self.values = [
             np.zeros(len(self.benchmark_stats)),
             np.zeros(len(self.benchmark_stats)),
-            np.zeros(len(self.benchmark_stats)),
-            np.zeros(len(self.benchmark_stats)),
-        ]
-        self.control_pattern = [
-            3, 2, 1, 0
         ]
 
         self.labels = [
-            'Cond. Both',
-            'Cond. Use',
-            'Cond. Update',
-            'Uncond.',
+            'Remain',
+            'Added',
         ]
 
         for idx in range(len(self.benchmark_stats)):
             self.process_transform_stats(idx)
-        for idx in range(len(self.control_pattern)):
-            print('Average {pattern} is {avg}.'.format(
-                pattern=self.control_pattern[idx],
+        for idx in range(len(self.labels)):
+            print('Average {label} is {avg}.'.format(
+                label=self.labels[idx],
                 avg=np.mean(self.values[idx])
             ))
 
@@ -44,15 +37,12 @@ class PlotStreamControl(object):
         sbs = self.benchmark_stats[benchmark_idx]
         stats = sbs.stream_transform_stats
 
-        total = 0.0
-        for idx in range(len(self.control_pattern)):
-            accesses = stats.get_stream_accesses_with_control(
-                self.control_pattern[idx])
-            total += accesses
-            self.values[idx][benchmark_idx] = accesses
-        # Normalize it.
-        for idx in range(len(self.control_pattern)):
-            self.values[idx][benchmark_idx] /= total
+        total = stats.get_total_insts()
+        removed = stats.get_total_removed_insts()
+        remain = total - removed
+        added = stats.get_total_added_insts()
+        self.values[0][benchmark_idx] = float(remain) / float(total)
+        self.values[1][benchmark_idx] = float(added) / float(total)
 
     def plot(self):
         # Compute average.
@@ -66,14 +56,14 @@ class PlotStreamControl(object):
 
         mpl.rcParams['hatch.linewidth'] = 0.1
 
-        bar_color_step = 0.8 / (len(self.values) - 1)
+        bar_color_step = 0.8 / (len(self.values))
         bar_color = np.ones(3) * 0.2
         bottom = [0] * len(self.benchmark_names)
         ps = list()
         for i in xrange(len(self.values)):
             l = self.values[i]
             ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
-                              color=bar_color, edgecolor='k', linewidth=0.1))
+                              color=bar_color, edgecolor='k', linewidth=0.1, zorder=3))
             bottom = bottom + l
             bar_color += np.ones(3) * bar_color_step
 
@@ -81,16 +71,17 @@ class PlotStreamControl(object):
         font.set_size(6)
         font.set_weight('bold')
 
+        plt.grid(zorder=0, axis='y')
         plt.xticks(ind, self.benchmark_names, horizontalalignment='right',
                    rotation=80, fontproperties=font)
-        plt.yticks(np.arange(0, 1.001, 0.1))
         plt.xlim(left=ind[0]-width/2, right=ind[N-1]+width/2)
+        plt.yticks(np.arange(0, 1.001, 0.1))
         plt.legend(handles=ps[::-1], loc=2, bbox_to_anchor=(1, 1))
 
         plt.subplots_adjust(top=0.85, bottom=0.45,
                             left=0.2, right=0.73, wspace=0.01)
 
-        fn = 'stream-control.pdf'
+        fn = 'stream-added-removed-inst.pdf'
         plt.savefig(fn)
         Util.call_helper([
             'pdfcrop',

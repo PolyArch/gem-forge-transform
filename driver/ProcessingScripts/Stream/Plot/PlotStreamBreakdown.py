@@ -30,14 +30,14 @@ class PlotStreamBreakdown(object):
             self.indirect_accesses,
             self.pointer_chase_accesses,
             self.unqualified_accesses,
-            self.not_inlined_accesses
+            # self.not_inlined_accesses
         ]
         self.labels = [
             'Affine',
             'Indirect',
             'Pointer Chase',
             'Unqualified',
-            'Not Fully Inlined',
+            # 'Not Fully Inlined',
         ]
         self.benchmark_names = [PlotUtil.get_benchmark_name(b.benchmark.get_name())
                                 for b in self.benchmark_stats]
@@ -92,23 +92,27 @@ class PlotStreamBreakdown(object):
 
         mpl.rcParams['hatch.linewidth'] = 0.1
 
-        bar_color_step = 0.8 / (len(self.values) - 3)
+        bar_color_step = 0.8 / (len(self.values) - 1)
         bar_color = np.ones(3) * 0.2
         bottom = [0] * len(self.benchmark_names)
         ps = list()
         for i in xrange(len(self.values)):
             l = self.values[i]
-            if i == len(self.values) - 1:
-                ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
-                                  color='none', edgecolor='k', linewidth=0.1,
-                                  hatch='xxxxxx'))
-            elif i == len(self.values) - 2:
-                ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
-                                  color='none', edgecolor='k', linewidth=0.1,
-                                  hatch='//////'))
-            else:
-                ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
-                                  color=bar_color, edgecolor='k', linewidth=0.1))
+            # if i == len(self.values) - 1:
+            #     ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
+            #                       color='none', edgecolor='k', linewidth=0.1,
+            #                       hatch='//////', zorder=3))
+            # elif i == len(self.values) - 2:
+            #     ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
+            #                       color='none', edgecolor='k', linewidth=0.1,
+            #                       hatch='//////'))
+            # else:
+                # ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
+                #                     color=bar_color, edgecolor='k', linewidth=0.1,
+                #                     zorder=3))
+            ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
+                                color=bar_color, edgecolor='k', linewidth=0.1,
+                                zorder=3))
             bottom = bottom + l
             bar_color += np.ones(3) * bar_color_step
 
@@ -116,9 +120,11 @@ class PlotStreamBreakdown(object):
         font.set_size(6)
         font.set_weight('bold')
 
+        plt.grid(zorder=0, axis='y')
         plt.xticks(ind, self.benchmark_names, horizontalalignment='right',
                    rotation=80, fontproperties=font)
         plt.yticks(np.arange(0, 1.001, 0.1))
+        plt.xlim(left=ind[0]-width/2, right=ind[N-1]+width/2)
         plt.legend(handles=ps[::-1], loc=2, bbox_to_anchor=(1, 1))
 
         plt.subplots_adjust(top=0.85, bottom=0.45,

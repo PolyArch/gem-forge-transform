@@ -71,7 +71,7 @@ class PlotStreamLength(object):
         for i in xrange(len(self.values)):
             l = self.values[i]
             ps.append(plt.bar(ind, l, width, bottom=bottom, label=self.labels[i],
-                              color=bar_color, edgecolor='k', linewidth=0.1))
+                              color=bar_color, edgecolor='k', linewidth=0.1, zorder=3))
             bottom = bottom + l
             bar_color += np.ones(3) * bar_color_step
 
@@ -82,6 +82,7 @@ class PlotStreamLength(object):
         plt.xticks(ind, self.benchmark_names, horizontalalignment='right',
                    rotation=80, fontproperties=font)
         plt.yticks(np.arange(0, 1.001, 0.1))
+        plt.xlim(left=ind[0]-width/2, right=ind[N-1]+width/2)
         plt.legend(handles=ps[::-1], loc=2, bbox_to_anchor=(1, 1))
 
         plt.subplots_adjust(top=0.85, bottom=0.45,

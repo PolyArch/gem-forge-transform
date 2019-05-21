@@ -83,9 +83,18 @@ class PlotStreamOverallPerformance(object):
         self.stream_cache_spd = np.divide(
             self.baseline_cycles, self.stream_cache_cycles)
 
+        print('Geomean StreamCache/Stride {spd}'.format(
+            spd=PlotUtil.geomean(np.divide(self.stream_cache_spd, self.stride_spd))))
+        print('Geomean StreamThrottle/Stride {spd}'.format(
+            spd=PlotUtil.geomean(np.divide(self.stream_throttle_spd, self.stride_spd))))
+        print('Geomean StreamPrefetch/Stride {spd}'.format(
+            spd=PlotUtil.geomean(np.divide(self.stream_prefetch_spd, self.stride_spd))))
+        print('Geomean IdealPrefetch/Stride {spd}'.format(
+            spd=PlotUtil.geomean(np.divide(self.ideal_prefetch_spd, self.stride_spd))))
+
         self.values = [
             self.stride_spd,
-            self.imp_spd,
+            # self.imp_spd,
             self.isb_spd,
             self.ideal_prefetch_spd,
             self.stream_prefetch_spd,
@@ -99,13 +108,15 @@ class PlotStreamOverallPerformance(object):
 
         self.labels = [
             'StridePf',
-            'IMPf',
+            # 'IMPf',
             'ISBPf',
             'IdealHT',
             'StreamPf',
             'BindingStreamPf',
             'StreamAwareCache',
         ]
+
+        self.num_baselines = len(self.labels) - 3
 
         self.benchmark_names = [PlotUtil.get_benchmark_name(b.benchmark.get_name())
                                 for b in self.benchmark_stats]
@@ -114,8 +125,7 @@ class PlotStreamOverallPerformance(object):
     def plot(self):
 
         N = len(self.benchmark_names)
-        num_baselines = 4
-        num_bars_per_benchmark = num_baselines + 1
+        num_bars_per_benchmark = self.num_baselines + 1
         width = 1
         width_per_benchmark = num_bars_per_benchmark * width + 1
         ind = np.arange(0, N * width_per_benchmark,
@@ -123,53 +133,53 @@ class PlotStreamOverallPerformance(object):
 
         mpl.rcParams['hatch.linewidth'] = 0.1
 
-        bar_color_step = 0.8 / (num_baselines)
+        bar_color_step = 0.8 / (self.num_baselines)
         bar_color = np.ones(3) * 0.2
         bottom = [0] * len(self.benchmark_names)
         ps = list()
         for i in xrange(len(self.values)):
             l = self.values[i]
-            if i < num_baselines:
+            if i < self.num_baselines:
                 # Baselines:
                 bar_ind = ind + i * width
-                print(bar_ind)
-                print(l)
-                print(width)
-                print(bottom)
-                print(self.labels[i])
-                print(bar_color)
                 ps.append(plt.bar(bar_ind, l, width, bottom=bottom, label=self.labels[i],
-                                  color=bar_color, edgecolor='k', linewidth=0.1))
-            if i == num_baselines:
+                                  color=bar_color, edgecolor='k', linewidth=0.1,
+                                  zorder=3))
+                bar_color += np.ones(3) * bar_color_step
+            if i == self.num_baselines:
                 # StreamPrefetch
-                bar_ind = ind + num_baselines * width
+                bar_ind = ind + self.num_baselines * width
                 ps.append(plt.bar(bar_ind, l, width, bottom=bottom, label=self.labels[i],
-                                  color=bar_color, edgecolor='k', linewidth=0.1))
-            if i == num_baselines + 1:
+                                  color=bar_color, edgecolor='k', linewidth=0.1,
+                                  zorder=3))
+            if i == self.num_baselines + 1:
                 # StreamThrottle
-                bar_ind = ind + num_baselines * width
+                bar_ind = ind + self.num_baselines * width
                 prev_value = self.values[i - 1]
                 diff_value = np.abs(l - prev_value)
                 ps.append(plt.bar(bar_ind, diff_value, width, bottom=prev_value, label=self.labels[i],
-                                  color='none', edgecolor='k', linewidth=0.1,
-                                  hatch='//////'))
-            if i == num_baselines + 2:
+                                  color=bar_color, edgecolor='k', linewidth=0.1,
+                                  hatch='//////',
+                                  zorder=3))
+            if i == self.num_baselines + 2:
                 # StreamThrottle
-                bar_ind = ind + num_baselines * width
+                bar_ind = ind + self.num_baselines * width
                 prev_value = self.values[i - 1]
                 diff_value = np.abs(l - prev_value)
                 ps.append(plt.bar(bar_ind, diff_value, width, bottom=prev_value, label=self.labels[i],
-                                  color='none', edgecolor='k', linewidth=0.1,
-                                  hatch='xxxxxx'))
-            bar_color += np.ones(3) * bar_color_step
+                                  color=bar_color, edgecolor='k', linewidth=0.1,
+                                  hatch='xxxxxx',
+                                  zorder=3))
 
         font = mpl.font_manager.FontProperties()
         font.set_size(6)
         font.set_weight('bold')
 
+        plt.grid(zorder=0, axis='y')
         plt.xticks(ind + num_bars_per_benchmark * width / 2, self.benchmark_names, horizontalalignment='right',
                    rotation=80, fontproperties=font)
-        plt.yticks(np.arange(0, 6.0, 0.5))
+        plt.yticks(np.arange(0, 7.0, 0.5))
+        plt.xlim(left=ind[0]-width, right=ind[N-1]+width_per_benchmark-width)
         # plt.legend(handles=ps[::-1], loc=2, bbox_to_anchor=(1, 1))
         plt.legend(handles=ps[::-1], loc=0,
                    prop={'size': 6})
