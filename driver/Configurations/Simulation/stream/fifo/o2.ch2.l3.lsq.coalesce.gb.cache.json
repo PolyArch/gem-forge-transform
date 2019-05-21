@@ -1,0 +1,61 @@
+{
+    "id": "stream.o2.ch2.l3.lsq.coalesce.fifo{init_size*24}.gb.cache",
+    "options": [
+        "--llvm-issue-width=2",
+        "--l1d_size=32kB",
+        "--l1d_lat=2",
+        "--l1d_mshrs=8",
+        "--l1d_assoc=8",
+        "--l1_5dcache",
+        "--l1_5d_size=256kB",
+        "--l1_5d_assoc=16",
+        "--l1_5d_mshrs=16",
+        "--l2_size=8MB",
+        "--l2_lat=20",
+        "--l2_mshrs=20",
+        "--l2_assoc=8",
+        "--l2bus_width=16",
+        "--mem-channels=2",
+        "--gem-forge-cache-load-ports=2",
+        "--gem-forge-cache-store-ports=2",
+        "--gem-forge-stream-engine-max-run-ahead-length={init_size}",
+        "--gem-forge-stream-engine-max-total-run-ahead-length={init_size*24}",
+        "--gem-forge-stream-engine-throttling=global",
+        "--gem-forge-stream-engine-enable-lsq",
+        "--gem-forge-stream-engine-enable-coalesce",
+        "--gem-forge-stream-engine-placement=placement-expr#imm.sub.rst"
+    ],
+    "support-transform-ids": [
+        "stream",
+        "stream.alias",
+        "stream.inner",
+        "stream.static-outer",
+        "stream.prefetch",
+        "stream.prefetch.alias"
+    ],
+    "design_space": [
+        {
+            "init_size": 10
+        }
+    ],
+    "comment": [
+        {
+            "init_size": 10
+        },
+        {
+            "init_size": 8
+        },
+        {
+            "init_size": 6
+        },
+        {
+            "init_size": 5
+        },
+        {
+            "init_size": 4
+        },
+        {
+            "init_size": 3
+        }
+    ]
+}
