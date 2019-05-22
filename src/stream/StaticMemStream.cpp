@@ -196,4 +196,9 @@ void StaticMemStream::finalizePattern() {
           BaseStream->StaticStreamInfo.val_pattern());
     }
   }
+  // Compute the possible loop path.
+  this->StaticStreamInfo.set_loop_possible_path(
+      LoopUtils::countPossiblePath(this->InnerMostLoop));
+  this->StaticStreamInfo.set_config_loop_possible_path(
+      LoopUtils::countPossiblePath(this->ConfigureLoop));
 }
