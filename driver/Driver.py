@@ -368,7 +368,7 @@ class Driver:
                     deps = list()
                     if name in self.simulate_jobs:
                         deps.append(
-                            self.simulate_jobs[name][transform_id][i][simulation_configs])
+                            self.simulate_jobs[name][transform_id][i][simulation_id])
                     job_scheduler.add_job(
                         name='{name}.{transform_id}.{simulation_id}.{i}.mcpat'.format(
                             name=name,
