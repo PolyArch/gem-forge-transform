@@ -1,7 +1,7 @@
 {
-    "id": "o8.ch2.l3.ipf{distance}",
+    "id": "o4.ch2.l3.ipf{distance}",
     "options": [
-        "--llvm-issue-width=8",
+        "--llvm-issue-width=4",
         "--l1d_size=32kB",
         "--l1d_lat=2",
         "--l1d_mshrs=8",

@@ -1,7 +1,7 @@
 {
-    "id": "o8.ch2.l3.ipf{distance}",
+    "id": "o2.ch2.l3.pfa",
     "options": [
-        "--llvm-issue-width=8",
+        "--llvm-issue-width=2",
         "--l1d_size=32kB",
         "--l1d_lat=2",
         "--l1d_mshrs=8",
@@ -16,18 +16,13 @@
         "--l2_assoc=8",
         "--l2bus_width=16",
         "--mem-channels=2",
-        "--gem-forge-ideal-prefetcher",
-        "--gem-forge-ideal-prefetcher-distance={distance}",
-        "--gem-forge-cache-load-ports=4",
-        "--gem-forge-cache-store-ports=4"
+        "--llvm-prefetch=1",
+        "--gem-forge-prefetch-on-access",
+        "--gem-forge-cache-load-ports=2",
+        "--gem-forge-cache-store-ports=2"
     ],
     "support-transform-ids": [
         "replay",
         "valid"
-    ],
-    "design_space": [
-        {
-            "distance": 1000
-        }
     ]
 }
