@@ -142,6 +142,17 @@ bool MemStream::isCandidate() const {
       "bb624") {
     return false;
   }
+  if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+      "dof_handler.cc::1952(dealii::DoFHandler<3, "
+      "3>::distribute_dofs)::bb418") {
+    return false;
+  }
+  if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
+      "forward.cc::25(void "
+      "METomography::ForwardSolver::block_build_matrix_and_rhs_threaded<3>)::"
+      "bb630") {
+    return false;
+  }
   // ! leela_s
   if (LoopUtils::getLoopId(this->SStream->ConfigureLoop) ==
       "_ZN9FastState16play_random_moveEv::bb1002") {
@@ -159,6 +170,19 @@ bool MemStream::isCandidate() const {
   if (this->BaseStepRootStreams.size() > 1) {
     // More than 1 step streams.
     return false;
+  }
+  // ! liblinear.
+  if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
+      "linear.c::844(solve_l2r_l1l2_svc)::bb218") {
+    if (this->SStream->InnerMostLoop != this->SStream->ConfigureLoop) {
+      return false;
+    }
+  }
+  if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
+      "linear.c::844(solve_l2r_l1l2_svc)::bb295") {
+    if (this->SStream->InnerMostLoop != this->SStream->ConfigureLoop) {
+      return false;
+    }
   }
   return true;
 }
