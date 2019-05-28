@@ -16,7 +16,7 @@ __attribute__((noinline)) float foo(struct Node *head) {
 }
 
 int main() {
-  const int N = 32;
+  const int N = 65536;
   struct Node *head = NULL;
   for (int i = 0; i < N; ++i) {
     struct Node *node = malloc(sizeof(struct Node));

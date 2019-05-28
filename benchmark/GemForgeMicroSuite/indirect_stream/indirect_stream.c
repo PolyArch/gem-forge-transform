@@ -7,7 +7,7 @@ typedef double Value;
 __attribute__((noinline)) Value foo_warm(volatile Value *a, int *ia, int N) {
   Value sum = 0.0;
 #pragma nounroll
-  for (int i = 1; i < N; i += 1) {
+  for (int i = 0; i < N; i += 1) {
     sum += a[ia[i]];
   }
   return sum;
@@ -16,13 +16,13 @@ __attribute__((noinline)) Value foo_warm(volatile Value *a, int *ia, int N) {
 __attribute__((noinline)) Value foo(volatile Value *a, int *ia, int N) {
   Value sum = 0.0;
 #pragma nounroll
-  for (int i = 1; i < N; i += 1) {
+  for (int i = 0; i < N; i += 1) {
     sum += a[ia[i]];
   }
   return sum;
 }
 
-const int N = 65536;
+const int N = 65536 * 1024;
 Value a[N];
 int ia[N];
 
