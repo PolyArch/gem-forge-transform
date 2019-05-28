@@ -138,10 +138,15 @@ void FunctionalStreamEngine::updateWithValue(Stream *S, DataGraph *DG,
    * BFS to update all dependent streams.
    * In the case of A-------->B
    *                 \-->C-->/
-   * We may update C twice.
+   * We may update B twice.
    */
   std::list<FunctionalStream *> UpdateQueue;
-  UpdateQueue.emplace_back(&FS);
+  // Add all dependent FS to the queue.
+  // ! Notice that you should not update FS here!
+  // ! If FS is back-dependence, this will reset the value to 0.
+  for (auto &DependentFS : FS.getDependentFunctionalStreams()) {
+    UpdateQueue.emplace_back(DependentFS);
+  }
 
   int Count = 0;
   while (!UpdateQueue.empty()) {
