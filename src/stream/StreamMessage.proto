@@ -69,6 +69,7 @@ message StreamInfo {
   repeated StreamId base_streams = 16;
   repeated StreamId back_base_streams = 17;
   repeated StreamId chosen_base_streams = 18;
+  repeated StreamId chosen_back_base_streams = 19;
 
   // Mark if this is stream is statically qualifed without any dynamic
   // information.
