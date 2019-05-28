@@ -23,7 +23,7 @@
         "--gem-forge-stream-engine-throttling=global",
         "--gem-forge-stream-engine-enable-lsq",
         "--gem-forge-stream-engine-enable-coalesce",
-        "--gem-forge-stream-engine-placement=placement-expr#imm.sub.rst"
+        "--gem-forge-stream-engine-placement=placement-expr#imm.sub.bus.rst"
     ],
     "support-transform-ids": [
         "stream",

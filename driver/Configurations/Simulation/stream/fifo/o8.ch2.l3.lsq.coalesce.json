@@ -33,11 +33,6 @@
     ],
     "design_space": [
         {
-            "init_size": 3
-        }
-    ],
-    "comment": [
-        {
             "init_size": 10
         },
         {
@@ -48,7 +43,9 @@
         },
         {
             "init_size": 5
-        },
+        }
+    ],
+    "comment": [
         {
             "init_size": 4
         }

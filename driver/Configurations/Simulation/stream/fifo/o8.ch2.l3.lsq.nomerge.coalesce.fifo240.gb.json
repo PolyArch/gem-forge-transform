@@ -1,5 +1,5 @@
 {
-    "id": "stream.o8.ch2.l3.lsq.coalesce.fifo{init_size*24}.gb",
+    "id": "stream.o8.ch2.l3.lsq.nomerge.coalesce.fifo{init_size*24}.gb",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
@@ -22,7 +22,8 @@
         "--gem-forge-stream-engine-max-total-run-ahead-length={init_size*24}",
         "--gem-forge-stream-engine-throttling=global",
         "--gem-forge-stream-engine-enable-lsq",
-        "--gem-forge-stream-engine-enable-coalesce"
+        "--gem-forge-stream-engine-enable-coalesce",
+        "--gem-forge-stream-engine-enable-merge=0"
     ],
     "support-transform-ids": [
         "stream",
@@ -35,15 +36,6 @@
     "design_space": [
         {
             "init_size": 10
-        },
-        {
-            "init_size": 8
-        },
-        {
-            "init_size": 6
-        },
-        {
-            "init_size": 5
         }
     ],
     "comment": [
