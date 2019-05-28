@@ -202,6 +202,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ADD_STREAM(this->BaseStreams, base_streams);
   ADD_STREAM(this->BackMemBaseStreams, back_base_streams);
   ADD_STREAM(this->ChosenBaseStreams, chosen_base_streams);
+  ADD_STREAM(this->ChosenBackMemBaseStreams, chosen_back_base_streams);
 
 #undef ADD_STREAM
 }

@@ -53,6 +53,19 @@ bool IndVarStream::isCandidateStatic() const {
       return false;
     }
   }
+  // ! liblinear.
+  if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
+      "linear.c::844(solve_l2r_l1l2_svc)::bb218") {
+    if (this->SStream->InnerMostLoop != this->SStream->ConfigureLoop) {
+      return false;
+    }
+  }
+  if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
+      "linear.c::844(solve_l2r_l1l2_svc)::bb295") {
+    if (this->SStream->InnerMostLoop != this->SStream->ConfigureLoop) {
+      return false;
+    }
+  }
   return true;
 }
 
