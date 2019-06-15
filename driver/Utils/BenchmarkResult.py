@@ -20,13 +20,26 @@ class SimulationResult:
         self.tdg = self.benchmark.get_tdg(self.transform_config, self.trace)
         self.result_folder = self.simulation_config.get_gem5_dir(self.tdg)
 
-        # Load config.json.
         config_fn = os.path.join(self.result_folder, 'config.json')
+        stats_fn = os.path.join(self.result_folder, 'stats.txt')
+        if (not os.path.isfile(config_fn)) or (not os.path.isfile(stats_fn)):
+            print('Failed to load simulation results for {stats_fn}'.format(
+                stats_fn=stats_fn))
+            self.loaded = False
+            self.config = None
+            self.stats = None
+            self.region_stats = None
+            self.mcpat = None
+            self.se_energy = None
+            return
+
+        self.loaded = True
+
+        # Load config.json.
         with open(config_fn, 'r') as f:
             self.config = json.load(f)
 
         # Load stats.
-        stats_fn = os.path.join(self.result_folder, 'stats.txt')
         self.stats = Gem5Stats.Gem5Stats(self.benchmark, stats_fn)
 
         # Load region stats.
@@ -40,6 +53,9 @@ class SimulationResult:
 
         # Load stream engine energy.
         self.se_energy = StreamEngineEnergy.StreamEngineEnergy(self.stats)
+
+    def is_loaded(self):
+        return self.loaded
 
     def get_energy(self):
         system_power = self.mcpat.get_system_power()

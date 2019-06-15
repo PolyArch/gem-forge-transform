@@ -107,6 +107,9 @@ class Driver:
         if self.options.benchmark is not None:
             self.benchmarks = [b for b in self.benchmarks if b.get_name()
                                in self.options.benchmark]
+        if self.options.exclude_benchmark is not None:
+            self.benchmarks = [b for b in self.benchmarks if b.get_name(
+            ) not in self.options.exclude_benchmark]
         self.perf_jobs = dict()
         self.opt_analyze_jobs = dict()
         self.profile_jobs = dict()
@@ -170,7 +173,6 @@ class Driver:
             benchmarks += suite.get_benchmarks()
         # Sort the benchmarks by name.
         benchmarks.sort(key=lambda x: x.get_name())
-        
 
         """
         If multi-program is greater than 1, then we group benchmarks into
@@ -525,6 +527,10 @@ def parse_trace_ids(option, opt, value, parser):
     setattr(parser.values, option.dest, [int(x) for x in vs])
 
 
+def parse_stream_plot(option, opt, value, parser):
+    setattr(parser.values, option.dest, value.split(','))
+
+
 def parse_stream_engine_maximum_run_ahead_length(option, opt, value, parser):
     vs = value.split(',')
     setattr(parser.values, option.dest, [int(x) for x in vs])
@@ -601,8 +607,13 @@ if __name__ == '__main__':
                       dest='suite', callback=parse_suites)
     parser.add_option('-b', '--benchmark', type='string', action='callback',
                       dest='benchmark', callback=parse_benchmarks)
+    parser.add_option('--exclude-benchmark', type='string', action='callback',
+                      dest='exclude_benchmark', callback=parse_benchmarks)
     parser.add_option('--trace-id', type='string', action='callback',
                       dest='trace_id', callback=parse_trace_ids)
+
+    parser.add_option('--stream-plot', type='string', action='callback',
+                      dest='stream_plot', callback=parse_stream_plot)
 
     parser.add_option('--multi-program', type='int',
                       action='store', dest='multi_programs', default=1)

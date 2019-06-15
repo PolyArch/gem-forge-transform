@@ -24,26 +24,26 @@
 // Definitely not the best way to do thes, but since it barely changes
 // and imitiveTypes - make sure LastPrimitiveTyID stays up to date.
 enum TypeID {
-  VoidTyID = 0,   ///<  0: type with no size
-  HalfTyID,       ///<  1: 16-bit floating point type
-  FloatTyID,      ///<  2: 32-bit floating point type
-  DoubleTyID,     ///<  3: 64-bit floating point type
-  X86_FP80TyID,   ///<  4: 80-bit floating point type (X87)
-  FP128TyID,      ///<  5: 128-bit floating point type (112-bit mantissa)
-  PPC_FP128TyID,  ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
-  LabelTyID,      ///<  7: Labels
-  MetadataTyID,   ///<  8: Metadata
-  X86_MMXTyID,    ///<  9: MMX vectors (64 bits, X86 specific)
-  TokenTyID,      ///< 10: Tokens
+  VoidTyID = 0,  ///<  0: type with no size
+  HalfTyID,      ///<  1: 16-bit floating point type
+  FloatTyID,     ///<  2: 32-bit floating point type
+  DoubleTyID,    ///<  3: 64-bit floating point type
+  X86_FP80TyID,  ///<  4: 80-bit floating point type (X87)
+  FP128TyID,     ///<  5: 128-bit floating point type (112-bit mantissa)
+  PPC_FP128TyID, ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
+  LabelTyID,     ///<  7: Labels
+  MetadataTyID,  ///<  8: Metadata
+  X86_MMXTyID,   ///<  9: MMX vectors (64 bits, X86 specific)
+  TokenTyID,     ///< 10: Tokens
 
   // Derived types... see DerivedTypes.h file.
   // Make sure FirstDerivedTyID stays up to date!
-  IntegerTyID,   ///< 11: Arbitrary bit width integers
-  FunctionTyID,  ///< 12: Functions
-  StructTyID,    ///< 13: Structures
-  ArrayTyID,     ///< 14: Arrays
-  PointerTyID,   ///< 15: Pointers
-  VectorTyID     ///< 16: SIMD 'packed' format, or other vector type
+  IntegerTyID,  ///< 11: Arbitrary bit width integers
+  FunctionTyID, ///< 12: Functions
+  StructTyID,   ///< 13: Structures
+  ArrayTyID,    ///< 14: Arrays
+  PointerTyID,  ///< 15: Pointers
+  VectorTyID    ///< 16: SIMD 'packed' format, or other vector type
 };
 
 // Contain some common definitions
@@ -81,10 +81,10 @@ static bool insideMyself = false;
 static uint64_t count = 0;
 static uint64_t countInTraceFunc = 0;
 static uint64_t tracedCount = 0;
+static uint64_t hardExitCount = 1e10;
 
 static InstructionUIDMapReader instUIDMap;
-static const LLVM::TDG::InstructionDescriptor
-    *currentInstDescriptor;
+static const LLVM::TDG::InstructionDescriptor *currentInstDescriptor;
 static size_t currentInstValueDescriptorId;
 
 // Use this flag to ingore all the initialization phase.
@@ -102,6 +102,11 @@ enum WorkMode {
 };
 
 static WorkMode workMode = WorkMode::Profile;
+
+/********************************************************************
+ * Parameters for Profile mode.
+ *******************************************************************/
+static uint64_t PROFILE_INTERVAL_SIZE = 1000000;
 
 /********************************************************************
  * Parameters for TraceUniformSampled mode.
@@ -148,11 +153,11 @@ static const char *currentInstOpName = nullptr;
 
 // Global profile log.
 static std::string allProfileFileName;
-static ProfileLogger allProfile;
+static ProfileLogger *allProfile = nullptr;
 // Traced profile log.
 static std::string tracedProfileFileName;
-static ProfileLogger tracedProfile;
-}  // namespace
+static ProfileLogger *tracedProfile = nullptr;
+} // namespace
 
 // This serves as the guard.
 
@@ -199,9 +204,13 @@ static void initializeIntervals() {
 
 static void cleanup() {
   if (workMode == WorkMode::Profile) {
-    allProfile.serializeToFile(allProfileFileName);
-    tracedProfile.serializeToFile(tracedProfileFileName);
+    allProfile->serializeToFile(allProfileFileName);
+    tracedProfile->serializeToFile(tracedProfileFileName);
   }
+  delete allProfile;
+  allProfile = nullptr;
+  delete tracedProfile;
+  tracedProfile = nullptr;
   /**
    * FIX IT!!
    * We really should deallocate this one, but it will cause
@@ -229,9 +238,23 @@ static void initialize() {
            "Please provide the inst uid file.");
     instUIDMap.parseFrom(instUIDMapFileName);
 
-    workMode = static_cast<WorkMode>(getUint64Env("LLVM_TDG_WORK_MODE"));
+    // Initialize the hard exit count.
+    {
+      auto hardExitInBillion = getUint64Env("LLVM_TDG_HARD_EXIT_IN_BILLION");
+      if (hardExitInBillion > 0) {
+        hardExitCount = hardExitInBillion * 1e9;
+      }
+      printf("initialize hardExitCount to %lu.\n", hardExitCount);
+    }
 
-    if (workMode == WorkMode::TraceUniformSampled) {
+    workMode = static_cast<WorkMode>(getUint64Env("LLVM_TDG_WORK_MODE"));
+    if (workMode == WorkMode::Profile) {
+      auto _PROFILE_INTERVAL_SIZE =
+          getUint64Env("LLVM_TDG_PROFILE_INTERVAL_SIZE");
+      if (_PROFILE_INTERVAL_SIZE > 0) {
+        PROFILE_INTERVAL_SIZE = _PROFILE_INTERVAL_SIZE;
+      }
+    } else if (workMode == WorkMode::TraceUniformSampled) {
       START_INST = getUint64Env("LLVM_TDG_START_INST");
       SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
       MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
@@ -239,6 +262,10 @@ static void initialize() {
     } else if (workMode == WorkMode::TraceSpecifiedInterval) {
       initializeIntervals();
     }
+
+    // Initialize the profileLogger.
+    allProfile = new ProfileLogger(PROFILE_INTERVAL_SIZE);
+    tracedProfile = new ProfileLogger(PROFILE_INTERVAL_SIZE);
 
     const char *meaureInTraceFunc =
         std::getenv("LLVM_TDG_MEASURE_IN_TRACE_FUNC");
@@ -283,31 +310,32 @@ static bool shouldLog() {
     c = countInTraceFunc;
   }
   switch (workMode) {
-    case WorkMode::Profile: {
+  case WorkMode::Profile: {
+    return false;
+  }
+  case WorkMode::TraceAll: {
+    return true;
+  }
+  case WorkMode::TraceTraced: {
+    return tracedFunctionsInStack > 0;
+  }
+  case WorkMode::TraceUniformSampled: {
+    if (c >= START_INST) {
+      return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
+    } else {
       return false;
     }
-    case WorkMode::TraceAll: {
-      return true;
+  }
+  case WorkMode::TraceSpecifiedInterval: {
+    if (intervals.empty())
+      return false;
+    const auto &interval = intervals.front();
+    if (c < interval.first) {
+      return false;
     }
-    case WorkMode::TraceTraced: {
-      return tracedFunctionsInStack > 0;
-    }
-    case WorkMode::TraceUniformSampled: {
-      if (c >= START_INST) {
-        return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
-      } else {
-        return false;
-      }
-    }
-    case WorkMode::TraceSpecifiedInterval: {
-      if (intervals.empty()) return false;
-      const auto &interval = intervals.front();
-      if (c < interval.first) {
-        return false;
-      }
-      return c < interval.second;
-    }
-    default: { assert(false && "Unknown work mode."); }
+    return c < interval.second;
+  }
+  default: { assert(false && "Unknown work mode."); }
   }
 }
 
@@ -317,58 +345,58 @@ static bool shouldSwitchTraceFile() {
     c = countInTraceFunc;
   }
   switch (workMode) {
-    case WorkMode::Profile:
-    case WorkMode::TraceAll:
-    case WorkMode::TraceTraced: {
+  case WorkMode::Profile:
+  case WorkMode::TraceAll:
+  case WorkMode::TraceTraced: {
+    return false;
+  }
+  case WorkMode::TraceUniformSampled: {
+    if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
+      // We are the last one of every MAX_INST. Switch file.
+      return true;
+    } else {
       return false;
     }
-    case WorkMode::TraceUniformSampled: {
-      if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
-        // We are the last one of every MAX_INST. Switch file.
-        return true;
-      } else {
-        return false;
-      }
-    }
-    case WorkMode::TraceSpecifiedInterval: {
-      if (intervals.empty()) {
-        return false;
-      }
-      if (c == intervals.front().second - 1) {
-        printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
-               intervals.front().second);
-        intervals.pop_front();
-        return true;
-      }
+  }
+  case WorkMode::TraceSpecifiedInterval: {
+    if (intervals.empty()) {
       return false;
     }
-    default: { assert(false && "Unknown work mode."); }
+    if (c == intervals.front().second - 1) {
+      printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
+             intervals.front().second);
+      intervals.pop_front();
+      return true;
+    }
+    return false;
+  }
+  default: { assert(false && "Unknown work mode."); }
   }
 }
 
 static bool shouldExit() {
   auto c = count;
-  // Hard exit condition when we hit 1e10
-  if (c == 1e10) {
+  // Hard exit condition.
+  if (c == hardExitCount) {
     std::exit(0);
   }
 
   switch (workMode) {
-    case WorkMode::Profile:
-    case WorkMode::TraceAll:
-    case WorkMode::TraceTraced: {
-      return false;
+  case WorkMode::Profile:
+  case WorkMode::TraceAll:
+  case WorkMode::TraceTraced: {
+    return false;
+  }
+  case WorkMode::TraceUniformSampled: {
+    if (MEASURE_IN_TRACE_FUNC) {
+      c = countInTraceFunc;
     }
-    case WorkMode::TraceUniformSampled: {
-      if (MEASURE_IN_TRACE_FUNC) {
-        c = countInTraceFunc;
-      }
-      return c == END_INST;
-    }
-    case WorkMode::TraceSpecifiedInterval: {
-      return intervals.empty();
-    }
-    default: { assert(false && "Unknown work mode."); };
+    return c == END_INST;
+  }
+  case WorkMode::TraceSpecifiedInterval: {
+    return intervals.empty();
+  }
+  default: { assert(false && "Unknown work mode."); };
   }
 }
 
@@ -555,7 +583,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
   std::string BBStr(BBName);
   if (workMode == WorkMode::Profile) {
     // Profile for every dynamic instruction.
-    allProfile.addBasicBlock(FuncStr, BBStr);
+    allProfile->addBasicBlock(FuncStr, BBStr);
   }
 
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
@@ -580,7 +608,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
   if (shouldLog()) {
     printInstImpl(FunctionName, BBName, Id, UID, OpCodeName);
     // Profile for traced instructions.
-    tracedProfile.addBasicBlock(FuncStr, BBStr);
+    tracedProfile->addBasicBlock(FuncStr, BBStr);
   }
   insideMyself = false;
   return;
@@ -605,38 +633,38 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
-    case TypeID::LabelTyID: {
-      // For label, log the name again to be compatible with other type.
-      printValueLabelImpl(Tag, Name, TypeId);
-      break;
-    }
-    case TypeID::IntegerTyID: {
-      uint64_t value = va_arg(VAList, uint64_t);
-      printValueIntImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    // Float is promoted to double on x64.
-    case TypeID::FloatTyID:
-    case TypeID::DoubleTyID: {
-      double value = va_arg(VAList, double);
-      printValueFloatImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    case TypeID::PointerTyID: {
-      void *value = va_arg(VAList, void *);
-      printValuePointerImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    case TypeID::VectorTyID: {
-      uint32_t size = va_arg(VAList, uint32_t);
-      uint8_t *buffer = va_arg(VAList, uint8_t *);
-      printValueVectorImpl(Tag, Name, TypeId, size, buffer);
-      break;
-    }
-    default: {
-      printValueUnsupportImpl(Tag, Name, TypeId);
-      break;
-    }
+  case TypeID::LabelTyID: {
+    // For label, log the name again to be compatible with other type.
+    printValueLabelImpl(Tag, Name, TypeId);
+    break;
+  }
+  case TypeID::IntegerTyID: {
+    uint64_t value = va_arg(VAList, uint64_t);
+    printValueIntImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  // Float is promoted to double on x64.
+  case TypeID::FloatTyID:
+  case TypeID::DoubleTyID: {
+    double value = va_arg(VAList, double);
+    printValueFloatImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  case TypeID::PointerTyID: {
+    void *value = va_arg(VAList, void *);
+    printValuePointerImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  case TypeID::VectorTyID: {
+    uint32_t size = va_arg(VAList, uint32_t);
+    uint8_t *buffer = va_arg(VAList, uint8_t *);
+    printValueVectorImpl(Tag, Name, TypeId, size, buffer);
+    break;
+  }
+  default: {
+    printValueUnsupportImpl(Tag, Name, TypeId);
+    break;
+  }
   }
   va_end(VAList);
   insideMyself = false;
@@ -668,47 +696,47 @@ void printInstValue(unsigned NumAdditionalArgs, ...) {
 
   auto TypeId = currentInstValueDescriptor.type_id();
   auto Tag = currentInstValueDescriptor.is_param() ? PRINT_VALUE_TAG_PARAMETER
-                                                : PRINT_VALUE_TAG_RESULT;
+                                                   : PRINT_VALUE_TAG_RESULT;
   // TODO: Totally remove Name.
-  const char* Name = "";
+  const char *Name = "";
 
   va_list VAList;
   va_start(VAList, NumAdditionalArgs);
   switch (TypeId) {
-    case TypeID::LabelTyID: {
-      // For label, log the name again to be compatible with other type.
-      // assert(false && "So far printInstValue does not work for label type.");
-      const char* labelName = va_arg(VAList, const char *);
-      printValueLabelImpl(Tag, labelName, TypeId);
-      break;
-    }
-    case TypeID::IntegerTyID: {
-      uint64_t value = va_arg(VAList, uint64_t);
-      printValueIntImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    // Float is promoted to double on x64.
-    case TypeID::FloatTyID:
-    case TypeID::DoubleTyID: {
-      double value = va_arg(VAList, double);
-      printValueFloatImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    case TypeID::PointerTyID: {
-      void *value = va_arg(VAList, void *);
-      printValuePointerImpl(Tag, Name, TypeId, value);
-      break;
-    }
-    case TypeID::VectorTyID: {
-      uint32_t size = va_arg(VAList, uint32_t);
-      uint8_t *buffer = va_arg(VAList, uint8_t *);
-      printValueVectorImpl(Tag, Name, TypeId, size, buffer);
-      break;
-    }
-    default: {
-      printValueUnsupportImpl(Tag, Name, TypeId);
-      break;
-    }
+  case TypeID::LabelTyID: {
+    // For label, log the name again to be compatible with other type.
+    // assert(false && "So far printInstValue does not work for label type.");
+    const char *labelName = va_arg(VAList, const char *);
+    printValueLabelImpl(Tag, labelName, TypeId);
+    break;
+  }
+  case TypeID::IntegerTyID: {
+    uint64_t value = va_arg(VAList, uint64_t);
+    printValueIntImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  // Float is promoted to double on x64.
+  case TypeID::FloatTyID:
+  case TypeID::DoubleTyID: {
+    double value = va_arg(VAList, double);
+    printValueFloatImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  case TypeID::PointerTyID: {
+    void *value = va_arg(VAList, void *);
+    printValuePointerImpl(Tag, Name, TypeId, value);
+    break;
+  }
+  case TypeID::VectorTyID: {
+    uint32_t size = va_arg(VAList, uint32_t);
+    uint8_t *buffer = va_arg(VAList, uint8_t *);
+    printValueVectorImpl(Tag, Name, TypeId, size, buffer);
+    break;
+  }
+  default: {
+    printValueUnsupportImpl(Tag, Name, TypeId);
+    break;
+  }
   }
   va_end(VAList);
   insideMyself = false;

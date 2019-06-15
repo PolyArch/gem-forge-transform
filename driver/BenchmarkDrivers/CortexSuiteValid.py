@@ -9,7 +9,7 @@ import os
 class CortexValidBenchmark(CortexBenchmark):
     def __init__(self, benchmark_args, folder, benchmark_name):
         super(CortexValidBenchmark, self).__init__(
-            benchmark_args, folder, benchmark_name, 'small', 'cortex.valid')
+            benchmark_args, folder, benchmark_name, 'medium', 'cortex.valid')
         self.defines['GEM_FORGE_VALID'] = None
 
     # For validation, we have to link with the gem5_pseudo.cpp.
@@ -69,6 +69,7 @@ class CortexValidBenchmark(CortexBenchmark):
 
     def simulate_valid(self, tdg, transform_config, simulation_config):
         print("# Simulating the validation binary.")
+        os.chdir(self.work_path)
         gem5_out_dir = simulation_config.get_gem5_dir(tdg)
         tdg_dir = os.path.dirname(tdg)
         binary = os.path.join(tdg_dir, self.get_valid_bin())
@@ -83,6 +84,7 @@ class CortexValidBenchmark(CortexBenchmark):
         # Do not add the fake tdg file, so that the script in gem5 will
         # actually simulate the valid bin.
         Util.call_helper(gem5_args)
+        os.chdir(self.cwd)
 
 
 class CortexValidSuite:

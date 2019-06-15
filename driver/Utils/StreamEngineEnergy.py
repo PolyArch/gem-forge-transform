@@ -38,9 +38,11 @@ class StreamEngineEnergy:
         self.se_unit_leak_J = self.se_unit.leakMW * seconds / 1000
 
         stream_uses = stats.get_default(
-            'tdg.accs.stream.numConfiguredStreamUse', 0)
-        stream_elements = stats.get_default('tdg.accs.stream.numElements', 0)
-        stream_stepped = stats.get_default('tdg.accs.stream.numStepped', 0)
+            'system.cpu.accs.stream.numLoadElementsUsed', 0)
+        stream_elements = stats.get_default(
+            'system.cpu.accs.stream.numElementsAllocated', 0)
+        stream_stepped = stats.get_default(
+            'syste.cpu.accs.stream.numStepped', 0)
         self.se_fifo_dynamic_NJ = self.se_fifo.readNJ * \
             stream_uses + self.se_fifo.writeNJ * stream_elements
         self.se_table_dynamic_NJ = self.se_table.readNJ * \

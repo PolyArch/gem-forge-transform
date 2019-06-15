@@ -32,7 +32,6 @@ class SPEC2017Benchmark(Benchmark):
         self.skip_inst = params['skip_inst']
         self.end_inst = params['end_inst']
         self.trace_ids = xrange(params['n_traces'])
-        # self.trace_ids = [1]
 
         self.trace_stdlib = False
         self.cwd = os.getcwd()
@@ -132,6 +131,11 @@ class SPEC2017Benchmark(Benchmark):
 
     def get_raw_bc(self):
         return self.target + '.bc'
+
+    def get_hard_exit_in_billion(self):
+        if self.get_name() == 'spec.620.omnetpp_s':
+            return 50
+        return 10
 
     def runcpu_fake(self):
         # Clear the existing build.
@@ -581,6 +585,7 @@ class SPEC2017Benchmarks:
                     lang=lang,
                 )
             )
+        self.benchmarks.sort(key=lambda x: x.get_name())
 
     def get_benchmarks(self):
         return self.benchmarks

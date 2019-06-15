@@ -90,6 +90,10 @@ class GemForgeMicroBenchmark(Benchmark):
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
+    # def get_additional_gem5_simulate_command(self):
+    #     # For validation, we disable cache warm.
+    #     return ['--gem-forge-cold-cache']
+
     def build_validation(self, transform_config, trace, output_tdg):
         # Build the validation binary.
         output_dir = os.path.dirname(output_tdg)

@@ -11,8 +11,8 @@
 // A thin wrapper over the LLVM::TDG::Profile structure.
 // This can only be used for single thread.
 class ProfileLogger {
- public:
-  ProfileLogger();
+public:
+  ProfileLogger(uint64_t _INTERVAL_SIZE);
 
   // Increase the counter of the specific basic block.
   void addBasicBlock(const std::string &Func, const std::string &BB);
@@ -26,7 +26,7 @@ class ProfileLogger {
   //   // End an interval.
   //   void endInterval(uint64_t DynamicInstSeqNum);
 
- private:
+private:
   using FunctionProfileMapT =
       std::unordered_map<std::string,
                          std::unordered_map<std::string, uint64_t>>;
@@ -36,6 +36,7 @@ class ProfileLogger {
   std::unordered_map<std::string, uint64_t> FuncProfile;
 
   FunctionProfileMapT IntervalProfile;
+  const uint64_t INTERVAL_SIZE;
   uint64_t IntervalLHS;
 
   uint64_t BBCount;

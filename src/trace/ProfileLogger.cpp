@@ -5,7 +5,8 @@
 #include <fstream>
 #include <iomanip>
 
-ProfileLogger::ProfileLogger() : IntervalLHS(0), BBCount(0) {}
+ProfileLogger::ProfileLogger(uint64_t _INTERVAL_SIZE)
+    : INTERVAL_SIZE(_INTERVAL_SIZE), IntervalLHS(0), BBCount(0) {}
 
 void ProfileLogger::addBasicBlock(const std::string &Func,
                                   const std::string &BB) {
@@ -23,7 +24,6 @@ void ProfileLogger::addBasicBlock(const std::string &Func,
   // Update the Interval.
   // If we reached the interval limit, store the current interval and create a
   // new one.
-  const uint64_t INTERVAL_SIZE = 10000000;
   if (this->BBCount - this->IntervalLHS == INTERVAL_SIZE) {
     auto ProtobufInterval = this->ProtobufProfile.add_intervals();
     ProtobufInterval->set_inst_lhs(this->IntervalLHS);
