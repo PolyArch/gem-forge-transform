@@ -432,88 +432,6 @@ def main(options):
     if options.clean != '':
         driver.clean()
 
-    benchmark_stream_statistics = dict()
-
-    for benchmark in benchmarks:
-        if 'stream' in options.transform_passes:
-            stream_tdgs = benchmark.get_tdgs(
-                driver.transform_manager.get_configs('stream')[0])
-
-            stream_stats = StreamStatistics.StreamStatistics(
-                benchmark.get_name(),
-                stream_tdgs
-            )
-            benchmark_stream_statistics[benchmark.get_name()] = stream_stats
-            print('-------------------------- ' + benchmark.get_name())
-
-    if benchmark_stream_statistics:
-        if options.dump_stream_stats:
-            stream_stats_pickle = 'Plots/data/{suite}.stream_stats.dat'.format(
-                suite=options.suite)
-            with open(stream_stats_pickle, mode='wb') as f:
-                pickle.dump(benchmark_stream_statistics, f)
-        # StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_coarse(
-        #     benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown_indirect(
-     #        benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_stream_paths(
-     #        benchmark_stream_statistics)
-        if options.dump_stream_breakdown:
-            StreamStatistics.StreamStatistics.print_benchmark_stream_breakdown(
-                benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_percentage(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_length(
-            benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_indirect(
-            benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_loop_path(
-     #        benchmark_stream_statistics)
-     #    StreamStatistics.StreamStatistics.print_benchmark_chosen_stream_configure_level(
-     #        benchmark_stream_statistics)
-        StreamStatistics.StreamStatistics.print_benchmark_static_max_n_alive_streams(
-            benchmark_stream_statistics)
-
-    suite_result = BenchmarkResult.SuiteResult(
-        options.suite,
-        benchmarks,
-        driver.transform_manager,
-        driver.simulation_manager,
-        options.transform_passes)
-
-    suite_result.show_region_stats()
-
-    if options.dump_suite_results:
-        folder = 'Plots/data'
-        suite_result.pickle(folder)
-    energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_energy()
-    se_energy_attribute = BenchmarkResult.BenchmarkResult.get_attribute_se_energy()
-    time_attribute = BenchmarkResult.BenchmarkResult.get_attribute_time()
-    suite_result.compare(
-        [energy_attribute, se_energy_attribute, time_attribute])
-
-    if len(options.transform_passes) > 1 and 'replay' in options.transform_passes:
-        for transform in options.transform_passes:
-            if transform == 'replay':
-                continue
-            for transform_config in driver.transform_manager.get_configs(transform):
-                suite_result.compare_transform_speedup(transform_config)
-                suite_result.compare_transform_energy(transform_config)
-
-    if options.dump_stream_placement:
-        if 'stream' in options.transform_passes:
-            for transform_config in driver.transform_manager.get_configs('stream'):
-                suite_result.show_stream_placement(transform_config)
-                suite_result.show_hit_lower(transform_config)
-                suite_result.show_hit_higher(transform_config)
-
-    if options.dump_cache_hits:
-        if 'stream' in options.transform_passes:
-            for transform_config in driver.transform_manager.get_configs('stream'):
-                suite_result.show_cache_hits(transform_config)
-                # suite_result.show_cache_coalesce_hits(transform_config)
-
-
 def parse_suites(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
 
@@ -529,12 +447,6 @@ def parse_trace_ids(option, opt, value, parser):
 
 def parse_stream_plot(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
-
-
-def parse_stream_engine_maximum_run_ahead_length(option, opt, value, parser):
-    vs = value.split(',')
-    setattr(parser.values, option.dest, [int(x) for x in vs])
-
 
 def parse_transform_configurations(option, opt, value, parser):
     vs = value.split(',')
@@ -627,21 +539,6 @@ if __name__ == '__main__':
     # If true, the simuation is not performed, but prepare the hoffman2 cluster to do it.
     parser.add_option('--hoffman2', action='store_true',
                       dest='hoffman2', default=False)
-
-    # Dump infos.
-    parser.add_option('--dump-stream-placement', action='store_true',
-                      dest='dump_stream_placement', default=False)
-    parser.add_option('--dump-cache-hits', action='store_true',
-                      dest='dump_cache_hits', default=False)
-
-    parser.add_option('--dump-stream-breakdown', action='store_true',
-                      dest='dump_stream_breakdown', default=False)
-
-    parser.add_option('--dump-stream-stats', action='store_true',
-                      dest='dump_stream_stats', default=False)
-
-    parser.add_option('--dump-suite-results', action='store_true',
-                      dest='dump_suite_results', default=False)
 
     (options, args) = parser.parse_args()
     main(options)

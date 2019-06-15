@@ -130,15 +130,6 @@ class SPUBenchmark(Benchmark):
     def get_raw_bc(self):
         return '{name}.bc'.format(name=self.get_name())
 
-    def clean(self):
-        clean_cmd = [
-            'rm',
-            '-f',
-            self.get_raw_bc(),
-            self.get_trace(),
-        ]
-        Util.call_helper(clean_cmd)
-
     def build_raw_bc(self):
         # By defining the TEST we control which test cases
         # we want to run.

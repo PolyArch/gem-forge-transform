@@ -140,17 +140,6 @@ class Benchmark(object):
 
         self.init_traces()
 
-    def clean(self):
-        clean_cmd = [
-            'rm',
-            '-f',
-            self.get_trace_bin(),
-            self.get_trace_bc(),
-            self.get_replay_bin(),
-            self.get_replay_bc(),
-        ]
-        Util.call_helper(clean_cmd)
-
     def debug(self, msg):
         print('> {name} <: {msg}'.format(name=self.get_name(), msg=msg))
 
