@@ -64,28 +64,6 @@ void StreamPass::transform() {
     auto &Analyzer = LoopStreamAnalyzer.second;
     Analyzer->endTransform();
   }
-
-  // /**
-  //  * Finalize the infomations, after we have the coalesce information.
-  //  */
-  // for (auto &InstStreamEntry : this->InstStreamMap) {
-  //   for (auto &S : InstStreamEntry.second) {
-  //     S->finalizeInfo(this->Trace->DataLayout);
-  //   }
-  // }
-
-  // /**
-  //  * Finally dump the information for loops.
-  //  */
-  // for (const auto &LoopStreamsPair : this->ChosenLoopSortedStreams) {
-  //   std::string LoopInfoFileName = this->OutputExtraFolderPath + "/" +
-  //                                  LoopUtils::getLoopId(LoopStreamsPair.first)
-  //                                  +
-  //                                  ".info.txt";
-  //   std::ofstream LoopInfoOS(LoopInfoFileName);
-  //   assert(LoopInfoOS.is_open() && "Failed to open a loop info file.");
-  //   this->dumpInfoForLoop(LoopStreamsPair.first, LoopInfoOS, "");
-  // }
 }
 
 void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
@@ -257,28 +235,16 @@ void StreamPass::pushLoopStackAndConfigureStreams(
 
   auto NewDynamicInst = *NewInstIter;
 
-  std::unordered_set<DynamicInstruction::DynamicId> InitDepIds;
-  for (const auto &RegDep : this->Trace->RegDeps.at(NewDynamicInst->getId())) {
-    InitDepIds.insert(RegDep.second);
-  }
-
-  auto TotalStreams =
-      this->CurrentStreamAnalyzer->getTotalStreamsWithinLoop(NewLoop);
-  auto TotalCoalescedStreams =
-      this->CurrentStreamAnalyzer->getTotalCoalescedStreamsWithinLoop(NewLoop);
   auto ConfigInst = new StreamConfigInst(Info);
   auto ConfigInstId = ConfigInst->getId();
   this->Trace->insertDynamicInst(NewInstIter, ConfigInst);
 
-  /**
-   * Insert the register dependence of the init deps.
-   */
   auto &RegDeps = this->Trace->RegDeps.at(ConfigInstId);
-  for (auto DepId : InitDepIds) {
-    RegDeps.emplace_back(nullptr, DepId);
-  }
 
   this->ConfigInstCount++;
+
+  // Stores all the loop invariant inputs.
+  std::unordered_set<const llvm::Instruction *> LoopInvariantInputs;
 
   const auto &SortedStreams = Info.getSortedStreams();
   for (auto &S : SortedStreams) {
@@ -299,6 +265,39 @@ void StreamPass::pushLoopStackAndConfigureStreams(
       ActiveStreamInstMapIter->second = ConfigInstId;
     } else {
       ActiveStreamInstMap.emplace(Inst, ConfigInstId);
+    }
+
+    /**
+     * Collect all the loop invariant values.
+     */
+    auto SStream = S->SStream;
+    for (const auto &LoopInvariantValue : SStream->LoopInvariantInputs) {
+      if (auto Inst = llvm::dyn_cast<llvm::Instruction>(LoopInvariantValue)) {
+        // This is an loop invariant instruction input.
+        LoopInvariantInputs.insert(Inst);
+        llvm::errs() << SStream->formatName() << " Loop Invariant Inst "
+                     << Utils::formatLLVMInst(Inst) << '\n';
+      }
+    }
+  }
+
+  /**
+   * Generate the dependence for all these loop invariant inputs.
+   */
+  for (auto Inst : LoopInvariantInputs) {
+    if (auto LoopInvariantStream =
+            this->CurrentStreamAnalyzer->getChosenStreamByInst(Inst)) {
+      // This is a stream input. Add dependence to the stream Id.
+      ConfigInst->addUsedStreamId(LoopInvariantStream->getStreamId());
+    } else {
+      // This is a normal inst input.
+      for (auto DepId :
+           this->Trace->DynamicFrameStack.front().translateRegisterDependence(
+               Inst)) {
+        // TODO: Make sure we use const llvm::Instruction everywhere and then
+        // TODO: fix this.
+        RegDeps.emplace_back(const_cast<llvm::Instruction *>(Inst), DepId);
+      }
     }
   }
 }

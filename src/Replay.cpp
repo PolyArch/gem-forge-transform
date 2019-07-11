@@ -271,6 +271,8 @@ void ReplayTrace::computeStaticInfo() {
           Region->add_bbs(reinterpret_cast<uint64_t>(BB));
           DEBUG(llvm::errs() << BB->getName() << '(' << BB << "), ");
         }
+        // Set the continuous flag.
+        Region->set_continuous(LoopUtils::isLoopContinuous(Loop));
         DEBUG(llvm::errs() << '\n');
         RegionsFound.insert(Loop);
       }

@@ -82,6 +82,11 @@ public:
                                                       const llvm::Loop *)>;
 
   /**
+   * Store the all the loop invariant inputs.
+   */
+  std::unordered_set<const llvm::Value *> LoopInvariantInputs;
+
+  /**
    * After all streams are created, this function should be called on every
    * stream to create the graphs.
    */
@@ -170,7 +175,7 @@ protected:
     StreamSet LoadBaseStreams;
     StreamSet IndVarBaseStreams;
     std::unordered_set<const llvm::Instruction *> CallInputs;
-    std::unordered_set<const llvm::Value *> LoopInvarianteInputs;
+    std::unordered_set<const llvm::Value *> LoopInvariantInputs;
     std::vector<const llvm::Instruction *> ComputeInsts;
     /**
      * Root (final result) of this meta node.
@@ -192,7 +197,6 @@ protected:
     bool isIdenticalTo(const ComputeMetaNode *Other) const;
   };
   std::unordered_set<const llvm::Instruction *> CallInputs;
-  std::unordered_set<const llvm::Value *> LoopInvarianteInputs;
 
   StreamSet LoadBaseStreams;
   StreamSet IndVarBaseStreams;

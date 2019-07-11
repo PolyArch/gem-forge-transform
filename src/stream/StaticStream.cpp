@@ -75,14 +75,14 @@ void StaticStream::handleFirstTimeComputeNode(
       }
     } else {
       // Loop Invarient Inst.
-      ComputeMNode->LoopInvarianteInputs.insert(Inst);
-      this->LoopInvarianteInputs.insert(Inst);
+      ComputeMNode->LoopInvariantInputs.insert(Inst);
+      this->LoopInvariantInputs.insert(Inst);
       DFSStack.pop_back();
     }
   } else {
     // Loop Invarient Value.
-    ComputeMNode->LoopInvarianteInputs.insert(DNode.Value);
-    this->LoopInvarianteInputs.insert(DNode.Value);
+    ComputeMNode->LoopInvariantInputs.insert(DNode.Value);
+    this->LoopInvariantInputs.insert(DNode.Value);
     DFSStack.pop_back();
   }
 }

@@ -147,7 +147,6 @@ void AbstractDataFlowAcceleratorPass::transform() {
           }
         } else {
           // This is not a candidate.
-          // DEBUG(llvm::errs() << "Getted loop is not a candidate.\n");
           NewLoop = nullptr;
         }
       }

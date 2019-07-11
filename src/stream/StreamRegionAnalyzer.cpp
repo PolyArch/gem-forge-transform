@@ -267,7 +267,7 @@ void StreamRegionAnalyzer::endRegion(
     }
   }
 
-  this->markQualifiedStreams();
+  this->markQualifiedStreams(StreamPassChooseStrategy);
   this->disqualifyStreams();
   if (StreamPassChooseStrategy ==
       StreamPassChooseStrategyE::DYNAMIC_OUTER_MOST) {
@@ -383,11 +383,24 @@ Stream *StreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
   llvm_unreachable("Failed to find the stream at specified loop level.");
 }
 
-void StreamRegionAnalyzer::markQualifiedStreams() {
+void StreamRegionAnalyzer::markQualifiedStreams(
+    StreamPassChooseStrategyE StreamPassChooseStrategy) {
+
+  auto IsQualifySeed = [StreamPassChooseStrategy](Stream *S) -> bool {
+    if (!S->isQualifySeed()) {
+      return false;
+    }
+    if (StreamPassChooseStrategy == StreamPassChooseStrategyE::INNER_MOST) {
+      return S->SStream->ConfigureLoop == S->SStream->InnerMostLoop;
+    } else {
+      return true;
+    }
+  };
+
   std::list<Stream *> Queue;
   for (auto &InstStream : this->InstStreamMap) {
     for (auto &S : InstStream.second) {
-      if (S->isQualifySeed()) {
+      if (IsQualifySeed(S)) {
         Queue.emplace_back(S);
       }
     }
@@ -403,7 +416,7 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
       // We have already processed this stream.
       continue;
     }
-    if (!S->isQualifySeed()) {
+    if (!IsQualifySeed(S)) {
       assert(false && "Stream should be a qualify seed to be inserted into the "
                       "qualifying queue.");
       continue;
@@ -411,7 +424,7 @@ void StreamRegionAnalyzer::markQualifiedStreams() {
     S->markQualified();
     // Check all the dependent streams.
     for (const auto &DependentStream : S->getDependentStreams()) {
-      if (DependentStream->isQualifySeed()) {
+      if (IsQualifySeed(DependentStream)) {
         Queue.emplace_back(DependentStream);
       }
     }
@@ -941,51 +954,6 @@ std::list<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
   }
 
   return SortedStreams;
-}
-
-int StreamRegionAnalyzer::getTotalStreamsWithinLoop(
-    const llvm::Loop *ConfigureLoop) {
-  // if (this->ConfigureLoopTotalStreamsMap.count(ConfigureLoop) != 0) {
-  //   return this->ConfigureLoopTotalStreamsMap.at(ConfigureLoop);
-  // }
-  // auto TotalStreams =
-  //     this->getSortedChosenStreamsByConfigureLoop(ConfigureLoop).size();
-  // // Check all the subloops.
-  // auto MaxTotalStreamsInSubLoop = 0;
-  // for (const auto &SubLoop : *ConfigureLoop) {
-  //   auto TotalStreamsInSubLoop = this->getTotalStreamsWithinLoop(SubLoop);
-  //   if (TotalStreamsInSubLoop > MaxTotalStreamsInSubLoop) {
-  //     MaxTotalStreamsInSubLoop = TotalStreamsInSubLoop;
-  //   }
-  // }
-  // TotalStreams += MaxTotalStreamsInSubLoop;
-  // this->ConfigureLoopTotalStreamsMap.emplace(ConfigureLoop, TotalStreams);
-  // return TotalStreams;
-  return 0;
-}
-
-int StreamRegionAnalyzer::getTotalCoalescedStreamsWithinLoop(
-    const llvm::Loop *ConfigureLoop) {
-  // if (this->ConfigureLoopTotalCoalescedStreamsMap.count(ConfigureLoop) != 0)
-  // {
-  //   return this->ConfigureLoopTotalCoalescedStreamsMap.at(ConfigureLoop);
-  // }
-  // auto TotalStreams =
-  //     this->getSortedChosenStreamsByConfigureLoop(ConfigureLoop).size();
-  // // Check all the subloops.
-  // auto MaxTotalStreamsInSubLoop = 0;
-  // for (const auto &SubLoop : *ConfigureLoop) {
-  //   auto TotalStreamsInSubLoop =
-  //       this->getTotalCoalescedStreamsWithinLoop(SubLoop);
-  //   if (TotalStreamsInSubLoop > MaxTotalStreamsInSubLoop) {
-  //     MaxTotalStreamsInSubLoop = TotalStreamsInSubLoop;
-  //   }
-  // }
-  // TotalStreams += MaxTotalStreamsInSubLoop;
-  // this->ConfigureLoopTotalCoalescedStreamsMap.emplace(ConfigureLoop,
-  //                                                     TotalStreams);
-  // return TotalStreams;
-  return 0;
 }
 
 Stream *

@@ -167,10 +167,6 @@ bool MemStream::isCandidate() const {
       "mser.c::68(mser)::bb233") {
     return false;
   }
-  if (this->BaseStepRootStreams.size() > 1) {
-    // More than 1 step streams.
-    return false;
-  }
   // ! liblinear.
   if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
       "linear.c::844(solve_l2r_l1l2_svc)::bb218") {
@@ -183,6 +179,20 @@ bool MemStream::isCandidate() const {
     if (this->SStream->InnerMostLoop != this->SStream->ConfigureLoop) {
       return false;
     }
+  }
+  // ! srr.
+  if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
+      "SystemMatrices.c::285(CalculateA)::bb2733") {
+    return false;
+  }
+  if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
+      "SystemMatrices.c::285(CalculateA)::bb4210") {
+    return false;
+  }
+
+  if (this->BaseStepRootStreams.size() > 1) {
+    // More than 1 step streams.
+    return false;
   }
   return true;
 }

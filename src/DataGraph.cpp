@@ -133,14 +133,14 @@ void DataGraph::DynamicFrame::insertValue(const llvm::Value *Value,
 
 const std::list<DataGraph::DynamicId> &
 DataGraph::DynamicFrame::translateRegisterDependence(
-    llvm::Instruction *StaticInst) const {
+    const llvm::Instruction *StaticInst) const {
   assert(StaticInst->getFunction() == this->Function &&
          "This instruction is not in our function.");
   return this->RegDepLookUpMap.at(StaticInst);
 }
 
 void DataGraph::DynamicFrame::updateRegisterDependenceLookUpMap(
-    llvm::Instruction *StaticInst, DynamicId Id) {
+    const llvm::Instruction *StaticInst, DynamicId Id) {
   assert(StaticInst->getFunction() == this->Function &&
          "This instruction is not in our function.");
   auto Iter = this->RegDepLookUpMap.find(StaticInst);
@@ -149,7 +149,7 @@ void DataGraph::DynamicFrame::updateRegisterDependenceLookUpMap(
 }
 
 void DataGraph::DynamicFrame::updateRegisterDependenceLookUpMap(
-    llvm::Instruction *StaticInst, std::list<DynamicId> Ids) {
+    const llvm::Instruction *StaticInst, std::list<DynamicId> Ids) {
   assert(StaticInst->getFunction() == this->Function &&
          "This instruction is not in our function.");
   this->RegDepLookUpMap.at(StaticInst) = std::move(Ids);
