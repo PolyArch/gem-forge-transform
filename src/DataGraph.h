@@ -185,10 +185,10 @@ public:
     }
 
     const std::list<DynamicId> &
-    translateRegisterDependence(llvm::Instruction *StaticInst) const;
-    void updateRegisterDependenceLookUpMap(llvm::Instruction *StaticInst,
+    translateRegisterDependence(const llvm::Instruction *StaticInst) const;
+    void updateRegisterDependenceLookUpMap(const llvm::Instruction *StaticInst,
                                            std::list<DynamicId> Ids);
-    void updateRegisterDependenceLookUpMap(llvm::Instruction *StaticInst,
+    void updateRegisterDependenceLookUpMap(const llvm::Instruction *StaticInst,
                                            DynamicId Id);
     size_t getRegisterDependenceLookUpMapSize() const {
       return this->RegDepLookUpMap.size();
@@ -210,7 +210,7 @@ public:
      * other user defined transformation, here we store the dynamic id of the
      * producer of the incoming value.
      */
-    std::unordered_map<llvm::Instruction *, std::list<DynamicId>>
+    std::unordered_map<const llvm::Instruction *, std::list<DynamicId>>
         RegDepLookUpMap;
   };
 

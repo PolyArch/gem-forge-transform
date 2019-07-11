@@ -7,7 +7,10 @@ message Region {
   string name = 1;
   string parent = 2;
   repeated uint64 bbs = 3;
+  // Whether this region is continuous, i.e. no function calls.
+  bool continuous = 4;
 }
+
 message StaticInformation {
   string module = 1;
   repeated Region regions = 2;

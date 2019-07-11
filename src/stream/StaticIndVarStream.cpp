@@ -68,7 +68,7 @@ bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
   if (this->CallInputs != Other->CallInputs) {
     return false;
   }
-  if (this->LoopInvarianteInputs != Other->LoopInvarianteInputs) {
+  if (this->LoopInvariantInputs != Other->LoopInvariantInputs) {
     return false;
   }
   if (this->IndVarBaseStreams != Other->IndVarBaseStreams) {

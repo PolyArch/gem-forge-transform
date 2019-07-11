@@ -75,7 +75,7 @@ void StaticMemStream::analyzeIsCandidate() {
     }
     InputSCEVs.insert(this->SE->getSCEV(Inst));
   }
-  for (auto &LoopInvariantInput : this->LoopInvarianteInputs) {
+  for (auto &LoopInvariantInput : this->LoopInvariantInputs) {
     if (!this->SE->isSCEVable(LoopInvariantInput->getType())) {
       this->IsCandidate = false;
       return;
