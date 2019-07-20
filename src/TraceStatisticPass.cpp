@@ -57,7 +57,8 @@ public:
 
     // // It is enough to collect some statistic in simple mode.
     // this->Trace =
-    //     new DataGraph(this->Module, DataGraph::DataGraphDetailLv::SIMPLE);
+    //     new DataGraph(this->Module, this->CachedLI, this->CachedPDf,
+    //     this->CachedLU, DataGraph::DataGraphDetailLv::SIMPLE);
 
     // // Simple sliding window method to read in the trace.
     // uint64_t Count = 0;

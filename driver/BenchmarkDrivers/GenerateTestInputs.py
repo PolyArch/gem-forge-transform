@@ -7,6 +7,7 @@ from Utils import Gem5ConfigureManager
 
 import Constants as C
 import Util
+import JobScheduler
 
 import os
 
@@ -145,10 +146,11 @@ if __name__ == '__main__':
     transform_manager = TransformManager.TransformManager([])
     benchmark_args = BenchmarkArgs(
         transform_manager,
-        Gem5ConfigureManager.Gem5ReplayConfigureManager([], transform_manager))
+        Gem5ConfigureManager.Gem5ReplayConfigureManager([], transform_manager),
+        None)
     suite = TestInputSuite(benchmark_args)
     benchmarks = suite.get_benchmarks()
-    job_scheduler = Util.JobScheduler('test', 8, 1)
+    job_scheduler = JobScheduler.JobScheduler('test', 8, 1)
     for b in benchmarks:
         benchmark_name = b.get_name()
         build_job_id = job_scheduler.add_job(

@@ -4,7 +4,7 @@ import os
 # Where is llvm-tdg
 LLVM_TDG_DIR = os.getenv('LLVM_TDG_PATH')
 assert(LLVM_TDG_DIR is not None)
-LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build', 'src')
+LLVM_TDG_BUILD_DIR = os.path.join(LLVM_TDG_DIR, 'build')
 LLVM_TDG_DRIVER_DIR = os.path.join(LLVM_TDG_DIR, 'driver')
 LLVM_TDG_BENCHMARK_DIR = os.path.join(LLVM_TDG_DIR, 'benchmark')
 

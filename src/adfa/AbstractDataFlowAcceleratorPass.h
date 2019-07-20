@@ -12,8 +12,6 @@
  * reached the end of one invoke and switch back to GPP.
  */
 
-#include "LoopUnroller.h"
-#include "PostDominanceFrontier.h"
 #include "Replay.h"
 #include "Utils.h"
 
@@ -157,9 +155,6 @@ protected:
    * Another serializer to the data flow stream
    */
   TDGSerializer *DataFlowSerializer;
-
-  CachedPostDominanceFrontier *CachedPDF;
-  CachedLoopUnroller *CachedLU;
 
   std::string DataFlowFileName;
   std::string RelativeDataFlowFileName;

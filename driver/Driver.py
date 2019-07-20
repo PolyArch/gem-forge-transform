@@ -27,6 +27,7 @@ from ProcessingScripts import ADFAExperiments
 from ProcessingScripts import StreamExperiments
 from ProcessingScripts import ValidExperiments
 from ProcessingScripts import LibraryInstExperiments
+from ProcessingScripts import SpeedupExperiments
 
 import os
 import random
@@ -429,8 +430,11 @@ def main(options):
             ValidExperiments.analyze(driver)
         if options.analyze == 'library':
             LibraryInstExperiments.analyze(driver)
+        if options.analyze == 'speedup':
+            SpeedupExperiments.analyze(driver)
     if options.clean != '':
         driver.clean()
+
 
 def parse_suites(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
@@ -447,6 +451,7 @@ def parse_trace_ids(option, opt, value, parser):
 
 def parse_stream_plot(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
+
 
 def parse_transform_configurations(option, opt, value, parser):
     vs = value.split(',')
@@ -510,6 +515,8 @@ if __name__ == '__main__':
 
     parser.add_option('-t', '--trans-configs', type='string', action='callback', default='',
                       dest='transforms', callback=parse_transform_configurations)
+    parser.add_option('--transform-text', action='store_true',
+                      dest='transform_text', default=False)
     parser.add_option('--sim-configs', type='string', action='callback', default='',
                       dest='simulations', callback=parse_simulate_configurations)
     parser.add_option('--perf-command', action='store_true',

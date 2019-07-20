@@ -38,8 +38,6 @@ bool AbstractDataFlowAcceleratorPass::initialize(llvm::Module &Module) {
   // If the main datagraph use text mode, we also use text mode for ours.
   this->DataFlowSerializer = new TDGSerializer(this->DataFlowFileName,
                                                GemForgeOutputDataGraphTextMode);
-  this->CachedPDF = new CachedPostDominanceFrontier();
-  this->CachedLU = new CachedLoopUnroller();
   // Reset other variables.
   this->State = SEARCHING;
   // A window of one thousand instructions is profitable for dataflow?
@@ -59,10 +57,6 @@ bool AbstractDataFlowAcceleratorPass::finalize(llvm::Module &Module) {
   // Release the data flow serializer.
   delete this->DataFlowSerializer;
   this->DataFlowSerializer = nullptr;
-  delete this->CachedLU;
-  this->CachedLU = nullptr;
-  delete this->CachedPDF;
-  this->CachedPDF = nullptr;
   return ReplayTrace::finalize(Module);
 }
 

@@ -460,7 +460,8 @@ void InlineContextStreamPass::transform() {
   }
 
   // delete this->Trace;
-  // this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+  // this->Trace = new DataGraph(this->Module, this->CachedLI, this->CachedPDF,
+  // this->CachedLU, this->DGDetailLevel);
 
   // Second pass.
   // this->transformStream();

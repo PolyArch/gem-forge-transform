@@ -41,9 +41,11 @@ class TransformConfig(object):
 class TransformManager(object):
     def __init__(self, transform_fns):
         self.configs = dict()
+        self.transform_ids_in_order = list()
         for fn in transform_fns:
             config = TransformConfig(fn)
             self.configs[config.get_transform_id()] = config
+            self.transform_ids_in_order.append(config.get_transform_id())
 
     def has_config(self, transform_id):
         return transform_id in self.configs
@@ -52,7 +54,8 @@ class TransformManager(object):
         return self.configs[transform_id]
 
     def get_all_configs(self):
-        return self.configs.values()
+        return [self.get_config(transform_id) for transform_id in self.transform_ids_in_order]
 
     def get_transforms(self):
-        return self.configs.keys()
+        # Return them in order.
+        return self.transform_ids_in_order

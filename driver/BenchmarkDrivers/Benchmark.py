@@ -131,10 +131,10 @@ class Benchmark(object):
         self.standalone = standalone
 
         self.pass_so = os.path.join(
-            C.LLVM_TDG_BUILD_DIR, 'libLLVMTDGPass.so')
+            C.LLVM_TDG_BUILD_DIR, 'src', 'libLLVMTDGPass.so')
 
         self.trace_lib = os.path.join(
-            C.LLVM_TDG_BUILD_DIR, 'trace/libTracerProtobuf.a'
+            C.LLVM_TDG_BUILD_DIR, 'src', 'trace/libTracerProtobuf.a'
         )
         self.trace_format = 'protobuf'
 
@@ -566,6 +566,8 @@ class Benchmark(object):
             '-o',
             self.get_replay_bc(),
         ]
+        if self.options.transform_text:
+            opt_cmd.append('-output-datagraph-text-mode=true')
         if output_tdg is not None:
             output_extra_folder = os.path.join(
                 os.getcwd(), output_tdg + '.extra')
@@ -645,9 +647,8 @@ class Benchmark(object):
             '--caches',
             '--l2cache',
             '--cpu-type={cpu_type}'.format(cpu_type=C.CPU_TYPE),
-            '--num-cpus=1',
-            '--l1d_size={l1d_size}'.format(l1d_size=C.GEM5_L1D_SIZE),
-            '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
+            # '--l1d_size={l1d_size}'.format(l1d_size=C.GEM5_L1D_SIZE),
+            # '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
         ]
         if self.options.gem5_debug is not None:
             gem5_args.insert(

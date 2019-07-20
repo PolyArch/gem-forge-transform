@@ -1,4 +1,5 @@
 #include "DataGraph.h"
+#include "LoopUnroller.h"
 #include "Utils.h"
 #include "trace/TraceParserProtobuf.h"
 
@@ -155,8 +156,12 @@ void DataGraph::DynamicFrame::updateRegisterDependenceLookUpMap(
   this->RegDepLookUpMap.at(StaticInst) = std::move(Ids);
 }
 
-DataGraph::DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel)
-    : Module(_Module), DataLayout(nullptr), DetailLevel(_DetailLevel),
+DataGraph::DataGraph(llvm::Module *_Module, CachedLoopInfo *_CachedLI,
+                     CachedPostDominanceFrontier *_CachedPDF,
+                     CachedLoopUnroller *_CachedLU,
+                     DataGraphDetailLv _DetailLevel)
+    : Module(_Module), CachedLI(_CachedLI), CachedPDF(_CachedPDF),
+      CachedLU(_CachedLU), DetailLevel(_DetailLevel), DataLayout(nullptr),
       NumMemDependences(0), Parser(nullptr),
       PrevControlInstId(DynamicInstruction::InvalidId) {
   DEBUG(llvm::errs() << "Intializing datagraph.\n");
@@ -494,15 +499,49 @@ void DataGraph::handleRegisterDependence(DynamicInstruction *DynamicInst,
                                std::forward_as_tuple())
                       .first->second;
 
+  auto Loop = this->CachedLI->getLoopInfo(StaticInstruction->getFunction())
+                  ->getLoopFor(StaticInstruction->getParent());
+  LoopUnroller *LU = nullptr;
+  if (Loop != nullptr) {
+    LU = this->CachedLU->getUnroller(
+        Loop,
+        this->CachedLI->getScalarEvolution(StaticInstruction->getFunction()));
+  }
+
   for (unsigned int OperandId = 0,
                     NumOperands = StaticInstruction->getNumOperands();
        OperandId != NumOperands; ++OperandId) {
     if (auto OperandStaticInst = llvm::dyn_cast<llvm::Instruction>(
             StaticInstruction->getOperand(OperandId))) {
+
+      auto DepIds = this->DynamicFrameStack.front().translateRegisterDependence(
+          OperandStaticInst);
+
+      if (LU != nullptr) {
+        if (LU->isInductionVariable(OperandStaticInst)) {
+          // This is an induction variable.
+          for (auto DepId : DepIds) {
+            DynamicInst->Deps.emplace_back(
+                DepId,
+                ::LLVM::TDG::TDGInstructionDependence::INDUCTION_VARIABLE,
+                OperandStaticInst);
+          }
+          continue;
+        }
+        if (LU->isReductionVariable(OperandStaticInst)) {
+          // This is an reduction variable.
+          for (auto DepId : DepIds) {
+            DynamicInst->Deps.emplace_back(
+                DepId,
+                ::LLVM::TDG::TDGInstructionDependence::REDUCTION_VARIABLE,
+                OperandStaticInst);
+          }
+          continue;
+        }
+      }
+
       // There is a register dependence on other instruction.
-      for (auto DepId :
-           this->DynamicFrameStack.front().translateRegisterDependence(
-               OperandStaticInst)) {
+      for (auto DepId : DepIds) {
         RegDeps.emplace_back(OperandStaticInst, DepId);
       }
     }
@@ -1000,6 +1039,51 @@ void DataGraph::handleControlDependence(DynamicInstruction *DynamicInst) {
                    .first->second;
   if (this->PrevControlInstId != DynamicInstruction::InvalidId) {
     Deps.insert(this->PrevControlInstId);
+  }
+  // Handle PDF dependence.
+  auto StaticInst = DynamicInst->getStaticInstruction();
+  auto PDF =
+      this->CachedPDF->getPostDominanceFrontier(StaticInst->getFunction());
+  DynamicId OldestPDFTerminatorId = DynamicInstruction::InvalidId;
+  llvm::Instruction *OldestPDFInst = nullptr;
+  for (auto PDFBB : PDF->getFrontier(StaticInst->getParent())) {
+    // Get the terminator of the PDFBB.
+    auto PDFTerminator = PDFBB->getTerminator();
+    auto PDFTerminatorIds =
+        this->DynamicFrameStack.front().translateRegisterDependence(
+            PDFTerminator);
+    assert(PDFTerminatorIds.size() <= 1 &&
+           "At most one PDFTerminator instructions.");
+    for (auto PDFTerminatorId : PDFTerminatorIds) {
+      if (PDFTerminatorId > OldestPDFTerminatorId) {
+        OldestPDFTerminatorId = PDFTerminatorId;
+        OldestPDFInst = PDFTerminator;
+      }
+    }
+  }
+  if (OldestPDFInst != nullptr) {
+    auto Loop = this->CachedLI->getLoopInfo(StaticInst->getFunction())
+                    ->getLoopFor(StaticInst->getParent());
+    bool Unrollable = false;
+    if (Loop != nullptr) {
+      auto SE = this->CachedLI->getScalarEvolution(StaticInst->getFunction());
+      auto LU = this->CachedLU->getUnroller(Loop, SE);
+      if (OldestPDFInst == LU->getUnrollableTerminator()) {
+        // This is an unrollable terminator dependence.
+        Unrollable = true;
+      }
+    }
+    if (Unrollable) {
+      DynamicInst->Deps.emplace_back(
+          OldestPDFTerminatorId,
+          ::LLVM::TDG::TDGInstructionDependence::UNROLLABLE_CONTROL,
+          OldestPDFInst);
+    } else {
+      DynamicInst->Deps.emplace_back(
+          OldestPDFTerminatorId,
+          ::LLVM::TDG::TDGInstructionDependence::POST_DOMINANCE_FRONTIER,
+          OldestPDFInst);
+    }
   }
 }
 
