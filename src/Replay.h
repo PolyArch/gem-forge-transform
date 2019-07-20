@@ -5,7 +5,7 @@
 #include "CacheWarmer.h"
 #include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
-#include "LoopUtils.h"
+#include "LoopUnroller.h"
 #include "TDGSerializer.h"
 #include "Utils.h"
 
@@ -57,6 +57,8 @@ protected:
   llvm::Module *Module;
 
   CachedLoopInfo *CachedLI;
+  CachedPostDominanceFrontier *CachedPDF;
+  CachedLoopUnroller *CachedLU;
 
   /**
    * Statistics.

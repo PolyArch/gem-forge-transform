@@ -2,6 +2,8 @@
 #define LLVM_TDG_DYNAMIC_TRACE_H
 
 #include "DynamicInstruction.h"
+#include "LoopUtils.h"
+#include "PostDominanceFrontier.h"
 #include "trace/TraceParser.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -13,6 +15,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+class CachedLoopUnroller;
 
 extern llvm::cl::opt<std::string> TraceFileName;
 extern llvm::cl::opt<std::string> TraceFileFormat;
@@ -96,7 +100,9 @@ public:
 
   // The datagraph owns the parser, but certainly not the module.
   // You can also control if its detail level.
-  DataGraph(llvm::Module *_Module, DataGraphDetailLv _DetailLevel);
+  DataGraph(llvm::Module *_Module, CachedLoopInfo *_CachedLI,
+            CachedPostDominanceFrontier *_CachedPDF,
+            CachedLoopUnroller *_CachedLU, DataGraphDetailLv _DetailLevel);
   ~DataGraph();
 
   DataGraph(const DataGraph &other) = delete;
@@ -137,9 +143,16 @@ public:
 
   llvm::Module *Module;
 
-  llvm::DataLayout *DataLayout;
+  /**
+   * Some cached information, provided by the constructor.
+   */
+  CachedLoopInfo *CachedLI;
+  CachedPostDominanceFrontier *CachedPDF;
+  CachedLoopUnroller *CachedLU;
 
   DataGraphDetailLv DetailLevel;
+
+  llvm::DataLayout *DataLayout;
 
   // Some statistics.
   uint64_t NumMemDependences;

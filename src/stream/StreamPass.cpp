@@ -55,7 +55,8 @@ void StreamPass::transform() {
   this->analyzeStream();
 
   delete this->Trace;
-  this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+  this->Trace = new DataGraph(this->Module, this->CachedLI, this->CachedPDF,
+                              this->CachedLU, this->DGDetailLevel);
 
   this->transformStream();
 
@@ -576,10 +577,15 @@ void StreamPass::transformStream() {
          * store.
          */
         auto NewDynamicId = NewDynamicInst->getId();
-        delete NewDynamicInst;
-
         auto StoreInst =
             new StreamStoreInst(TransformPlan.getParamStream(), NewDynamicId);
+        /**
+         * Copy the additional dependence information within the instruction
+         * itself.
+         */
+        StoreInst->Deps = NewDynamicInst->Deps;
+        delete NewDynamicInst;
+
         *NewInstIter = StoreInst;
         NewDynamicInst = StoreInst;
 
@@ -598,6 +604,7 @@ void StreamPass::transformStream() {
             ++RegDepIter;
           }
         }
+
 
         /**
          * Stream store is guaranteed to be no alias we have to worry.

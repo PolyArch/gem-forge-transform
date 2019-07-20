@@ -22,12 +22,12 @@
 namespace {
 
 class TraceProfile {
- public:
+public:
   TraceProfile(llvm::Module *_Module) : TotalDynamicInstCount(0) {}
 
   void addInst(llvm::Instruction *Inst, uint64_t Value = 1);
 
- private:
+private:
   uint64_t TotalDynamicInstCount;
   std::unordered_map<llvm::BasicBlock *, uint64_t> BBDynamicInstCount;
   std::unordered_map<llvm::Function *, uint64_t> FuncDynamicInstCount;
@@ -35,20 +35,19 @@ class TraceProfile {
 };
 
 class TraceProfilingPass : public ReplayTrace {
- public:
+public:
   static char ID;
   TraceProfilingPass(char _ID = ID);
 
- protected:
+protected:
   bool initialize(llvm::Module &Module) override;
   bool finalize(llvm::Module &Module) override;
   void dumpStats(std::ostream &O) override;
   void transform() override;
 
- private:
+private:
   std::unordered_map<std::string, std::unique_ptr<TraceProfile>> TraceFileNames;
   std::unique_ptr<TraceProfile> AllTracesProfile;
-  
 
   ProfileParser Profile;
 };
@@ -108,7 +107,8 @@ void TraceProfilingPass::transform() {
     auto &TP = FNIter.second;
     TraceFileName.setValue(FN, false);
     delete this->Trace;
-    this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+    this->Trace = new DataGraph(this->Module, this->CachedLI, this->CachedPDF,
+                                this->CachedLU, this->DGDetailLevel);
 
     while (true) {
       auto NewInstIter = this->Trace->loadOneDynamicInst();
@@ -130,4 +130,4 @@ void TraceProfile::addInst(llvm::Instruction *Inst, uint64_t Value) {
       Value;
 }
 
-}  // namespace
+} // namespace

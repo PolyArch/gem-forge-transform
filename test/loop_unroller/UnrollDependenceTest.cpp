@@ -14,6 +14,9 @@ protected:
 
   llvm::LLVMContext Context;
   std::unique_ptr<llvm::Module> Module;
+  std::unique_ptr<CachedLoopInfo> CachedLI;
+  std::unique_ptr<CachedPostDominanceFrontier> CachedPDF;
+  std::unique_ptr<CachedLoopUnroller> CachedLU;
 
   std::unique_ptr<TestInput> Input;
   std::string OutputExtraFolder;
@@ -25,6 +28,9 @@ protected:
 void LoopUnrollerTestFixture::SetUp() {
   this->Input = nullptr;
   this->Module = nullptr;
+  this->CachedLI = nullptr;
+  this->CachedPDF = nullptr;
+  this->CachedLU = nullptr;
   this->DG = nullptr;
   this->Serializer = nullptr;
 }
@@ -32,6 +38,9 @@ void LoopUnrollerTestFixture::SetUp() {
 void LoopUnrollerTestFixture::TearDown() {
   this->Input = nullptr;
   this->Module = nullptr;
+  this->CachedLI = nullptr;
+  this->CachedPDF = nullptr;
+  this->CachedLU = nullptr;
   this->DG = nullptr;
   this->Serializer = nullptr;
 }
@@ -41,13 +50,17 @@ void LoopUnrollerTestFixture::setUpEnvironment(
   this->Input = std::make_unique<TestInput>(InputSourceFile, "");
   this->Module = makeLLVMModule(this->Context, this->Input->getBitCodeFile());
   assert(this->Module != nullptr && "Failed to initialize the module.");
+  this->CachedLI = std::make_unique<CachedLoopInfo>(this->Module.get());
+  this->CachedPDF = std::make_unique<CachedPostDominanceFrontier>();
+  this->CachedLU = std::make_unique<CachedLoopUnroller>();
 
   // Set up all the llvm options.
   this->Input->setUpLLVMOptions("");
 
   // Create the DG.
   this->DG = std::make_unique<DataGraph>(
-      this->Module.get(), DataGraph::DataGraphDetailLv::STANDALONE);
+      this->Module.get(), this->CachedLI.get(), this->CachedPDF.get(),
+      this->CachedLU.get(), DataGraph::DataGraphDetailLv::STANDALONE);
   this->Serializer = std::make_unique<TDGSerializer>(
       this->Input->getOutputDataGraphFile(), true);
 }

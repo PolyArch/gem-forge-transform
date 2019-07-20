@@ -84,6 +84,21 @@ public:
   void serializeToProtobuf(LLVM::TDG::TDGInstruction *ProtobufEntry,
                            DataGraph *DG) const;
 
+  /**
+   * Hold the dependence information.
+   */
+  using DependenceType = ::LLVM::TDG::TDGInstructionDependence_DependenceType;
+  struct Dependence {
+    llvm::Instruction *StaticInst;
+    DynamicId Id;
+    DependenceType Type;
+    Dependence(DynamicId Id, DependenceType Type,
+               llvm::Instruction *StaticInst = nullptr)
+        : StaticInst(StaticInst), Id(Id), Type(Type) {}
+  };
+  using DependenceList = std::list<Dependence>;
+  DependenceList Deps;
+
 protected:
   /**
    * Special constructor to allow take in dynamic id.

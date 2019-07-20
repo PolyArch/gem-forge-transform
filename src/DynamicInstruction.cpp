@@ -240,6 +240,14 @@ void DynamicInstruction::serializeToProtobuf(
       }
     }
   }
+
+  // For other dependence information within the instruction.
+  for (const auto &Dep : this->Deps) {
+    auto ProtobufDep = ProtobufEntry->add_deps();
+    ProtobufDep->set_type(Dep.Type);
+    ProtobufDep->set_dependent_id(Dep.Id);
+  }
+
   this->serializeToProtobufExtra(ProtobufEntry, DG);
 }
 

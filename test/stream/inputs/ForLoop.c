@@ -1,9 +1,10 @@
-#define M 1024
+#define M 16
 
 int arr[M];
 
-int foo(volatile int *A) {
+int foo(volatile int **pA) {
   int x = 0;
+  volatile int *A = *pA;
   for (int i = 0; i < M; ++i) {
     x = A[i];
   }
@@ -11,6 +12,7 @@ int foo(volatile int *A) {
 }
 
 int main() {
-  int x = foo(arr);
+  int *A = arr;
+  int x = foo(&A);
   return 0;
 }

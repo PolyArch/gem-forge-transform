@@ -183,13 +183,16 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
 
   DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
                      << this->DGDetailLevel << ".\n");
-  this->Trace = new DataGraph(this->Module, this->DGDetailLevel);
+  this->CachedLI = new CachedLoopInfo(this->Module);
+  this->CachedPDF = new CachedPostDominanceFrontier();
+  this->CachedLU = new CachedLoopUnroller();
+
+  this->Trace = new DataGraph(this->Module, this->CachedLI, this->CachedPDF,
+                              this->CachedLU, this->DGDetailLevel);
   this->Serializer = new TDGSerializer(
       this->OutTraceName, GemForgeOutputDataGraphTextMode.getValue());
   this->CacheWarmerPtr = new CacheWarmer(this->OutputExtraFolderPath,
                                          this->OutTraceName + ".cache");
-
-  this->CachedLI = new CachedLoopInfo(this->Module);
 
   // Initialize the static information.
   this->computeStaticInfo();
@@ -215,6 +218,10 @@ bool ReplayTrace::finalize(llvm::Module &Module) {
   // Release the cached static loops.
   delete this->CachedLI;
   this->CachedLI = nullptr;
+  delete this->CachedLU;
+  this->CachedLU = nullptr;
+  delete this->CachedPDF;
+  this->CachedPDF = nullptr;
   return true;
 }
 
