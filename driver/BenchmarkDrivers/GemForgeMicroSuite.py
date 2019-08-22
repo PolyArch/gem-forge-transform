@@ -21,7 +21,6 @@ class GemForgeMicroBenchmark(Benchmark):
             self.src_path, '../gem5_pseudo.cpp')
 
         # Create the result dir out of the source tree.
-        self.cwd = os.getcwd()
         self.work_path = os.path.join(
             C.LLVM_TDG_RESULT_DIR, 'gfm', self.benchmark_name
         )

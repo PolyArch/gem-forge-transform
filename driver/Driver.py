@@ -150,7 +150,7 @@ class Driver:
                 suite = MachSuite.MachSuiteBenchmarks(benchmark_args)
             elif suite_name == 'hello':
                 suite = TestHelloWorld.TestHelloWorldBenchmarks(benchmark_args)
-            elif suite_name == 'graph500':
+            elif suite_name == 'graph':
                 suite = Graph500.Graph500Benchmarks(benchmark_args)
             elif suite_name == 'cortex':
                 suite = CortexSuite.CortexSuite(benchmark_args)

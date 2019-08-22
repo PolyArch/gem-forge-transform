@@ -8,6 +8,8 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 
+driver/ProcessingScripts
+
 build/*
 
 *.trace
@@ -22,3 +24,4 @@ build/*
 *.data
 *.exe
 *.txt
+*.pdf
