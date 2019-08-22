@@ -41,6 +41,7 @@ bool IndVarStream::isCandidateStatic() const {
     if (BaseLoadInTheInnerMostLoop > 1) {
       return false;
     }
+    
     // For iv stream with base loads, we only allow it to be configured at inner
     // most loop level.
     if (BaseLoadInTheInnerMostLoop > 0 &&

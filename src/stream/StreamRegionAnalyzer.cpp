@@ -442,6 +442,14 @@ void StreamRegionAnalyzer::disqualifyStreams() {
   for (auto &InstStream : this->InstStreamMap) {
     for (auto &S : InstStream.second) {
       if (S->isQualified()) {
+        for (auto &BackMemBaseStream : S->getBackMemBaseStreams()) {
+          // ! So far let only allow directly dependence.
+          if (BackMemBaseStream->getBaseStreams().count(S) == 0) {
+            // Purely back-mem dependence streams is disabled now.
+            DisqualifiedQueue.emplace_back(S);
+            break;
+          }
+        }
         continue;
       }
       for (auto &BackIVDependentStream : S->getBackIVDependentStreams()) {

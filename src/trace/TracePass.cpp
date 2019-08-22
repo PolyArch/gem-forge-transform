@@ -118,7 +118,7 @@ public:
     registerPrintFunctions(Module);
 
     // If trace function specified, find all the reachable functions.
-    // Parse the comma separated list.
+    // Parse the dot separated list.
     if (TraceFunctionNames.getNumOccurrences() == 1) {
       size_t Prev = 0;
       // Append a comma to eliminate a corner case.
