@@ -89,38 +89,65 @@ static size_t currentInstValueDescriptorId;
 
 // Use this flag to ingore all the initialization phase.
 static bool hasSeenMain = false;
-static bool isProfileMode = false;
 
 static bool isDebug = false;
 
-enum WorkMode {
-  Profile = 0,
-  TraceAll = 1,
-  TraceTraced = 2,
-  TraceUniformSampled = 3,
-  TraceSpecifiedInterval = 4,
+/**
+ * Specify the ROI of the tracer.
+ * 1. All
+ *    -> All instructions starting from main.
+ * 2. SpecifiedFunction
+ *    -> Only specified functions and their callee are considered by the tracer.
+ *       So far such functions are specified by the printFunctionEnter().
+ */
+enum TraceROI {
+  All = 0,
+  SpecifiedFunction = 1,
 };
 
-static WorkMode workMode = WorkMode::Profile;
+/**
+ * Specify the mode of the tracer.
+ * 1. Profile
+ *    -> All basic blocks in ROI are profiled.
+ * 2. TraceAll
+ *    -> All ROI instructions are traced.
+ * 3. TraceUniformInterval
+ *    -> ROI Instructions in uniformly spaced intervals are traced.
+ * 4. TraceSpecifiedInterval
+ *    -> ROI Instructions in user-specified intervals are traced.
+ */
+enum TraceMode {
+  Profile = 0,
+  TraceAll = 1,
+  TraceUniformInterval = 2,
+  TraceSpecifiedInterval = 3,
+};
+
+static TraceROI traceROI = TraceROI::All;
+static TraceMode traceMode = TraceMode::Profile;
 
 /********************************************************************
  * Parameters for Profile mode.
  *******************************************************************/
-static uint64_t PROFILE_INTERVAL_SIZE = 1000000;
+// Global profile log.
+static std::string allProfileFileName;
+static ProfileLogger *allProfile = nullptr;
+// Traced profile log.
+static std::string tracedProfileFileName;
+static ProfileLogger *tracedProfile = nullptr;
 
 /********************************************************************
- * Parameters for TraceUniformSampled mode.
+ * Parameters for TraceUniformInterval mode.
  *******************************************************************/
 
 /**
- * If START_INST is set (>0), the tracer will ignore the dynamic stack and
- * trace in a pattern of
+ * If START_INST is set (>0), the tracer will trace in a pattern of
  * [START_INST+MAX_INST*0+SKIP_INST*0 ... START_INST+MAX_INST*1+SKIP_INST*0] ...
  * [START_INST+MAX_INST*1+SKIP_INST*1 ... START_INST+MAX_INST*2+SKIP_INST*1] ...
  * ...
  * [START_INST+MAX_INST*i+SKIP_INST*i ... END_INST] ...
  *
- * Initialization is set to trace everything.
+ * Initialization is set to trace nothing.
  */
 static uint64_t START_INST = 0;
 static uint64_t MAX_INST = 1;
@@ -137,26 +164,17 @@ static uint64_t END_INST = 0;
  */
 static std::list<std::pair<uint64_t, uint64_t>> intervals;
 
-/**
- * Determins how to interpret the START_INST and so on.
- */
-static bool MEASURE_IN_TRACE_FUNC = false;
-
 static uint64_t PRINT_INTERVAL = 10000000;
 
-// The tracer will maintain a stack at run time to determine if the
-// inst should be traced.
+/**
+ * The tracer will maintain a stack at run time to determine if we are in a
+ * specified function region.
+ */
 static std::vector<unsigned> stack;
 static std::vector<const char *> stackName;
 static unsigned tracedFunctionsInStack;
 static const char *currentInstOpName = nullptr;
 
-// Global profile log.
-static std::string allProfileFileName;
-static ProfileLogger *allProfile = nullptr;
-// Traced profile log.
-static std::string tracedProfileFileName;
-static ProfileLogger *tracedProfile = nullptr;
 } // namespace
 
 // This serves as the guard.
@@ -203,14 +221,14 @@ static void initializeIntervals() {
 }
 
 static void cleanup() {
-  if (workMode == WorkMode::Profile) {
+  if (traceMode == TraceMode::Profile) {
     allProfile->serializeToFile(allProfileFileName);
     tracedProfile->serializeToFile(tracedProfileFileName);
+    delete allProfile;
+    allProfile = nullptr;
+    delete tracedProfile;
+    tracedProfile = nullptr;
   }
-  delete allProfile;
-  allProfile = nullptr;
-  delete tracedProfile;
-  tracedProfile = nullptr;
   /**
    * FIX IT!!
    * We really should deallocate this one, but it will cause
@@ -218,6 +236,30 @@ static void cleanup() {
    * Since the memory will be recollected by the OS anyway, I leave it here.
    */
   printf("Done!\n");
+}
+
+static void initializeTraceMode() {
+  traceMode = static_cast<TraceMode>(getUint64Env("LLVM_TDG_TRACE_MODE"));
+  printf("Initializing traceMode to %d.\n", static_cast<int>(traceMode));
+  if (traceMode == TraceMode::Profile) {
+    auto profileIntervalSize = getUint64Env("LLVM_TDG_PROFILE_INTERVAL_SIZE");
+    if (profileIntervalSize == 0) {
+      profileIntervalSize = 10000000;
+    }
+    allProfile = new ProfileLogger(profileIntervalSize);
+    tracedProfile = new ProfileLogger(profileIntervalSize);
+  } else if (traceMode == TraceMode::TraceUniformInterval) {
+    START_INST = getUint64Env("LLVM_TDG_START_INST");
+    SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
+    MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
+    END_INST = getUint64Env("LLVM_TDG_END_INST");
+  } else if (traceMode == TraceMode::TraceSpecifiedInterval) {
+    initializeIntervals();
+  }
+}
+
+static void initializeTraceROI() {
+  traceROI = static_cast<TraceROI>(getUint64Env("LLVM_TDG_TRACE_ROI"));
 }
 
 static void initialize() {
@@ -247,34 +289,8 @@ static void initialize() {
       printf("initialize hardExitCount to %lu.\n", hardExitCount);
     }
 
-    workMode = static_cast<WorkMode>(getUint64Env("LLVM_TDG_WORK_MODE"));
-    if (workMode == WorkMode::Profile) {
-      auto _PROFILE_INTERVAL_SIZE =
-          getUint64Env("LLVM_TDG_PROFILE_INTERVAL_SIZE");
-      if (_PROFILE_INTERVAL_SIZE > 0) {
-        PROFILE_INTERVAL_SIZE = _PROFILE_INTERVAL_SIZE;
-      }
-    } else if (workMode == WorkMode::TraceUniformSampled) {
-      START_INST = getUint64Env("LLVM_TDG_START_INST");
-      SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
-      MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
-      END_INST = getUint64Env("LLVM_TDG_END_INST");
-    } else if (workMode == WorkMode::TraceSpecifiedInterval) {
-      initializeIntervals();
-    }
-
-    // Initialize the profileLogger.
-    allProfile = new ProfileLogger(PROFILE_INTERVAL_SIZE);
-    tracedProfile = new ProfileLogger(PROFILE_INTERVAL_SIZE);
-
-    const char *meaureInTraceFunc =
-        std::getenv("LLVM_TDG_MEASURE_IN_TRACE_FUNC");
-    std::string MEASURE_IN_TRACE_FUNC_VAL = "TRUE";
-    if (meaureInTraceFunc != nullptr) {
-      MEASURE_IN_TRACE_FUNC = MEASURE_IN_TRACE_FUNC_VAL == meaureInTraceFunc;
-    } else {
-      MEASURE_IN_TRACE_FUNC = false;
-    }
+    initializeTraceMode();
+    initializeTraceROI();
 
     PRINT_INTERVAL = getUint64Env("LLVM_TDG_PRINT_INTERVAL");
     if (PRINT_INTERVAL == 0) {
@@ -287,82 +303,99 @@ static void initialize() {
 
     std::atexit(cleanup);
 
-    printf("initializing workMode to %lu...\n",
-           static_cast<uint64_t>(workMode));
-    printf("initializing SKIP_INST to %lu...\n", SKIP_INST);
-    printf("initializing MAX_INST to %lu...\n", MAX_INST);
-    printf("initializing START_INST to %lu...\n", START_INST);
-    printf("initializing END_INST to %lu...\n", END_INST);
-    printf("initializing PRINT_INTERVAL to %lu...\n", PRINT_INTERVAL);
-    printf("initializing isDebug to %d...\n", isDebug);
+    printf("Initializing traceROI to %d.\n", static_cast<int>(traceROI));
+    printf("Initializing SKIP_INST to %lu...\n", SKIP_INST);
+    printf("Initializing MAX_INST to %lu...\n", MAX_INST);
+    printf("Initializing START_INST to %lu...\n", START_INST);
+    printf("Initializing END_INST to %lu...\n", END_INST);
+    printf("Initializing PRINT_INTERVAL to %lu...\n", PRINT_INTERVAL);
+    printf("Initializing isDebug to %d...\n", isDebug);
     initialized = true;
   }
 }
 
 /**
- * This functions decides if its time to trace.
- * 1. If START_INST is set (> 0), we just trace in the above pattern.
- * 2. Otherwise, we trace all the IsTraced function and their callees.
+ * This function decides if we are in ROI.
  */
-static bool shouldLog() {
-  auto c = count;
-  if (MEASURE_IN_TRACE_FUNC) {
-    c = countInTraceFunc;
-  }
-  switch (workMode) {
-  case WorkMode::Profile: {
-    return false;
-  }
-  case WorkMode::TraceAll: {
+static bool isInROI() {
+  switch (traceROI) {
+  case TraceROI::All: {
     return true;
   }
-  case WorkMode::TraceTraced: {
+  case TraceROI::SpecifiedFunction: {
     return tracedFunctionsInStack > 0;
   }
-  case WorkMode::TraceUniformSampled: {
-    if (c >= START_INST) {
-      return (c - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
+  default: { assert(false && "Illegal traceROI."); }
+  }
+}
+
+/**
+ * This functions decides if it's time to trace.
+ */
+static bool shouldLog() {
+
+  // First we check if we are actually in the ROI.
+  if (!isInROI()) {
+    return false;
+  }
+
+  // Get the correct instruction count;
+  auto instCount = count;
+  if (traceROI == TraceROI::SpecifiedFunction) {
+    instCount = countInTraceFunc;
+  }
+
+  switch (traceMode) {
+  case TraceMode::Profile: {
+    return false;
+  }
+  case TraceMode::TraceAll: {
+    return true;
+  }
+  case TraceMode::TraceUniformInterval: {
+    if (instCount >= START_INST) {
+      return (instCount - START_INST) % (MAX_INST + SKIP_INST) < MAX_INST;
     } else {
       return false;
     }
   }
-  case WorkMode::TraceSpecifiedInterval: {
+  case TraceMode::TraceSpecifiedInterval: {
     if (intervals.empty())
       return false;
     const auto &interval = intervals.front();
-    if (c < interval.first) {
+    if (instCount < interval.first) {
       return false;
     }
-    return c < interval.second;
+    return instCount < interval.second;
   }
-  default: { assert(false && "Unknown work mode."); }
+  default: { assert(false && "Unknown trace mode."); }
   }
 }
 
 static bool shouldSwitchTraceFile() {
-  auto c = count;
-  if (MEASURE_IN_TRACE_FUNC) {
-    c = countInTraceFunc;
+  // Get the correct instruction count;
+  auto instCount = count;
+  if (traceROI == TraceROI::SpecifiedFunction) {
+    instCount = countInTraceFunc;
   }
-  switch (workMode) {
-  case WorkMode::Profile:
-  case WorkMode::TraceAll:
-  case WorkMode::TraceTraced: {
+  switch (traceMode) {
+  case TraceMode::Profile:
+  case TraceMode::TraceAll: {
     return false;
   }
-  case WorkMode::TraceUniformSampled: {
-    if ((c - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
+  case TraceMode::TraceUniformInterval: {
+    if ((instCount - START_INST) % (MAX_INST + SKIP_INST) == (MAX_INST - 1)) {
       // We are the last one of every MAX_INST. Switch file.
       return true;
     } else {
       return false;
     }
   }
-  case WorkMode::TraceSpecifiedInterval: {
+  case TraceMode::TraceSpecifiedInterval: {
     if (intervals.empty()) {
       return false;
     }
-    if (c == intervals.front().second - 1) {
+    if (instCount == intervals.front().second - 1) {
       printf("Finish tracing interval [%lu, %lu).\n", intervals.front().first,
              intervals.front().second);
       intervals.pop_front();
@@ -370,33 +403,32 @@ static bool shouldSwitchTraceFile() {
     }
     return false;
   }
-  default: { assert(false && "Unknown work mode."); }
+  default: { assert(false && "Unknown trace mode."); }
   }
 }
 
 static bool shouldExit() {
-  auto c = count;
   // Hard exit condition.
-  if (c == hardExitCount) {
+  if (count == hardExitCount) {
     std::exit(0);
   }
 
-  switch (workMode) {
-  case WorkMode::Profile:
-  case WorkMode::TraceAll:
-  case WorkMode::TraceTraced: {
+  switch (traceMode) {
+  case TraceMode::Profile:
+  case TraceMode::TraceAll: {
     return false;
   }
-  case WorkMode::TraceUniformSampled: {
-    if (MEASURE_IN_TRACE_FUNC) {
-      c = countInTraceFunc;
+  case TraceMode::TraceUniformInterval: {
+    if (traceROI == TraceROI::SpecifiedFunction) {
+      return countInTraceFunc == END_INST;
+    } else {
+      return count == END_INST;
     }
-    return c == END_INST;
   }
-  case WorkMode::TraceSpecifiedInterval: {
+  case TraceMode::TraceSpecifiedInterval: {
     return intervals.empty();
   }
-  default: { assert(false && "Unknown work mode."); };
+  default: { assert(false && "Unknown trace mode."); };
   }
 }
 
@@ -516,8 +548,8 @@ void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
   }
   // printf("%s:%d, inside? %d\n", __FILE__, __LINE__, insideMyself);
   initialize();
-  // Update the stack only if we measure in trace function.
-  if (MEASURE_IN_TRACE_FUNC) {
+  // Update the stack only if we considered specified function as ROI.
+  if (traceROI == TraceROI::SpecifiedFunction) {
     pushStack(FunctionName, IsTraced);
   }
   // printf("Entering %s, stack depth %lu\n", FunctionName, stack.size());
@@ -555,7 +587,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
   auto Id = currentInstDescriptor->pos_in_bb();
 
   // Check if this is a landingpad instruction if we want to have the stack.
-  if (MEASURE_IN_TRACE_FUNC) {
+  if (traceROI == TraceROI::SpecifiedFunction) {
     if (std::strcmp(OpCodeName, "landingpad") == 0) {
       // This is a landingpad instruction.
       // Use libunwind to adjust our stack.
@@ -581,9 +613,17 @@ void printInst(const char *FunctionName, uint64_t UID) {
 
   std::string FuncStr(FunctionName);
   std::string BBStr(BBName);
-  if (workMode == WorkMode::Profile) {
-    // Profile for every dynamic instruction.
-    allProfile->addBasicBlock(FuncStr, BBStr);
+  if (traceMode == TraceMode::Profile) {
+    /**
+     * Profile if we are in ROI.
+     * Normally we should profile for every basic block,
+     * but it is similar to profile for every dynamic instruction,
+     * and the profiler needs to know the instruction count to
+     * correctly partition the profiling interval.
+     */
+    if (isInROI()) {
+      allProfile->addBasicBlock(FuncStr, BBStr);
+    }
   }
 
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
@@ -591,7 +631,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
   assert(currentInstOpName == nullptr && "Previous inst has not been closed.");
   currentInstOpName = OpCodeName;
   count++;
-  if (MEASURE_IN_TRACE_FUNC && tracedFunctionsInStack > 0) {
+  if (traceROI == TraceROI::SpecifiedFunction && tracedFunctionsInStack > 0) {
     countInTraceFunc++;
   }
   if (count % PRINT_INTERVAL < 5) {
@@ -607,8 +647,6 @@ void printInst(const char *FunctionName, uint64_t UID) {
   }
   if (shouldLog()) {
     printInstImpl(FunctionName, BBName, Id, UID, OpCodeName);
-    // Profile for traced instructions.
-    tracedProfile->addBasicBlock(FuncStr, BBStr);
   }
   insideMyself = false;
   return;
@@ -763,7 +801,7 @@ void printInstEnd() {
   }
 
   // Update the stack only when we try to measure in traced functions.
-  if (MEASURE_IN_TRACE_FUNC) {
+  if (traceROI == TraceROI::SpecifiedFunction) {
     assert(currentInstOpName != nullptr &&
            "Missing currentInstOpName in printInstEnd.");
     if (std::strcmp(currentInstOpName, "ret") == 0) {
