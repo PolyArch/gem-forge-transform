@@ -4,6 +4,7 @@ from Benchmark import BenchmarkArgs
 
 from Utils import TransformManager
 from Utils import Gem5ConfigureManager
+from Utils import TraceFlagEnum
 
 import Constants as C
 import Util
@@ -95,8 +96,8 @@ class TestInputBenchmark(Benchmark):
             # debugs=['TracePass']
         )
         # Remember to set the flag to trace traced function.
-        os.putenv('LLVM_TDG_WORK_MODE', str(2))
-        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        os.putenv('LLVM_TDG_TRACE_MODE', str(TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
+        os.putenv('LLVM_TDG_TRACE_ROI', str(TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 

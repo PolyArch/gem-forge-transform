@@ -3,6 +3,8 @@ import subprocess
 import multiprocessing
 import prettytable
 
+from Utils import TraceFlagEnum
+
 import Constants as C
 import Util
 import StreamStatistics
@@ -155,8 +157,8 @@ class MachSuiteBenchmark(Benchmark):
         )
 
         # For this benchmark, we only trace the target function.
-        os.putenv('LLVM_TDG_WORK_MODE', str(2))
-        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        os.putenv('LLVM_TDG_TRACE_MODE', str(TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
+        os.putenv('LLVM_TDG_TRACE_ROI', str(TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 

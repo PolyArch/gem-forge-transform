@@ -7,6 +7,7 @@ import Constants as C
 import Util
 from Utils import SimPoint
 from Utils import Gem5McPAT
+from Utils import TraceFlagEnum
 
 
 class BenchmarkArgs(object):
@@ -401,7 +402,11 @@ class Benchmark(object):
 
     def run_profile(self):
         # Remember to set the environment for profile.
-        os.putenv('LLVM_TDG_WORK_MODE', '0')
+        # By default it will profile all dynamic instructions.
+        # Derived class can set LLVM_TDG_TRACE_ROI to override this behavior.
+        os.putenv('LLVM_TDG_TRACE_MODE', str(
+            TraceFlagEnum.GemForgeTraceMode.Profile.value
+        ))
         os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
         os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
         os.putenv('LLVM_TDG_HARD_EXIT_IN_BILLION',

@@ -2,6 +2,8 @@ import Util
 import Constants as C
 from Benchmark import Benchmark
 
+from Utils import TraceFlagEnum
+
 import os
 
 from SDVBS import SDVBSBenchmark
@@ -52,8 +54,8 @@ class SDVBSValidBenchmark(SDVBSBenchmark):
         )
 
         # Fractal experiments.
-        os.putenv('LLVM_TDG_WORK_MODE', str(2))
-        os.putenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC', 'TRUE')
+        os.putenv('LLVM_TDG_TRACE_MODE', str(TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
+        os.putenv('LLVM_TDG_TRACE_ROI', str(TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
 
         self.run_trace(self.get_name())
         os.chdir(self.cwd)

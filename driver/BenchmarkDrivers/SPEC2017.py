@@ -3,6 +3,8 @@ import sys
 import subprocess
 import multiprocessing
 
+from Utils import TraceFlagEnum
+
 import Constants as C
 import Util
 import StreamStatistics
@@ -305,9 +307,11 @@ class SPEC2017Benchmark(Benchmark):
         )
         # Set the tracer mode.
 
-        os.putenv('LLVM_TDG_WORK_MODE', str(4))
+        os.putenv('LLVM_TDG_TRACE_MODE', str(
+            TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value
+        ))
         os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        os.unsetenv('LLVM_TDG_MEASURE_IN_TRACE_FUNC')
+        os.unsetenv('LLVM_TDG_TRACE_ROI')
         self.run_trace(self.get_name())
         os.chdir(self.cwd)
 
