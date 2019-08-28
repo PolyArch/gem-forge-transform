@@ -104,6 +104,18 @@ class Graph500Benchmark(Benchmark):
         super(Graph500Benchmark, self).run_profile()
         os.unsetenv('LLVM_TDG_TRACE_ROI')
 
+    def get_additional_transform_options(self):
+        """
+        Add the stream whitelist file as addition options to the transformation.
+        """
+        if self.benchmark_name == 'seq-list':
+            return [
+                '-stream-whitelist-file={whitelist}'.format(whitelist=os.path.join(
+                    self.src_path, 'stream_whitelist.txt'
+                ))
+            ]
+        return list()
+
     def trace(self):
         os.chdir(self.work_path)
         self.build_trace(

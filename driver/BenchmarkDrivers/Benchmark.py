@@ -538,6 +538,9 @@ class Benchmark(object):
     def build_validation(self, transform_config, trace, output_tdg):
         raise NotImplementedError
 
+    def get_additional_transform_options(self):
+        return list()
+
     """
     Construct the replay binary from the trace.
     """
@@ -573,6 +576,8 @@ class Benchmark(object):
         ]
         if self.options.transform_text:
             opt_cmd.append('-output-datagraph-text-mode=true')
+        # Add the additional options.
+        opt_cmd += self.get_additional_transform_options()
         if output_tdg is not None:
             output_extra_folder = os.path.join(
                 os.getcwd(), output_tdg + '.extra')
