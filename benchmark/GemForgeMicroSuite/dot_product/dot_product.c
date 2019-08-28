@@ -1,9 +1,12 @@
 // Simple dense vector dot product.
 typedef double Value;
 
-__attribute__((noinline)) Value foo(Value *a, Value *b, int N) {
+__attribute__((noinline)) Value foo(Value **pa, Value **pb, int N) {
   Value c = 0.0f;
+  Value *a = *pa;
+  Value *b = *pb;
   // Make sure there is no reuse.
+  #pragma nounroll
   for (int i = 0; i < N; i += 1) {
     c += a[i] * b[i];
   }
@@ -18,12 +21,14 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, int N) {
 }
 
 // 65536*4 is 512kB.
-const int N = 65536;
+const int N = 65536 / 2;
 Value a[N];
 Value b[N];
 
 int main() {
   volatile Value c;
-  c = foo(a, b, N);
+  Value *pa = a;
+  Value *pb = b;
+  c = foo(&pa, &pb, N);
   return 0;
 }

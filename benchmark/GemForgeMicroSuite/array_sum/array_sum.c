@@ -1,12 +1,13 @@
 // Simple dense vector dot product.
-typedef double Value;
+#include "../gem5_pseudo.h"
+typedef int Value;
 
 __attribute__((noinline)) Value foo(Value **pa, int N) {
   Value sum = 0.0f;
-  Value *a = *pa;
+  volatile Value *a = *pa;
   // Make sure there is no reuse.
   #pragma nounroll
-  for (int i = 0; i < N; i += 1) {
+  for (long long i = 0; i < N; i += 16) {
     sum += a[i];
   }
   // Unroll by 2 to check coalesce.
@@ -19,13 +20,19 @@ __attribute__((noinline)) Value foo(Value **pa, int N) {
   return sum;
 }
 
-// 65536*4 is 512kB.
-const int N = 65536;
+// 65536*8 is 512kB.
+const int N = 65536 * 2;
 Value a[N];
 
 int main() {
   volatile Value c;
   Value *pa = a;
+  // This should warm up the cache.
+  for (long long i = 0; i < N; i++) {
+    a[i] = i;
+  }
+  DETAILED_SIM_START();
   c = foo(&pa, N);
+  DETAILED_SIM_STOP();
   return 0;
 }

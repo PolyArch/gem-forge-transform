@@ -16,6 +16,13 @@ __attribute__((noinline)) float foo(struct Node *head) {
 }
 
 int main() {
+  /**
+   * Interesting fact: creating the linked list via
+   * a sequence of malloc of the same size will actually 
+   * result in a lot of locality. The difference between 
+   * the consecutive allocated addresses is always 32 in
+   * this example.
+   */
   const int N = 65536;
   struct Node *head = NULL;
   for (int i = 0; i < N; ++i) {
