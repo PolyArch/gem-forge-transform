@@ -19,9 +19,17 @@ llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy(
                      clEnumValN(StreamPassChooseStrategyE::INNER_MOST, "inner",
                                 "Always pick the inner most loop level.")));
 
+llvm::cl::opt<std::string> StreamWhitelistFileName(
+    "stream-whitelist-file",
+    llvm::cl::desc("Stream whitelist instruction file."));
+
 bool StreamPass::initialize(llvm::Module &Module) {
   bool Ret = ReplayTrace::initialize(Module);
   this->MemorizedStreamInst.clear();
+  // Initialize the stream whitelist if specified.
+  if (StreamWhitelistFileName.getNumOccurrences() == 1) {
+    StreamUtils::getStreamWhitelist().parseFrom(StreamWhitelistFileName);
+  }
   return Ret;
 }
 
@@ -276,8 +284,6 @@ void StreamPass::pushLoopStackAndConfigureStreams(
       if (auto Inst = llvm::dyn_cast<llvm::Instruction>(LoopInvariantValue)) {
         // This is an loop invariant instruction input.
         LoopInvariantInputs.insert(Inst);
-        llvm::errs() << SStream->formatName() << " Loop Invariant Inst "
-                     << Utils::formatLLVMInst(Inst) << '\n';
       }
     }
   }
@@ -604,7 +610,6 @@ void StreamPass::transformStream() {
             ++RegDepIter;
           }
         }
-
 
         /**
          * Stream store is guaranteed to be no alias we have to worry.

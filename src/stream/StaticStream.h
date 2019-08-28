@@ -1,6 +1,8 @@
 #ifndef LLVM_TDG_STREAM_STATIC_STREAM_H
 #define LLVM_TDG_STREAM_STATIC_STREAM_H
 
+#include "StreamUtils.h"
+
 #include "LoopUtils.h"
 #include "Utils.h"
 

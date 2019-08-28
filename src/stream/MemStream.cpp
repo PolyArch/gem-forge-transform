@@ -95,6 +95,15 @@ bool MemStream::isCandidate() const {
     // Such a short stream.
     return false;
   }
+  // Check whitelist.
+  {
+    auto StreamWhitelist = StreamUtils::getStreamWhitelist();
+    if (StreamWhitelist.isInitialized()) {
+      if (!StreamWhitelist.contains(this->SStream->Inst)) {
+        return false;
+      }
+    }
+  }
   /**
    * Hack to reduce number of streams.
    */
