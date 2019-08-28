@@ -54,6 +54,16 @@ bool IndVarStream::isCandidateStatic() const {
       return false;
     }
   }
+  // Check whitelist.
+  {
+    auto StreamWhitelist = StreamUtils::getStreamWhitelist();
+    if (StreamWhitelist.isInitialized()) {
+      if (!StreamWhitelist.contains(this->SStream->Inst)) {
+        return false;
+      }
+    }
+  }
+
   // ! liblinear.
   if (LoopUtils::getLoopId(this->SStream->InnerMostLoop) ==
       "linear.c::844(solve_l2r_l1l2_svc)::bb218") {

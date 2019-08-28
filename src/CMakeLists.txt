@@ -26,6 +26,7 @@ add_library(LLVMTDGPass SHARED
     DynamicInstruction.cpp
     DataGraph.cpp
     Utils.cpp
+    UserSpecifiedInstructionSet.cpp
     LoopUtils.cpp
     LoopUnroller.cpp
     PostDominanceFrontier.cpp
@@ -43,6 +44,7 @@ add_library(LLVMTDGPass SHARED
     adfa/AbstractDataFlowAcceleratorPass.cpp
     # Stream
     $<TARGET_OBJECTS:ProtobufStreamMessage>
+    stream/StreamUtils.cpp
     stream/StreamPattern.cpp
     stream/InlineContextStreamPass.cpp
     stream/InlineContext.cpp
