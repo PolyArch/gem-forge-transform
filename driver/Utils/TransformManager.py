@@ -56,6 +56,6 @@ class TransformManager(object):
     def get_all_configs(self):
         return [self.get_config(transform_id) for transform_id in self.transform_ids_in_order]
 
-    def get_transforms(self):
+    def get_all_transform_ids(self):
         # Return them in order.
         return self.transform_ids_in_order

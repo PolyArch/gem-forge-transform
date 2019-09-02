@@ -3,6 +3,7 @@ from BenchmarkDrivers.MultiProgramBenchmark import MultiProgramBenchmark
 
 import Utils.Gem5Stats as Gem5Stats
 import Utils.StreamMessage_pb2 as StreamMessage_pb2
+import Utils.SimpleTable as SimpleTable
 import json
 
 import os
@@ -13,7 +14,9 @@ class StreamExperiments(object):
         self.driver = driver
         stream_transforms = [
             'stream',
-            'stream.inner',
+            'stream.i',
+            'stream.ai',
+            'stream.pai',
             'stream.static-outer',
             'stream.alias',
         ]
@@ -27,56 +30,16 @@ class StreamExperiments(object):
         self.stream_simulation_configs = self.driver.simulation_manager.get_configs(
             self.stream_transform_config.get_transform_id())
 
-        mismatches = None
-        n_single_benchmarks = 0
-        self.static_stream_analyzer = dict()
-        for benchmark in self.driver.benchmarks:
-            if not isinstance(benchmark, MultiProgramBenchmark):
-                ret = self.analyzeStaticStreamForBenchmark(benchmark)
-                n_single_benchmarks += 1
-                if mismatches is None:
-                    mismatches = ret
-                else:
-                    for i in range(len(mismatches)):
-                        mismatches[i] += ret[i]
-        for i in range(len(mismatches)):
-            mismatches[i] /= n_single_benchmarks
-            print('Average mismatch rate at level {level} is {mismatch}'.format(
-                level=i,
-                mismatch=mismatches[i]))
+        self.analyze_static_stream()
 
-        total_average_stream_length = 0.0
-        for benchmark in self.driver.benchmarks:
-            if benchmark not in self.static_stream_analyzer:
-                continue
-            ssa = self.static_stream_analyzer[benchmark]
-            average_stream_length = ssa.analyze_chosen_stream_length()
-            print('{b} has chosen stream length {l}'.format(
-                b=benchmark.get_name(), l=average_stream_length))
-            total_average_stream_length += average_stream_length
-        print('Average stream length is {l}'.format(
-            l=total_average_stream_length/len(self.static_stream_analyzer)))
-
-        # total_aliased_accesses = 0.0
-        # for benchmark in self.driver.benchmarks:
-        #     if benchmark not in self.static_stream_analyzer:
-        #         continue
-        #     ssa = self.static_stream_analyzer[benchmark]
-        #     alias_stream_access = ssa.analyze_aliase_stream_access()
-        #     print('{b} has {v} loop accesses aliased.'.format(
-        #         b=benchmark.get_name(), v=alias_stream_access
-        #     ))
-        #     total_aliased_accesses += alias_stream_access
-        # print('Average alias stream accesses is {v}'.format(
-        #     v=total_aliased_accesses / len(self.static_stream_analyzer)))
-
+        self.analyze_mismatch_between_chosen_and_static_analysis()
+        self.analyze_chosen_stream_length()
         self.analyze_stream_type()
+        self.analyze_alias_stream_access()
 
-        self.replay_transform_config = self.driver.transform_manager.get_config(
-            'replay')
-        self.replay_simulation_configs = self.driver.simulation_manager.get_configs(
-            'replay')
-
+        """
+        Speedup matrix is indexed by Speedup[Benchmark][BaseGemForgeSystemConfig][ExprGemForgeSystemConfig].
+        """
         self.single_program_speedup = dict()
         self.multi_program_speedup = dict()
 
@@ -84,21 +47,33 @@ class StreamExperiments(object):
             if isinstance(benchmark, MultiProgramBenchmark):
                 self.analyzeMultiProgramBenchmark(benchmark)
             else:
-                speedup = self.analyzeSingleBenchmark(benchmark)
+                speedup_matrix = self.analyze_single_benchmark_speedup_matrix(
+                    benchmark)
+                self.single_program_speedup[benchmark] = speedup_matrix
 
-        for replay_simulation_config in self.replay_simulation_configs:
-            for stream_simulation_config in self.stream_simulation_configs:
-                single_geomean = self.geomean(
-                    replay_simulation_config, stream_simulation_config,
-                    self.single_program_speedup)
-                multi_geomean = self.geomean(
-                    replay_simulation_config, stream_simulation_config,
-                    self.multi_program_speedup)
-                print('geomean single {s} multi {m} diff {d}'.format(
-                    s=single_geomean,
-                    m=multi_geomean,
-                    d=multi_geomean/single_geomean,
-                ))
+        for gem_forge_system_config in self.driver.simulation_manager.get_all_gem_forge_system_configs():
+            transform_config = gem_forge_system_config.transform_config
+            simulation_config = gem_forge_system_config.simulation_config
+            if transform_config.get_transform_id() == 'replay':
+                self.print_speedup_over_base_config(
+                    self.single_program_speedup, gem_forge_system_config)
+            elif simulation_config.get_simulation_id().endswith('o8'):
+                self.print_speedup_over_base_config(
+                    self.single_program_speedup, gem_forge_system_config)
+
+        # for replay_simulation_config in self.replay_simulation_configs:
+        #     for stream_simulation_config in self.stream_simulation_configs:
+        #         single_geomean = self.geomean(
+        #             replay_simulation_config, stream_simulation_config,
+        #             self.single_program_speedup)
+        #         multi_geomean = self.geomean(
+        #             replay_simulation_config, stream_simulation_config,
+        #             self.multi_program_speedup)
+        #         print('geomean single {s} multi {m} diff {d}'.format(
+        #             s=single_geomean,
+        #             m=multi_geomean,
+        #             d=multi_geomean/single_geomean,
+        #         ))
 
     def dump(self):
         from Stream import StreamBenchmarkStats
@@ -114,7 +89,21 @@ class StreamExperiments(object):
                 header_dumped = True
                 sbs.dump_header(stream_csv)
             sbs.dump(stream_csv)
-        stream_csv.close() 
+        stream_csv.close()
+
+    """
+    Build the map from single benchmark to StaticBenchmarkAnalyzer.
+    """
+
+    def analyze_static_stream(self):
+        self.static_stream_analyzer = dict()
+        for benchmark in self.driver.benchmarks:
+            if not isinstance(benchmark, MultiProgramBenchmark):
+                print('Start static stream analysis for {b}'.format(
+                    b=benchmark.get_name()))
+                ssa = StaticStreamAnalyzer(
+                    benchmark, self.stream_transform_config)
+                self.static_stream_analyzer[benchmark] = ssa
 
     def analyze_stream_type(self):
         total_average_stream_length = 0.0
@@ -124,15 +113,49 @@ class StreamExperiments(object):
             ssa = self.static_stream_analyzer[benchmark]
             ssa.analyze_stream_type()
 
-    def geomean(self, replay_simulation_config, stream_simulation_config, spd):
-        all_speedup = [spd[b][replay_simulation_config]
-                       [stream_simulation_config] for b in spd]
-        if len(all_speedup) == 0:
-            return 1.0
-        prod = 1.0
-        for x in all_speedup:
-            prod *= x
-        return prod ** (1./len(all_speedup))
+    def analyze_chosen_stream_length(self):
+        total_average_stream_length = 0.0
+        for benchmark in self.driver.benchmarks:
+            if benchmark not in self.static_stream_analyzer:
+                continue
+            ssa = self.static_stream_analyzer[benchmark]
+            average_stream_length = ssa.analyze_chosen_stream_length()
+            print('{b} has chosen stream length {l}'.format(
+                b=benchmark.get_name(), l=average_stream_length))
+            total_average_stream_length += average_stream_length
+        print('Average chosen stream length is {l}'.format(
+            l=total_average_stream_length/len(self.static_stream_analyzer)))
+
+    def analyze_mismatch_between_chosen_and_static_analysis(self):
+        mismatches = [0] * 3
+        n_single_benchmarks = 0
+        for benchmark in self.driver.benchmarks:
+            if benchmark not in self.static_stream_analyzer:
+                continue
+            n_single_benchmarks += 1
+            ssa = self.static_stream_analyzer[benchmark]
+            for i in range(len(ssa.mismatches)):
+                mismatches[i] += ssa.mismatches[i]
+        for i in range(len(mismatches)):
+            mismatches[i] /= n_single_benchmarks
+            print('Average mismatch rate at level {level} is {mismatch}'.format(
+                level=i,
+                mismatch=mismatches[i]))
+
+    def analyze_alias_stream_access(self):
+        # total_aliased_accesses = 0.0
+        # for benchmark in self.driver.benchmarks:
+        #     if benchmark not in self.static_stream_analyzer:
+        #         continue
+        #     ssa = self.static_stream_analyzer[benchmark]
+        #     alias_stream_access = ssa.analyze_alias_stream_access()
+        #     print('{b} has {v} loop accesses aliased.'.format(
+        #         b=benchmark.get_name(), v=alias_stream_access
+        #     ))
+        #     total_aliased_accesses += alias_stream_access
+        # print('Average alias stream accesses is {v}'.format(
+        #     v=total_aliased_accesses / len(self.static_stream_analyzer)))
+        pass
 
     def get_single_program_time(self, benchmark, transform_config, simulation_config):
         time = 0.0
@@ -142,32 +165,33 @@ class StreamExperiments(object):
             time += result.stats.get_sim_seconds() * trace.weight
         return time
 
-    def analyzeSingleBenchmark(self, benchmark):
-        replay_time = dict()
-        for replay_simulation_config in self.replay_simulation_configs:
-            time = self.get_single_program_time(
-                benchmark, self.replay_transform_config, replay_simulation_config)
-            replay_time[replay_simulation_config] = time
-        stream_time = dict()
-        for stream_simulation_config in self.stream_simulation_configs:
-            time = self.get_single_program_time(
-                benchmark, self.stream_transform_config, stream_simulation_config)
-            stream_time[stream_simulation_config] = time
-        speedups = dict()
-        for replay_simulation_config in replay_time:
-            speedups[replay_simulation_config] = dict()
-            for stream_simulation_config in stream_time:
-                speedup = replay_time[replay_simulation_config] / \
-                    stream_time[stream_simulation_config]
-                speedups[replay_simulation_config][stream_simulation_config] = speedup
-                print('{b} Speedup {stream}/{replay} is {speedup}.'.format(
-                    b=benchmark.get_name(),
-                    stream=stream_simulation_config.get_simulation_id(),
-                    replay=replay_simulation_config.get_simulation_id(),
-                    speedup=speedup
-                ))
-        self.single_program_speedup[benchmark] = speedups
-        return speedups
+    def analyze_single_benchmark_speedup_matrix(self, benchmark):
+        all_gem_forge_system_configs = self.driver.simulation_manager.get_all_gem_forge_system_configs()
+        speedup_matrix = dict()
+        for gem_forge_system_config in all_gem_forge_system_configs:
+            speedup_matrix[gem_forge_system_config] = dict()
+        for i in range(len(all_gem_forge_system_configs)):
+            gem_forge_system_config_i = all_gem_forge_system_configs[i]
+            simulation_time_i = self.get_single_program_time(
+                benchmark, gem_forge_system_config_i.transform_config, gem_forge_system_config_i.simulation_config)
+            for j in range(i, len(all_gem_forge_system_configs)):
+                gem_forge_system_config_j = all_gem_forge_system_configs[j]
+                simulation_time_j = self.get_single_program_time(
+                    benchmark, gem_forge_system_config_j.transform_config, gem_forge_system_config_j.simulation_config)
+                speedup_matrix[gem_forge_system_config_i][gem_forge_system_config_j] = simulation_time_i / simulation_time_j
+                speedup_matrix[gem_forge_system_config_j][gem_forge_system_config_i] = simulation_time_j / simulation_time_i
+        return speedup_matrix
+
+    def print_speedup_over_base_config(self, speedup_matrix, base_gem_forge_system_config):
+        all_gem_forge_system_configs = self.driver.simulation_manager.get_all_gem_forge_system_configs()
+        table = SimpleTable.SimpleTable(
+            'Benchmark', [c.get_id() for c in all_gem_forge_system_configs], compress_columns=True)
+        for benchmark in speedup_matrix:
+            speedup = [speedup_matrix[benchmark][base_gem_forge_system_config][c]
+                       for c in all_gem_forge_system_configs]
+            table.add_row(benchmark.get_name(), speedup)
+        table.add_geomean_row()
+        print(table)
 
     def getAllTimeForMultiProgramBenchmark(self,
                                            multi_program_benchmark, multi_program_tdgs, simulation_configs):
@@ -252,13 +276,6 @@ class StreamExperiments(object):
                         m=multi,
                         d=multi/single,
                     ))
-
-    def analyzeStaticStreamForBenchmark(self, benchmark):
-        print('Start static stream analysis for {b}'.format(
-            b=benchmark.get_name()))
-        ssa = StaticStreamAnalyzer(benchmark, self.stream_transform_config)
-        self.static_stream_analyzer[benchmark] = ssa
-        return ssa.mismatches
 
 
 class StaticStreamAnalyzer(object):
@@ -473,7 +490,7 @@ class StaticStreamAnalyzer(object):
                 trace.trace.get_weight()
         return average_stream_length
 
-    def analyze_aliase_stream_access(self):
+    def analyze_alias_stream_access(self):
         total_aliased_accesses = 0.0
         total_loop_accesses = 0.0
         for trace in self.traces:

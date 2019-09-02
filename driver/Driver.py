@@ -132,7 +132,7 @@ class Driver:
         # Use the suites and transforms
         return '{ss}.{ts}'.format(
             ss='.'.join(self.options.suite),
-            ts='.'.join(self.transform_manager.get_transforms())
+            ts='.'.join(self.transform_manager.get_all_transform_ids())
         )
 
     def _init_benchmarks(self):
@@ -323,7 +323,8 @@ class Driver:
             deps = list()
             if name in self.transform_jobs:
                 if transform_id in self.transform_jobs[name]:
-                    deps.append(self.transform_jobs[name][transform_id][trace_id])
+                    deps.append(
+                        self.transform_jobs[name][transform_id][trace_id])
 
             simulation_configs = self.simulation_manager.get_configs(
                 transform_id
@@ -386,13 +387,17 @@ class Driver:
 
     def load_simulation_results(self):
         self.simulation_results = list()
-        for benchmark in self.benchmarks:
-            for transform_config in self.transform_manager.get_all_configs():
-                transform_id = transform_config.get_transform_id()
-                for simulation_config in self.simulation_manager.get_configs(transform_id):
-                    for trace in benchmark.get_traces():
-                        self.simulation_results.append(BenchmarkResult.SimulationResult(
-                            benchmark, trace, transform_config, simulation_config))
+        for gem_forge_system_config in self.simulation_manager.get_all_gem_forge_system_configs():
+            transform_config = gem_forge_system_config.transform_config
+            simulation_config = gem_forge_system_config.simulation_config
+            for benchmark in self.benchmarks:
+                for trace in benchmark.get_traces():
+                    self.simulation_results.append(BenchmarkResult.SimulationResult(
+                        benchmark, trace, transform_config, simulation_config))
+
+    """
+    Lookup a specific simulation result.
+    """
 
     def get_simulation_result(self, benchmark, trace, transform_config, simulation_config):
         for simulation_result in self.simulation_results:

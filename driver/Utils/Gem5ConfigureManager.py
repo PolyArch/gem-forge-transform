@@ -70,16 +70,35 @@ class Gem5ReplayConfig(object):
         return '{prefix}.{id}'.format(prefix=prefix, id=self.json['id'])
 
 
+"""
+GemForgeSystemConfig is simply a tuple of TransformConfig and Gem5ReplayConfig.
+Gem5ReplayConfigureManager will host all legal GemForgeSystemConfig.
+"""
+
+
+class GemForgeSystemConfig(object):
+    def __init__(self, transform_config, simulation_config):
+        self.transform_config = transform_config
+        self.simulation_config = simulation_config
+
+    def get_id(self):
+        return '{transform_id}/{simulation_id}'.format(
+            transform_id=self.transform_config.get_transform_id(),
+            simulation_id=self.simulation_config.get_simulation_id(),
+        )
+
+
 class Gem5ReplayConfigureManager(object):
     def __init__(self, simulation_fns, transform_manager):
         self.transform_manager = transform_manager
         self.configs = dict()
+        self.gem_forge_system_configs = list()
         self.field_re = re.compile('\{[^\{\}]+\}')
         self.simulation_folder_root = os.path.join(
             C.LLVM_TDG_DRIVER_DIR, 'Configurations/Simulation')
 
         # Allocate a list for every transform configuration.
-        for t in self.transform_manager.get_transforms():
+        for t in self.transform_manager.get_all_transform_ids():
             self.configs[t] = list()
 
         for fn in simulation_fns:
@@ -104,11 +123,15 @@ class Gem5ReplayConfigureManager(object):
                 for t in support_transforms:
                     if t in self.configs:
                         self.configs[t].append(config)
+                        self.gem_forge_system_configs.append(GemForgeSystemConfig(
+                            self.transform_manager.get_config(t), config))
                 if not support_transforms:
                     # For empty support transform list, we assume it can support all
                     # transformation.
                     for t in self.configs:
                         self.configs[t].append(config)
+                        self.gem_forge_system_configs.append(GemForgeSystemConfig(
+                            self.transform_manager.get_config(t), config))
 
     def replace_field(self, match, design):
         expression = match.group(0)[1:-1]
@@ -133,3 +156,6 @@ class Gem5ReplayConfigureManager(object):
 
     def get_configs(self, transform_id):
         return self.configs[transform_id]
+
+    def get_all_gem_forge_system_configs(self):
+        return self.gem_forge_system_configs
