@@ -18,6 +18,7 @@ class GemForgeMicroBenchmark(Benchmark):
         self.src_path = src_path
         self.benchmark_name = os.path.basename(self.src_path)
         self.source = self.benchmark_name + '.c'
+        self.stream_whitelist_fn = os.path.join(self.src_path, 'stream_whitelist.txt')
         self.gem5_pseudo_source = os.path.join(
             self.src_path, '../gem5_pseudo.cpp')
 
@@ -77,6 +78,16 @@ class GemForgeMicroBenchmark(Benchmark):
         Util.call_helper([C.LLVM_DIS, bc])
 
         os.chdir(self.cwd)
+
+    def get_additional_transform_options(self):
+        """
+        Adhoc stream whitelist file as additional option.
+        """
+        if os.path.isfile(self.stream_whitelist_fn):
+            return [
+                '-stream-whitelist-file={whitelist}'.format(whitelist=self.stream_whitelist_fn)
+            ]
+        return list()
 
     def trace(self):
         os.chdir(self.work_path)

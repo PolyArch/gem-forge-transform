@@ -41,10 +41,17 @@ class Gem5Stats:
         # return self['sim_seconds']
 
     def get_cpu_cycles(self):
-        return self['system.cpu.numCycles']
+        # Take the first cpu as the standard.
+        if 'system.cpu.numCycles' in self:
+            return self['system.cpu.numCycles']
+        else:
+            return self['system.cpu0.numCycles']
 
     def get_cpu_insts(self):
-        return self['system.cpu.commit.committedInsts']
+        if 'system.cpu.commit.committedInsts' in self:
+            return self['system.cpu.committedInsts']
+        else:
+            return self['system.cpu0.committedInsts']
 
     """
     Region stats has not total.
@@ -83,3 +90,5 @@ class Gem5Stats:
                 file=self.fn
             ))
             raise e
+    def __contains__(self, key):
+        return key in self.stats

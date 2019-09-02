@@ -264,7 +264,6 @@ class Driver:
 
     def schedule_transform(self, job_scheduler, benchmark):
         name = benchmark.get_name()
-
         traces = benchmark.get_traces()
 
         for transform_config in self.transform_manager.get_all_configs():
@@ -280,10 +279,6 @@ class Driver:
             for i in xrange(len(traces)):
                 trace = traces[i]
                 trace_id = trace.get_trace_id()
-                if self.options.trace_id:
-                    if trace_id not in self.options.trace_id:
-                        # Ignore those traces if not specified
-                        continue
                 deps = list()
                 if name in self.trace_jobs:
                     deps.append(self.trace_jobs[name])
@@ -315,27 +310,27 @@ class Driver:
 
     def schedule_simulate_for_transform_config(self, job_scheduler, benchmark, transform_config):
         name = benchmark.get_name()
+        traces = benchmark.get_traces()
         tdgs = benchmark.get_tdgs(transform_config)
+        assert(len(traces) == len(tdgs))
         transform_id = transform_config.get_transform_id()
         self.simulate_jobs[name][transform_id] = dict()
 
-        for i in xrange(0, len(tdgs)):
-            if self.options.trace_id:
-                if i not in self.options.trace_id:
-                    # Ignore those traces if not specified
-                    continue
-            self.simulate_jobs[name][transform_id][i] = dict()
+        for i in range(len(traces)):
+            tdg = tdgs[i]
+            trace_id = traces[i].get_trace_id()
+            self.simulate_jobs[name][transform_id][trace_id] = dict()
             deps = list()
             if name in self.transform_jobs:
                 if transform_id in self.transform_jobs[name]:
-                    deps.append(self.transform_jobs[name][transform_id][i])
+                    deps.append(self.transform_jobs[name][transform_id][trace_id])
 
             simulation_configs = self.simulation_manager.get_configs(
                 transform_id
             )
             for simulation_config in simulation_configs:
                 simulation_id = simulation_config.get_simulation_id()
-                self.simulate_jobs[name][transform_id][i][simulation_id] = job_scheduler.add_job(
+                self.simulate_jobs[name][transform_id][trace_id][simulation_id] = job_scheduler.add_job(
                     name='{name}.{transform_id}.{simulation_id}'.format(
                         name=name,
                         transform_id=transform_id,
@@ -344,7 +339,7 @@ class Driver:
                     job=simulate,
                     args=(
                         benchmark,
-                        tdgs[i],
+                        tdg,
                         transform_config,
                         simulation_config,
                     ),
@@ -355,34 +350,34 @@ class Driver:
 
     def schedule_mcpat(self, job_scheduler, benchmark):
         name = benchmark.get_name()
+        traces = benchmark.get_traces()
         for transform_config in self.transform_manager.get_all_configs():
             tdgs = benchmark.get_tdgs(transform_config)
+            assert(len(tdgs) == len(traces))
             transform_id = transform_config.get_transform_id()
             simulation_configs = self.simulation_manager.get_configs(
                 transform_id)
             for i in range(0, len(tdgs)):
-                if self.options.trace_id:
-                    if i not in self.options.trace_id:
-                        # Ignore those traces if not specified.
-                        continue
+                trace_id = traces[i].get_trace_id()
+                tdg = tdgs[i]
                 for simulation_config in simulation_configs:
                     simulation_id = simulation_config.get_simulation_id()
                     # Add dependence on the simulation job.
                     deps = list()
                     if name in self.simulate_jobs:
                         deps.append(
-                            self.simulate_jobs[name][transform_id][i][simulation_id])
+                            self.simulate_jobs[name][transform_id][trace_id][simulation_id])
                     job_scheduler.add_job(
-                        name='{name}.{transform_id}.{simulation_id}.{i}.mcpat'.format(
+                        name='{name}.{transform_id}.{simulation_id}.{trace_id}.mcpat'.format(
                             name=name,
                             transform_id=transform_id,
                             simulation_id=simulation_id,
-                            i=i,
+                            trace_id=trace_id,
                         ),
                         job=mcpat,
                         args=(
                             benchmark,
-                            tdgs[i],
+                            tdg,
                             transform_config,
                             simulation_config
                         ),
@@ -467,8 +462,6 @@ def parse_transform_configurations(option, opt, value, parser):
 
 def parse_simulate_configurations(option, opt, value, parser):
     vs = value.split(',')
-    # full_paths = [os.path.join(
-    #     C.LLVM_TDG_DRIVER_DIR, 'Configurations/Simulation', v) for v in vs]
     full_paths = list()
     for v in vs:
         s = os.path.join(C.LLVM_TDG_DRIVER_DIR,

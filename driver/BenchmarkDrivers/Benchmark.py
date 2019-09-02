@@ -222,8 +222,13 @@ class Benchmark(object):
 
     def init_traces(self):
         trace_ids = self.init_trace_ids()
-        self.traces = [TraceObj(self.get_trace_fn(trace_id), trace_id)
-                       for trace_id in trace_ids]
+        self.traces = list()
+        for trace_id in trace_ids:
+            # Ignore the trace id not specified by the user.
+            if self.options.trace_id:
+                if trace_id not in self.options.trace_id:
+                    continue
+            self.traces.append(TraceObj(self.get_trace_fn(trace_id), trace_id))
 
     def get_transform_path(self, transform_id):
         return os.path.join(self.get_run_path(), transform_id)

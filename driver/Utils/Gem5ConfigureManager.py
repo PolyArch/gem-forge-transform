@@ -44,20 +44,20 @@ class Gem5ReplayConfig(object):
             '--l2bus_width={l2bus_width}'.format(l2bus_width=self.l2bus_width)
             '--l1_5dcache'
             '--llvm-prefetch=1'
-                    '--gem-forge-adfa-enable-speculation=1'
-                    '--gem-forge-adfa-break-iv-dep=1'
-                    '--gem-forge-adfa-break-rv-dep=1'
-                    '--gem-forge-stream-engine-is-oracle=1'
-                    '--gem-forge-stream-engine-max-run-ahead-length={x}'.format(
-                        x=self.stream_engine_max_run_ahead_length
-                    )
-                    '--gem-forge-stream-engine-throttling={x}'.format(
-                        x=self.stream_engine_throttling
-                    )
-                    '--gem-forge-stream-engine-enable-coalesce=1'
-                    '--gem-forge-stream-engine-enable-merge=1'
-                    '--gem-forge-stream-engine-l1d={l1d}'.format(
-                        l1d=self.stream_engine_l1d)
+            '--gem-forge-adfa-enable-speculation=1'
+            '--gem-forge-adfa-break-iv-dep=1'
+            '--gem-forge-adfa-break-rv-dep=1'
+            '--gem-forge-stream-engine-is-oracle=1'
+            '--gem-forge-stream-engine-max-run-ahead-length={x}'.format(
+                x=self.stream_engine_max_run_ahead_length
+            )
+            '--gem-forge-stream-engine-throttling={x}'.format(
+                x=self.stream_engine_throttling
+            )
+            '--gem-forge-stream-engine-enable-coalesce=1'
+            '--gem-forge-stream-engine-enable-merge=1'
+            '--gem-forge-stream-engine-l1d={l1d}'.format(
+                l1d=self.stream_engine_l1d)
     """
 
     def get_options(self):
@@ -75,16 +75,26 @@ class Gem5ReplayConfigureManager(object):
         self.transform_manager = transform_manager
         self.configs = dict()
         self.field_re = re.compile('\{[^\{\}]+\}')
+        self.simulation_folder_root = os.path.join(
+            C.LLVM_TDG_DRIVER_DIR, 'Configurations/Simulation')
 
         # Allocate a list for every transform configuration.
         for t in self.transform_manager.get_transforms():
             self.configs[t] = list()
 
         for fn in simulation_fns:
+            # Make sure fn is contained within the simulation folder.
+            assert(os.path.commonprefix([fn, self.simulation_folder_root])
+                   == self.simulation_folder_root)
             with open(fn, 'r') as f:
                 json_obj = json.load(f)
                 assert('options' in json_obj)
                 assert('id' in json_obj)
+                # Prepend the id with the folder structure.
+                relative_folder = os.path.dirname(
+                    os.path.relpath(fn, self.simulation_folder_root))
+                json_obj['id'] = relative_folder.replace(
+                    os.sep, '.') + '.' + json_obj['id']
             if 'design_space' in json_obj:
                 configs = self.generate_config_for_design_space(json_obj)
             else:
