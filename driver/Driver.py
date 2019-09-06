@@ -513,6 +513,8 @@ if __name__ == '__main__':
 
     parser.add_option('-t', '--trans-configs', type='string', action='callback', default='',
                       dest='transforms', callback=parse_transform_configurations)
+    parser.add_option('--transform-debug', type='string',
+                      action='store', dest='transform_debug', default=None)
     parser.add_option('--transform-text', action='store_true',
                       dest='transform_text', default=False)
     parser.add_option('--sim-configs', type='string', action='callback', default='',

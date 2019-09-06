@@ -555,7 +555,6 @@ class Benchmark(object):
                      trace,
                      tdg_detail='integrated',
                      output_tdg=None,
-                     debugs=[]
                      ):
         # Special case for validation, which is a raw binary.
         if transform_config.get_transform_id() == 'valid':
@@ -597,11 +596,9 @@ class Benchmark(object):
             opt_cmd.append('-output-extra-folder-path=' + output_extra_folder)
         else:
             assert(False)
-        # debugs = ['StreamPass']
-        debugs = list()
-        if debugs:
+        if self.options.transform_debug:
             opt_cmd.append(
-                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
+                '-debug-only={debugs}'.format(debugs=self.options.transform_debug))
         if self.options.perf_command:
             opt_cmd = ['perf', 'record'] + opt_cmd
         print('# Processing trace...')
@@ -630,7 +627,6 @@ class Benchmark(object):
             trace=trace,
             tdg_detail='standalone',
             output_tdg=tdg,
-            debugs=debugs,
         )
 
         os.chdir(cwd)
