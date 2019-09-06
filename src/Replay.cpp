@@ -37,6 +37,10 @@ llvm::cl::opt<bool> GemForgeOutputDataGraphTextMode(
     llvm::cl::desc("Output datagraph in text mode."));
 
 #define DEBUG_TYPE "ReplayPass"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
+
 namespace {
 
 llvm::Constant *
@@ -125,7 +129,7 @@ bool ReplayTrace::runOnModule(llvm::Module &Module) {
   this->transform();
 
   std::string Stats = this->OutTraceName + ".stats.txt";
-  DEBUG(llvm::errs() << "Dump stats to " << Stats << '\n');
+  LLVM_DEBUG(llvm::errs() << "Dump stats to " << Stats << '\n');
   std::ofstream OStats(Stats);
   this->dumpStats(OStats);
   OStats.close();
@@ -148,7 +152,7 @@ bool ReplayTrace::runOnModule(llvm::Module &Module) {
 }
 
 bool ReplayTrace::initialize(llvm::Module &Module) {
-  DEBUG(llvm::errs() << "ReplayTrace::doInitialization.\n");
+  LLVM_DEBUG(llvm::errs() << "ReplayTrace::doInitialization.\n");
   this->Module = &Module;
 
   // Register the external ioctl function.
@@ -181,8 +185,8 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
          "You must provide instruction uid file.");
   Utils::getInstUIDMap().parseFrom(InstUIDFileName.getValue(), this->Module);
 
-  DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
-                     << this->DGDetailLevel << ".\n");
+  LLVM_DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
+                          << this->DGDetailLevel << ".\n");
   this->CachedLI = new CachedLoopInfo(this->Module);
   this->CachedPDF = new CachedPostDominanceFrontier();
   this->CachedLU = new CachedLoopUnroller();
@@ -204,15 +208,16 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
 }
 
 bool ReplayTrace::finalize(llvm::Module &Module) {
-  DEBUG(llvm::errs() << "Releasing serializer at " << this->Serializer << '\n');
+  LLVM_DEBUG(llvm::errs() << "Releasing serializer at " << this->Serializer
+                          << '\n');
   delete this->Serializer;
   this->Serializer = nullptr;
 
-  DEBUG(llvm::errs() << "Releasing cache warmer at " << this->CacheWarmerPtr
-                     << '\n');
+  LLVM_DEBUG(llvm::errs() << "Releasing cache warmer at "
+                          << this->CacheWarmerPtr << '\n');
   delete this->CacheWarmerPtr;
   this->CacheWarmerPtr = nullptr;
-  DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
+  LLVM_DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
   delete this->Trace;
   this->Trace = nullptr;
   // Release the cached static loops.
@@ -270,17 +275,17 @@ void ReplayTrace::computeStaticInfo() {
         }
         // Add all the basic blocks to the regions.
         // Use the memory address as the block id.
-        DEBUG(llvm::errs() << "Found region " << RegionId << " parent "
-                           << Region->parent() << ": ");
+        LLVM_DEBUG(llvm::errs() << "Found region " << RegionId << " parent "
+                                << Region->parent() << ": ");
         for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
              BBIter != BBEnd; ++BBIter) {
           llvm::BasicBlock *BB = *BBIter;
           Region->add_bbs(reinterpret_cast<uint64_t>(BB));
-          DEBUG(llvm::errs() << BB->getName() << '(' << BB << "), ");
+          LLVM_DEBUG(llvm::errs() << BB->getName() << '(' << BB << "), ");
         }
         // Set the continuous flag.
         Region->set_continuous(LoopUtils::isLoopContinuous(Loop));
-        DEBUG(llvm::errs() << '\n');
+        LLVM_DEBUG(llvm::errs() << '\n');
         RegionsFound.insert(Loop);
       }
     }
@@ -289,7 +294,7 @@ void ReplayTrace::computeStaticInfo() {
 
 bool ReplayTrace::processFunction(llvm::Function &Function) {
   auto FunctionName = Function.getName().str();
-  DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
+  LLVM_DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
 
   if (Function.isIntrinsic()) {
     return false;
@@ -315,7 +320,8 @@ bool ReplayTrace::processFunction(llvm::Function &Function) {
     return false;
   }
 
-  DEBUG(llvm::errs() << "Found accelerable function: " << FunctionName << '\n');
+  LLVM_DEBUG(llvm::errs() << "Found accelerable function: " << FunctionName
+                          << '\n');
 
   // Change the function body to call ioctl
   // to replay the trace.
@@ -463,7 +469,8 @@ void ReplayTrace::fakeRegisterAllocation() {
   //   }
   //   Iter = IterPrev;
   // }
-  // DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount << '\n');
+  // LLVM_DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount <<
+  // '\n');
 }
 
 static DynamicInstruction *createFakeDynamicInst(const std::string &OpName) {
@@ -538,7 +545,7 @@ void ReplayTrace::fakeMicroOps() {
   //         }
   //       }
 
-  //       // DEBUG(llvm::errs() << StaticInstruction->getName() << ' '
+  //       //LLVM_DEBUG(llvm::errs() << StaticInstruction->getName() << ' '
   //       //                    << StaticInstruction->getOpcodeName() << '\n');
 
   //       switch (StaticInstruction->getOpcode()) {
@@ -740,7 +747,7 @@ void ReplayTrace::registerFunction(llvm::Module &Module) {
       Builder.CreateLoad(FakeRegisterAllocationAddr, "FakeRegisterFill64");
   this->FakeRegisterSpill = Builder.CreateStore(FakeRegisterAllocationValue,
                                                 FakeRegisterAllocationAddr);
-  DEBUG(llvm::errs() << this->FakeRegisterFill->getName() << '\n');
+  LLVM_DEBUG(llvm::errs() << this->FakeRegisterFill->getName() << '\n');
   Builder.CreateRetVoid();
 }
 

@@ -18,6 +18,9 @@
 #include <sstream>
 
 #define DEBUG_TYPE "TraceProfilingPass"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 namespace {
 

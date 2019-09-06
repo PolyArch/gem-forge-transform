@@ -6,6 +6,9 @@
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "TDGSerializer"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 TDGSerializer::TDGSerializer(const std::string &_FileName, bool TextMode)
     : FileName(_FileName), Gem5Serializer(_FileName), TextSerializer(nullptr),
@@ -71,9 +74,9 @@ void TDGSerializer::write() {
         break;
       }
       std::string OutString;
-      DEBUG(google::protobuf::TextFormat::PrintToString(
+      LLVM_DEBUG(google::protobuf::TextFormat::PrintToString(
           this->TDG.instructions(DUMPED), &OutString));
-      DEBUG(llvm::errs() << OutString << '\n');
+      LLVM_DEBUG(llvm::errs() << OutString << '\n');
     }
   }
 

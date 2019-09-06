@@ -1,6 +1,9 @@
 #include "FunctionalStreamEngine.h"
 
 #define DEBUG_TYPE "FunctionalStream"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 FunctionalStreamEngine::FunctionalStreamEngine(
     std::unique_ptr<llvm::Interpreter> &_Interpreter,

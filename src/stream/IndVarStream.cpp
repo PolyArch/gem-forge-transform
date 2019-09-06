@@ -3,6 +3,9 @@
 #include <list>
 
 #define DEBUG_TYPE "IndVarStream"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 IndVarStream::IndVarStream(const std::string &_Folder,
                            const std::string &_RelativeFolder,
@@ -41,7 +44,7 @@ bool IndVarStream::isCandidateStatic() const {
     if (BaseLoadInTheInnerMostLoop > 1) {
       return false;
     }
-    
+
     // For iv stream with base loads, we only allow it to be configured at inner
     // most loop level.
     if (BaseLoadInTheInnerMostLoop > 0 &&
@@ -84,9 +87,9 @@ void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
                                       const llvm::Loop *Loop) {
   std::list<llvm::Instruction *> Queue;
 
-  DEBUG(llvm::errs() << "Search compute instructions for "
-                     << LoopUtils::formatLLVMInst(PHINode) << " at loop "
-                     << LoopUtils::getLoopId(Loop) << '\n');
+  LLVM_DEBUG(llvm::errs() << "Search compute instructions for "
+                          << LoopUtils::formatLLVMInst(PHINode) << " at loop "
+                          << LoopUtils::getLoopId(Loop) << '\n');
 
   for (unsigned IncomingIdx = 0,
                 NumIncomingValues = PHINode->getNumIncomingValues();
@@ -98,29 +101,30 @@ void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
     auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
     if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
       Queue.emplace_back(IncomingInst);
-      DEBUG(llvm::errs() << "Enqueue inst "
-                         << LoopUtils::formatLLVMInst(IncomingInst) << '\n');
+      LLVM_DEBUG(llvm::errs()
+                 << "Enqueue inst " << LoopUtils::formatLLVMInst(IncomingInst)
+                 << '\n');
     }
   }
 
   while (!Queue.empty()) {
     auto CurrentInst = Queue.front();
     Queue.pop_front();
-    DEBUG(llvm::errs() << "Processing "
-                       << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
+    LLVM_DEBUG(llvm::errs() << "Processing "
+                            << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     if (this->ComputeInsts.count(CurrentInst) != 0) {
       // We have already processed this one.
-      DEBUG(llvm::errs() << "Already processed\n");
+      LLVM_DEBUG(llvm::errs() << "Already processed\n");
       continue;
     }
     if (!Loop->contains(CurrentInst)) {
       // This instruction is out of our analysis level. ignore it.
-      DEBUG(llvm::errs() << "Not in loop\n");
+      LLVM_DEBUG(llvm::errs() << "Not in loop\n");
       continue;
     }
 
-    DEBUG(llvm::errs() << "Found compute inst "
-                       << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
+    LLVM_DEBUG(llvm::errs() << "Found compute inst "
+                            << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     this->ComputeInsts.insert(CurrentInst);
 
     if (Utils::isCallOrInvokeInst(CurrentInst)) {
@@ -140,8 +144,9 @@ void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
       auto OperandValue = CurrentInst->getOperand(OperandIdx);
       if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
         Queue.emplace_back(OperandInst);
-        DEBUG(llvm::errs() << "Enqueue inst "
-                           << LoopUtils::formatLLVMInst(OperandInst) << '\n');
+        LLVM_DEBUG(llvm::errs()
+                   << "Enqueue inst " << LoopUtils::formatLLVMInst(OperandInst)
+                   << '\n');
       }
     }
   }
@@ -152,9 +157,9 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
                               const llvm::Loop *Loop) {
   std::list<llvm::Instruction *> Queue;
 
-  DEBUG(llvm::errs() << "Search step instructions for "
-                     << LoopUtils::formatLLVMInst(PHINode) << " at loop "
-                     << LoopUtils::getLoopId(Loop) << '\n');
+  LLVM_DEBUG(llvm::errs() << "Search step instructions for "
+                          << LoopUtils::formatLLVMInst(PHINode) << " at loop "
+                          << LoopUtils::getLoopId(Loop) << '\n');
 
   for (unsigned IncomingIdx = 0,
                 NumIncomingValues = PHINode->getNumIncomingValues();
@@ -166,8 +171,9 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
     auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
     if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
       Queue.emplace_back(IncomingInst);
-      DEBUG(llvm::errs() << "Enqueue inst "
-                         << LoopUtils::formatLLVMInst(IncomingInst) << '\n');
+      LLVM_DEBUG(llvm::errs()
+                 << "Enqueue inst " << LoopUtils::formatLLVMInst(IncomingInst)
+                 << '\n');
     }
   }
 
@@ -177,21 +183,21 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
   while (!Queue.empty()) {
     auto CurrentInst = Queue.front();
     Queue.pop_front();
-    DEBUG(llvm::errs() << "Processing "
-                       << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
+    LLVM_DEBUG(llvm::errs() << "Processing "
+                            << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     if (VisitedInsts.count(CurrentInst) != 0) {
       // We have already processed this one.
-      DEBUG(llvm::errs() << "Already processed\n");
+      LLVM_DEBUG(llvm::errs() << "Already processed\n");
       continue;
     }
     if (!Loop->contains(CurrentInst)) {
       // This instruction is out of our analysis level. ignore it.
-      DEBUG(llvm::errs() << "Not in loop\n");
+      LLVM_DEBUG(llvm::errs() << "Not in loop\n");
       continue;
     }
     if (Utils::isCallOrInvokeInst(CurrentInst)) {
       // So far I do not know how to process the call/invoke instruction.
-      DEBUG(llvm::errs() << "Is call or invoke\n");
+      LLVM_DEBUG(llvm::errs() << "Is call or invoke\n");
       continue;
     }
 
@@ -199,8 +205,9 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
 
     if (Stream::isStepInst(CurrentInst)) {
       // Find a step instruction, do not go further.
-      DEBUG(llvm::errs() << "Found step inst "
-                         << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
+      LLVM_DEBUG(llvm::errs()
+                 << "Found step inst " << LoopUtils::formatLLVMInst(CurrentInst)
+                 << '\n');
       StepInsts.insert(CurrentInst);
     } else if (llvm::isa<llvm::LoadInst>(CurrentInst)) {
       // Base load instruction is also considered as StepInst.
@@ -213,8 +220,9 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
         if (auto OperandInst =
                 llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
           Queue.emplace_back(OperandInst);
-          DEBUG(llvm::errs() << "Enqueue inst "
-                             << LoopUtils::formatLLVMInst(OperandInst) << '\n');
+          LLVM_DEBUG(llvm::errs()
+                     << "Enqueue inst "
+                     << LoopUtils::formatLLVMInst(OperandInst) << '\n');
         }
       }
     }

@@ -11,23 +11,26 @@ static llvm::cl::opt<uint32_t> CCAFUMax("cca-max-fus",
                                         llvm::cl::init(7));
 
 #define DEBUG_TYPE "ReplayPass"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 struct CCASubGraph {
- public:
+public:
   CCASubGraph() : Source(nullptr), InsertionPoint(nullptr) {}
-  std::unordered_set<llvm::Instruction*> StaticInstructions;
-  std::unordered_set<llvm::Instruction*> DependentStaticInstructions;
-  std::unordered_set<llvm::Instruction*> UsedStaticInstructions;
-  llvm::Instruction* Source;
-  llvm::Instruction* InsertionPoint;
-  void addInstruction(llvm::Instruction* StaticInstruction) {
+  std::unordered_set<llvm::Instruction *> StaticInstructions;
+  std::unordered_set<llvm::Instruction *> DependentStaticInstructions;
+  std::unordered_set<llvm::Instruction *> UsedStaticInstructions;
+  llvm::Instruction *Source;
+  llvm::Instruction *InsertionPoint;
+  void addInstruction(llvm::Instruction *StaticInstruction) {
     if (this->StaticInstructions.size() == 0) {
       // This is the first instruction.
       this->Source = StaticInstruction;
     }
     this->StaticInstructions.insert(StaticInstruction);
   }
-  void removeInstruction(llvm::Instruction* StaticInstruction) {
+  void removeInstruction(llvm::Instruction *StaticInstruction) {
     this->StaticInstructions.erase(StaticInstruction);
     if (this->Source == StaticInstruction) {
       this->Source = nullptr;
@@ -65,15 +68,15 @@ struct CCASubGraph {
     }
   }
   uint32_t getDepth() const {
-    std::list<llvm::Instruction*> Stack;
+    std::list<llvm::Instruction *> Stack;
     if (this->Source == nullptr) {
       return 0;
     }
     // Topological sort.
-    std::unordered_map<llvm::Instruction*, int> Visited;
+    std::unordered_map<llvm::Instruction *, int> Visited;
     Stack.push_back(this->Source);
     Visited[this->Source] = 0;
-    std::list<llvm::Instruction*> Sorted;
+    std::list<llvm::Instruction *> Sorted;
     while (!Stack.empty()) {
       auto Node = Stack.back();
       if (Visited.at(Node) == 0) {
@@ -101,7 +104,7 @@ struct CCASubGraph {
         Stack.pop_back();
       }
     }
-    std::unordered_map<llvm::Instruction*, uint32_t> Dist;
+    std::unordered_map<llvm::Instruction *, uint32_t> Dist;
     Dist[this->Source] = 1;
     uint32_t Depth = 1;
     for (auto Node : Sorted) {
@@ -133,40 +136,40 @@ struct CCASubGraph {
   }
   void dump() const {
     for (auto Inst : this->StaticInstructions) {
-      DEBUG(llvm::errs() << "Subgraph " << Inst->getName() << '\n');
+      LLVM_DEBUG(llvm::errs() << "Subgraph " << Inst->getName() << '\n');
     }
   }
 };
 
 class CCADynamicInstruction : public DynamicInstruction {
- public:
-  CCADynamicInstruction(const std::string& _OpName, DynamicInstruction* _Prev,
-                        DynamicInstruction* _Next)
+public:
+  CCADynamicInstruction(const std::string &_OpName, DynamicInstruction *_Prev,
+                        DynamicInstruction *_Next)
       : DynamicInstruction(), OpName(_OpName) {
     this->Prev = _Prev;
     this->Next = _Next;
   }
-  const std::string& getOpName() override { return this->OpName; }
+  const std::string &getOpName() override { return this->OpName; }
   std::string OpName;
   // For debug.
-  llvm::Instruction* InsertionPoint;
-  std::unordered_set<llvm::Instruction*> ReplacedInsts;
+  llvm::Instruction *InsertionPoint;
+  std::unordered_set<llvm::Instruction *> ReplacedInsts;
   void dump() override {
-    DEBUG(llvm::errs() << "CCA insertion point: " << InsertionPoint->getName()
-                       << '\n');
+    LLVM_DEBUG(llvm::errs()
+               << "CCA insertion point: " << InsertionPoint->getName() << '\n');
   }
 };
 
 class CCA : public ReplayTrace {
- public:
+public:
   static char ID;
   CCA() : ReplayTrace(ID), ReplacedDynamicInsts(0) {}
   virtual ~CCA() {}
 
- protected:
-  llvm::Instruction* determineInsertionPoint(
-      const std::unordered_map<llvm::Instruction*, int>& Numbering,
-      CCASubGraph& SubGraph) const {
+protected:
+  llvm::Instruction *determineInsertionPoint(
+      const std::unordered_map<llvm::Instruction *, int> &Numbering,
+      CCASubGraph &SubGraph) const {
     // Find the latest dependent.
     int Latest = -1;
     for (auto DependentInst : SubGraph.DependentStaticInstructions) {
@@ -175,7 +178,7 @@ class CCA : public ReplayTrace {
       }
       auto DependentId = Numbering.at(DependentInst);
       if (DependentId > Latest) {
-        // DEBUG(llvm::errs() << "Set Latest to " << DependentId << " of "
+        // LLVM_DEBUG(llvm::errs() << "Set Latest to " << DependentId << " of "
         //                    << DependentInst->getName() << '\n');
         Latest = DependentId;
       }
@@ -193,21 +196,21 @@ class CCA : public ReplayTrace {
       Earliest = std::min(Numbering.at(UsedInst), Earliest);
     }
 
-    llvm::Instruction* InsertionPoint = nullptr;
+    llvm::Instruction *InsertionPoint = nullptr;
     // Find the insertion point.
     if (Latest < Earliest) {
       for (auto Inst : SubGraph.StaticInstructions) {
         if (Numbering.find(Inst) == Numbering.end()) {
           for (auto DumpInst : SubGraph.StaticInstructions) {
-            DEBUG(llvm::errs() << "Failed to look up numbering for inst "
-                               << DumpInst->getName() << '\n');
+            LLVM_DEBUG(llvm::errs() << "Failed to look up numbering for inst "
+                                    << DumpInst->getName() << '\n');
           }
           assert(false);
         }
         auto Idx = Numbering.at(Inst);
         if (Idx > Latest && Idx < Earliest) {
           // Found one.
-          // DEBUG(llvm::errs() << "Found insertion point for subgraph "
+          // LLVM_DEBUG(llvm::errs() << "Found insertion point for subgraph "
           //                    << Inst->getName() << '\n');
           InsertionPoint = Inst;
           break;
@@ -218,9 +221,9 @@ class CCA : public ReplayTrace {
     return InsertionPoint;
   }
 
-  std::unordered_map<llvm::Instruction*, int> getNumbering(
-      llvm::BasicBlock* BB) const {
-    std::unordered_map<llvm::Instruction*, int> Numbering;
+  std::unordered_map<llvm::Instruction *, int>
+  getNumbering(llvm::BasicBlock *BB) const {
+    std::unordered_map<llvm::Instruction *, int> Numbering;
     int Number = 0;
     for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
          ++InstIter) {
@@ -231,20 +234,20 @@ class CCA : public ReplayTrace {
   }
 
   bool checkConstraints(
-      const CCASubGraph& SubGraph, llvm::Instruction* CandidateInst,
-      const std::unordered_set<llvm::Instruction*>& MatchedInst) const {
+      const CCASubGraph &SubGraph, llvm::Instruction *CandidateInst,
+      const std::unordered_set<llvm::Instruction *> &MatchedInst) const {
     switch (CandidateInst->getOpcode()) {
-      case llvm::Instruction::PHI:
-      case llvm::Instruction::Br:
-      case llvm::Instruction::Switch:
-      case llvm::Instruction::IndirectBr:
-      case llvm::Instruction::Ret:
-      case llvm::Instruction::Call:
-      case llvm::Instruction::Load:
-      case llvm::Instruction::Store: {
-        return false;
-      }
-      default: { break; }
+    case llvm::Instruction::PHI:
+    case llvm::Instruction::Br:
+    case llvm::Instruction::Switch:
+    case llvm::Instruction::IndirectBr:
+    case llvm::Instruction::Ret:
+    case llvm::Instruction::Call:
+    case llvm::Instruction::Load:
+    case llvm::Instruction::Store: {
+      return false;
+    }
+    default: { break; }
     }
     // Make sure that the candidate doesn't have dependence on other cca.
     // This is key to avoid lock between two cca instructions.
@@ -283,19 +286,19 @@ class CCA : public ReplayTrace {
     return SubGraph.getDepth() <= CCAFUMax.getValue();
   }
 
-  float estimateSpeedUp(const CCASubGraph& SubGraph) const {
+  float estimateSpeedUp(const CCASubGraph &SubGraph) const {
     float TotalWeight = 0.0f;
     for (auto Inst : SubGraph.StaticInstructions) {
       switch (Inst->getOpcode()) {
-        case llvm::Instruction::FAdd:
-        case llvm::Instruction::FSub: {
-          TotalWeight += 2.0f;
-          break;
-        }
-        default: {
-          TotalWeight += 1.0f;
-          break;
-        }
+      case llvm::Instruction::FAdd:
+      case llvm::Instruction::FSub: {
+        TotalWeight += 2.0f;
+        break;
+      }
+      default: {
+        TotalWeight += 1.0f;
+        break;
+      }
       }
     }
     if (TotalWeight > 3.0) {
@@ -305,12 +308,12 @@ class CCA : public ReplayTrace {
     }
   }
 
-  std::list<CCASubGraph> detectSubGraph(llvm::BasicBlock* BB) {
+  std::list<CCASubGraph> detectSubGraph(llvm::BasicBlock *BB) {
     auto Numbering = this->getNumbering(BB);
     std::list<CCASubGraph> SubGraphs;
     CCASubGraph CurrentSubGraph;
-    std::list<llvm::Instruction*> WaitList;
-    std::unordered_set<llvm::Instruction*> MatchedStaticInsts;
+    std::list<llvm::Instruction *> WaitList;
+    std::unordered_set<llvm::Instruction *> MatchedStaticInsts;
     for (auto InstIter = BB->rbegin(), InstEnd = BB->rend();
          InstIter != InstEnd; ++InstIter) {
       auto Inst = &*InstIter;
@@ -353,12 +356,12 @@ class CCA : public ReplayTrace {
       // We have a new subgraph.
       // First we finalize it.
       CurrentSubGraph.finalize();
-      llvm::Instruction* InsertionPoint =
+      llvm::Instruction *InsertionPoint =
           this->determineInsertionPoint(Numbering, CurrentSubGraph);
       if (InsertionPoint != nullptr &&
           this->estimateSpeedUp(CurrentSubGraph) > 1.10) {
         // Take a copy of the current subgraph.
-        DEBUG(llvm::errs() << "Detect subgraph:\n");
+        LLVM_DEBUG(llvm::errs() << "Detect subgraph:\n");
         CurrentSubGraph.dump();
         SubGraphs.emplace_back(CurrentSubGraph);
       } else {
@@ -372,7 +375,7 @@ class CCA : public ReplayTrace {
     return SubGraphs;
   }
 
-  size_t getNumOccurrence(llvm::BasicBlock* BB) const {
+  size_t getNumOccurrence(llvm::BasicBlock *BB) const {
     auto FirstInst = &(BB->front());
     auto Iter = this->Trace->StaticToDynamicMap.find(FirstInst);
     if (Iter == this->Trace->StaticToDynamicMap.end()) {
@@ -382,9 +385,10 @@ class CCA : public ReplayTrace {
     }
   }
 
-  void transferDependence(
-      const std::unordered_set<DynamicInstruction*>& SubGraph,
-      CCADynamicInstruction* CCADynamicInst, DynamicInstruction* ReplacedInst) {
+  void
+  transferDependence(const std::unordered_set<DynamicInstruction *> &SubGraph,
+                     CCADynamicInstruction *CCADynamicInst,
+                     DynamicInstruction *ReplacedInst) {
     auto Iter = this->Trace->RegDeps.find(ReplacedInst);
     if (Iter != this->Trace->RegDeps.end()) {
       for (auto DynamicDepInst : Iter->second) {
@@ -400,41 +404,41 @@ class CCA : public ReplayTrace {
     }
   }
 
-  void replaceSubgraphs(llvm::BasicBlock* BB,
-                        std::list<CCASubGraph>&& SubGraphs) {
-    std::unordered_map<llvm::Instruction*, DynamicInstruction*>
+  void replaceSubgraphs(llvm::BasicBlock *BB,
+                        std::list<CCASubGraph> &&SubGraphs) {
+    std::unordered_map<llvm::Instruction *, DynamicInstruction *>
         ReplacedStaticMap;
     size_t NumOccurrence = this->getNumOccurrence(BB);
     for (size_t i = 0; i < NumOccurrence; ++i) {
       ReplacedStaticMap.clear();
-      // DEBUG(llvm::errs() << "Replacing occurrence #" << i << " / "
+      // LLVM_DEBUG(llvm::errs() << "Replacing occurrence #" << i << " / "
       //                    << NumOccurrence << '\n');
-      for (auto& SubGraph : SubGraphs) {
+      for (auto &SubGraph : SubGraphs) {
         // Ignore those subgraph without insertion point.
         assert(SubGraph.InsertionPoint != nullptr &&
                "This subgraph doesn't have insertion point.");
         // Create the new dynamic inst.
-        std::unordered_set<DynamicInstruction*> SubGraphDynamicInsts;
+        std::unordered_set<DynamicInstruction *> SubGraphDynamicInsts;
         auto CCADynamicInst =
             new CCADynamicInstruction("cca", nullptr, nullptr);
         CCADynamicInst->InsertionPoint = SubGraph.InsertionPoint;
-        this->Trace->RegDeps.emplace(CCADynamicInst,
-                                     std::unordered_set<DynamicInstruction*>());
-        this->Trace->MemDeps.emplace(CCADynamicInst,
-                                     std::unordered_set<DynamicInstruction*>());
-        this->Trace->CtrDeps.emplace(CCADynamicInst,
-                                     std::unordered_set<DynamicInstruction*>());
+        this->Trace->RegDeps.emplace(
+            CCADynamicInst, std::unordered_set<DynamicInstruction *>());
+        this->Trace->MemDeps.emplace(
+            CCADynamicInst, std::unordered_set<DynamicInstruction *>());
+        this->Trace->CtrDeps.emplace(
+            CCADynamicInst, std::unordered_set<DynamicInstruction *>());
 
         // Collect all the dynamic instruction waiting to be replaced.
         // But do not modify the graph for now.
         bool Inserted = false;
         for (auto StaticInst : SubGraph.StaticInstructions) {
-          //   DEBUG(llvm::errs()
+          //  LLVM_DEBUG(llvm::errs()
           //         << "Processing inst " << StaticInst->getName() << '\n');
           assert(this->Trace->StaticToDynamicMap.find(StaticInst) !=
                      this->Trace->StaticToDynamicMap.end() &&
                  "Failed to find dynamic instruction to be replaced.");
-          auto& DynamicInsts = this->Trace->StaticToDynamicMap.at(StaticInst);
+          auto &DynamicInsts = this->Trace->StaticToDynamicMap.at(StaticInst);
           assert(DynamicInsts.size() == NumOccurrence - i &&
                  "Unmatched number of occurrence.");
           // Get the first dynamic insts.
@@ -448,16 +452,18 @@ class CCA : public ReplayTrace {
 
         // Now do the first job: fix the dependence.
         for (auto DynamicInst : SubGraphDynamicInsts) {
-          llvm::Instruction* StaticInst = DynamicInst->getStaticInstruction();
+          llvm::Instruction *StaticInst = DynamicInst->getStaticInstruction();
           assert(StaticInst != nullptr &&
                  "This replaced dynamic instruction should be an llvm "
                  "instruction.");
           // Transfer any dependence.
-          // DEBUG(llvm::errs() << "Transfering dynamic dependence for inst "
+          // LLVM_DEBUG(llvm::errs() << "Transfering dynamic dependence for inst
+          // "
           //                    << StaticInst->getName() << '\n');
           this->transferDependence(SubGraphDynamicInsts, CCADynamicInst,
                                    DynamicInst);
-          // DEBUG(llvm::errs() << "Transfering dynamic dependence for inst: "
+          // LLVM_DEBUG(llvm::errs() << "Transfering dynamic dependence for
+          // inst: "
           //                    << StaticInst->getName() << ": Done\n");
           // Remove any dependence.
           this->Trace->RegDeps.erase(DynamicInst);
@@ -467,12 +473,12 @@ class CCA : public ReplayTrace {
 
         // Now do the second job: remove it from the list.
         for (auto DynamicInst : SubGraphDynamicInsts) {
-          llvm::Instruction* StaticInst = DynamicInst->getStaticInstruction();
+          llvm::Instruction *StaticInst = DynamicInst->getStaticInstruction();
           assert(StaticInst != nullptr &&
                  "This replaced dynamic instruction should be an llvm "
                  "instruction.");
           // Remove the dynamic inst.
-          // DEBUG(llvm::errs()
+          // LLVM_DEBUG(llvm::errs()
           //       << "Removing inst " << StaticInst->getName() << " from
           //       list\n");
           if (DynamicInst->Prev != nullptr) {
@@ -487,7 +493,7 @@ class CCA : public ReplayTrace {
           }
           // Check if this is the insertion point for the new cca inst.
           if (SubGraph.InsertionPoint == StaticInst) {
-            // DEBUG(llvm::errs() << "Inserting cca inst in place of "
+            // LLVM_DEBUG(llvm::errs() << "Inserting cca inst in place of "
             //                    << StaticInst->getName() << '\n');
             assert(!Inserted &&
                    "The new CCA instruction has already been inserted.");
@@ -517,7 +523,7 @@ class CCA : public ReplayTrace {
     }
   }
 
-  bool isBasicBlockTraced(llvm::BasicBlock* BB) const {
+  bool isBasicBlockTraced(llvm::BasicBlock *BB) const {
     auto FirstInst = &(BB->front());
     return this->Trace->StaticToDynamicMap.find(FirstInst) !=
            this->Trace->StaticToDynamicMap.end();
@@ -538,9 +544,9 @@ class CCA : public ReplayTrace {
           continue;
         }
         auto SubGraphs = this->detectSubGraph(BB);
-        DEBUG(llvm::errs() << "CCA Transforming on " << FuncIter->getName()
-                           << "::" << BB->getName() << " Subgraphs "
-                           << SubGraphs.size() << '\n');
+        LLVM_DEBUG(llvm::errs() << "CCA Transforming on " << FuncIter->getName()
+                                << "::" << BB->getName() << " Subgraphs "
+                                << SubGraphs.size() << '\n');
         // Replace every thing.
         this->replaceSubgraphs(BB, std::move(SubGraphs));
       }
@@ -549,8 +555,8 @@ class CCA : public ReplayTrace {
     auto Iter = this->Trace->DynamicInstructionListHead;
     while (Iter != nullptr) {
       if (this->Trace->RegDeps.find(Iter) != this->Trace->RegDeps.end()) {
-        auto& Deps = this->Trace->RegDeps.at(Iter);
-        std::unordered_set<DynamicInstruction*> Replaced;
+        auto &Deps = this->Trace->RegDeps.at(Iter);
+        std::unordered_set<DynamicInstruction *> Replaced;
         for (auto DepIter = Deps.begin(), DepEnd = Deps.end();
              DepIter != DepEnd;) {
           if (this->ReplacedMap.find(*DepIter) != this->ReplacedMap.end()) {
@@ -566,8 +572,8 @@ class CCA : public ReplayTrace {
       }
       Iter = Iter->Next;
     }
-    DEBUG(llvm::errs() << "Replaced dynamic instructions "
-                       << this->ReplacedDynamicInsts << '\n');
+    LLVM_DEBUG(llvm::errs() << "Replaced dynamic instructions "
+                            << this->ReplacedDynamicInsts << '\n');
   }
 
   void TransformTrace() override {
@@ -575,14 +581,14 @@ class CCA : public ReplayTrace {
     ReplayTrace::TransformTrace();
   }
 
- protected:
+protected:
   uint64_t ReplacedDynamicInsts;
-  std::unordered_map<DynamicInstruction*, DynamicInstruction*> ReplacedMap;
+  std::unordered_map<DynamicInstruction *, DynamicInstruction *> ReplacedMap;
 };
 
 #undef DEBUG_TYPE
 
 char CCA::ID = 0;
-static llvm::RegisterPass<CCA> R(
-    "replay-cca", "replay the llvm trace with cca transformation", false,
-    false);
+static llvm::RegisterPass<CCA>
+    R("replay-cca", "replay the llvm trace with cca transformation", false,
+      false);
