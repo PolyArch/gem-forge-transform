@@ -166,6 +166,7 @@ void StreamRegionAnalyzer::buildStreamDependenceGraph() {
 
 void StreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
                                         DataGraph *DG) {
+  this->numDynamicMemAccesses++;
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Invalid llvm static instruction.");
   assert(Utils::isMemAccessInst(StaticInst) &&
