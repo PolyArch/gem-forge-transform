@@ -70,11 +70,7 @@ Build it. Build type must be "Debug", otherwise we can not use `-debug-only` fla
 
 When using LLVM 8.0.1, there are some issues when using `InductionDescriptor::isInductionPHI()` and `RecurrenceDescriptor::isReductionPHI()`. The problem is that these two functions assume that there will be a loop preheader if the value has AddRecSCEV. However, this is not the case in LLVM 8.0.1. So far I have to change it to use `getLoopPredecessor()` insteand of `getLoopPreheader()`, which is more relaxed than the later.
 
-Similarily you want to build both Debug and Release configuration.
-
-```bash
-
-```
+Similarily you want to build both Debug and Release configuration. You can use the provided `driver/setup.llvm-8.0.1.sh`.
 
 ### Protobuf 3.5.1
 
