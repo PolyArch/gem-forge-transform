@@ -90,6 +90,15 @@ public:
   void dumpStats() const;
 
   /**
+   * Basic query API.
+   */
+  uint64_t getNumDynamicMemAccesses() const {
+    return this->numDynamicMemAccesses;
+  }
+
+  llvm::Loop *getTopLoop() { return this->TopLoop; }
+
+  /**
    * Query for the analysis results.
    */
 
@@ -120,6 +129,11 @@ private:
   std::string AnalyzeRelativePath;
   std::string AnalyzePath;
   std::unique_ptr<StaticStreamRegionAnalyzer> StaticAnalyzer;
+
+  /**
+   * Remember the number of dynamic memory accesses happened in this region.
+   */
+  uint64_t numDynamicMemAccesses = 0;
 
   /**
    * Key data structure, map from instruction to the list of streams.
