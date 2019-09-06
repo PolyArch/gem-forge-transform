@@ -1,4 +1,3 @@
-// Simple dense vector dot product.
 #include "../gem5_pseudo.h"
 typedef int Value;
 
