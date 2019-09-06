@@ -27,7 +27,8 @@ class Graph500Benchmark(Benchmark):
         )
         Util.mkdir_chain(self.work_path)
 
-        self.scale = 14
+        self.scale = 16
+        self.edge_factor = 16
         self.edge_list_file = 'test.graph'
         self.root_file = 'test.root'
 
@@ -43,6 +44,8 @@ class Graph500Benchmark(Benchmark):
         return [
             '-s',
             str(self.scale),
+            '-e',
+            str(self.edge_factor),
             '-o',
             self.edge_list_file,
             '-r',
@@ -77,6 +80,8 @@ class Graph500Benchmark(Benchmark):
             './make-edgelist',
             '-s',
             str(self.scale),
+            '-e',
+            str(self.edge_factor),
             '-o',
             os.path.join(self.work_path, self.edge_list_file),
             '-r',
@@ -109,6 +114,12 @@ class Graph500Benchmark(Benchmark):
         Add the stream whitelist file as addition options to the transformation.
         """
         if self.benchmark_name == 'seq-list':
+            return [
+                '-stream-whitelist-file={whitelist}'.format(whitelist=os.path.join(
+                    self.src_path, 'stream_whitelist.txt'
+                ))
+            ]
+        if self.benchmark_name == 'seq-csr':
             return [
                 '-stream-whitelist-file={whitelist}'.format(whitelist=os.path.join(
                     self.src_path, 'stream_whitelist.txt'
