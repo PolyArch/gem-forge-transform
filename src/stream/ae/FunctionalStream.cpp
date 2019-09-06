@@ -6,11 +6,15 @@
 #include "google/protobuf/util/json_util.h"
 
 #define DEBUG_TYPE "FunctionalStream"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
+
 FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
     : S(_S), SE(_SE), Pattern(_S->getProtobufPatterns()),
       CurrentIdx(InvalidIdx), IsAddressValid(false), IsValueValid(false) {
-  DEBUG(llvm::errs() << "Initialized FunctionalStream of " << S->formatName()
-                     << '\n');
+  LLVM_DEBUG(llvm::errs() << "Initialized FunctionalStream of "
+                          << S->formatName() << '\n');
 }
 
 void FunctionalStream::addBaseStream(FunctionalStream *BaseStream) {
@@ -36,9 +40,9 @@ void FunctionalStream::configure(DataGraph *DG) {
   this->CurrentIdx++;
   this->CurrentEntryUsed = false;
   this->update(DG);
-  DEBUG(llvm::errs() << "Configured ");
-  DEBUG(this->DEBUG_DUMP(llvm::errs()));
-  DEBUG(llvm::errs() << '\n');
+  LLVM_DEBUG(llvm::errs() << "Configured ");
+  LLVM_DEBUG(this->DEBUG_DUMP(llvm::errs()));
+  LLVM_DEBUG(llvm::errs() << '\n');
 }
 
 void FunctionalStream::step(DataGraph *DG) {

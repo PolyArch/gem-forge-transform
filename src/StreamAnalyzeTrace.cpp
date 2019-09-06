@@ -17,27 +17,30 @@ static llvm::cl::opt<std::string> TraceFileName("stream-trace-file",
                                                 llvm::cl::desc("Trace file."));
 
 #define DEBUG_TYPE "ReplayPass"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 #define CCA_SUBGRAPH_DEPTH_MAX 7u
 
 namespace {
 
 struct CCASubGraph {
- public:
+public:
   CCASubGraph() : Source(nullptr), InsertionPoint(nullptr) {}
-  std::unordered_set<llvm::Instruction*> StaticInstructions;
-  std::unordered_set<llvm::Instruction*> DependentStaticInstructions;
-  std::unordered_set<llvm::Instruction*> UsedStaticInstructions;
-  llvm::Instruction* Source;
-  llvm::Instruction* InsertionPoint;
-  void addInstruction(llvm::Instruction* StaticInstruction) {
+  std::unordered_set<llvm::Instruction *> StaticInstructions;
+  std::unordered_set<llvm::Instruction *> DependentStaticInstructions;
+  std::unordered_set<llvm::Instruction *> UsedStaticInstructions;
+  llvm::Instruction *Source;
+  llvm::Instruction *InsertionPoint;
+  void addInstruction(llvm::Instruction *StaticInstruction) {
     if (this->StaticInstructions.size() == 0) {
       // This is the first instruction.
       this->Source = StaticInstruction;
     }
     this->StaticInstructions.insert(StaticInstruction);
   }
-  void removeInstruction(llvm::Instruction* StaticInstruction) {
+  void removeInstruction(llvm::Instruction *StaticInstruction) {
     this->StaticInstructions.erase(StaticInstruction);
     if (this->Source == StaticInstruction) {
       this->Source = nullptr;
@@ -75,15 +78,15 @@ struct CCASubGraph {
     }
   }
   uint32_t getDepth() const {
-    std::list<llvm::Instruction*> Stack;
+    std::list<llvm::Instruction *> Stack;
     if (this->Source == nullptr) {
       return 0;
     }
     // Topological sort.
-    std::unordered_map<llvm::Instruction*, int> Visited;
+    std::unordered_map<llvm::Instruction *, int> Visited;
     Stack.push_back(this->Source);
     Visited[this->Source] = 0;
-    std::list<llvm::Instruction*> Sorted;
+    std::list<llvm::Instruction *> Sorted;
     while (!Stack.empty()) {
       auto Node = Stack.back();
       if (Visited.at(Node) == 0) {
@@ -111,7 +114,7 @@ struct CCASubGraph {
         Stack.pop_back();
       }
     }
-    std::unordered_map<llvm::Instruction*, uint32_t> Dist;
+    std::unordered_map<llvm::Instruction *, uint32_t> Dist;
     Dist[this->Source] = 1;
     uint32_t Depth = 1;
     for (auto Node : Sorted) {
@@ -143,34 +146,26 @@ struct CCASubGraph {
   }
   void dump() const {
     for (auto Inst : this->StaticInstructions) {
-      DEBUG(llvm::errs() << "Subgraph " << Inst->getName() << '\n');
+      LLVM_DEBUG(llvm::errs() << "Subgraph " << Inst->getName() << '\n');
     }
   }
 };
-}  // namespace
+} // namespace
 
 // Analyze the stream interface.
 class StreamAnalysisTrace : public llvm::FunctionPass {
- public:
+public:
   static char ID;
   StreamAnalysisTrace()
-      : llvm::FunctionPass(ID),
-        StaticMemAccessCount(0),
-        StaticStreamCount(0),
-        StaticAffineStreamCount(0),
-        StaticQuadricStreamCount(0),
-        DynamicInstructionCount(0),
-        DynamicMemAccessCount(0),
-        DynamicStreamCount(0),
-        DynamicMemAccessBytes(0),
-        DynamicStreamBytes(0),
-        CurrentFunction(nullptr),
-        CurrentBasicBlock(nullptr),
-        CurrentIndex(-1),
+      : llvm::FunctionPass(ID), StaticMemAccessCount(0), StaticStreamCount(0),
+        StaticAffineStreamCount(0), StaticQuadricStreamCount(0),
+        DynamicInstructionCount(0), DynamicMemAccessCount(0),
+        DynamicStreamCount(0), DynamicMemAccessBytes(0), DynamicStreamBytes(0),
+        CurrentFunction(nullptr), CurrentBasicBlock(nullptr), CurrentIndex(-1),
         DataLayout(nullptr) {}
   virtual ~StreamAnalysisTrace() {}
 
-  void getAnalysisUsage(llvm::AnalysisUsage& Info) const override {
+  void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
     // We require the loop information.
     Info.addRequired<llvm::LoopInfoWrapperPass>();
     // Not preserve the loop information.
@@ -181,7 +176,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     // We donot preserve the scev infomation as we may change function body.
   }
 
-  bool doInitialization(llvm::Module& Module) override {
+  bool doInitialization(llvm::Module &Module) override {
     assert(TraceFileName.getNumOccurrences() == 1 &&
            "Please specify the trace file.");
 
@@ -196,20 +191,20 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
         break;
       }
       switch (NextType) {
-        case TraceParser::INST: {
-          auto Parsed = Parser->parseLLVMInstruction();
-          this->parseInst(Module, Parsed);
-          break;
-        }
-        case TraceParser::FUNC_ENTER: {
-          auto Parsed = Parser->parseFunctionEnter();
-          // Ignore function enter.
-          break;
-        }
-        default: {
-          llvm_unreachable("Unknown next type.");
-          break;
-        }
+      case TraceParser::INST: {
+        auto Parsed = Parser->parseLLVMInstruction();
+        this->parseInst(Module, Parsed);
+        break;
+      }
+      case TraceParser::FUNC_ENTER: {
+        auto Parsed = Parser->parseFunctionEnter();
+        // Ignore function enter.
+        break;
+      }
+      default: {
+        llvm_unreachable("Unknown next type.");
+        break;
+      }
       }
     }
     delete Parser;
@@ -223,10 +218,10 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
 
   //   bool doInitialization(llvm::Module& Module) override;
 
-  bool runOnFunction(llvm::Function& Function) override {
+  bool runOnFunction(llvm::Function &Function) override {
     // Collect information of stream in this function.
     // This will not modify the llvm function.
-    llvm::ScalarEvolution& SE =
+    llvm::ScalarEvolution &SE =
         this->getAnalysis<llvm::ScalarEvolutionWrapperPass>().getSE();
 
     for (auto BBIter = Function.begin(), BBEnd = Function.end();
@@ -261,10 +256,10 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
       //     std::string SCEVFormat;
       //     llvm::raw_string_ostream rs(SCEVFormat);
       //     SCEV->print(rs);
-      //     // DEBUG(llvm::errs() << rs.str() << '\n');
+      //     //LLVM_DEBUG(llvm::errs() << rs.str() << '\n');
 
-      //     // DEBUG(SCEV->print(llvm::errs()));
-      //     // DEBUG(llvm::errs() << '\n');
+      //     //LLVM_DEBUG(SCEV->print(llvm::errs()));
+      //     //LLVM_DEBUG(llvm::errs() << '\n');
       //     if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
       //       // This is a stream.
       //       this->StaticStreamCount++;
@@ -295,28 +290,28 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     return false;
   }
 
-  bool doFinalization(llvm::Module& Module) override {
-    DEBUG(llvm::errs() << "StaticMemAccessCount: " << this->StaticMemAccessCount
-                       << '\n');
-    DEBUG(llvm::errs() << "StaticStreamCount: " << this->StaticStreamCount
-                       << '\n');
-    DEBUG(llvm::errs() << "StaticAffineStreamCount: "
-                       << this->StaticAffineStreamCount << '\n');
-    DEBUG(llvm::errs() << "StaticQuadricStreamCount: "
-                       << this->StaticQuadricStreamCount << '\n');
-    DEBUG(llvm::errs() << "DynamicInstructionCount: "
-                       << this->DynamicInstructionCount << '\n');
-    DEBUG(llvm::errs() << "DynamicMemAccessCount: "
-                       << this->DynamicMemAccessCount << '\n');
-    DEBUG(llvm::errs() << "DynamicStreamCount: " << this->DynamicStreamCount
-                       << '\n');
-    DEBUG(llvm::errs() << "DynamicMemAccessBytes: "
-                       << this->DynamicMemAccessBytes << '\n');
-    DEBUG(llvm::errs() << "DynamicStreamBytes: " << this->DynamicStreamBytes
-                       << '\n');
+  bool doFinalization(llvm::Module &Module) override {
+    LLVM_DEBUG(llvm::errs() << "StaticMemAccessCount: "
+                            << this->StaticMemAccessCount << '\n');
+    LLVM_DEBUG(llvm::errs()
+               << "StaticStreamCount: " << this->StaticStreamCount << '\n');
+    LLVM_DEBUG(llvm::errs() << "StaticAffineStreamCount: "
+                            << this->StaticAffineStreamCount << '\n');
+    LLVM_DEBUG(llvm::errs() << "StaticQuadricStreamCount: "
+                            << this->StaticQuadricStreamCount << '\n');
+    LLVM_DEBUG(llvm::errs() << "DynamicInstructionCount: "
+                            << this->DynamicInstructionCount << '\n');
+    LLVM_DEBUG(llvm::errs() << "DynamicMemAccessCount: "
+                            << this->DynamicMemAccessCount << '\n');
+    LLVM_DEBUG(llvm::errs()
+               << "DynamicStreamCount: " << this->DynamicStreamCount << '\n');
+    LLVM_DEBUG(llvm::errs() << "DynamicMemAccessBytes: "
+                            << this->DynamicMemAccessBytes << '\n');
+    LLVM_DEBUG(llvm::errs()
+               << "DynamicStreamBytes: " << this->DynamicStreamBytes << '\n');
     for (size_t i = 0; i < CCA_SUBGRAPH_DEPTH_MAX; ++i) {
-      DEBUG(llvm::errs() << "CCASubGraphDepth:" << i + 1 << ':'
-                         << this->SubGraphDepthHistograpm[i] << '\n');
+      LLVM_DEBUG(llvm::errs() << "CCASubGraphDepth:" << i + 1 << ':'
+                              << this->SubGraphDepthHistograpm[i] << '\n');
     }
     // Try to sort out top 10.
     // const size_t MaxCount = 50;
@@ -339,7 +334,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     // // Print out the top memory access.
     // for (auto& Entry : TopMemAccess) {
     //   llvm::Instruction* Inst = Entry.second;
-    //   DEBUG(llvm::errs() << Entry.first << ' ' <<
+    //  LLVM_DEBUG(llvm::errs() << Entry.first << ' ' <<
     //   Inst->getFunction()->getName()
     //                      << ' ' << Inst->getParent()->getName() << ' '
     //                      << Inst->getName() << ' '
@@ -351,22 +346,22 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     return false;
   }
 
- protected:
+protected:
   bool CCACheckConstraints(
-      const CCASubGraph& SubGraph, llvm::Instruction* CandidateInst,
-      const std::unordered_set<llvm::Instruction*>& MatchedInst) const {
+      const CCASubGraph &SubGraph, llvm::Instruction *CandidateInst,
+      const std::unordered_set<llvm::Instruction *> &MatchedInst) const {
     switch (CandidateInst->getOpcode()) {
-      case llvm::Instruction::PHI:
-      case llvm::Instruction::Br:
-      case llvm::Instruction::Switch:
-      case llvm::Instruction::IndirectBr:
-      case llvm::Instruction::Ret:
-      case llvm::Instruction::Call:
-      case llvm::Instruction::Load:
-      case llvm::Instruction::Store: {
-        return false;
-      }
-      default: { break; }
+    case llvm::Instruction::PHI:
+    case llvm::Instruction::Br:
+    case llvm::Instruction::Switch:
+    case llvm::Instruction::IndirectBr:
+    case llvm::Instruction::Ret:
+    case llvm::Instruction::Call:
+    case llvm::Instruction::Load:
+    case llvm::Instruction::Store: {
+      return false;
+    }
+    default: { break; }
     }
     // Make sure that the candidate doesn't have dependence on other cca.
     // This is key to avoid lock between two cca instructions.
@@ -406,7 +401,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     return true;
   }
 
-  void CCASubGraphDepthAnalyze(llvm::BasicBlock* BB) {
+  void CCASubGraphDepthAnalyze(llvm::BasicBlock *BB) {
     auto FirstInst = &*(BB->begin());
     if (this->StaticInstructionInstantiatedCount.find(FirstInst) ==
         this->StaticInstructionInstantiatedCount.end()) {
@@ -415,8 +410,8 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
     auto InstantiateCount = StaticInstructionInstantiatedCount.at(FirstInst);
 
     CCASubGraph CurrentSubGraph;
-    std::list<llvm::Instruction*> WaitList;
-    std::unordered_set<llvm::Instruction*> MatchedStaticInsts;
+    std::list<llvm::Instruction *> WaitList;
+    std::unordered_set<llvm::Instruction *> MatchedStaticInsts;
     for (auto InstIter = BB->rbegin(), InstEnd = BB->rend();
          InstIter != InstEnd; ++InstIter) {
       auto Inst = &*InstIter;
@@ -459,7 +454,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
       // We have a new subgraph.
       // First we finalize it.
       CurrentSubGraph.finalize();
-      DEBUG(llvm::errs() << "Detect subgraph:\n");
+      LLVM_DEBUG(llvm::errs() << "Detect subgraph:\n");
       CurrentSubGraph.dump();
       auto Depth = CurrentSubGraph.getDepth();
       if (Depth > 0) {
@@ -485,19 +480,19 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
   // Hack this class for CCA analysis.
   uint64_t SubGraphDepthHistograpm[CCA_SUBGRAPH_DEPTH_MAX];
 
-  std::unordered_map<llvm::Instruction*, uint64_t>
+  std::unordered_map<llvm::Instruction *, uint64_t>
       StaticInstructionInstantiatedCount;
 
-  std::unordered_map<llvm::Instruction*, std::string> StaticInstructionSCEVMap;
+  std::unordered_map<llvm::Instruction *, std::string> StaticInstructionSCEVMap;
 
-  llvm::Function* CurrentFunction;
-  llvm::BasicBlock* CurrentBasicBlock;
+  llvm::Function *CurrentFunction;
+  llvm::BasicBlock *CurrentBasicBlock;
   int64_t CurrentIndex;
   llvm::BasicBlock::iterator CurrentStaticInstruction;
 
-  llvm::DataLayout* DataLayout;
+  llvm::DataLayout *DataLayout;
 
-  void parseInst(llvm::Module& Module, TraceParser::TracedInst& Parsed) {
+  void parseInst(llvm::Module &Module, TraceParser::TracedInst &Parsed) {
     if (this->CurrentFunction == nullptr ||
         this->CurrentFunction->getName() != Parsed.Func) {
       this->CurrentFunction = Module.getFunction(Parsed.Func);
@@ -540,7 +535,7 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
       }
     }
 
-    llvm::Instruction* StaticInstruction = &*(this->CurrentStaticInstruction);
+    llvm::Instruction *StaticInstruction = &*(this->CurrentStaticInstruction);
 
     assert(Parsed.Id == this->CurrentIndex && "Invalid index.");
 
@@ -561,6 +556,6 @@ class StreamAnalysisTrace : public llvm::FunctionPass {
 
 #undef DEBUG_TYPE
 char StreamAnalysisTrace::ID = 0;
-static llvm::RegisterPass<StreamAnalysisTrace> R(
-    "stream-analysis-trace", "analyze the llvm trace with stream inferface",
-    false, false);
+static llvm::RegisterPass<StreamAnalysisTrace>
+    R("stream-analysis-trace", "analyze the llvm trace with stream inferface",
+      false, false);

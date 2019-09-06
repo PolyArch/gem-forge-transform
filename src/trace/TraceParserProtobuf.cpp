@@ -6,6 +6,9 @@
 #include <iostream>
 
 #define DEBUG_TYPE "ParserProtobuf"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName,
                                          const InstructionUIDMap &_InstUIDMap)

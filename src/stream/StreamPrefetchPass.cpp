@@ -1,6 +1,9 @@
 #include "stream/StreamPass.h"
 
 #define DEBUG_TYPE "StreamPrefetchPass"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 namespace {
 
@@ -20,7 +23,7 @@ protected:
 };
 
 void StreamPrefetchPass::transformStream() {
-  DEBUG(llvm::errs() << "StreamPrefetch: Start transform.\n");
+  LLVM_DEBUG(llvm::errs() << "StreamPrefetch: Start transform.\n");
 
   LoopStackT LoopStack;
   ActiveStreamInstMapT ActiveStreamInstMap;
@@ -164,7 +167,7 @@ void StreamPrefetchPass::transformStream() {
     }
   }
 
-  DEBUG(llvm::errs() << "StreamPrefetch: Transform done.\n");
+  LLVM_DEBUG(llvm::errs() << "StreamPrefetch: Transform done.\n");
 }
 } // namespace
 

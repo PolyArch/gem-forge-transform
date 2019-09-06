@@ -7,6 +7,9 @@
 #include <sstream>
 
 #define DEBUG_TYPE "LLVM_TDG_UTILS"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 std::unordered_map<const llvm::Function *, std::string>
     Utils::MemorizedDemangledFunctionNames;
@@ -29,23 +32,23 @@ const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
         MangledName.c_str(), Buffer, &DemangledNameSize, &DemangleStatus);
 
     if (DemangledName == nullptr) {
-      DEBUG(llvm::errs() << "Failed demangling name " << MangledName
-                         << " due to ");
+      LLVM_DEBUG(llvm::errs()
+                 << "Failed demangling name " << MangledName << " due to ");
       switch (DemangleStatus) {
       case -4: {
-        DEBUG(llvm::errs() << "unknown error.\n");
+        LLVM_DEBUG(llvm::errs() << "unknown error.\n");
         break;
       }
       case -3: {
-        DEBUG(llvm::errs() << "invalid args.\n");
+        LLVM_DEBUG(llvm::errs() << "invalid args.\n");
         break;
       }
       case -2: {
-        DEBUG(llvm::errs() << "invalid mangled name.\n");
+        LLVM_DEBUG(llvm::errs() << "invalid mangled name.\n");
         break;
       }
       case -1: {
-        DEBUG(llvm::errs() << "memory alloc failure.\n");
+        LLVM_DEBUG(llvm::errs() << "memory alloc failure.\n");
         break;
       }
       default: { llvm_unreachable("Illegal demangle status."); }

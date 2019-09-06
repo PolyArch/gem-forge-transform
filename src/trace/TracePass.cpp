@@ -54,6 +54,10 @@ static llvm::cl::opt<bool> TraceReachableFunctionOnly(
                    "only. About when there is indirect call."));
 
 #define DEBUG_TYPE "TracePass"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
+
 namespace {
 
 bool isIntrinsicFunctionName(const std::string &FunctionName) {
@@ -104,7 +108,7 @@ public:
   static char ID;
   TracePass() : llvm::FunctionPass(ID) {}
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
-    // DEBUG(llvm::errs() << "We have required the analysis.\n");
+    //LLVM_DEBUG(llvm::errs() << "We have required the analysis.\n");
     Info.addRequired<LocateAccelerableFunctions>();
     Info.addPreserved<LocateAccelerableFunctions>();
   }
@@ -112,7 +116,7 @@ public:
     this->Module = &Module;
     this->DataLayout = new llvm::DataLayout(this->Module);
 
-    DEBUG(llvm::errs() << "Initialize TracePass\n");
+    LLVM_DEBUG(llvm::errs() << "Initialize TracePass\n");
 
     // Register the external log functions.
     registerPrintFunctions(Module);
@@ -136,7 +140,7 @@ public:
   }
   bool runOnFunction(llvm::Function &Function) override {
     auto FunctionName = Function.getName().str();
-    DEBUG(llvm::errs() << "Processing Function: " << FunctionName << '\n');
+   LLVM_DEBUG(llvm::errs() << "Processing Function: " << FunctionName << '\n');
 
     if (this->mustTracedFunctionNames.count(FunctionName) == 0) {
       // This function is not in the must traced set.
@@ -158,7 +162,7 @@ public:
 
     for (auto BBIter = Function.begin(), BBEnd = Function.end();
          BBIter != BBEnd; ++BBIter) {
-      // DEBUG(llvm::errs() << "Found basic block: " << BBIter->getName() <<
+      //LLVM_DEBUG(llvm::errs() << "Found basic block: " << BBIter->getName() <<
       // '\n');
       runOnBasicBlock(*BBIter);
     }
@@ -344,7 +348,7 @@ private:
              llvm::isa<llvm::LandingPadInst>(Inst);
     };
 
-    DEBUG(llvm::errs() << "Inside bb " << BB.getName() << '\n');
+   LLVM_DEBUG(llvm::errs() << "Inside bb " << BB.getName() << '\n');
 
     for (auto InstIter = BB.begin(); InstIter != BB.end();
          InstIter = NextInstIter, PosInBB++) {
@@ -352,7 +356,7 @@ private:
       NextInstIter++;
 
       std::string OpCodeName = InstIter->getOpcodeName();
-      DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
+     LLVM_DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
       llvm::Instruction *Inst = &*InstIter;
 
       if (IsHeadInst(Inst)) {
@@ -366,10 +370,10 @@ private:
       traceNonPhiInst(Inst, FunctionNameValue, PosInBB);
     }
 
-    DEBUG(llvm::errs() << "After transformation.\n");
+   LLVM_DEBUG(llvm::errs() << "After transformation.\n");
     for (auto InstIter = BB.begin(); InstIter != BB.end(); ++InstIter) {
       std::string OpCodeName = InstIter->getOpcodeName();
-      DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
+     LLVM_DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
     }
 
     // Handle all the phi nodes now.
@@ -403,7 +407,7 @@ private:
     std::vector<llvm::Value *> PrintInstArgs =
         getPrintInstArgs(Inst, FunctionNameValue, PosInBB);
     // Call printInst. After the instruction.
-    // DEBUG(llvm::errs() << "Insert printInst for phi node.\n");
+    //LLVM_DEBUG(llvm::errs() << "Insert printInst for phi node.\n");
     llvm::IRBuilder<> Builder(InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
@@ -412,7 +416,7 @@ private:
       for (unsigned IncomingValueId = 0,
                     NumIncomingValues = Inst->getNumIncomingValues();
            IncomingValueId < NumIncomingValues; IncomingValueId++) {
-        // DEBUG(llvm::errs() << "Insert printValue for phi node.\n");
+        //LLVM_DEBUG(llvm::errs() << "Insert printValue for phi node.\n");
         auto PrintValueArgs = getPrintValueArgsForPhiParameter(
             Inst->getIncomingValue(IncomingValueId),
             Inst->getIncomingBlock(IncomingValueId));
@@ -421,7 +425,7 @@ private:
 
       // Call printResult after the instruction (if it has a result).
       if (Inst->getName() != "") {
-        // DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
+        //LLVM_DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
         auto PrintValueArgs =
             getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
         Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
@@ -437,7 +441,7 @@ private:
     std::string OpCodeName = Inst->getOpcodeName();
     assert(OpCodeName != "phi" && "traceNonPhiInst can't trace phi inst.");
 
-    // DEBUG(llvm::errs() << "Trace non-phi inst " << Inst->getName() << " op
+    //LLVM_DEBUG(llvm::errs() << "Trace non-phi inst " << Inst->getName() << " op
     // "
     //                    << Inst->getOpcodeName() << '\n');
 
@@ -756,7 +760,7 @@ void TracePass::parseTraceFunctions(const std::string &Names) {
           // We found the function directly.
           // After this point we use mangled name everywhere.
           this->tracedFunctionNames.insert(Function->getName());
-          DEBUG(llvm::errs()
+         LLVM_DEBUG(llvm::errs()
                 << "Add traced function " << Function->getName() << '\n');
         } else {
           UnmatchedNames.insert(Name);
@@ -787,23 +791,23 @@ void TracePass::parseTraceFunctions(const std::string &Names) {
         MangledName.c_str(), Buffer, &DemangledNameSize, &DemangleStatus);
 
     if (DemangledName == nullptr) {
-      DEBUG(llvm::errs() << "Failed demangling name " << MangledName
+     LLVM_DEBUG(llvm::errs() << "Failed demangling name " << MangledName
                          << " due to ");
       switch (DemangleStatus) {
       case -4: {
-        DEBUG(llvm::errs() << "unknown error.\n");
+       LLVM_DEBUG(llvm::errs() << "unknown error.\n");
         break;
       }
       case -3: {
-        DEBUG(llvm::errs() << "invalid args.\n");
+       LLVM_DEBUG(llvm::errs() << "invalid args.\n");
         break;
       }
       case -2: {
-        DEBUG(llvm::errs() << "invalid mangled name.\n");
+       LLVM_DEBUG(llvm::errs() << "invalid mangled name.\n");
         break;
       }
       case -1: {
-        DEBUG(llvm::errs() << "memory alloc failure.\n");
+       LLVM_DEBUG(llvm::errs() << "memory alloc failure.\n");
         break;
       }
       default: { llvm_unreachable("Illegal demangle status."); }
@@ -812,14 +816,14 @@ void TracePass::parseTraceFunctions(const std::string &Names) {
       continue;
     }
 
-    DEBUG(llvm::errs() << "Demangled " << MangledName << " into "
+   LLVM_DEBUG(llvm::errs() << "Demangled " << MangledName << " into "
                        << DemangledName << '\n');
     auto UnmatchedNameIter = UnmatchedNames.find(DemangledName);
     if (UnmatchedNameIter != UnmatchedNames.end()) {
       // We found a match.
       // We always use mangled name hereafter for simplicity.
       this->tracedFunctionNames.insert(MangledName);
-      DEBUG(llvm::errs() << "Add traced function " << MangledName << '\n');
+     LLVM_DEBUG(llvm::errs() << "Add traced function " << MangledName << '\n');
       UnmatchedNames.erase(UnmatchedNameIter);
     }
 
@@ -885,12 +889,12 @@ void TracePass::findReachableFunctions() {
       }
     }
   }
-  DEBUG(llvm::errs()
+ LLVM_DEBUG(llvm::errs()
         << "==================== Reachable Functions ==================\n");
   for (auto Func : this->reachableFunctions) {
-    DEBUG(llvm::errs() << Func->getName() << '\n');
+   LLVM_DEBUG(llvm::errs() << Func->getName() << '\n');
   }
-  DEBUG(llvm::errs()
+ LLVM_DEBUG(llvm::errs()
         << "==================== Reachable Functions ==================\n");
 }
 
@@ -928,10 +932,10 @@ TracePass::getOrCreateVectorStoreBuffer(llvm::VectorType *Type,
   //   for (auto Iter = Function->front().begin(), End =
   //   Function->front().end();
   //        Iter != End; ++Iter) {
-  //     DEBUG(llvm::errs() << '(' << Iter->getName() << ", "
+  //    LLVM_DEBUG(llvm::errs() << '(' << Iter->getName() << ", "
   //                        << Iter->getOpcodeName() << ")\n");
   //   }
-  //   DEBUG(llvm::errs() << "Found insertion point for vector buffer in "
+  //  LLVM_DEBUG(llvm::errs() << "Found insertion point for vector buffer in "
   //                      << Function->getName()
   //                      << "::" << Function->front().getName() << " at ("
   //                      << IP->getName() << ", " << IP->getOpcodeName()
@@ -941,7 +945,7 @@ TracePass::getOrCreateVectorStoreBuffer(llvm::VectorType *Type,
   //   for (auto Iter = Function->front().begin(), End =
   //   Function->front().end();
   //        Iter != End; ++Iter) {
-  //     DEBUG(llvm::errs() << '(' << Iter->getName() << ", "
+  //    LLVM_DEBUG(llvm::errs() << '(' << Iter->getName() << ", "
   //                        << Iter->getOpcodeName() << ")\n");
   //   }
   //   VectorStoreBuffer[BitSize] = Alloca;

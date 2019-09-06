@@ -2,7 +2,7 @@
 
 ## Without stdlib
 
-### LLVM
+### LLVM 6.0
 
 Checkout LLVM 6.0. The rest is optional for now.
 
@@ -48,6 +48,32 @@ cmake -G "Unix Makefiles" \
 LLVM_SRC_ROOT
 make -j9
 make install
+```
+
+### LLVM 8.0.1
+
+This repo should also work with LLVM 8.0.1. Checkout the repo.
+
+```bash
+git clone git@github.com:llvm/llvm-project.git llvm-8.0.1
+cd llvm-8.0.1
+git checkout llvmorg-8.0.1
+```
+
+In order to use the golden linker plugin we have download the include file.
+
+```bash
+git clone --depth 1 git://sourceware.org/git/binutils-gdb.git binutils
+```
+
+Build it. Build type must be "Debug", otherwise we can not use `-debug-only` flag. Notice that we also build shared library to avoid redefinition. We also specify the include directory of binutils to build the golden linker plugin.
+
+When using LLVM 8.0.1, there are some issues when using `InductionDescriptor::isInductionPHI()` and `RecurrenceDescriptor::isReductionPHI()`. The problem is that these two functions assume that there will be a loop preheader if the value has AddRecSCEV. However, this is not the case in LLVM 8.0.1. So far I have to change it to use `getLoopPredecessor()` insteand of `getLoopPreheader()`, which is more relaxed than the later.
+
+Similarily you want to build both Debug and Release configuration.
+
+```bash
+
 ```
 
 ### Protobuf 3.5.1

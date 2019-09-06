@@ -9,6 +9,9 @@
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "DynamicInstruction"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 DynamicValue::DynamicValue(const std::string &_Value,
                            const std::string &_MemBase, uint64_t _MemOffset)
@@ -52,7 +55,7 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
     auto IntegerType = llvm::cast<llvm::IntegerType>(Type);
     unsigned BitWidth = IntegerType->getBitWidth();
     if ((BitWidth % 8) != 0) {
-      DEBUG(llvm::errs() << "Bit width of integer " << BitWidth << '\n');
+      LLVM_DEBUG(llvm::errs() << "Bit width of integer " << BitWidth << '\n');
     }
     if (BitWidth == 1) {
       // Sometimes, llvm optimize boolean to i1, but this is at least 1 bytes.
@@ -479,7 +482,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     LoadExtra->set_offset(LoadedAddr->MemOffset);
     if (this->DynamicResult->MemBase != "") {
       // This load inst will produce some new base for future memory access.
-      DEBUG(llvm::errs() << "Set new base for load "
+      LLVM_DEBUG(llvm::errs() << "Set new base for load "
                          << this->DynamicResult->MemBase << '\n');
       LoadExtra->set_new_base(this->DynamicResult->MemBase);
     }
@@ -502,11 +505,11 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     StoreExtra->set_offset(StoredAddr->MemOffset);
 
     if (StoreExtra->size() != StoreExtra->value().size()) {
-      DEBUG(llvm::errs() << "size " << StoreExtra->size() << " value size "
+      LLVM_DEBUG(llvm::errs() << "size " << StoreExtra->size() << " value size "
                          << StoreExtra->value().size() << '\n');
-      DEBUG(llvm::errs() << "Stored type: ");
-      DEBUG(StoredType->print(llvm::errs()));
-      DEBUG(llvm::errs() << "\n");
+      LLVM_DEBUG(llvm::errs() << "Stored type: ");
+      LLVM_DEBUG(StoredType->print(llvm::errs()));
+      LLVM_DEBUG(llvm::errs() << "\n");
     }
 
     assert(StoreExtra->size() == StoreExtra->value().size() &&
@@ -559,7 +562,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     AllocExtra->set_size(AllocatedSize);
     AllocExtra->set_new_base(this->DynamicResult->MemBase);
     // This alloc inst will produce some new base for future memory access.
-    // DEBUG(llvm::errs() << "Set new base for alloc " << AllocExtra->new_base()
+    // LLVM_DEBUG(llvm::errs() << "Set new base for alloc " << AllocExtra->new_base()
     //                    << '\n');
     return;
   }

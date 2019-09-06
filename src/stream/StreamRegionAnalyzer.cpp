@@ -8,6 +8,9 @@
 #include <sstream>
 
 #define DEBUG_TYPE "StreamRegionAnalyzer"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 StreamConfigureLoopInfo::StreamConfigureLoopInfo(
     const std::string &_Folder, const std::string &_RelativeFolder,
@@ -676,18 +679,18 @@ void StreamRegionAnalyzer::buildTransformPlan() {
     auto &SelfInst = InstChosenStream.first;
     auto &S = InstChosenStream.second;
 
-    DEBUG(llvm::errs() << "make transform plan for stream " << S->formatName()
-                       << '\n');
+    LLVM_DEBUG(llvm::errs()
+               << "make transform plan for stream " << S->formatName() << '\n');
 
     // Handle all the step instructions.
     if (S->SStream->Type == StaticStream::TypeT::IV) {
       for (const auto &StepInst : S->getStepInsts()) {
         this->InstPlanMap.at(StepInst).planToStep(S);
-        DEBUG(llvm::errs() << "Select transform plan for inst "
-                           << LoopUtils::formatLLVMInst(StepInst) << " to "
-                           << StreamTransformPlan::formatPlanT(
-                                  StreamTransformPlan::PlanT::STEP)
-                           << '\n');
+        LLVM_DEBUG(llvm::errs() << "Select transform plan for inst "
+                                << LoopUtils::formatLLVMInst(StepInst) << " to "
+                                << StreamTransformPlan::formatPlanT(
+                                       StreamTransformPlan::PlanT::STEP)
+                                << '\n');
         /**
          * A hack here to make the user of step instruction also user of the
          * stream. PURE EVIL!!
@@ -716,9 +719,9 @@ void StreamRegionAnalyzer::buildTransformPlan() {
           continue;
         }
         this->InstPlanMap.at(I).addUsedStream(S);
-        DEBUG(llvm::errs() << "Add used stream for user "
-                           << LoopUtils::formatLLVMInst(I) << " with stream "
-                           << S->formatName() << '\n');
+        LLVM_DEBUG(llvm::errs() << "Add used stream for user "
+                                << LoopUtils::formatLLVMInst(I)
+                                << " with stream " << S->formatName() << '\n');
       }
     }
 
@@ -741,10 +744,10 @@ void StreamRegionAnalyzer::buildTransformPlan() {
       }
     }
 
-    DEBUG(llvm::errs() << "Select transform plan for inst "
-                       << LoopUtils::formatLLVMInst(SelfInst) << " to "
-                       << StreamTransformPlan::formatPlanT(SelfPlan.Plan)
-                       << '\n');
+    LLVM_DEBUG(llvm::errs()
+               << "Select transform plan for inst "
+               << LoopUtils::formatLLVMInst(SelfInst) << " to "
+               << StreamTransformPlan::formatPlanT(SelfPlan.Plan) << '\n');
   }
 
   // Second step: find deletable instruction from the candidates.

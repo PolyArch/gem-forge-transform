@@ -5,6 +5,10 @@
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "LoopUtils"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
+
 /**
  * Determine if the static inst is the head of a loop.
  */
@@ -42,9 +46,9 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
       auto *Callee = Utils::getCalledFunction(&*InstIter);
       if (Callee == nullptr) {
         // Indirect call, not continuous.
-        DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
-                           << " is statically not continuous because it "
-                              "contains indirect call.\n");
+        LLVM_DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+                                << " is statically not continuous because it "
+                                   "contains indirect call.\n");
         return false;
       }
       if (Callee->isIntrinsic()) {
@@ -56,10 +60,10 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
           continue;
         }
       }
-      DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
-                         << " is statically not continuous because it "
-                            "contains unsupported call to "
-                         << Callee->getName() << "\n");
+      LLVM_DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+                              << " is statically not continuous because it "
+                                 "contains unsupported call to "
+                              << Callee->getName() << "\n");
       return false;
     }
   }
@@ -236,8 +240,8 @@ llvm::Instruction *StaticInnerMostLoop::getHeaderNonPhiInst() {
 void StaticInnerMostLoop::scheduleBasicBlocksInLoop(llvm::Loop *Loop) {
   assert(Loop != nullptr && "Null Loop for scheduleBasicBlocksInLoop.");
 
-  DEBUG(llvm::errs() << "Schedule basic blocks in loop " << printLoop(Loop)
-                     << '\n');
+  LLVM_DEBUG(llvm::errs() << "Schedule basic blocks in loop " << printLoop(Loop)
+                          << '\n');
 
   auto &Schedule = this->BBList;
 
@@ -255,7 +259,7 @@ void StaticInnerMostLoop::scheduleBasicBlocksInLoop(llvm::Loop *Loop) {
       if (Scheduled.find(BB) == Scheduled.end()) {
         Schedule.push_front(BB);
         Scheduled.insert(BB);
-        DEBUG(llvm::errs() << "Schedule " << BB->getName() << '\n');
+        LLVM_DEBUG(llvm::errs() << "Schedule " << BB->getName() << '\n');
       }
       Stack.pop_back();
       continue;
@@ -270,7 +274,7 @@ void StaticInnerMostLoop::scheduleBasicBlocksInLoop(llvm::Loop *Loop) {
       if (Visited.find(Succ) != Visited.end()) {
         continue;
       }
-      DEBUG(llvm::errs() << "Explore " << Succ->getName() << '\n');
+      LLVM_DEBUG(llvm::errs() << "Explore " << Succ->getName() << '\n');
       Stack.emplace_back(Succ, false);
     }
   }

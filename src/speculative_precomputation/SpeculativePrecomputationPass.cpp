@@ -5,6 +5,9 @@ llvm::cl::opt<std::string>
                         llvm::cl::desc("Load profile file."));
 
 #define DEBUG_TYPE "SpeculativePrecomputationPass"
+#if !defined(LLVM_DEBUG) && defined(DEBUG)
+#define LLVM_DEBUG DEBUG
+#endif
 
 bool SpeculativePrecomputationPass::initialize(llvm::Module &Module) {
   bool Ret = ReplayTrace::initialize(Module);
@@ -25,7 +28,7 @@ bool SpeculativePrecomputationPass::finalize(llvm::Module &Module) {
 }
 
 void SpeculativePrecomputationPass::transform() {
-  DEBUG(llvm::errs() << "SpeculativePrecomputation: start.\n");
+  LLVM_DEBUG(llvm::errs() << "SpeculativePrecomputation: start.\n");
 
   size_t InstCount = 0;
   while (true) {
@@ -79,7 +82,7 @@ void SpeculativePrecomputationPass::transform() {
     }
   }
 
-  DEBUG(llvm::errs() << "SpeculativePrecomputation: done.\n");
+  LLVM_DEBUG(llvm::errs() << "SpeculativePrecomputation: done.\n");
 }
 
 void SpeculativePrecomputationPass::dumpStats(std::ostream &O) {}
