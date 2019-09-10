@@ -1,5 +1,7 @@
 #include "stream/StreamPass.h"
 
+#include "TransformUtils.h"
+
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Intrinsics.h"
@@ -51,7 +53,9 @@ protected:
 
   void transformStreamRegion(StreamRegionAnalyzer *Analyzer);
   void configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop);
-  void insertStreamEndAtLoop(llvm::Loop *Loop);
+  void insertStreamConfigAtLoop(llvm::Loop *Loop,
+                                llvm::Constant *ConfigPathValue);
+  void insertStreamEndAtLoop(llvm::Loop *Loop, llvm::Constant *ConfigPathValue);
   void transformLoadInst(StreamRegionAnalyzer *Analyzer,
                          llvm::LoadInst *LoadInst);
   void transformStoreInst(StreamRegionAnalyzer *Analyzer,
@@ -252,7 +256,14 @@ void StreamExecutionPass::configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer,
 
   LLVM_DEBUG(llvm::errs() << "Configure loop " << LoopUtils::getLoopId(Loop)
                           << '\n');
+  auto ConfigPathValue = TransformUtils::insertStringLiteral(
+      this->ClonedModule.get(), ConfigureInfo.getRelativePath());
+  this->insertStreamConfigAtLoop(Loop, ConfigPathValue);
+  this->insertStreamEndAtLoop(Loop, ConfigPathValue);
+}
 
+void StreamExecutionPass::insertStreamConfigAtLoop(
+    llvm::Loop *Loop, llvm::Constant *ConfigPathValue) {
   /**
    * 1. Make sure the loop has a predecessor.
    *    TODO: Maybe this can be relaxed in the future.
@@ -267,17 +278,15 @@ void StreamExecutionPass::configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer,
   // Simply insert one stream configure instruction before the terminator.
   auto ClonedPreheaderTerminator = ClonedPreheader->getTerminator();
   llvm::IRBuilder<> Builder(ClonedPreheaderTerminator);
-  std::vector<llvm::Value *> StreamConfigArgs;
+  std::array<llvm::Value *, 1> StreamConfigArgs{ConfigPathValue};
   Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                       llvm::Intrinsic::ID::ssp_stream_config),
       StreamConfigArgs);
-
-  // Insert StreamEnd.
-  this->insertStreamEndAtLoop(Loop);
 }
 
-void StreamExecutionPass::insertStreamEndAtLoop(llvm::Loop *Loop) {
+void StreamExecutionPass::insertStreamEndAtLoop(
+    llvm::Loop *Loop, llvm::Constant *ConfigPathValue) {
 
   /**
    * 1. Format dedicated exit block.
@@ -300,7 +309,7 @@ void StreamExecutionPass::insertStreamEndAtLoop(llvm::Loop *Loop) {
         continue;
       }
       llvm::IRBuilder<> Builder(SuccBB->getFirstNonPHI());
-      std::vector<llvm::Value *> StreamEndArgs;
+      std::array<llvm::Value *, 1> StreamEndArgs{ConfigPathValue};
       Builder.CreateCall(
           llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                           llvm::Intrinsic::ID::ssp_stream_end),
@@ -429,8 +438,8 @@ void StreamExecutionPass::cleanClonedModule() {
     if (ClonedFunc.isDeclaration()) {
       continue;
     }
-    Utils::eliminateDeadCode(ClonedFunc,
-                             this->ClonedCachedLI->getTargetLibraryInfo());
+    TransformUtils::eliminateDeadCode(
+        ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
   }
 }
 
