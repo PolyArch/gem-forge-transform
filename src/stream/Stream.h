@@ -232,6 +232,7 @@ protected:
   std::string PatternFileName;
   std::string InfoFileName;
   std::string HistoryFileName;
+  std::string AddressFunctionName;
   std::list<LLVM::TDG::StreamPattern> ProtobufPatterns;
 
   size_t ElementSize;

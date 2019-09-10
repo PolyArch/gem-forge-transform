@@ -119,6 +119,12 @@ public:
 
   FunctionalStreamEngine *getFuncSE();
 
+  /**
+   * Insert address computation function in the module.
+   * Used by StreamExeuctionPass.
+   */
+  void insertAddrFuncInModule(std::unique_ptr<llvm::Module> &Module);
+
 private:
   uint64_t RegionIdx;
   CachedLoopInfo *CachedLI;

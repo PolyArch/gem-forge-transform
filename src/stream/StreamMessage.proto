@@ -66,6 +66,7 @@ message StreamInfo {
 
   DynamicStreamInfo dynamic_info = 10;
   int32 region_stream_id = 11;
+  string addr_func_name = 12;
 
   repeated StreamId base_streams = 16;
   repeated StreamId back_base_streams = 17;

@@ -17,13 +17,6 @@ public:
                IsInductionVar) {
     assert(Utils::isMemAccessInst(this->getInst()) &&
            "Should be load/store instruction to build a stream.");
-    auto PosInBB = LoopUtils::getLLVMInstPosInBB(this->getInst());
-    this->AddressFunctionName =
-        (this->getInst()->getFunction()->getName() + "_" +
-         this->getInst()->getParent()->getName() + "_" +
-         this->getInst()->getName() + "_" + this->getInst()->getOpcodeName() +
-         "_" + llvm::Twine(PosInBB))
-            .str();
     this->searchAddressComputeInstructions(IsInductionVar);
   }
 
@@ -97,8 +90,6 @@ private:
   std::unordered_set<llvm::PHINode *> BaseInductionVars;
   std::unordered_set<const llvm::Instruction *> AddrInsts;
   std::unordered_set<llvm::Instruction *> AliasInsts;
-
-  std::string AddressFunctionName;
 
   AddressDataGraph AddrDG;
 

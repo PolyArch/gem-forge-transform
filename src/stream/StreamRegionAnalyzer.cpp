@@ -605,13 +605,8 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
   }
 }
 
-void StreamRegionAnalyzer::buildAddressModule() {
-  auto AddressModulePath = this->AnalyzePath + "/addr.ll";
-
-  auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
-  auto AddressModule =
-      std::make_unique<llvm::Module>(AddressModulePath, Context);
-
+void StreamRegionAnalyzer::insertAddrFuncInModule(
+    std::unique_ptr<llvm::Module> &Module) {
   for (auto &InstStream : this->InstChosenStreamMap) {
     auto Inst = InstStream.first;
     if (llvm::isa<llvm::PHINode>(Inst)) {
@@ -619,8 +614,18 @@ void StreamRegionAnalyzer::buildAddressModule() {
       continue;
     }
     auto MStream = reinterpret_cast<MemStream *>(InstStream.second);
-    MStream->generateComputeFunction(AddressModule);
+    MStream->generateComputeFunction(Module);
   }
+}
+
+void StreamRegionAnalyzer::buildAddressModule() {
+  auto AddressModulePath = this->AnalyzePath + "/addr.ll";
+
+  auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
+  auto AddressModule =
+      std::make_unique<llvm::Module>(AddressModulePath, Context);
+
+  this->insertAddrFuncInModule(AddressModule);
 
   // Write it to file for debug purpose.
   std::error_code EC;
