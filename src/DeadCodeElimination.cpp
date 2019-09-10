@@ -1,4 +1,4 @@
-#include "Utils.h"
+#include "TransformUtils.h"
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/IR/InstIterator.h"
@@ -38,7 +38,7 @@ static bool DCEInstruction(Instruction *I,
   return false;
 }
 
-bool Utils::eliminateDeadCode(Function &F, TargetLibraryInfo *TLI) {
+bool TransformUtils::eliminateDeadCode(Function &F, TargetLibraryInfo *TLI) {
   bool MadeChange = false;
   SmallSetVector<Instruction *, 16> WorkList;
   // Iterate over the original function, only adding insts to the worklist

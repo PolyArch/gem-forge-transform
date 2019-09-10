@@ -199,12 +199,6 @@ public:
   }
 
   /**
-   * Dead code elimination.
-   */
-  static bool eliminateDeadCode(llvm::Function &F,
-                                llvm::TargetLibraryInfo *TLI);
-
-  /**
    * Helper function to estimate the branching property of the asm from the llvm
    * instruction.
    *
