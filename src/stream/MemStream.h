@@ -83,6 +83,9 @@ public:
 
 protected:
   void formatAdditionalInfoText(std::ostream &OStream) const override;
+  void fillProtobufAddrFuncInfo(
+      ::llvm::DataLayout *DataLayout,
+      ::LLVM::TDG::StreamInfo *ProtobufInfo) const override;
 
 private:
   MemoryFootprint Footprint;

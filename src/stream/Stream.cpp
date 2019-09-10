@@ -180,7 +180,10 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_element_size(this->ElementSize);
   ProtobufInfo->set_pattern_path(this->getPatternRelativePath());
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
-  ProtobufInfo->set_addr_func_name(this->AddressFunctionName);
+
+  // Dump the address function.
+  this->fillProtobufAddrFuncInfo(DataLayout, ProtobufInfo);
+
   ProtobufInfo->set_coalesce_group(this->CoalesceGroup);
   auto DynamicStreamInfo = ProtobufInfo->mutable_dynamic_info();
   DynamicStreamInfo->set_is_candidate(this->isCandidate());

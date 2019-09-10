@@ -53,7 +53,8 @@ protected:
 
   void transformStreamRegion(StreamRegionAnalyzer *Analyzer);
   void configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop);
-  void insertStreamConfigAtLoop(llvm::Loop *Loop,
+  void insertStreamConfigAtLoop(StreamRegionAnalyzer *Analyzer,
+                                llvm::Loop *Loop,
                                 llvm::Constant *ConfigPathValue);
   void insertStreamEndAtLoop(llvm::Loop *Loop, llvm::Constant *ConfigPathValue);
   void transformLoadInst(StreamRegionAnalyzer *Analyzer,
@@ -69,7 +70,7 @@ protected:
    */
   template <typename T>
   std::enable_if_t<std::is_base_of<llvm::Value, T>::value, T *>
-  getClonedValue(T *Value) {
+  getClonedValue(const T *Value) {
     auto ClonedValueIter = this->ClonedValueMap.find(Value);
     LLVM_DEBUG({
       if (ClonedValueIter == this->ClonedValueMap.end()) {
@@ -261,17 +262,20 @@ void StreamExecutionPass::configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer,
                           << '\n');
   auto ConfigPathValue = TransformUtils::insertStringLiteral(
       this->ClonedModule.get(), ConfigureInfo.getRelativePath());
-  this->insertStreamConfigAtLoop(Loop, ConfigPathValue);
+  this->insertStreamConfigAtLoop(Analyzer, Loop, ConfigPathValue);
   this->insertStreamEndAtLoop(Loop, ConfigPathValue);
 }
 
 void StreamExecutionPass::insertStreamConfigAtLoop(
-    llvm::Loop *Loop, llvm::Constant *ConfigPathValue) {
+    StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
+    llvm::Constant *ConfigPathValue) {
+  const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   /**
    * 1. Make sure the loop has a predecessor.
    *    TODO: Maybe this can be relaxed in the future.
    * 2. Create a preheader.
    * 3. Insert the configure instruction.
+   * 4. Insert all the live-in read instruction.
    */
   assert(Loop->getLoopPredecessor() != nullptr &&
          "Loop without predecessor. Please investigate.");
@@ -286,6 +290,47 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                       llvm::Intrinsic::ID::ssp_stream_config),
       StreamConfigArgs);
+
+  for (auto S : ConfigureInfo.getSortedStreams()) {
+    if (S->SStream->Type != StaticStream::TypeT::MEM) {
+      // So far we can only read in live-in of mem stream.
+      continue;
+    } else {
+      auto MS = static_cast<const MemStream *>(S);
+      const auto &AddrDG = MS->getAddressDataGraph();
+      for (const auto &Input : AddrDG.getInputs()) {
+        if (auto InputInst = llvm::dyn_cast<llvm::Instruction>(Input)) {
+          if (auto InputS = Analyzer->getChosenStreamByInst(InputInst)) {
+            if (MS->getBaseStreams().count(InputS) != 0) {
+              // This is a base stream. Ignore it.
+              continue;
+            }
+          }
+        }
+
+        // This is a live in?
+        LLVM_DEBUG(llvm::errs()
+                   << "Insert StreamInput for Stream " << S->formatName()
+                   << " Input " << Utils::formatLLVMValue(Input) << '\n');
+
+        auto StreamId = S->getRegionStreamId();
+        assert(StreamId >= 0 && StreamId < 64 &&
+               "Illegal RegionStreamId for StreamInput.");
+        auto StreamIdValue = llvm::ConstantInt::get(
+            llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()),
+            StreamId, false);
+        auto ClonedInput = this->getClonedValue(Input);
+        std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue,
+                                                     ClonedInput};
+        std::array<llvm::Type *, 1> StreamInputType{ClonedInput->getType()};
+        auto StreamInputInst = Builder.CreateCall(
+            llvm::Intrinsic::getDeclaration(
+                this->ClonedModule.get(), llvm::Intrinsic::ID::ssp_stream_input,
+                StreamInputType),
+            StreamInputArgs);
+      }
+    }
+  }
 }
 
 void StreamExecutionPass::insertStreamEndAtLoop(
