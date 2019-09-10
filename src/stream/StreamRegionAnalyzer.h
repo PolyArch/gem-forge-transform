@@ -196,6 +196,8 @@ private:
   void buildTransformPlan();
 
   void buildStreamConfigureLoopInfoMap(const llvm::Loop *ConfigureLoop);
+  // Must be called after allocate the StreamConfigureLoopInfo.
+  void allocateRegionStreamId(const llvm::Loop *ConfigureLoop);
 
   std::list<Stream *>
   sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);

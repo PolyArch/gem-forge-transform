@@ -6,20 +6,11 @@
 
 Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
                const StaticStream *_SStream, llvm::DataLayout *DataLayout)
-    : SStream(_SStream),
-      Folder(_Folder),
-      RelativeFolder(_RelativeFolder),
-      HasMissingBaseStream(false),
-      Qualified(false),
-      Chosen(false),
-      CoalesceGroup(-1),
-      TotalIters(0),
-      TotalAccesses(0),
-      TotalStreams(0),
-      Iters(1),
-      LastAccessIters(0),
-      StartId(DynamicInstruction::InvalidId),
-      Pattern() {
+    : SStream(_SStream), Folder(_Folder), RelativeFolder(_RelativeFolder),
+      HasMissingBaseStream(false), Qualified(false), Chosen(false),
+      RegionStreamId(-1), CoalesceGroup(-1), TotalIters(0), TotalAccesses(0),
+      TotalStreams(0), Iters(1), LastAccessIters(0),
+      StartId(DynamicInstruction::InvalidId), Pattern() {
   this->ElementSize = this->getElementSize(DataLayout);
 
   auto PatternFolder = this->Folder + "/pattern";
@@ -82,9 +73,9 @@ void Stream::computeBaseStepRootStreams() {
 }
 
 void Stream::buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) {
-  auto TranslateBasicToChosen = [&GetChosenStream](
-                                    const StreamSet &BasicSet,
-                                    StreamSet &ChosenSet) -> void {
+  auto TranslateBasicToChosen =
+      [&GetChosenStream](const StreamSet &BasicSet,
+                         StreamSet &ChosenSet) -> void {
     for (const auto &BaseS : BasicSet) {
       const auto &BaseInst = BaseS->SStream->Inst;
       auto ChosenBaseS = GetChosenStream(BaseInst);
@@ -174,6 +165,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
                                     LLVM::TDG::StreamInfo *ProtobufInfo) const {
   ProtobufInfo->set_name(this->formatName());
   ProtobufInfo->set_id(this->getStreamId());
+  ProtobufInfo->set_region_stream_id(this->getRegionStreamId());
   ProtobufInfo->set_type(this->getInst()->getOpcodeName());
   ProtobufInfo->set_loop_level(this->getInnerMostLoop()->getLoopDepth());
   ProtobufInfo->set_config_loop_level(this->getLoop()->getLoopDepth());
@@ -191,13 +183,13 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   DynamicStreamInfo->set_total_configures(this->TotalStreams);
   this->SStream->setStaticStreamInfo(*ProtobufInfo->mutable_static_info());
 
-#define ADD_STREAM(SET, FIELD)                  \
-  {                                             \
-    for (const auto &S : SET) {                 \
-      auto Entry = ProtobufInfo->add_##FIELD(); \
-      Entry->set_name(S->formatName());         \
-      Entry->set_id(S->getStreamId());          \
-    }                                           \
+#define ADD_STREAM(SET, FIELD)                                                 \
+  {                                                                            \
+    for (const auto &S : SET) {                                                \
+      auto Entry = ProtobufInfo->add_##FIELD();                                \
+      Entry->set_name(S->formatName());                                        \
+      Entry->set_id(S->getStreamId());                                         \
+    }                                                                          \
   }
   ADD_STREAM(this->BaseStreams, base_streams);
   ADD_STREAM(this->BackMemBaseStreams, back_base_streams);

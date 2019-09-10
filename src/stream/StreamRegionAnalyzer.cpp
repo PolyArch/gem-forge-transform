@@ -876,8 +876,27 @@ void StreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
       std::piecewise_construct, std::forward_as_tuple(ConfigureLoop),
       std::forward_as_tuple(this->AnalyzePath, this->AnalyzeRelativePath,
                             ConfigureLoop, SortedStreams));
+  this->allocateRegionStreamId(ConfigureLoop);
   for (auto &SubLoop : *ConfigureLoop) {
     this->buildStreamConfigureLoopInfoMap(SubLoop);
+  }
+}
+
+void StreamRegionAnalyzer::allocateRegionStreamId(
+    const llvm::Loop *ConfigureLoop) {
+  auto &ConfigureLoopInfo = this->getConfigureLoopInfo(ConfigureLoop);
+  int UsedRegionId = 0;
+  for (auto ParentLoop = ConfigureLoop->getParentLoop();
+       ParentLoop != nullptr && this->TopLoop->contains(ParentLoop);
+       ParentLoop = ParentLoop->getParentLoop()) {
+    const auto &ParentConfigureLoopInfo =
+        this->getConfigureLoopInfo(ParentLoop);
+    UsedRegionId += ParentConfigureLoopInfo.getSortedStreams().size();
+  }
+  for (auto S : ConfigureLoopInfo.getSortedStreams()) {
+    const int MaxRegionStreamId = 64;
+    assert(UsedRegionId < MaxRegionStreamId && "RegionStreamId overflow.");
+    S->setRegionStreamId(UsedRegionId++);
   }
 }
 

@@ -367,8 +367,10 @@ void StreamExecutionPass::transformLoadInst(StreamRegionAnalyzer *Analyzer,
   auto ClonedLoadInst = this->getClonedValue(LoadInst);
   llvm::IRBuilder<> Builder(ClonedLoadInst);
 
-  // So far use 0 as the dummy stream id.
-  auto StreamId = 0;
+  // Here we should RegionStreamId to fit in immediate field.
+  auto StreamId = S->getRegionStreamId();
+  assert(StreamId >= 0 && StreamId < 64 &&
+         "Illegal RegionStreamId for StreamLoad.");
   auto StreamIdValue = llvm::ConstantInt::get(
       llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()), StreamId,
       false);
@@ -403,7 +405,9 @@ void StreamExecutionPass::transformStepInst(StreamRegionAnalyzer *Analyzer,
 
   const auto &TransformPlan = Analyzer->getTransformPlanByInst(StepInst);
   for (auto StepStream : TransformPlan.getStepStreams()) {
-    auto StreamId = 0;
+    auto StreamId = StepStream->getRegionStreamId();
+    assert(StreamId >= 0 && StreamId < 64 &&
+           "Illegal RegionStreamId for StreamStep.");
     auto StreamIdValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()),
         StreamId, false);
