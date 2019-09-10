@@ -238,6 +238,37 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
   this->AddrDG.format(OStream);
 }
 
+void MemStream::fillProtobufAddrFuncInfo(
+    ::llvm::DataLayout *DataLayout,
+    ::LLVM::TDG::StreamInfo *ProtobufInfo) const {
+
+  auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
+  AddrFuncInfo->set_name(this->AddressFunctionName);
+
+  auto FindBaseStream = [this](const llvm::Value *Value) -> Stream * {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      for (auto BaseStream : this->getBaseStreams()) {
+        if (BaseStream->SStream->Inst == Inst) {
+          return BaseStream;
+        }
+      }
+    }
+    return nullptr;
+  };
+
+  for (const auto &Input : this->AddrDG.getInputs()) {
+    auto ProtobufArg = AddrFuncInfo->add_args();
+    if (auto BaseStream = FindBaseStream(Input)) {
+      // This comes from the base stream.
+      ProtobufArg->set_is_stream(true);
+      ProtobufArg->set_stream_id(BaseStream->getStreamId());
+    } else {
+      // This is an input value.
+      ProtobufArg->set_is_stream(false);
+    }
+  }
+}
+
 void MemStream::generateComputeFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   this->AddrDG.generateComputeFunction(this->AddressFunctionName, Module);

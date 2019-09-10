@@ -296,6 +296,9 @@ protected:
    * Used for subclass to add additionl dumping information.
    */
   virtual void formatAdditionalInfoText(std::ostream &OStream) const {}
+  virtual void
+  fillProtobufAddrFuncInfo(::llvm::DataLayout *DataLayout,
+                           ::LLVM::TDG::StreamInfo *ProtobufInfo) const {}
 
   void addBaseStream(Stream *Other);
   void addBackEdgeBaseStream(Stream *Other);

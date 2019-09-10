@@ -53,6 +53,15 @@ message DynamicStreamInfo {
   uint64 total_configures = 7;
 }
 
+message AddrFuncInfo {
+  string name = 1;
+  message AddrFuncArg {
+    bool is_stream = 1;
+    uint64 stream_id = 2;
+  }
+  repeated AddrFuncArg args = 2;
+}
+
 message StreamInfo {
   string name = 1;
   uint64 id = 2;
@@ -66,7 +75,7 @@ message StreamInfo {
 
   DynamicStreamInfo dynamic_info = 10;
   int32 region_stream_id = 11;
-  string addr_func_name = 12;
+  AddrFuncInfo addr_func_info = 12;
 
   repeated StreamId base_streams = 16;
   repeated StreamId back_base_streams = 17;
