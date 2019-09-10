@@ -34,7 +34,7 @@
  */
 
 class Stream {
- public:
+public:
   const StaticStream *const SStream;
   Stream(const std::string &_Folder, const std::string &_RelativeFolder,
          const StaticStream *_SStream, llvm::DataLayout *DataLayout);
@@ -62,6 +62,13 @@ class Stream {
     this->Chosen = true;
   }
   bool isChosen() const { return this->Chosen; }
+  void setRegionStreamId(int Id) {
+    assert(this->isChosen() && "Only chosen stream has RegionStreamId.");
+    assert(this->RegionStreamId == -1 && "RegionStreamId set multiple times.");
+    assert(Id >= 0 && "Illegal RegionStreamId set.");
+    this->RegionStreamId = Id;
+  }
+  int getRegionStreamId() const { return this->RegionStreamId; }
   void setCoalesceGroup(int CoalesceGroup) {
     assert(this->CoalesceGroup == -1 && "Coalesce group is already set.");
     this->CoalesceGroup = CoalesceGroup;
@@ -135,27 +142,27 @@ class Stream {
   virtual bool isAliased() const { return false; }
   std::string formatName() const { return this->SStream->formatName(); }
 
-  virtual const std::unordered_set<const llvm::Instruction *> &getComputeInsts()
-      const = 0;
+  virtual const std::unordered_set<const llvm::Instruction *> &
+  getComputeInsts() const = 0;
 
-  virtual const std::unordered_set<const llvm::Instruction *> &getStepInsts()
-      const {
+  virtual const std::unordered_set<const llvm::Instruction *> &
+  getStepInsts() const {
     assert(false && "getStepInst only implemented for IVStream.");
   }
 
-  virtual const std::unordered_set<const llvm::LoadInst *> &getBaseLoads()
-      const = 0;
+  virtual const std::unordered_set<const llvm::LoadInst *> &
+  getBaseLoads() const = 0;
 
   static bool isStepInst(const llvm::Instruction *Inst) {
     auto Opcode = Inst->getOpcode();
     switch (Opcode) {
-      case llvm::Instruction::Add: {
-        return true;
-      }
-      case llvm::Instruction::GetElementPtr: {
-        return true;
-      }
-      default: { return false; }
+    case llvm::Instruction::Add: {
+      return true;
+    }
+    case llvm::Instruction::GetElementPtr: {
+      return true;
+    }
+    default: { return false; }
     }
   }
 
@@ -216,7 +223,7 @@ class Stream {
       std::function<Stream *(const llvm::Instruction *)>;
   void buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream);
 
- protected:
+protected:
   /**
    * Stores the information of the stream.
    */
@@ -246,6 +253,11 @@ class Stream {
   bool HasMissingBaseStream;
   bool Qualified;
   bool Chosen;
+  /**
+   * The unique id for streams configured at the same time.
+   * Mainly for execution. Only chosen stream has this.
+   */
+  int RegionStreamId;
 
   int CoalesceGroup;
   /**

@@ -65,6 +65,7 @@ message StreamInfo {
   int32 coalesce_group = 9;
 
   DynamicStreamInfo dynamic_info = 10;
+  int32 region_stream_id = 11;
 
   repeated StreamId base_streams = 16;
   repeated StreamId back_base_streams = 17;
