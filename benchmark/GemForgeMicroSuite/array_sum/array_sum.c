@@ -3,7 +3,7 @@ typedef int Value;
 
 __attribute__((noinline)) Value foo(Value **pa, int N) {
   Value sum = 0.0f;
-  volatile Value *a = *pa;
+  Value *a = *pa;
   // Make sure there is no reuse.
   #pragma nounroll
   for (long long i = 0; i < N; i += 16) {

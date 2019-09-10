@@ -26,6 +26,7 @@ add_library(LLVMTDGPass SHARED
     DynamicInstruction.cpp
     DataGraph.cpp
     Utils.cpp
+    DeadCodeElimination.cpp
     UserSpecifiedInstructionSet.cpp
     LoopUtils.cpp
     LoopUnroller.cpp

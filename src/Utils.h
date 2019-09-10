@@ -4,6 +4,7 @@
 #include "DynamicInstruction.h"
 #include "trace/InstructionUIDMap.h"
 
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instruction.h"
@@ -196,6 +197,12 @@ public:
     }
     return ret;
   }
+
+  /**
+   * Dead code elimination.
+   */
+  static bool eliminateDeadCode(llvm::Function &F,
+                                llvm::TargetLibraryInfo *TLI);
 
   /**
    * Helper function to estimate the branching property of the asm from the llvm
