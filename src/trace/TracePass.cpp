@@ -923,35 +923,6 @@ TracePass::getOrCreateVectorStoreBuffer(llvm::VectorType *Type,
 
   std::vector<llvm::Value *> Args{SizeValue};
   return Builder.CreateCall(this->GetOrAllocateDataBufferFunc, Args);
-
-  // auto BitSize = Type->getBitWidth();
-  // if (VectorStoreBuffer.find(BitSize) == VectorStoreBuffer.end()) {
-  //   // Insert at the beginning of the function.
-  //   auto IP = Function->front().getFirstInsertionPt();
-  //   auto Instruction = &*IP;
-  //   for (auto Iter = Function->front().begin(), End =
-  //   Function->front().end();
-  //        Iter != End; ++Iter) {
-  //    LLVM_DEBUG(llvm::errs() << '(' << Iter->getName() << ", "
-  //                        << Iter->getOpcodeName() << ")\n");
-  //   }
-  //  LLVM_DEBUG(llvm::errs() << "Found insertion point for vector buffer in "
-  //                      << Function->getName()
-  //                      << "::" << Function->front().getName() << " at ("
-  //                      << IP->getName() << ", " << IP->getOpcodeName()
-  //                      << ")\n");
-  //   llvm::IRBuilder<> Builder(IP->getParent(), IP);
-  //   llvm::Value *Alloca = Builder.CreateAlloca(Type);
-  //   for (auto Iter = Function->front().begin(), End =
-  //   Function->front().end();
-  //        Iter != End; ++Iter) {
-  //    LLVM_DEBUG(llvm::errs() << '(' << Iter->getName() << ", "
-  //                        << Iter->getOpcodeName() << ")\n");
-  //   }
-  //   VectorStoreBuffer[BitSize] = Alloca;
-  // }
-
-  // return VectorStoreBuffer.at(BitSize);
 }
 
 } // namespace
