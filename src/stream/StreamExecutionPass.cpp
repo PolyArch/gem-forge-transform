@@ -198,6 +198,9 @@ void StreamExecutionPass::transformStreamRegion(
     this->configureStreamsAtLoop(Analyzer, CurrentLoop);
   }
 
+  // Insert address computation function in the cloned module.
+  Analyzer->insertAddrFuncInModule(this->ClonedModule);
+
   // Transform each individual instruction.
   for (auto *BB : TopLoop->blocks()) {
     for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;

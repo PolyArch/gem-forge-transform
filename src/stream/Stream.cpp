@@ -28,6 +28,14 @@ Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
   this->PatternFileName = "pattern/" + this->formatName() + ".pattern";
   this->InfoFileName = "info/" + this->formatName() + ".info";
   this->HistoryFileName = "history/" + this->formatName() + ".history";
+
+  auto PosInBB = LoopUtils::getLLVMInstPosInBB(this->getInst());
+  this->AddressFunctionName =
+      (this->getInst()->getFunction()->getName() + "_" +
+       this->getInst()->getParent()->getName() + "_" +
+       this->getInst()->getName() + "_" + this->getInst()->getOpcodeName() +
+       "_" + llvm::Twine(PosInBB))
+          .str();
 }
 
 void Stream::addBaseStream(Stream *Other) {
@@ -172,6 +180,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_element_size(this->ElementSize);
   ProtobufInfo->set_pattern_path(this->getPatternRelativePath());
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
+  ProtobufInfo->set_addr_func_name(this->AddressFunctionName);
   ProtobufInfo->set_coalesce_group(this->CoalesceGroup);
   auto DynamicStreamInfo = ProtobufInfo->mutable_dynamic_info();
   DynamicStreamInfo->set_is_candidate(this->isCandidate());
