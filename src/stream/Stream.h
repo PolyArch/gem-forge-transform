@@ -223,6 +223,13 @@ public:
       std::function<Stream *(const llvm::Instruction *)>;
   void buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream);
 
+  /**
+   * Get the input value for this stream when configure it.
+   */
+  virtual std::list<const llvm::Value *> getInputValues() const {
+    return std::list<const llvm::Value *>();
+  }
+
 protected:
   /**
    * Stores the information of the stream.

@@ -81,6 +81,8 @@ public:
 
   void generateComputeFunction(std::unique_ptr<llvm::Module> &Module) const;
 
+  std::list<const llvm::Value *> getInputValues() const override;
+
 protected:
   void formatAdditionalInfoText(std::ostream &OStream) const override;
   void fillProtobufAddrFuncInfo(

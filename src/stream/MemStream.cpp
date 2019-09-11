@@ -238,16 +238,46 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
   this->AddrDG.format(OStream);
 }
 
+std::list<const llvm::Value *> MemStream::getInputValues() const {
+
+  assert(this->isChosen() && "Only consider chosen stream's input values.");
+  std::list<const llvm::Value *> InputValues;
+  auto FindBaseStream = [this](const llvm::Value *Value) -> Stream * {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      for (auto BaseStream : this->getChosenBaseStreams()) {
+        if (BaseStream->SStream->Inst == Inst) {
+          return BaseStream;
+        }
+      }
+    }
+    return nullptr;
+  };
+
+  for (const auto &Input : this->AddrDG.getInputs()) {
+    if (auto BaseStream = FindBaseStream(Input)) {
+      // This comes from the base stream.
+    } else {
+      // This is an input value.
+      InputValues.push_back(Input);
+    }
+  }
+  return InputValues;
+}
+
 void MemStream::fillProtobufAddrFuncInfo(
     ::llvm::DataLayout *DataLayout,
     ::LLVM::TDG::StreamInfo *ProtobufInfo) const {
+
+  if (!this->isChosen()) {
+    return;
+  }
 
   auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
   AddrFuncInfo->set_name(this->AddressFunctionName);
 
   auto FindBaseStream = [this](const llvm::Value *Value) -> Stream * {
     if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-      for (auto BaseStream : this->getBaseStreams()) {
+      for (auto BaseStream : this->getChosenBaseStreams()) {
         if (BaseStream->SStream->Inst == Inst) {
           return BaseStream;
         }
