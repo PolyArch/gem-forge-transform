@@ -5,9 +5,44 @@
 
 LLVM::TDG::StreamValuePattern
 StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
+
+  auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
+  ProtoIVPattern->set_val_pattern(LLVM::TDG::StreamValuePattern::RANDOM);
+
   llvm::errs() << (SCEV == nullptr) << '\n';
   if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
     if (AddRecSCEV->isAffine()) {
+
+      // Set the IVPattern.
+      ProtoIVPattern->set_val_pattern(LLVM::TDG::StreamValuePattern::LINEAR);
+      /**
+       * Linear pattern has two parameters, base and stride.
+       * TODO: Handle non-constant params in the future.
+       */
+#define AddParam(SCEV, Signed)                                                 \
+  {                                                                            \
+    auto ProtoParam = ProtoIVPattern->add_params();                            \
+    if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {           \
+      ProtoParam->set_valid(true);                                             \
+      if (Signed)                                                              \
+        ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());          \
+      else                                                                     \
+        ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());          \
+    } else {                                                                   \
+      ProtoParam->set_valid(false);                                            \
+      assert(false && "Can only handle constant base so far.");                \
+    }                                                                          \
+  }
+      // Careful, we should use SCEV for ourselve to get correct start value.
+      auto PHINodeAddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(
+          this->SE->getSCEV(this->PHINode));
+      assert(PHINodeAddRecSCEV != nullptr && "I should be an AddRecSCEV.");
+      auto BaseSCEV = PHINodeAddRecSCEV->getStart();
+      AddParam(BaseSCEV, false);
+      auto StrideSCEV = PHINodeAddRecSCEV->getOperand(1);
+      AddParam(StrideSCEV, true);
+#undef AddParam
+
       return LLVM::TDG::StreamValuePattern::LINEAR;
     }
   } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV)) {

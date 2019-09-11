@@ -19,6 +19,16 @@ enum StreamValuePattern {
   PREV_LOAD = 6;
 }
 
+// Pattern describe the induction variable.
+message IVPattern {
+  StreamValuePattern val_pattern = 1;
+  message PatternParam {
+    int64 param = 1;
+    bool valid = 2;
+  }
+  repeated PatternParam params = 2;
+}
+
 message StaticStreamInfo {
   bool is_candidate = 1;
   bool is_qualified = 2;
@@ -28,6 +38,7 @@ message StaticStreamInfo {
   StaticNotStreamReason not_stream_reason = 6;
   uint32 loop_possible_path = 7;
   uint32 config_loop_possible_path = 8;
+  IVPattern iv_pattern = 9;
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
@@ -53,6 +64,7 @@ message DynamicStreamInfo {
   uint64 total_configures = 7;
 }
 
+// Address function for MemStream.
 message AddrFuncInfo {
   string name = 1;
   message AddrFuncArg {

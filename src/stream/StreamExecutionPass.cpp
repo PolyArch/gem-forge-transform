@@ -292,43 +292,26 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
       StreamConfigArgs);
 
   for (auto S : ConfigureInfo.getSortedStreams()) {
-    if (S->SStream->Type != StaticStream::TypeT::MEM) {
-      // So far we can only read in live-in of mem stream.
-      continue;
-    } else {
-      auto MS = static_cast<const MemStream *>(S);
-      const auto &AddrDG = MS->getAddressDataGraph();
-      for (const auto &Input : AddrDG.getInputs()) {
-        if (auto InputInst = llvm::dyn_cast<llvm::Instruction>(Input)) {
-          if (auto InputS = Analyzer->getChosenStreamByInst(InputInst)) {
-            if (MS->getBaseStreams().count(InputS) != 0) {
-              // This is a base stream. Ignore it.
-              continue;
-            }
-          }
-        }
+    for (auto Input : S->getInputValues()) {
+      // This is a live in?
+      LLVM_DEBUG(llvm::errs()
+                 << "Insert StreamInput for Stream " << S->formatName()
+                 << " Input " << Utils::formatLLVMValue(Input) << '\n');
 
-        // This is a live in?
-        LLVM_DEBUG(llvm::errs()
-                   << "Insert StreamInput for Stream " << S->formatName()
-                   << " Input " << Utils::formatLLVMValue(Input) << '\n');
-
-        auto StreamId = S->getRegionStreamId();
-        assert(StreamId >= 0 && StreamId < 64 &&
-               "Illegal RegionStreamId for StreamInput.");
-        auto StreamIdValue = llvm::ConstantInt::get(
-            llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()),
-            StreamId, false);
-        auto ClonedInput = this->getClonedValue(Input);
-        std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue,
-                                                     ClonedInput};
-        std::array<llvm::Type *, 1> StreamInputType{ClonedInput->getType()};
-        auto StreamInputInst = Builder.CreateCall(
-            llvm::Intrinsic::getDeclaration(
-                this->ClonedModule.get(), llvm::Intrinsic::ID::ssp_stream_input,
-                StreamInputType),
-            StreamInputArgs);
-      }
+      auto StreamId = S->getRegionStreamId();
+      assert(StreamId >= 0 && StreamId < 64 &&
+             "Illegal RegionStreamId for StreamInput.");
+      auto StreamIdValue = llvm::ConstantInt::get(
+          llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()),
+          StreamId, false);
+      auto ClonedInput = this->getClonedValue(Input);
+      std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue, ClonedInput};
+      std::array<llvm::Type *, 1> StreamInputType{ClonedInput->getType()};
+      auto StreamInputInst = Builder.CreateCall(
+          llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
+                                          llvm::Intrinsic::ID::ssp_stream_input,
+                                          StreamInputType),
+          StreamInputArgs);
     }
   }
 }
