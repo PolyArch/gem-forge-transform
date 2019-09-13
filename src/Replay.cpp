@@ -727,7 +727,7 @@ void ReplayTrace::registerFunction(llvm::Module &Module) {
       Int64Ty,
   };
   auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, true);
-  this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy);
+  this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy).getCallee();
 
   auto FakeRegisterAllocationTy = llvm::FunctionType::get(VoidTy, false);
   auto FakeRegisterAllocationFunc = llvm::Function::Create(

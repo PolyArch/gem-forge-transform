@@ -220,15 +220,19 @@ private:
     };
     auto GetOrAllocateDataBufferTy =
         llvm::FunctionType::get(Int8PtrTy, GetOrAllocateDataBufferArgs, false);
-    this->GetOrAllocateDataBufferFunc = Module.getOrInsertFunction(
-        "getOrAllocateDataBuffer", GetOrAllocateDataBufferTy);
+    this->GetOrAllocateDataBufferFunc =
+        Module
+            .getOrInsertFunction("getOrAllocateDataBuffer",
+                                 GetOrAllocateDataBufferTy)
+            .getCallee();
 
     std::vector<llvm::Type *> PrintInstArgs{
         Int8PtrTy, // char* FunctionName
         Int64Ty,   // uint64_t UID,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
-    this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
+    this->PrintInstFunc =
+        Module.getOrInsertFunction("printInst", PrintInstTy).getCallee();
 
     std::vector<llvm::Type *> PrintValueArgs{
         Int8Ty,
@@ -238,7 +242,7 @@ private:
     };
     auto PrintValueTy = llvm::FunctionType::get(VoidTy, PrintValueArgs, true);
     this->PrintValueFunc =
-        Module.getOrInsertFunction("printValue", PrintValueTy);
+        Module.getOrInsertFunction("printValue", PrintValueTy).getCallee();
 
     std::vector<llvm::Type *> PrintInstValueArgs{
         Int32Ty, // unsigned NumAdditionalArgs,
@@ -246,7 +250,8 @@ private:
     auto PrintInstValueTy =
         llvm::FunctionType::get(VoidTy, PrintInstValueArgs, true);
     this->PrintInstValueFunc =
-        Module.getOrInsertFunction("printInstValue", PrintInstValueTy);
+        Module.getOrInsertFunction("printInstValue", PrintInstValueTy)
+            .getCallee();
 
     std::vector<llvm::Type *> PrintFuncEnterArgs{
         Int8PtrTy,
@@ -255,15 +260,17 @@ private:
     auto PrintFuncEnterTy =
         llvm::FunctionType::get(VoidTy, PrintFuncEnterArgs, false);
     this->PrintFuncEnterFunc =
-        Module.getOrInsertFunction("printFuncEnter", PrintFuncEnterTy);
+        Module.getOrInsertFunction("printFuncEnter", PrintFuncEnterTy)
+            .getCallee();
 
     auto PrintInstEndTy = llvm::FunctionType::get(VoidTy, false);
     this->PrintInstEndFunc =
-        Module.getOrInsertFunction("printInstEnd", PrintInstEndTy);
+        Module.getOrInsertFunction("printInstEnd", PrintInstEndTy).getCallee();
 
     auto PrintFuncEnterEndTy = llvm::FunctionType::get(VoidTy, false);
     this->PrintFuncEnterEndFunc =
-        Module.getOrInsertFunction("printFuncEnterEnd", PrintFuncEnterEndTy);
+        Module.getOrInsertFunction("printFuncEnterEnd", PrintFuncEnterEndTy)
+            .getCallee();
   }
 
   std::map<std::string, llvm::Constant *> GlobalStrings;

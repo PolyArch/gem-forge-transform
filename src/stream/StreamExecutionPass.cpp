@@ -327,7 +327,7 @@ void StreamExecutionPass::insertStreamEndAtLoop(
   auto ClonedFunc = ClonedLoop->getHeader()->getParent();
   auto ClonedLI = this->ClonedCachedLI->getLoopInfo(ClonedFunc);
   auto ClonedDT = this->ClonedCachedLI->getDominatorTree(ClonedFunc);
-  llvm::formDedicatedExitBlocks(ClonedLoop, ClonedDT, ClonedLI, false);
+  llvm::formDedicatedExitBlocks(ClonedLoop, ClonedDT, ClonedLI, nullptr, false);
 
   std::unordered_set<llvm::BasicBlock *> VisitedExitBlockSet;
   for (auto *BB : ClonedLoop->blocks()) {
@@ -376,8 +376,8 @@ StreamExecutionPass::getOrCreateLoopPreheaderInClonedModule(llvm::Loop *Loop) {
   auto ClonedLI = this->ClonedCachedLI->getLoopInfo(ClonedFunc);
   auto ClonedDT = this->ClonedCachedLI->getDominatorTree(ClonedFunc);
   // We pass LI and DT so that they are updated.
-  auto NewPreheader =
-      llvm::InsertPreheaderForLoop(ClonedLoop, ClonedDT, ClonedLI, false);
+  auto NewPreheader = llvm::InsertPreheaderForLoop(ClonedLoop, ClonedDT,
+                                                   ClonedLI, nullptr, false);
 
   return NewPreheader;
 }
