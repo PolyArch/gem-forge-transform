@@ -43,11 +43,10 @@ get_name() returns a unique name.
 get_run_path() returns the path to run.
 build_raw_bc() build the raw bitcode.
 trace() generates the trace.
-transform(pass_name, trace, profile_file, tdg, debugs)
+transform(pass_name, trace, profile_file, tdg)
     transforms the trace by a specified pass.
-simulate(tdg, result, debugs)
-    simuates a transformed datagraph, and stores the simulation
-    result to result
+simulate(trace, transform_config, simulation_config)
+    simuates a transformed datagraph.
 """
 
 
@@ -72,12 +71,12 @@ def trace(benchmark):
     benchmark.trace()
 
 
-def transform(benchmark, transform_config, trace, tdg, debugs):
-    benchmark.transform(transform_config, trace, tdg, debugs)
+def transform(benchmark, transform_config, trace, tdg):
+    benchmark.transform(transform_config, trace, tdg)
 
 
-def simulate(benchmark, tdg, transform_config, simulation_config):
-    benchmark.simulate(tdg, transform_config, simulation_config)
+def simulate(benchmark, trace, transform_config, simulation_config):
+    benchmark.simulate(trace, transform_config, simulation_config)
 
 
 def mcpat(benchmark, tdg, transform_config, simulation_config):
@@ -296,7 +295,6 @@ class Driver:
                             transform_config,
                             trace,
                             tdgs[i],
-                            transform_config.get_debugs(),
                         ),
                         deps=deps
                     )
@@ -311,14 +309,11 @@ class Driver:
     def schedule_simulate_for_transform_config(self, job_scheduler, benchmark, transform_config):
         name = benchmark.get_name()
         traces = benchmark.get_traces()
-        tdgs = benchmark.get_tdgs(transform_config)
-        assert(len(traces) == len(tdgs))
         transform_id = transform_config.get_transform_id()
         self.simulate_jobs[name][transform_id] = dict()
 
-        for i in range(len(traces)):
-            tdg = tdgs[i]
-            trace_id = traces[i].get_trace_id()
+        for trace in traces:
+            trace_id = trace.get_trace_id()
             self.simulate_jobs[name][transform_id][trace_id] = dict()
             deps = list()
             if name in self.transform_jobs:
@@ -340,7 +335,7 @@ class Driver:
                     job=simulate,
                     args=(
                         benchmark,
-                        tdg,
+                        trace,
                         transform_config,
                         simulation_config,
                     ),

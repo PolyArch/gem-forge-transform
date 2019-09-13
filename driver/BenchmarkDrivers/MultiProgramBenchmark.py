@@ -6,13 +6,21 @@ from pprint import pprint
 import os
 
 
-class MultiProgramTDG(object):
+class MultiProgramTrace(object):
 
-    def __init__(self, benchmark, idx, transform_config, tdgs):
+    def __init__(self, benchmark, trace_id, single_program_traces):
         self.benchmark = benchmark
-        self.idx = idx
-        self.transform_config = transform_config
-        self.tdgs = tdgs
+        self.trace_id = trace_id
+        self.single_program_traces = single_program_traces
+
+    def get_trace_id(self):
+        return self.trace_id
+
+    def get_single_program_tdgs(self, transform_config):
+        tdgs = list()
+        for single_benchmark, trace in self.single_program_traces:
+            tdgs.append(single_benchmark.get_tdg(transform_config, trace))
+        return tdgs
 
     def get_name(self):
         return '{transform_path}/{name}.{transform_id}.{trace_id}.tdg'.format(
@@ -22,6 +30,9 @@ class MultiProgramTDG(object):
             transform_id=self.transform_config.get_transform_id(),
             trace_id=self.idx
         )
+
+    def get_weight(self):
+        return 1.0
 
 
 class MultiProgramBenchmark(Benchmark):
@@ -38,6 +49,9 @@ class MultiProgramBenchmark(Benchmark):
         super(MultiProgramBenchmark, self).__init__(
             benchmark_args
         )
+
+        # Build MultiProgramTrace upon single program traces.
+        self.build_multi_program_traces()
 
     def get_name(self):
         return self.name
@@ -85,54 +99,35 @@ class MultiProgramBenchmark(Benchmark):
         raise NotImplementedError(
             "MultiProgramBenchmark only supports simulation.")
 
-    def transform(self, transform_config, trace, tdg, debugs):
+    def transform(self, transform_config, trace, tdg):
         raise NotImplementedError(
             "MultiProgramBenchmark only supports simulation.")
 
-    """
-    Virtual TDGs.
-    """
+    def build_multi_program_traces(self):
+        # Initially we should have no traces.
+        assert(not self.traces)
+        total_multi_program_traces = min(
+            [len(b.get_traces()) for b in self.benchmarks])
+        for trace_id in xrange(total_multi_program_traces):
+            single_program_traces = [
+                (b, b.get_traces()[trace_id])
+                for b in self.benchmarks]
+            multi_program_trace = MultiProgramTrace(
+                self, trace_id, single_program_traces)
+            self.traces.append(multi_program_trace)
 
-    def get_tdgs(self, transform_config):
-        if transform_config in self.transform_config_to_tdgs:
-            return self.transform_config_to_tdgs[transform_config]
-
-        tdgs = list()
-
-        transform_id = transform_config.get_transform_id()
-        benchmark_tdgs = [b.get_tdgs(transform_config)
-                          for b in self.benchmarks]
-        # Take the min of number of all benchmarks' tdgs.
-        total_virtual_tdgs = min([len(d) for d in benchmark_tdgs])
-        for virtual_tdg_idx in xrange(total_virtual_tdgs):
-            single_tdgs = [b[virtual_tdg_idx] for b in benchmark_tdgs]
-            multi_program_tdg = MultiProgramTDG(
-                self, virtual_tdg_idx, transform_config, single_tdgs)
-
-            # Add to the map
-            self.tdg_map[multi_program_tdg.get_name()] = multi_program_tdg
-            tdgs.append(multi_program_tdg.get_name())
-
-        # Hack: for now only one job.
-        # tdgs = tdgs[0:1]
-        self.transform_config_to_tdgs[transform_config] = tdgs
-        return tdgs
-
-    def simulate(self, tdg, simulation_config):
-        if tdg not in self.tdg_map:
-            raise ValueError("MultiProgramTDG not found.")
-        multi_program_tdg = self.tdg_map[tdg]
-
+    def simulate(self, trace, transform_config, simulation_config):
+        tdg = self.get_tdg(transform_config, trace)
         sim_out_dir = simulation_config.get_gem5_dir(tdg)
         Util.mkdir_p(sim_out_dir)
         gem5_args = self.get_gem5_simulate_command(
             simulation_config, self.get_replay_bin, sim_out_dir, False)
         # Remember to add back all the tdgs.
         gem5_args.append(
-            '--llvm-trace-file={tdg}'.format(
-                tdg=','.join(multi_program_tdg.tdgs))
+            '--llvm-trace-file={tdgs}'.format(
+                tdgs=','.join(trace.get_single_program_tdgs(
+                    transform_config)))
         )
         print('# Simulate multi-program datagraph.')
         pprint(gem5_args)
         Util.call_helper(gem5_args)
-        

@@ -618,7 +618,57 @@ class Benchmark(object):
             print('# Building replay binary...')
             Util.call_helper(build_cmd)
 
-    def transform(self, transform_config, trace, tdg, debugs):
+    def get_replay_exe(self, transform_config, trace, suffix):
+        return os.path.join(
+            self.get_tdg_extra_path(transform_config, trace),
+            # So far the bc is named after transform_id.bc
+            '{tid}.{suffix}'.format(
+                tid=transform_config.get_transform_id(),
+                suffix=suffix,
+            ),
+        )
+
+    def build_replay_exe(self, transform_config, trace):
+        transformed_bc = self.get_replay_exe(transform_config, trace, 'bc')
+        transformed_obj = self.get_replay_exe(transform_config, trace, 'o')
+        compile_cmd = [
+            # Use DEBUG compiler?
+            C.CC_DEBUG if self.get_lang() == 'C' else C.CXX_DEBUG,
+            '-c',
+            '-O3',
+            '--target=riscv32-unknown-unknown-elf',
+            '-march=rv32gc',
+            '-mabi=ilp32d',
+            transformed_bc,
+            '-o',
+            transformed_obj,
+        ]
+        Util.call_helper(compile_cmd)
+        if self.options.transform_text:
+            # Disassembly it for debug purpose.
+            transformed_asm = self.get_replay_exe(transform_config, trace, 's')
+            with open(transformed_asm, 'w') as asm:
+                disasm_cmd = [
+                    C.LLVM_OBJDUMP_DEBUG,
+                    '-d',
+                    transformed_obj,
+                ]
+                Util.call_helper(disasm_cmd, stdout=asm)
+        # Link them into code.
+        transformed_exe = self.get_replay_exe(transform_config, trace, 'exe')
+        link_cmd = [
+            os.path.join(C.RISCV_GNU_INSTALL_PATH, 'bin/riscv32-unknown-elf-gcc'),
+            '-static',
+            '-march=rv32gc',
+            '-mabi=ilp32d',
+            '-o',
+            transformed_exe,
+            transformed_obj,
+        ]
+        link_cmd += self.get_links()
+        Util.call_helper(link_cmd)
+
+    def transform(self, transform_config, trace, tdg):
         cwd = os.getcwd()
         os.chdir(self.get_run_path())
 
@@ -628,6 +678,9 @@ class Benchmark(object):
             tdg_detail='standalone',
             output_tdg=tdg,
         )
+
+        if transform_config.is_execution_transform():
+            self.build_replay_exe(transform_config, trace)
 
         os.chdir(cwd)
 
@@ -694,12 +747,13 @@ class Benchmark(object):
     Simulate a single datagraph with gem5.
     """
 
-    def simulate(self, tdg, transform_config, simulation_config):
+    def simulate(self, trace, transform_config, simulation_config):
         if transform_config.get_transform_id() == 'valid':
             self.simulate_valid(tdg, transform_config, simulation_config)
             return
 
         print('# Simulating the datagraph')
+        tdg = self.get_tdg(transform_config, trace)
         gem5_out_dir = simulation_config.get_gem5_dir(tdg)
         Util.call_helper(['mkdir', '-p', gem5_out_dir])
         gem5_args = self.get_gem5_simulate_command(

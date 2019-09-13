@@ -34,7 +34,7 @@ class GemForgeMicroBenchmark(Benchmark):
         return 'gfm.{b}'.format(b=self.benchmark_name)
 
     def get_links(self):
-        return [self.gem5_pseudo_source, '-lm']
+        return [self.gem5_pseudo_source]
 
     def get_args(self):
         return None

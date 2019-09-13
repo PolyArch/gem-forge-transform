@@ -17,7 +17,7 @@ class TransformConfig(object):
         return self.json['id']
 
     def get_options(self, benchmark, trace):
-        # Simple hacky preprocessing.
+        # Simple hacky preprocessing for some "env" variables.
         options = list()
         trace_id = trace.get_trace_id()
         for o in self.json['options']:
@@ -34,8 +34,13 @@ class TransformConfig(object):
     def get_transform(self):
         return self.json['transform']
 
-    def get_debugs(self):
-        return []
+    def is_execution_transform(self):
+        field = 'is_execution_transform'
+        if field in self.json:
+            return self.json[field]
+        else:
+            # By default this is trace transform.
+            return False
 
 
 class TransformManager(object):

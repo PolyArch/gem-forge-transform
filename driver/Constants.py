@@ -25,6 +25,11 @@ LLVM_BIN_PATH = os.path.join(LLVM_PATH, 'bin')
 LLVM_DEBUG_PATH = os.getenv('LLVM_DEBUG_INSTALL_PATH')
 LLVM_DEBUG_BIN_PATH = os.path.join(LLVM_DEBUG_PATH, 'bin')
 
+"""
+Path for riscv gnu toolchain.
+"""
+RISCV_GNU_INSTALL_PATH = os.getenv('RISCV_GNU_INSTALL_PATH')
+
 
 """
 ellcc path.
@@ -94,6 +99,13 @@ if not USE_ELLCC:
     CXX = os.path.join(LLVM_BIN_PATH, 'clang++')
     LLVM_LINK = os.path.join(LLVM_BIN_PATH, 'llvm-link')
     LLVM_DIS = os.path.join(LLVM_BIN_PATH, 'llvm-dis')
+    LLVM_OBJDUMP = os.path.join(LLVM_BIN_PATH, 'llvm-objdump')
+
+    # We may need DEBUG compiler.
+    CC_DEBUG = os.path.join(LLVM_DEBUG_BIN_PATH, 'clang')
+    CXX_DEBUG = os.path.join(LLVM_DEBUG_BIN_PATH, 'clang++')
+    LLVM_OBJDUMP_DEBUG = os.path.join(LLVM_DEBUG_BIN_PATH, 'llvm-objdump')
+
     # Some one installed a wrong version of protobuf on my computer.
     # PROTOBUF_LIB = os.path.join('/usr/local/lib/libprotobuf.a')
     PROTOBUF_LIB = os.getenv('LIBPROTOBUF_STATIC_LIB')
