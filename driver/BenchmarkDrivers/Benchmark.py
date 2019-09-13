@@ -636,9 +636,9 @@ class Benchmark(object):
             C.CC_DEBUG if self.get_lang() == 'C' else C.CXX_DEBUG,
             '-c',
             '-O3',
-            '--target=riscv32-unknown-unknown-elf',
-            '-march=rv32gc',
-            '-mabi=ilp32d',
+            '--target=riscv64-unknown-unknown-elf',
+            '-march=rv64g',
+            '-mabi=lp64d',
             transformed_bc,
             '-o',
             transformed_obj,
@@ -657,10 +657,11 @@ class Benchmark(object):
         # Link them into code.
         transformed_exe = self.get_replay_exe(transform_config, trace, 'exe')
         link_cmd = [
-            os.path.join(C.RISCV_GNU_INSTALL_PATH, 'bin/riscv32-unknown-elf-gcc'),
+            os.path.join(C.RISCV_GNU_INSTALL_PATH,
+                         'bin/riscv64-unknown-elf-gcc'),
             '-static',
-            '-march=rv32gc',
-            '-mabi=ilp32d',
+            '-march=rv64g',
+            '-mabi=lp64d',
             '-o',
             transformed_exe,
             transformed_obj,
@@ -699,7 +700,8 @@ class Benchmark(object):
             standalone):
         hoffman2 = False
         gem5_args = [
-            C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
+            # C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
+            C.GEM5_RISCV,
             '--outdir={outdir}'.format(outdir=outdir),
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=binary),
@@ -743,6 +745,19 @@ class Benchmark(object):
     def simulate_valid(self, tdg, transform_config, simulation_config):
         raise NotImplementedError
 
+    def simulate_execution_transform(self, trace, transform_config, simulation_config):
+        assert(transform_config.is_execution_transform())
+        tdg = self.get_tdg(transform_config, trace)
+        gem5_out_dir = simulation_config.get_gem5_dir(tdg)
+        gem5_args = self.get_gem5_simulate_command(
+            simulation_config=simulation_config,
+            binary=self.get_replay_exe(transform_config, trace, 'exe'),
+            outdir=gem5_out_dir,
+            standalone=False,
+        )
+        # Do not add the tdg file, so that gem5 will simulate the binary.
+        Util.call_helper(gem5_args)
+
     """
     Simulate a single datagraph with gem5.
     """
@@ -750,6 +765,10 @@ class Benchmark(object):
     def simulate(self, trace, transform_config, simulation_config):
         if transform_config.get_transform_id() == 'valid':
             self.simulate_valid(tdg, transform_config, simulation_config)
+            return
+        if transform_config.is_execution_transform():
+            self.simulate_execution_transform(
+                trace, transform_config, simulation_config)
             return
 
         print('# Simulating the datagraph')

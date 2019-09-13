@@ -2,8 +2,9 @@
 cd ~/Documents
 mkdir -p riscv
 cd riscv
+rm -r install
 # git clone --recursive https://github.com/riscv/riscv-gnu-toolchain
 cd riscv-gnu-toolchain
-./configure --prefix=${HOME}/Documents/riscv/install-linux-gnu --with-arch=rv32gc --with-abi=ilp32d
+./configure --prefix=${HOME}/Documents/riscv/install --enable-multilib
 make clean
 make -j9 
