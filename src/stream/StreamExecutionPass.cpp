@@ -302,7 +302,7 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
       assert(StreamId >= 0 && StreamId < 64 &&
              "Illegal RegionStreamId for StreamInput.");
       auto StreamIdValue = llvm::ConstantInt::get(
-          llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()),
+          llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
           StreamId, false);
       auto ClonedInput = this->getClonedValue(Input);
       std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue, ClonedInput};
@@ -403,7 +403,7 @@ void StreamExecutionPass::transformLoadInst(StreamRegionAnalyzer *Analyzer,
   assert(StreamId >= 0 && StreamId < 64 &&
          "Illegal RegionStreamId for StreamLoad.");
   auto StreamIdValue = llvm::ConstantInt::get(
-      llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()), StreamId,
+      llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()), StreamId,
       false);
   std::array<llvm::Value *, 1> StreamLoadArgs{StreamIdValue};
   std::array<llvm::Type *, 1> StreamLoadType{LoadInst->getType()};
@@ -440,7 +440,7 @@ void StreamExecutionPass::transformStepInst(StreamRegionAnalyzer *Analyzer,
     assert(StreamId >= 0 && StreamId < 64 &&
            "Illegal RegionStreamId for StreamStep.");
     auto StreamIdValue = llvm::ConstantInt::get(
-        llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext()),
+        llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
         StreamId, false);
     std::array<llvm::Value *, 1> StreamStepArgs{StreamIdValue};
     auto StreamStepInst = Builder.CreateCall(
