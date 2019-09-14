@@ -100,8 +100,7 @@ message TDGInstruction {
   message StreamStoreExtra { uint64 stream_id = 1; }
 
   message StreamEndExtra { 
-    string loop = 1;
-    repeated uint64 stream_ids = 2; 
+    string info_path = 1;
   }
 
   message SpecPreTriggerExtra { string slice_stream = 1; uint64 critical_pc = 2; }
