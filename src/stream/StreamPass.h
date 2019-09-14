@@ -94,10 +94,7 @@ protected:
     auto EndExtra = ProtobufEntry->mutable_stream_end();
     assert(ProtobufEntry->has_stream_end() &&
            "The protobuf entry should have stream end extra struct.");
-    EndExtra->set_loop(LoopUtils::getLoopId(this->Info.getLoop()));
-    for (auto S : this->Info.getSortedStreams()) {
-      EndExtra->add_stream_ids(S->getStreamId());
-    }
+    EndExtra->set_info_path(this->Info.getRelativePath());
   }
 
 private:
