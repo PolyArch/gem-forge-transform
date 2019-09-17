@@ -115,6 +115,7 @@ message StreamRegion {
 }
 
 message StreamPattern {
+  // Describe the pattern of the a dynamic direct stream.
   string val_pattern = 1;
   string acc_pattern = 2;
   uint64 iters = 3;
@@ -133,6 +134,7 @@ message StreamPattern {
 }
 
 message StreamHistory {
+  // Describe the accessed entries of the a dynamic stream.
   message HistoryEntry {
     bool valid = 1;
     uint64 addr = 2;
