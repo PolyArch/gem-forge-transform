@@ -318,6 +318,10 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
           StreamInputArgs);
     }
   }
+
+  // Insert the StreamReady instruction.
+  Builder.CreateCall(llvm::Intrinsic::getDeclaration(
+      this->ClonedModule.get(), llvm::Intrinsic::ID::ssp_stream_ready));
 }
 
 void StreamExecutionPass::insertStreamEndAtLoop(
