@@ -713,8 +713,6 @@ class Benchmark(object):
             '--caches',
             '--l2cache',
             '--cpu-type={cpu_type}'.format(cpu_type=C.CPU_TYPE),
-            # '--l1d_size={l1d_size}'.format(l1d_size=C.GEM5_L1D_SIZE),
-            # '--l1i_size={l1i_size}'.format(l1i_size=C.GEM5_L1I_SIZE),
         ]
         if self.options.gem5_debug is not None:
             gem5_args.insert(

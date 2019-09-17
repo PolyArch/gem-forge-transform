@@ -117,6 +117,10 @@ void StreamExecutionPass::transformStream() {
   // Generate the module.
   LLVM_DEBUG(llvm::errs() << "Write the module.\n");
   this->writeModule();
+
+  // So far we still need to generate the history for testing purpose.
+  // TODO: Remove this once we are done.
+  StreamPass::transformStream();
 }
 
 std::vector<StreamRegionAnalyzer *>
