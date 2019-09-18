@@ -227,6 +227,9 @@ public:
    * Get the input value for this stream when configure it.
    */
   virtual std::list<const llvm::Value *> getInputValues() const {
+    if (this->SStream->inputValuesValid) {
+      return this->SStream->inputValues;
+    }
     return std::list<const llvm::Value *>();
   }
 

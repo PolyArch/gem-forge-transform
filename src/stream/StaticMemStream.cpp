@@ -194,6 +194,52 @@ void StaticMemStream::finalizePattern() {
       // This is likely our step root, copy its value pattern.
       this->StaticStreamInfo.set_val_pattern(
           BaseStream->StaticStreamInfo.val_pattern());
+      /**
+       * If this is LINEAR pattern, we generate the parameters.
+       * ! Too Hacky! Need a uniform way to express the pattern.
+       */
+      if (this->StaticStreamInfo.val_pattern() ==
+          LLVM::TDG::StreamValuePattern::LINEAR) {
+        // Careful, we should use SCEV for ourselve to get correct start value.
+        auto AddrSCEV = this->ComputeMetaNodes.front().SCEV;
+        AddrSCEV->print(llvm::errs());
+        // So far we only handle AddRec.
+        // TODO: Handle Add.
+        if (auto AddrAddRecSCEV =
+                llvm::dyn_cast<llvm::SCEVAddRecExpr>(AddrSCEV)) {
+          this->inputValuesValid = true;
+          auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
+          ProtoIVPattern->set_val_pattern(
+              LLVM::TDG::StreamValuePattern::LINEAR);
+
+          /**
+           * Linear pattern has two parameters, base and stride.
+           * TODO: Handle non-constant params in the future.
+           */
+#define AddParam(SCEV, Signed)                                                 \
+  {                                                                            \
+    auto ProtoParam = ProtoIVPattern->add_params();                            \
+    if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {           \
+      ProtoParam->set_valid(true);                                             \
+      if (Signed)                                                              \
+        ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());          \
+      else                                                                     \
+        ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());          \
+    } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {   \
+      ProtoParam->set_valid(false);                                            \
+      this->inputValues.push_back(UnknownSCEV->getValue());                    \
+    } else {                                                                   \
+      assert(false && "Can only handle this SCEV so far.");                    \
+    }                                                                          \
+  }
+          auto BaseSCEV = AddrAddRecSCEV->getStart();
+          llvm::errs() << BaseSCEV->getSCEVType() << '\n';
+          AddParam(BaseSCEV, false);
+          auto StrideSCEV = AddrAddRecSCEV->getOperand(1);
+          AddParam(StrideSCEV, true);
+#undef AddParam
+        }
+      }
     }
   }
   // Compute the possible loop path.
