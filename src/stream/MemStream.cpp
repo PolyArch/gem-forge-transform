@@ -239,6 +239,9 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
 }
 
 std::list<const llvm::Value *> MemStream::getInputValues() const {
+  if (this->SStream->inputValuesValid) {
+    return this->SStream->inputValues;
+  }
 
   assert(this->isChosen() && "Only consider chosen stream's input values.");
   std::list<const llvm::Value *> InputValues;

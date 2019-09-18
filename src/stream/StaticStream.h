@@ -8,6 +8,7 @@
 
 #include "stream/StreamMessage.pb.h"
 
+#include <list>
 #include <unordered_set>
 
 /**
@@ -149,6 +150,13 @@ public:
   bool IsStream;
   // Some bookkeeping information.
   mutable LLVM::TDG::StaticStreamInfo StaticStreamInfo;
+
+  /**
+   * Stores all the input value for the analyzed pattern.
+   * ! Only used this when the inputValuesValid is set.
+   */
+  bool inputValuesValid = false;
+  std::list<const llvm::Value *> inputValues;
 
 protected:
   struct MetaNode {
