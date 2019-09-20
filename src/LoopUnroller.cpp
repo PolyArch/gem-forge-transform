@@ -28,23 +28,6 @@ LoopUnroller::LoopUnroller(llvm::Loop *_Loop, llvm::ScalarEvolution *SE)
       auto Inst = &*InstIter;
       if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         llvm::InductionDescriptor ID;
-        llvm::errs() << "Checking IVPhi for " << Utils::formatLLVMInst(Inst)
-                     << '\n';
-        {
-          auto PhiScev = SE->getSCEV(PHINode);
-          if (PhiScev != nullptr) {
-            PhiScev->print(llvm::errs());
-            if (auto AR = llvm::dyn_cast<llvm::SCEVAddRecExpr>(PhiScev)) {
-              llvm::errs() << "Loop " << LoopUtils::getLoopId(AR->getLoop())
-                           << '\n';
-              llvm::errs() << "This Loop " << LoopUtils::getLoopId(this->Loop)
-                           << '\n';
-              llvm::errs() << "Loop predecessor "
-                           << AR->getLoop()->getLoopPredecessor()->getName()
-                           << '\n';
-            }
-          }
-        }
 
         if (llvm::InductionDescriptor::isInductionPHI(PHINode, Loop, SE, ID)) {
           // // This is an induction variable. We try to find the updating
