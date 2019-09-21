@@ -115,6 +115,7 @@ public:
 
     return true;
   }
+
   bool runOnFunction(llvm::Function &Function) override {
     auto FunctionName = Function.getName().str();
     LLVM_DEBUG(llvm::errs() << "Processing Function: " << FunctionName << '\n');

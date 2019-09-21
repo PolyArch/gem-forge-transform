@@ -1,6 +1,7 @@
-#include "trace/Tracer.h"
-#include "trace/InstructionUIDMapReader.h"
-#include "trace/ProfileLogger.h"
+#include "Tracer.h"
+#include "InstructionUIDMapReader.h"
+#include "ProfileLogger.h"
+#include "TracerImpl.h"
 
 #include <cassert>
 #include <cstdio>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <list>
+#include <pthread.h>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -48,22 +50,6 @@ enum TypeID {
 
 // Contain some common definitions
 const char *DEFAULT_TRACE_FILE_NAME = "llvm";
-const char *getNewTraceFileName() {
-  static size_t samples = 0;
-  static char fileName[128];
-  const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
-  if (traceFileName) {
-    if (std::strlen(traceFileName) > 100) {
-      assert(false && "Too long trace name.");
-    }
-  } else {
-    traceFileName = DEFAULT_TRACE_FILE_NAME;
-  }
-  std::sprintf(fileName, "%s.%zu.trace", traceFileName, samples);
-  samples++;
-  return fileName;
-}
-
 std::string getProfileFileName() {
   const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
   if (!traceFileName) {
@@ -73,19 +59,12 @@ std::string getProfileFileName() {
 }
 
 namespace {
-
 // This flag controls if I am already inside myself.
 // This helps to solve the problem when the tracer runtime calls some functions
 // which is also traced (so no recursion).
-static bool insideMyself = false;
-static uint64_t count = 0;
-static uint64_t countInTraceFunc = 0;
-static uint64_t tracedCount = 0;
 static uint64_t hardExitCount = 1e10;
 
 static InstructionUIDMapReader instUIDMap;
-static const LLVM::TDG::InstructionDescriptor *currentInstDescriptor;
-static size_t currentInstValueDescriptorId;
 
 // Use this flag to ingore all the initialization phase.
 static bool hasSeenMain = false;
@@ -166,18 +145,7 @@ static std::list<std::pair<uint64_t, uint64_t>> intervals;
 
 static uint64_t PRINT_INTERVAL = 10000000;
 
-/**
- * The tracer will maintain a stack at run time to determine if we are in a
- * specified function region.
- */
-static std::vector<unsigned> stack;
-static std::vector<const char *> stackName;
-static unsigned tracedFunctionsInStack;
-static const char *currentInstOpName = nullptr;
-
 } // namespace
-
-// This serves as the guard.
 
 static uint64_t getUint64Env(const char *name) {
   const char *env = std::getenv(name);
@@ -314,10 +282,127 @@ static void initialize() {
   }
 }
 
+void checkIsMain(const char *functionName) {
+  if (hasSeenMain) {
+    return;
+  }
+  const char *mainFunctionName = "main";
+  while ((*functionName) != 0 && (*mainFunctionName) != 0) {
+    if ((*functionName) != (*mainFunctionName)) {
+      return;
+    }
+    ++functionName;
+    ++mainFunctionName;
+  }
+  if ((*functionName) == 0 && (*mainFunctionName) == 0) {
+    hasSeenMain = true;
+  }
+}
+
+// Extension for multi-thread.
+struct TracerThreadState {
+public:
+  bool insideMyself = false;
+  // ! TracerThreadState initialization should be protected by lock.
+  bool initialized = false;
+  pthread_t tid;
+  int seqTid = 0;
+  uint64_t count = 0;
+  uint64_t countInTraceFunc = 0;
+  uint64_t tracedCount = 0;
+  uint64_t hardExitCount = 1e10;
+  const LLVM::TDG::InstructionDescriptor *currentInstDescriptor = nullptr;
+  size_t currentInstValueDescriptorId = 0;
+  /**
+   * The tracer will maintain a stack at run time to determine if we are in a
+   * specified function region.
+   */
+  std::vector<unsigned> stack;
+  std::vector<const char *> stackName;
+  unsigned tracedFunctionsInStack = 0;
+  const char *currentInstOpName = nullptr;
+
+  // Thread-local storage, used to pass in values larger than register, e.g.
+  // vector.
+  static constexpr size_t MaxTLSBytes = 4096;
+  uint8_t tlsBuffer[MaxTLSBytes];
+
+  size_t samples = 0;
+  char fileName[128];
+
+  const char *getNewTraceFileName();
+  bool isInROI();
+  bool shouldLog();
+  bool shouldSwitchTraceFile();
+  bool shouldExit();
+  void printStack();
+  void pushStack(const char *funcName, bool isTraced);
+  void popStack();
+  void unwind();
+};
+
+TracerThreadState threadStates[MaxNThreads];
+pthread_mutex_t threadStatesAllocationLock;
+
+TracerThreadState &getOrInitializeThreadState() {
+  /**
+   * ! This function is not protected by insideMyself.
+   * ! Must contain no code that may trigger recursive call chain.
+   */
+  auto tid = pthread_self();
+  for (size_t i = 0; i < MaxNThreads; ++i) {
+    auto &tts = threadStates[i];
+    if (tts.initialized) {
+      if (pthread_equal(tts.tid, tid) != 0) {
+        return tts;
+      } else {
+        continue;
+      }
+    } else {
+      // ! We have to acquire the lock to allocate new states.
+      pthread_mutex_lock(&threadStatesAllocationLock);
+      if (!tts.initialized) {
+        // We got this one.
+        tts.tid = tid;
+        tts.initialized = true;
+        tts.seqTid = i;
+        pthread_mutex_unlock(&threadStatesAllocationLock);
+        return tts;
+      } else {
+        // This one has been occupied by another thread.
+        pthread_mutex_unlock(&threadStatesAllocationLock);
+        continue;
+      }
+    }
+  }
+  printf("Reach the maximum number of threads.\n");
+  std::exit(1);
+}
+
+const char *getNewTraceFileName(int tid) {
+  auto &tts = threadStates[tid];
+  assert(tts.initialized && "This thread state should be initialized.");
+  return tts.getNewTraceFileName();
+}
+
+const char *TracerThreadState::getNewTraceFileName() {
+  const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
+  if (traceFileName) {
+    if (std::strlen(traceFileName) > 100) {
+      assert(false && "Too long trace name.");
+    }
+  } else {
+    traceFileName = DEFAULT_TRACE_FILE_NAME;
+  }
+  std::sprintf(fileName, "%s.%d.%zu.trace", traceFileName, seqTid, samples);
+  samples++;
+  return fileName;
+}
+
 /**
  * This function decides if we are in ROI.
  */
-static bool isInROI() {
+bool TracerThreadState::isInROI() {
   switch (traceROI) {
   case TraceROI::All: {
     return true;
@@ -332,7 +417,7 @@ static bool isInROI() {
 /**
  * This functions decides if it's time to trace.
  */
-static bool shouldLog() {
+bool TracerThreadState::shouldLog() {
 
   // First we check if we are actually in the ROI.
   if (!isInROI()) {
@@ -372,7 +457,7 @@ static bool shouldLog() {
   }
 }
 
-static bool shouldSwitchTraceFile() {
+bool TracerThreadState::shouldSwitchTraceFile() {
   // Get the correct instruction count;
   auto instCount = count;
   if (traceROI == TraceROI::SpecifiedFunction) {
@@ -407,7 +492,7 @@ static bool shouldSwitchTraceFile() {
   }
 }
 
-static bool shouldExit() {
+bool TracerThreadState::shouldExit() {
   // Hard exit condition.
   if (count == hardExitCount) {
     std::exit(0);
@@ -432,14 +517,14 @@ static bool shouldExit() {
   }
 }
 
-static void printStack() {
+void TracerThreadState::printStack() {
   for (size_t i = 0; i < stackName.size(); ++i) {
     printf("%s (%u) -> ", stackName[i], stack[i]);
   }
   printf("\n");
 }
 
-static void pushStack(const char *funcName, bool isTraced) {
+void TracerThreadState::pushStack(const char *funcName, bool isTraced) {
   stack.push_back(isTraced);
   stackName.push_back(funcName);
   if (isTraced) {
@@ -447,7 +532,7 @@ static void pushStack(const char *funcName, bool isTraced) {
   }
 }
 
-static void popStack() {
+void TracerThreadState::popStack() {
   if (stack.size() == 0) {
     printf("Empty stack when we found ret?\n");
   }
@@ -461,7 +546,7 @@ static void popStack() {
 
 // Try to use libunwind to unwind the stack to some point. Return if
 // succeed.
-static void unwind() {
+void TracerThreadState::unwind() {
   unw_cursor_t cursor;
   unw_context_t context;
 
@@ -517,74 +602,62 @@ static void unwind() {
   stack.resize(boundary);
 }
 
+#define TracerLibEnter()                                                       \
+  if (!hasSeenMain) {                                                          \
+    return;                                                                    \
+  }                                                                            \
+  auto &tts = getOrInitializeThreadState();                                    \
+  if (tts.insideMyself) {                                                      \
+    return;                                                                    \
+  } else {                                                                     \
+    tts.insideMyself = true;                                                   \
+  }
+
+#define TracerLibExit()                                                        \
+  {                                                                            \
+    tts.insideMyself = false;                                                  \
+    return;                                                                    \
+  }
+
 uint8_t *getOrAllocateDataBuffer(uint64_t size) {
   /**
-   * So far we take a simple approach: a statically allocated 1 page.
+   * So far we take a simple approach: a statically allocated 1 page for each
+   * thread.
+   * ! No need to protect this function insideMyself because it is impossible to
+   * ! get recursive call chain.
    */
-  const size_t maximumSize = 4096;
-  static uint8_t buffer[maximumSize];
-  assert(size <= maximumSize &&
+  auto &tts = getOrInitializeThreadState();
+  assert(size <= TracerThreadState::MaxTLSBytes &&
          "Exceed the maximum allowed size for data buffer.");
-  return buffer;
+  return tts.tlsBuffer;
 }
 
 void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
-  // printf("%s %s:%d, inside? %d\n", FunctionName, __FILE__, __LINE__,
-  // insideMyself);
-  if (insideMyself) {
-    return;
-  } else {
-    insideMyself = true;
-  }
-  if (!hasSeenMain) {
-    if (std::strcmp(FunctionName, "main") == 0) {
-      // Keep going.
-      hasSeenMain = true;
-    } else {
-      // Exit.
-      insideMyself = false;
-      return;
-    }
-  }
-  // printf("%s:%d, inside? %d\n", __FILE__, __LINE__, insideMyself);
+  // Main function should always be traced.
+  checkIsMain(FunctionName);
+  TracerLibEnter();
   initialize();
+  // printf("%s:%d, inside? %d\n", __FILE__, __LINE__, insideMyself);
   // Update the stack only if we considered specified function as ROI.
   if (traceROI == TraceROI::SpecifiedFunction) {
-    pushStack(FunctionName, IsTraced);
+    tts.pushStack(FunctionName, IsTraced);
   }
   // printf("Entering %s, stack depth %lu\n", FunctionName, stack.size());
-  if (shouldLog()) {
-    printFuncEnterImpl(FunctionName);
+  if (tts.shouldLog()) {
+    printFuncEnterImpl(tts.seqTid, FunctionName);
   }
-  insideMyself = false;
-  // printf("%s:%d, inside? %d\n", __FILE__, __LINE__, insideMyself);
-  return;
+  TracerLibExit();
 }
 
 void printInst(const char *FunctionName, uint64_t UID) {
-  if (insideMyself) {
-    return;
-  } else {
-    insideMyself = true;
-  }
-  if (!hasSeenMain) {
-    if (std::strcmp(FunctionName, "main") == 0) {
-      // Keep going.
-      hasSeenMain = true;
-    } else {
-      // Exit.
-      insideMyself = false;
-      return;
-    }
-  }
-  initialize();
+  TracerLibEnter();
 
-  currentInstDescriptor = &(instUIDMap.getDescriptor(UID));
-  currentInstValueDescriptorId = 0;
-  auto OpCodeName = currentInstDescriptor->op().c_str();
-  auto BBName = currentInstDescriptor->bb().c_str();
+  tts.currentInstDescriptor = &(instUIDMap.getDescriptor(UID));
+  tts.currentInstValueDescriptorId = 0;
+  auto OpCodeName = tts.currentInstDescriptor->op().c_str();
+  auto BBName = tts.currentInstDescriptor->bb().c_str();
   // auto FunctionName = instDescriptor.FuncName.c_str();
-  auto Id = currentInstDescriptor->pos_in_bb();
+  auto Id = tts.currentInstDescriptor->pos_in_bb();
 
   // Check if this is a landingpad instruction if we want to have the stack.
   if (traceROI == TraceROI::SpecifiedFunction) {
@@ -593,20 +666,20 @@ void printInst(const char *FunctionName, uint64_t UID) {
       // Use libunwind to adjust our stack.
       if (isDebug) {
         printf("Before unwind the stack: \n");
-        printStack();
+        tts.printStack();
       }
-      unwind();
-      assert(!stackName.empty() && "After unwind the stack is empty.");
+      tts.unwind();
+      assert(!tts.stackName.empty() && "After unwind the stack is empty.");
 
       if (isDebug) {
         printf("After unwind the stack: \n");
-        printStack();
+        tts.printStack();
       }
     }
-    if (stackName.back() != FunctionName) {
+    if (tts.stackName.back() != FunctionName) {
       printf("Unmatched FunctionName %s %s %u with stack: \n", FunctionName,
              BBName, Id);
-      printStack();
+      tts.printStack();
       std::exit(1);
     }
   }
@@ -621,51 +694,43 @@ void printInst(const char *FunctionName, uint64_t UID) {
      * and the profiler needs to know the instruction count to
      * correctly partition the profiling interval.
      */
-    if (isInROI()) {
+    if (tts.isInROI()) {
       allProfile->addBasicBlock(FuncStr, BBStr);
     }
   }
 
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
   // __LINE__, insideMyself, count); Update current inst.
-  assert(currentInstOpName == nullptr && "Previous inst has not been closed.");
-  currentInstOpName = OpCodeName;
-  count++;
-  if (traceROI == TraceROI::SpecifiedFunction && tracedFunctionsInStack > 0) {
-    countInTraceFunc++;
+  assert(tts.currentInstOpName == nullptr &&
+         "Previous inst has not been closed.");
+  tts.currentInstOpName = OpCodeName;
+  tts.count++;
+  if (traceROI == TraceROI::SpecifiedFunction &&
+      tts.tracedFunctionsInStack > 0) {
+    tts.countInTraceFunc++;
   }
-  if (count % PRINT_INTERVAL < 5) {
+  if (tts.count % PRINT_INTERVAL < 5) {
     // Print every PRINT_INTERVAL instructions.
-    printf("%lu:", count);
-    for (size_t i = 0; i < stackName.size(); ++i) {
-      printf("%s (%u) -> ", stackName[i], stack[i]);
+    printf("%lu:", tts.count);
+    for (size_t i = 0; i < tts.stackName.size(); ++i) {
+      printf("%s (%u) -> ", tts.stackName[i], tts.stack[i]);
     }
     printf(" %s %u %s\n", BBName, Id, OpCodeName);
-    if (count % PRINT_INTERVAL == 0) {
+    if (tts.count % PRINT_INTERVAL == 0) {
       printf("\n");
     }
   }
-  if (shouldLog()) {
-    printInstImpl(FunctionName, BBName, Id, UID, OpCodeName);
+  if (tts.shouldLog()) {
+    printInstImpl(tts.seqTid, FunctionName, BBName, Id, UID, OpCodeName);
   }
-  insideMyself = false;
-  return;
+  TracerLibExit();
 }
 
 void printValue(const char Tag, const char *Name, unsigned TypeId,
                 unsigned NumAdditionalArgs, ...) {
-  if (insideMyself) {
-    return;
-  } else {
-    insideMyself = true;
-  }
-  if (!hasSeenMain) {
-    insideMyself = false;
-    return;
-  }
-  if (!shouldLog()) {
-    insideMyself = false;
-    return;
+  TracerLibEnter();
+  if (!tts.shouldLog()) {
+    TracerLibExit();
   }
 
   va_list VAList;
@@ -673,64 +738,55 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
   switch (TypeId) {
   case TypeID::LabelTyID: {
     // For label, log the name again to be compatible with other type.
-    printValueLabelImpl(Tag, Name, TypeId);
+    printValueLabelImpl(tts.seqTid, Tag, Name, TypeId);
     break;
   }
   case TypeID::IntegerTyID: {
     uint64_t value = va_arg(VAList, uint64_t);
-    printValueIntImpl(Tag, Name, TypeId, value);
+    printValueIntImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
   // Float is promoted to double on x64.
   case TypeID::FloatTyID:
   case TypeID::DoubleTyID: {
     double value = va_arg(VAList, double);
-    printValueFloatImpl(Tag, Name, TypeId, value);
+    printValueFloatImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
   case TypeID::PointerTyID: {
     void *value = va_arg(VAList, void *);
-    printValuePointerImpl(Tag, Name, TypeId, value);
+    printValuePointerImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
   case TypeID::VectorTyID: {
     uint32_t size = va_arg(VAList, uint32_t);
     uint8_t *buffer = va_arg(VAList, uint8_t *);
-    printValueVectorImpl(Tag, Name, TypeId, size, buffer);
+    printValueVectorImpl(tts.seqTid, Tag, Name, TypeId, size, buffer);
     break;
   }
   default: {
-    printValueUnsupportImpl(Tag, Name, TypeId);
+    printValueUnsupportImpl(tts.seqTid, Tag, Name, TypeId);
     break;
   }
   }
   va_end(VAList);
-  insideMyself = false;
-  return;
+  TracerLibExit();
 }
 
 void printInstValue(unsigned NumAdditionalArgs, ...) {
-  if (insideMyself) {
-    return;
-  } else {
-    insideMyself = true;
-  }
-  if (!hasSeenMain) {
-    insideMyself = false;
-    return;
-  }
-  if (!shouldLog()) {
-    insideMyself = false;
-    return;
+  TracerLibEnter();
+  if (!tts.shouldLog()) {
+    TracerLibExit();
   }
 
-  assert(currentInstDescriptor != nullptr && "Missing inst descriptor.");
-  assert(currentInstValueDescriptorId < currentInstDescriptor->values_size() &&
+  assert(tts.currentInstDescriptor != nullptr && "Missing inst descriptor.");
+  assert(tts.currentInstValueDescriptorId <
+             tts.currentInstDescriptor->values_size() &&
          "Overflow of value descriptor id.");
 
   const auto &currentInstValueDescriptor =
-      currentInstDescriptor->values(currentInstValueDescriptorId);
-  currentInstValueDescriptorId++;
+      tts.currentInstDescriptor->values(tts.currentInstValueDescriptorId);
+  tts.currentInstValueDescriptorId++;
 
   auto TypeId = currentInstValueDescriptor.type_id();
   auto Tag = currentInstValueDescriptor.is_param() ? PRINT_VALUE_TAG_PARAMETER
@@ -745,99 +801,80 @@ void printInstValue(unsigned NumAdditionalArgs, ...) {
     // For label, log the name again to be compatible with other type.
     // assert(false && "So far printInstValue does not work for label type.");
     const char *labelName = va_arg(VAList, const char *);
-    printValueLabelImpl(Tag, labelName, TypeId);
+    printValueLabelImpl(tts.seqTid, Tag, labelName, TypeId);
     break;
   }
   case TypeID::IntegerTyID: {
     uint64_t value = va_arg(VAList, uint64_t);
-    printValueIntImpl(Tag, Name, TypeId, value);
+    printValueIntImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
   // Float is promoted to double on x64.
   case TypeID::FloatTyID:
   case TypeID::DoubleTyID: {
     double value = va_arg(VAList, double);
-    printValueFloatImpl(Tag, Name, TypeId, value);
+    printValueFloatImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
   case TypeID::PointerTyID: {
     void *value = va_arg(VAList, void *);
-    printValuePointerImpl(Tag, Name, TypeId, value);
+    printValuePointerImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
   case TypeID::VectorTyID: {
     uint32_t size = va_arg(VAList, uint32_t);
     uint8_t *buffer = va_arg(VAList, uint8_t *);
-    printValueVectorImpl(Tag, Name, TypeId, size, buffer);
+    printValueVectorImpl(tts.seqTid, Tag, Name, TypeId, size, buffer);
     break;
   }
   default: {
-    printValueUnsupportImpl(Tag, Name, TypeId);
+    printValueUnsupportImpl(tts.seqTid, Tag, Name, TypeId);
     break;
   }
   }
   va_end(VAList);
-  insideMyself = false;
-  return;
+  TracerLibExit();
 }
 
 void printInstEnd() {
-  if (insideMyself) {
-    return;
-  } else {
-    insideMyself = true;
-  }
-  if (!hasSeenMain) {
-    insideMyself = false;
-    return;
-  }
-  if (shouldLog()) {
-    tracedCount++;
-    printInstEndImpl();
+  TracerLibEnter();
+  if (tts.shouldLog()) {
+    tts.tracedCount++;
+    printInstEndImpl(tts.seqTid);
     // Check if we are about to switch file.
-    if (shouldSwitchTraceFile()) {
-      switchFileImpl();
+    if (tts.shouldSwitchTraceFile()) {
+      switchFileImpl(tts.seqTid);
     }
   }
 
   // Update the stack only when we try to measure in traced functions.
   if (traceROI == TraceROI::SpecifiedFunction) {
-    assert(currentInstOpName != nullptr &&
+    assert(tts.currentInstOpName != nullptr &&
            "Missing currentInstOpName in printInstEnd.");
-    if (std::strcmp(currentInstOpName, "ret") == 0) {
+    if (std::strcmp(tts.currentInstOpName, "ret") == 0) {
       // printf("%s\n", currentInstOpName.c_str());
       if (isDebug) {
         printf("Return from: ");
-        printStack();
+        tts.printStack();
       }
-      popStack();
+      tts.popStack();
     }
   }
 
-  currentInstOpName = nullptr;
+  tts.currentInstOpName = nullptr;
 
   // Check if we are about to exit.
-  if (shouldExit()) {
+  if (tts.shouldExit()) {
     std::exit(0);
   }
 
-  insideMyself = false;
-  return;
+  TracerLibExit();
 }
 
 void printFuncEnterEnd() {
-  if (insideMyself) {
-    return;
-  } else {
-    insideMyself = true;
+  TracerLibEnter();
+  if (tts.shouldLog()) {
+    printFuncEnterEndImpl(tts.seqTid);
   }
-  if (!hasSeenMain) {
-    insideMyself = false;
-    return;
-  }
-  if (shouldLog()) {
-    printFuncEnterEndImpl();
-  }
-  insideMyself = false;
-  return;
+  TracerLibExit();
 }
