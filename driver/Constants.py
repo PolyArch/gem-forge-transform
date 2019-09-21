@@ -82,7 +82,8 @@ HOFFMAN2_GEM5_SE_CONFIG = os.path.join(
 """
 Gem5 parameters.
 """
-CPU_TYPE = 'DerivO3CPU'
+# CPU_TYPE = 'DerivO3CPU'
+CPU_TYPE = 'TimingSimpleCPU'
 ISSUE_WIDTH = 8
 STORE_QUEUE_SIZE = 32
 GEM5_L1D_SIZE = '32kB'

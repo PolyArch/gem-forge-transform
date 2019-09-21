@@ -1,6 +1,7 @@
 from BenchmarkDrivers import Benchmark
 from BenchmarkDrivers import MultiProgramBenchmark
 from BenchmarkDrivers import SPEC2017
+from BenchmarkDrivers import Parsec
 from BenchmarkDrivers import MachSuite
 from BenchmarkDrivers import TestHelloWorld
 from BenchmarkDrivers import SPU
@@ -143,6 +144,8 @@ class Driver:
             suite = None
             if suite_name == 'spec':
                 suite = SPEC2017.SPEC2017Benchmarks(benchmark_args)
+            elif suite_name == 'parsec':
+                suite = Parsec.ParsecSuite(benchmark_args)
             elif suite_name == 'spu':
                 suite = SPU.SPUBenchmarks(benchmark_args)
             elif suite_name == 'mach':

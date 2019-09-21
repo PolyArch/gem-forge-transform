@@ -396,6 +396,7 @@ class Benchmark(object):
             ]
         trace_links = self.get_links() + [
             '-lz',
+            '-pthread',
             C.PROTOBUF_LIB,
             C.LIBUNWIND_LIB,
         ]
@@ -499,10 +500,9 @@ class Benchmark(object):
             trace_cmd.append('-trace-function=' + self.get_trace_func())
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
-        if debugs:
-            print(debugs)
+        if self.options.transform_debug:
             trace_cmd.append(
-                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
+                '-debug-only={debugs}'.format(debugs=self.options.transform_debug))
         print('# Instrumenting tracer...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
@@ -529,6 +529,7 @@ class Benchmark(object):
             ]
         trace_links = self.get_links() + [
             '-lz',
+            '-pthread',
             C.PROTOBUF_LIB,
             C.LIBUNWIND_LIB,
         ]
@@ -650,6 +651,9 @@ class Benchmark(object):
             with open(transformed_asm, 'w') as asm:
                 disasm_cmd = [
                     C.LLVM_OBJDUMP_DEBUG,
+                    '--triple=riscv64-unknown-unknown-elf',
+                    '--mattr=+g',
+                    # '-mabi=lp64d',
                     '-d',
                     transformed_obj,
                 ]

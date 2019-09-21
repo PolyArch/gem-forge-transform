@@ -299,11 +299,8 @@ class SPEC2017Benchmark(Benchmark):
 
     def trace(self):
         os.chdir(self.get_exe_path())
-        debugs = [
-            # 'TracePass',
-        ]
         self.build_trace(
-            debugs=debugs,
+            link_stdlib=False,
         )
         # Set the tracer mode.
 
