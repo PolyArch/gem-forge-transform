@@ -221,14 +221,32 @@ class Benchmark(object):
         return trace_ids
 
     def init_traces(self):
-        trace_ids = self.init_trace_ids()
+        """
+        Originally for single thread workloads, the trace id will
+        be encoded in the trace file name. However, after we enable
+        tracing for multi-threaded workloads, the trace file name 
+        will be {benchmark_name}.{thread_id}.{trace_id}.trace, with
+        the main thread always be assigned to 0.
+        We find all traces and sort them to have a consistant scalar
+        trace id assigned to all traces.
+        """
+        trace_fns = glob.glob(os.path.join(
+            self.get_run_path(),
+            '{name}.*.trace'.format(name=self.get_name())
+        ))
+        # Sort them.
+        trace_fns.sort()
         self.traces = list()
-        for trace_id in trace_ids:
+        for trace_id in range(len(trace_fns)):
+            trace_fn = trace_fns[trace_id]
+            print(trace_fn, trace_id)
             # Ignore the trace id not specified by the user.
             if self.options.trace_id:
                 if trace_id not in self.options.trace_id:
                     continue
-            self.traces.append(TraceObj(self.get_trace_fn(trace_id), trace_id))
+            self.traces.append(
+                TraceObj(trace_fn, trace_id)
+            )
 
     def get_transform_path(self, transform_id):
         return os.path.join(self.get_run_path(), transform_id)
@@ -460,16 +478,11 @@ class Benchmark(object):
         # Move all the traces to run_path.
         if self.get_exe_path() == self.get_run_path():
             return
-        trace_id = 0
-        while True:
-            trace_fn = '{name}.{i}.trace'.format(
-                name=self.get_name(),
-                i=trace_id)
-            if os.path.isfile(trace_fn):
-                Util.call_helper(['mv', trace_fn, self.get_run_path()])
-                trace_id += 1
-            else:
-                break
+        trace_fns = glob.glob('{name}.*.trace'.format(
+            name=self.get_name(),
+        ))
+        for trace_fn in trace_fns:
+            Util.call_helper(['mv', trace_fn, self.get_run_path()])
         Util.call_helper([
             'mv',
             self.get_inst_uid(),
@@ -637,7 +650,7 @@ class Benchmark(object):
             C.CC_DEBUG if self.get_lang() == 'C' else C.CXX_DEBUG,
             '-c',
             '-O3',
-            '--target=riscv64-unknown-unknown-elf',
+            '--target=riscv64-unknown-linux-gnu',
             '-march=rv64g',
             '-mabi=lp64d',
             transformed_bc,
@@ -651,9 +664,6 @@ class Benchmark(object):
             with open(transformed_asm, 'w') as asm:
                 disasm_cmd = [
                     C.LLVM_OBJDUMP_DEBUG,
-                    '--triple=riscv64-unknown-unknown-elf',
-                    '--mattr=+g',
-                    # '-mabi=lp64d',
                     '-d',
                     transformed_obj,
                 ]
@@ -662,7 +672,7 @@ class Benchmark(object):
         transformed_exe = self.get_replay_exe(transform_config, trace, 'exe')
         link_cmd = [
             os.path.join(C.RISCV_GNU_INSTALL_PATH,
-                         'bin/riscv64-unknown-elf-gcc'),
+                         'bin/riscv64-unknown-linux-gnu-gcc'),
             '-static',
             '-march=rv64g',
             '-mabi=lp64d',

@@ -48,7 +48,7 @@ class ParsecBenchmark(Benchmark):
         return 'parsec.{b}'.format(b=self.benchmark_name)
 
     def get_links(self):
-        return []
+        return ['-lm', '-lpthread']
 
     def get_args(self):
         if self.benchmark_name == 'blackscholes':
@@ -114,6 +114,13 @@ class ParsecBenchmark(Benchmark):
             'cp',
             self.get_raw_bc(),
             self.exe_path,
+        ]
+        Util.call_helper(cp_cmd)
+        # Copy to work_path
+        cp_cmd = [
+            'cp',
+            self.get_raw_bc(),
+            self.get_run_path(),
         ]
         Util.call_helper(cp_cmd)
 

@@ -7,4 +7,5 @@ rm -r install
 cd riscv-gnu-toolchain
 ./configure --prefix=${HOME}/Documents/riscv/install --enable-multilib
 make clean
-make -j9 
+# We need linux cross compiler for pthread?
+make -j9 linux
