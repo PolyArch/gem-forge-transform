@@ -25,3 +25,4 @@ build/*
 *.exe
 *.txt
 *.pdf
+*_pb2.py
