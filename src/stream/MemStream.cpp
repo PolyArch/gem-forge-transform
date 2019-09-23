@@ -87,6 +87,10 @@ bool MemStream::isCandidate() const {
   if (this->AddrDG.hasCallInstInComputeInsts()) {
     return false;
   }
+  // So far ignore store stream.
+  if (llvm::isa<llvm::StoreInst>(this->SStream->Inst)) {
+    return false;
+  }
   // Also ignore myself if I have no accesses.
   if (this->TotalAccesses == 0) {
     return false;
@@ -239,8 +243,8 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
 }
 
 std::list<const llvm::Value *> MemStream::getInputValues() const {
-  if (this->SStream->inputValuesValid) {
-    return this->SStream->inputValues;
+  if (this->SStream->InputValuesValid) {
+    return this->SStream->InputValues;
   }
 
   assert(this->isChosen() && "Only consider chosen stream's input values.");
@@ -291,6 +295,10 @@ void MemStream::fillProtobufAddrFuncInfo(
 
   for (const auto &Input : this->AddrDG.getInputs()) {
     auto ProtobufArg = AddrFuncInfo->add_args();
+    auto Type = Input->getType();
+    if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(Type)) {
+      
+    }
     if (auto BaseStream = FindBaseStream(Input)) {
       // This comes from the base stream.
       ProtobufArg->set_is_stream(true);

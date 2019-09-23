@@ -78,5 +78,7 @@ private:
     // No computation required.
     return this->StaticStreamInfo.stp_pattern();
   }
+
+  void addInputParam(const llvm::SCEV *SCEV, bool Signed);
 };
 #endif

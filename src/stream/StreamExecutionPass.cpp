@@ -414,13 +414,37 @@ void StreamExecutionPass::transformLoadInst(StreamRegionAnalyzer *Analyzer,
       llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()), StreamId,
       false);
   std::array<llvm::Value *, 1> StreamLoadArgs{StreamIdValue};
-  std::array<llvm::Type *, 1> StreamLoadType{LoadInst->getType()};
+
+  auto LoadType = LoadInst->getType();
+  auto StreamLoadType = LoadType;
+  bool NeedTruncate = false;
+  /**
+   * ! It takes an effort to promote the loaded value to 64-bit in RV64,
+   * ! so as a temporary fix, I truncate it here.
+   */
+  if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(LoadType)) {
+    if (IntType->getBitWidth() < 64) {
+      StreamLoadType =
+          llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
+      NeedTruncate = true;
+    } else if (IntType->getBitWidth() > 64) {
+      assert(false && "Cannot handle load type larger than 64 bit.");
+    }
+  }
+
+  std::array<llvm::Type *, 1> StreamLoadTypes{StreamLoadType};
   auto StreamLoadInst = Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                       llvm::Intrinsic::ID::ssp_stream_load,
-                                      StreamLoadType),
+                                      StreamLoadTypes),
       StreamLoadArgs);
-  ClonedLoadInst->replaceAllUsesWith(StreamLoadInst);
+
+  if (NeedTruncate) {
+    auto TruncateInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
+    ClonedLoadInst->replaceAllUsesWith(TruncateInst);
+  } else {
+    ClonedLoadInst->replaceAllUsesWith(StreamLoadInst);
+  }
 
   // Insert the load into the pending removed set.
   this->PendingRemovedInsts.insert(ClonedLoadInst);
