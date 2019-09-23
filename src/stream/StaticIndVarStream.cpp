@@ -198,7 +198,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
       // TODO: Handle Add.
       if (auto PHINodeAddRecSCEV =
               llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
-        this->inputValuesValid = true;
+        this->InputValuesValid = true;
         auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
         ProtoIVPattern->set_val_pattern(LLVM::TDG::StreamValuePattern::LINEAR);
 
@@ -206,25 +206,10 @@ void StaticIndVarStream::analyzeIsCandidate() {
          * Linear pattern has two parameters, base and stride.
          * TODO: Handle non-constant params in the future.
          */
-#define AddParam(SCEV, Signed)                                                 \
-  {                                                                            \
-    auto ProtoParam = ProtoIVPattern->add_params();                            \
-    if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {           \
-      ProtoParam->set_valid(true);                                             \
-      if (Signed)                                                              \
-        ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());          \
-      else                                                                     \
-        ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());          \
-    } else {                                                                   \
-      ProtoParam->set_valid(false);                                            \
-      assert(false && "Can only handle constant base so far.");                \
-    }                                                                          \
-  }
         auto BaseSCEV = PHINodeAddRecSCEV->getStart();
-        AddParam(BaseSCEV, false);
+        this->addInputParam(BaseSCEV, false);
         auto StrideSCEV = PHINodeAddRecSCEV->getOperand(1);
-        AddParam(StrideSCEV, true);
-#undef AddParam
+        this->addInputParam(StrideSCEV, true);
       }
     }
 
@@ -234,6 +219,37 @@ void StaticIndVarStream::analyzeIsCandidate() {
   llvm::errs() << "Done\n";
 
   this->IsCandidate = true;
+}
+
+void StaticIndVarStream::addInputParam(const llvm::SCEV *SCEV, bool Signed) {
+
+  auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
+  auto ProtoParam = ProtoIVPattern->add_params();
+  if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {
+    ProtoParam->set_valid(true);
+    if (Signed)
+      ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());
+    else
+      ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());
+  } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {
+    ProtoParam->set_valid(false);
+    this->InputValues.push_back(UnknownSCEV->getValue());
+  } else {
+    // Search through the child compute nodes.
+    const auto &PHIMNode = this->PHIMetaNodes.front();
+    for (const auto &ComputeMNode : PHIMNode.ComputeMetaNodes) {
+      if (ComputeMNode->SCEV == SCEV) {
+        ProtoParam->set_valid(false);
+        // We found the SCEV, check if the ComputeMetaNode is empty.
+        if (ComputeMNode->isEmpty()) {
+          this->InputValues.push_back(ComputeMNode->RootValue);
+          return;
+        }
+      }
+    }
+    SCEV->print(llvm::errs());
+    assert(false && "Cannot handle this SCEV so far.");
+  }
 }
 
 void StaticIndVarStream::initializeMetaGraphConstruction(

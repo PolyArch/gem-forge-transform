@@ -42,6 +42,8 @@ private:
       const std::unordered_set<const llvm::SCEV *> &InputSCEVs);
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override;
+
+  void addInputParam(const llvm::SCEV *SCEV, bool Signed);
 };
 
 #endif

@@ -153,10 +153,10 @@ public:
 
   /**
    * Stores all the input value for the analyzed pattern.
-   * ! Only used this when the inputValuesValid is set.
+   * ! Only used this when the InputValuesValid is set.
    */
-  bool inputValuesValid = false;
-  std::list<const llvm::Value *> inputValues;
+  bool InputValuesValid = false;
+  std::list<const llvm::Value *> InputValues;
 
 protected:
   struct MetaNode {

@@ -198,48 +198,49 @@ void StaticMemStream::finalizePattern() {
        * If this is LINEAR pattern, we generate the parameters.
        * ! Too Hacky! Need a uniform way to express the pattern.
        */
-      if (this->StaticStreamInfo.val_pattern() ==
-          LLVM::TDG::StreamValuePattern::LINEAR) {
-        // Careful, we should use SCEV for ourselve to get correct start value.
-        auto AddrSCEV = this->ComputeMetaNodes.front().SCEV;
-        AddrSCEV->print(llvm::errs());
-        // So far we only handle AddRec.
-        // TODO: Handle Add.
-        if (auto AddrAddRecSCEV =
-                llvm::dyn_cast<llvm::SCEVAddRecExpr>(AddrSCEV)) {
-          this->inputValuesValid = true;
-          auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
-          ProtoIVPattern->set_val_pattern(
-              LLVM::TDG::StreamValuePattern::LINEAR);
+//       if (this->StaticStreamInfo.val_pattern() ==
+//           LLVM::TDG::StreamValuePattern::LINEAR) {
+//         // Careful, we should use SCEV for ourselve to get correct start value.
+//         auto AddrSCEV = this->ComputeMetaNodes.front().SCEV;
+//         AddrSCEV->print(llvm::errs());
+//         // So far we only handle AddRec.
+//         // TODO: Handle Add.
+//         if (auto AddrAddRecSCEV =
+//                 llvm::dyn_cast<llvm::SCEVAddRecExpr>(AddrSCEV)) {
+//           this->InputValuesValid = true;
+//           auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
+//           ProtoIVPattern->set_val_pattern(
+//               LLVM::TDG::StreamValuePattern::LINEAR);
 
-          /**
-           * Linear pattern has two parameters, base and stride.
-           * TODO: Handle non-constant params in the future.
-           */
-#define AddParam(SCEV, Signed)                                                 \
-  {                                                                            \
-    auto ProtoParam = ProtoIVPattern->add_params();                            \
-    if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {           \
-      ProtoParam->set_valid(true);                                             \
-      if (Signed)                                                              \
-        ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());          \
-      else                                                                     \
-        ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());          \
-    } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {   \
-      ProtoParam->set_valid(false);                                            \
-      this->inputValues.push_back(UnknownSCEV->getValue());                    \
-    } else {                                                                   \
-      assert(false && "Can only handle this SCEV so far.");                    \
-    }                                                                          \
-  }
-          auto BaseSCEV = AddrAddRecSCEV->getStart();
-          llvm::errs() << BaseSCEV->getSCEVType() << '\n';
-          AddParam(BaseSCEV, false);
-          auto StrideSCEV = AddrAddRecSCEV->getOperand(1);
-          AddParam(StrideSCEV, true);
-#undef AddParam
-        }
-      }
+//           /**
+//            * Linear pattern has two parameters, base and stride.
+//            * TODO: Handle non-constant params in the future.
+//            */
+// #define AddParam(SCEV, Signed)                                                 \
+//   {                                                                            \
+//     auto ProtoParam = ProtoIVPattern->add_params();                            \
+//     if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {           \
+//       ProtoParam->set_valid(true);                                             \
+//       if (Signed)                                                              \
+//         ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());          \
+//       else                                                                     \
+//         ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());          \
+//     } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {   \
+//       ProtoParam->set_valid(false);                                            \
+//       this->InputValues.push_back(UnknownSCEV->getValue());                    \
+//     } else {                                                                   \
+//       SCEV->print(llvm::errs());                                               \
+//       assert(false && "Can only handle this SCEV so far.");                    \
+//     }                                                                          \
+//   }
+//           auto BaseSCEV = AddrAddRecSCEV->getStart();
+//           llvm::errs() << BaseSCEV->getSCEVType() << '\n';
+//           AddParam(BaseSCEV, false);
+//           auto StrideSCEV = AddrAddRecSCEV->getOperand(1);
+//           AddParam(StrideSCEV, true);
+// #undef AddParam
+//         }
+//       }
     }
   }
   // Compute the possible loop path.
@@ -247,4 +248,34 @@ void StaticMemStream::finalizePattern() {
       LoopUtils::countPossiblePath(this->InnerMostLoop));
   this->StaticStreamInfo.set_config_loop_possible_path(
       LoopUtils::countPossiblePath(this->ConfigureLoop));
+}
+
+void StaticMemStream::addInputParam(const llvm::SCEV *SCEV, bool Signed) {
+
+  auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
+  auto ProtoParam = ProtoIVPattern->add_params();
+  if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {
+    ProtoParam->set_valid(true);
+    if (Signed)
+      ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());
+    else
+      ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());
+  } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {
+    ProtoParam->set_valid(false);
+    this->InputValues.push_back(UnknownSCEV->getValue());
+  } else {
+    // Search through the child compute nodes.
+    const auto &PHIMNode = this->PHIMetaNodes.front();
+    for (const auto &ComputeMNode : PHIMNode.ComputeMetaNodes) {
+      if (ComputeMNode->SCEV == SCEV) {
+        // We found the SCEV, check if the ComputeMetaNode is empty.
+        if (ComputeMNode->isEmpty()) {
+          this->InputValues.push_back(ComputeMNode->RootValue);
+          return;
+        }
+      }
+    }
+    SCEV->print(llvm::errs());
+    assert(false && "Cannot handle this SCEV so far.");
+  }
 }
