@@ -13,6 +13,17 @@ import os
 
 
 class ParsecBenchmark(Benchmark):
+
+    # Hardcode the input arguments.
+    ARGS = {
+        'blackscholes': {
+            'test': ['in_4.txt', 'prices.txt'],
+            'simdev': ['in_16.txt', 'prices.txt'],
+            'simsmall': ['in_4K.txt', 'prices.txt'],
+            'simmedium': ['in_16K.txt', 'prices.txt'],
+        }
+    }
+
     def __init__(self, benchmark_args, benchmark_path):
         self.cwd = os.getcwd()
         self.benchmark_path = benchmark_path
@@ -23,7 +34,8 @@ class ParsecBenchmark(Benchmark):
         # Override the input_size if use-specified.
         if benchmark_args.options.input_size:
             self.input_size = benchmark_args.options.input_size
-        assert(self.input_size in {'test'})
+        assert(self.input_size in {'test', 'simdev',
+                                   'simsmall', 'simmedium', 'simlarge', 'native'})
 
         self.exe_path = os.path.join(
             self.benchmark_path, 'run', self.input_size)
@@ -66,13 +78,9 @@ class ParsecBenchmark(Benchmark):
         return ['-lm', '-lpthread']
 
     def get_args(self):
-        if self.benchmark_name == 'blackscholes':
-            return [
-                str(self.n_thread),
-                'in_4.txt',
-                'prices.txt',
-            ]
-        return None
+        args = ParsecBenchmark.ARGS[self.benchmark_name][self.input_size]
+        args = [str(self.n_thread)] + args
+        return args
 
     def get_trace_func(self):
         if self.benchmark_name == 'blackscholes':
@@ -219,6 +227,10 @@ class ParsecSuite:
         for item in items:
             if item[0] == '.':
                 # Ignore special folders.
+                continue
+            benchmark_name = 'parsec.{b}'.format(b=os.path.basename(item))
+            if benchmark_name not in benchmark_args.options.benchmark:
+                # Ignore benchmark not required.
                 continue
             abs_path = os.path.join(suite_folder, sub_folder, item)
             if os.path.isdir(abs_path):
