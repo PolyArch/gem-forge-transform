@@ -18,11 +18,19 @@ class ParsecBenchmark(Benchmark):
         self.benchmark_path = benchmark_path
         self.obj_path = os.path.join(
             self.benchmark_path, 'obj/amd64-linux.clang-pthreads')
-        self.exe_path = os.path.join(self.benchmark_path, 'run')
-        Util.mkdir_p(self.exe_path)
+
+        self.input_size = 'test'
+        # Override the input_size if use-specified.
+        if benchmark_args.options.input_size:
+            self.input_size = benchmark_args.options.input_size
+        assert(self.input_size in {'test'})
+
+        self.exe_path = os.path.join(
+            self.benchmark_path, 'run', self.input_size)
+        self.setup_input()
+
         self.benchmark_name = os.path.basename(self.benchmark_path)
         self.n_thread = 1
-        self.input_size = 'test'
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -33,6 +41,12 @@ class ParsecBenchmark(Benchmark):
         super(ParsecBenchmark, self).__init__(benchmark_args)
 
     def setup_input(self):
+        if os.path.isdir(self.exe_path):
+            # We assume the input is there.
+            return
+        elif os.path.isfile(self.exe_path):
+            # Exe path is not a folder.
+            assert(False)
         Util.mkdir_p(self.exe_path)
         input_tar = os.path.join(
             self.benchmark_path, 'inputs', 'input_{size}.tar'.format(size=self.input_size))
@@ -42,6 +56,7 @@ class ParsecBenchmark(Benchmark):
             'xvf',
             input_tar,
         ]
+        Util.call_helper(untar_cmd)
         os.chdir(self.cwd)
 
     def get_name(self):
@@ -130,13 +145,12 @@ class ParsecBenchmark(Benchmark):
         return list()
 
     def trace(self):
-        self.setup_input()
         os.chdir(self.get_exe_path())
         self.build_trace(
             link_stdlib=False,
             trace_reachable_only=True,
         )
-        
+
         # For this benchmark, we only trace the target function.
         os.putenv('LLVM_TDG_TRACE_MODE', str(
             TraceFlagEnum.GemForgeTraceMode.TraceAll.value))

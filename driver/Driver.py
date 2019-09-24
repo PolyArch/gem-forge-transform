@@ -529,6 +529,9 @@ if __name__ == '__main__':
     parser.add_option('--trace-id', type='string', action='callback',
                       dest='trace_id', callback=parse_trace_ids)
 
+    parser.add_option('--input-size', type='string', action='store',
+                      dest='input_size', default=None)
+
     parser.add_option('--stream-plot', type='string', action='callback',
                       dest='stream_plot', callback=parse_stream_plot)
 
