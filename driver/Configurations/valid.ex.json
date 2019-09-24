@@ -1,0 +1,7 @@
+{
+    "id": "valid.ex",
+    "is_execution_transform": true,
+    "options": [
+        "-valid-execution-pass"
+    ]
+}

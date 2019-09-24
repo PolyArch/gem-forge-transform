@@ -74,6 +74,7 @@ add_library(LLVMTDGPass SHARED
     speculative_precomputation/PrecomputationSlice.cpp
     speculative_precomputation/CriticalLoadManager.cpp
     speculative_precomputation/SpeculativePrecomputationPass.cpp
+    valid/ValidExecutionPass.cpp
 )
 
 
