@@ -661,13 +661,29 @@ class Benchmark(object):
         if self.options.transform_text:
             # Disassembly it for debug purpose.
             transformed_asm = self.get_replay_exe(transform_config, trace, 's')
-            with open(transformed_asm, 'w') as asm:
-                disasm_cmd = [
-                    C.LLVM_OBJDUMP_DEBUG,
-                    '-d',
-                    transformed_obj,
-                ]
-                Util.call_helper(disasm_cmd, stdout=asm)
+            disasm_cmd = [
+                # Use DEBUG compiler?
+                C.CC_DEBUG if self.get_lang() == 'C' else C.CXX_DEBUG,
+                '-c',
+                '-S',
+                '-O3',
+                '--target=riscv64-unknown-linux-gnu',
+                '-march=rv64g',
+                '-mabi=lp64d',
+                transformed_bc,
+                '-o',
+                transformed_asm,
+            ]
+            Util.call_helper(disasm_cmd)
+            # ! Don't use llvm_objdump as it does not decode floating instructions.
+            # with open(transformed_asm, 'w') as asm:
+            #     disasm_cmd = [
+            #         C.LLVM_OBJDUMP_DEBUG,
+            #         '-d',
+            #         '-march=rv64g',
+            #         transformed_obj,
+            #     ]
+            #     Util.call_helper(disasm_cmd, stdout=asm)
         # Link them into code.
         transformed_exe = self.get_replay_exe(transform_config, trace, 'exe')
         link_cmd = [
@@ -744,10 +760,10 @@ class Benchmark(object):
         # Add any options from derived classes.
         gem5_args += self.get_additional_gem5_simulate_command()
 
-        if not standalone:
-            if self.get_args() is not None:
-                gem5_args.append(
-                    '--options={binary_args}'.format(binary_args=' '.join(self.get_args())))
+        # Append the arguments.
+        if self.get_args() is not None:
+            gem5_args.append(
+                '--options={binary_args}'.format(binary_args=' '.join(self.get_args())))
         return gem5_args
 
     """
@@ -768,7 +784,11 @@ class Benchmark(object):
             standalone=False,
         )
         # Do not add the tdg file, so that gem5 will simulate the binary.
+        # For execution simulation, we would like to be in the exe_path.
+        cwd = os.getcwd()
+        os.chdir(self.get_exe_path())
         Util.call_helper(gem5_args)
+        os.chdir(cwd)
 
     """
     Simulate a single datagraph with gem5.
