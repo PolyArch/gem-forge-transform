@@ -9,6 +9,8 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
 
+#include "google/protobuf/util/json_util.h"
+
 #include <queue>
 #include <unordered_set>
 
@@ -45,6 +47,13 @@ protected:
   std::unordered_set<llvm::Instruction *> PendingRemovedInsts;
 
   /**
+   * All the configured stream regions, in the order of configured.
+   * Used to generate allStreamRegion.
+   * * There should be no duplicate in this vector.
+   */
+  std::vector<const StreamConfigureLoopInfo *> AllConfiguredLoopInfos;
+
+  /**
    * Since we are purely static trasnformation, we have to first select
    * StreamRegionAnalyzer as our candidate. Here I sort them by the number of
    * dynamic memory accesses and exclude overlapped regions.
@@ -55,8 +64,8 @@ protected:
   void configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop);
   void insertStreamConfigAtLoop(StreamRegionAnalyzer *Analyzer,
                                 llvm::Loop *Loop,
-                                llvm::Constant *ConfigPathValue);
-  void insertStreamEndAtLoop(llvm::Loop *Loop, llvm::Constant *ConfigPathValue);
+                                llvm::Constant *ConfigIdxValue);
+  void insertStreamEndAtLoop(llvm::Loop *Loop, llvm::Constant *ConfigIdxValue);
   void transformLoadInst(StreamRegionAnalyzer *Analyzer,
                          llvm::LoadInst *LoadInst);
   void transformStoreInst(StreamRegionAnalyzer *Analyzer,
@@ -90,6 +99,7 @@ protected:
   llvm::BasicBlock *getOrCreateLoopPreheaderInClonedModule(llvm::Loop *Loop);
 
   void writeModule();
+  void writeAllConfiguredRegions();
 };
 
 void StreamExecutionPass::transformStream() {
@@ -117,6 +127,7 @@ void StreamExecutionPass::transformStream() {
   // Generate the module.
   LLVM_DEBUG(llvm::errs() << "Write the module.\n");
   this->writeModule();
+  this->writeAllConfiguredRegions();
 
   // So far we still need to generate the history for testing purpose.
   // TODO: Remove this once we are done.
@@ -183,6 +194,29 @@ void StreamExecutionPass::writeModule() {
            "Failed to open the cloned module ll file.");
     this->ClonedModule->print(ModuleFStream, nullptr);
     ModuleFStream.close();
+  }
+}
+
+void StreamExecutionPass::writeAllConfiguredRegions() {
+  ::LLVM::TDG::AllStreamRegions ProtoAllRegions;
+  ProtoAllRegions.set_binary(this->Module->getModuleIdentifier());
+  for (auto ConfiguredLoopInfo : this->AllConfiguredLoopInfos) {
+    ProtoAllRegions.add_relative_paths(ConfiguredLoopInfo->getRelativePath());
+  }
+
+  auto AllRegionPath = this->OutputExtraFolderPath + "/all.stream.data";
+  Gem5ProtobufSerializer Serializer(AllRegionPath);
+  Serializer.serialize(ProtoAllRegions);
+  if (GemForgeOutputDataGraphTextMode) {
+    auto AllRegionJsonPath = this->OutputExtraFolderPath + "/all.stream.json";
+    std::ofstream InfoTextFStream(AllRegionJsonPath);
+    assert(InfoTextFStream.is_open() &&
+           "Failed to open the output info text file.");
+    std::string InfoJsonString;
+    ::google::protobuf::util::MessageToJsonString(ProtoAllRegions,
+                                                  &InfoJsonString);
+    InfoTextFStream << InfoJsonString;
+    InfoTextFStream.close();
   }
 }
 
@@ -262,17 +296,27 @@ void StreamExecutionPass::configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer,
     return;
   }
 
+  /**
+   * Allocate an entry in the allStreamRegions.
+   * Subject to the imm12 limit.
+   */
+  assert(this->AllConfiguredLoopInfos.size() < 4096 &&
+         "Too many configured streams.");
+  auto ConfigIdx = this->AllConfiguredLoopInfos.size();
+  this->AllConfiguredLoopInfos.push_back(&ConfigureInfo);
+
   LLVM_DEBUG(llvm::errs() << "Configure loop " << LoopUtils::getLoopId(Loop)
                           << '\n');
-  auto ConfigPathValue = TransformUtils::insertStringLiteral(
-      this->ClonedModule.get(), ConfigureInfo.getRelativePath());
-  this->insertStreamConfigAtLoop(Analyzer, Loop, ConfigPathValue);
-  this->insertStreamEndAtLoop(Loop, ConfigPathValue);
+  auto ConfigIdxValue = llvm::ConstantInt::get(
+      llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
+      ConfigIdx, false);
+  this->insertStreamConfigAtLoop(Analyzer, Loop, ConfigIdxValue);
+  this->insertStreamEndAtLoop(Loop, ConfigIdxValue);
 }
 
 void StreamExecutionPass::insertStreamConfigAtLoop(
     StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
-    llvm::Constant *ConfigPathValue) {
+    llvm::Constant *ConfigIdxValue) {
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   /**
    * 1. Make sure the loop has a predecessor.
@@ -289,7 +333,7 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
   // Simply insert one stream configure instruction before the terminator.
   auto ClonedPreheaderTerminator = ClonedPreheader->getTerminator();
   llvm::IRBuilder<> Builder(ClonedPreheaderTerminator);
-  std::array<llvm::Value *, 1> StreamConfigArgs{ConfigPathValue};
+  std::array<llvm::Value *, 1> StreamConfigArgs{ConfigIdxValue};
   Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                       llvm::Intrinsic::ID::ssp_stream_config),
@@ -325,7 +369,7 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
 }
 
 void StreamExecutionPass::insertStreamEndAtLoop(
-    llvm::Loop *Loop, llvm::Constant *ConfigPathValue) {
+    llvm::Loop *Loop, llvm::Constant *ConfigIdxValue) {
 
   /**
    * 1. Format dedicated exit block.
@@ -348,7 +392,7 @@ void StreamExecutionPass::insertStreamEndAtLoop(
         continue;
       }
       llvm::IRBuilder<> Builder(SuccBB->getFirstNonPHI());
-      std::array<llvm::Value *, 1> StreamEndArgs{ConfigPathValue};
+      std::array<llvm::Value *, 1> StreamEndArgs{ConfigIdxValue};
       Builder.CreateCall(
           llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                           llvm::Intrinsic::ID::ssp_stream_end),
