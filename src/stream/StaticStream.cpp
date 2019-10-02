@@ -121,11 +121,10 @@ void StaticStream::handleFirstTimePHIMetaNode(
 
 void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
   // Create the first PHIMetaNode.
-  ConstructedPHIMetaNodeMapT ConstructedPHIMetaNodeMap;
-  ConstructedComputeMetaNodeMapT ConstructedComputeMetaNodeMap;
   std::list<DFSNode> DFSStack;
-  this->initializeMetaGraphConstruction(DFSStack, ConstructedPHIMetaNodeMap,
-                                        ConstructedComputeMetaNodeMap);
+  this->initializeMetaGraphConstruction(DFSStack,
+                                        this->ConstructedPHIMetaNodeMap,
+                                        this->ConstructedComputeMetaNodeMap);
   while (!DFSStack.empty()) {
     auto &DNode = DFSStack.back();
     llvm::errs() << "Processing DFSNode "
