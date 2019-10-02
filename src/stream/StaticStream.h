@@ -227,6 +227,9 @@ protected:
   using ConstructedComputeMetaNodeMapT =
       std::unordered_map<const llvm::Value *, ComputeMetaNode *>;
 
+  ConstructedPHIMetaNodeMapT ConstructedPHIMetaNodeMap;
+  ConstructedComputeMetaNodeMapT ConstructedComputeMetaNodeMap;
+
   /**
    * Handle the newly created PHIMetaNode.
    * Notice: this may modify DFSStack!
