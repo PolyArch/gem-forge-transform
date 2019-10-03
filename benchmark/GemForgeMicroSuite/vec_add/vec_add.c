@@ -1,29 +1,56 @@
-// Simple dense vector dot product.
-typedef double Value;
+/**
+ * Simple dense vector add.
+ */
+
+#include "../gem5_pseudo.h"
+#include <stdio.h>
+
+typedef long long Value;
+
+#define STRIDE 1
+#define CHECK
+#define WARM_CACHE
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
   // Make sure there is no reuse.
-  for (int i = 0; i < N; i += 1) {
+#pragma clang loop vectorize(disable)
+#pragma clang loop unroll(disable)
+  for (int i = 0; i < N; i += STRIDE) {
     c[i] = a[i] + b[i];
   }
-  // Unroll by 2 to check coalesce.
-  // for (int i = 0; i < N; i += 4) {
-  //   c += a[i] * b[i];
-  //   c += a[i + 1] * b[i + 1];
-  //   c += a[i + 2] * b[i + 2];
-  //   c += a[i + 3] * b[i + 3];
-  // }
   return c[0];
 }
 
 // 65536*4 is 512kB.
-const int N = 1080*1920;
+const int N = 65536;
 Value a[N];
 Value b[N];
 Value c[N];
 
 int main() {
-  volatile Value ret;
-  ret = foo(a, b, c, N);
+
+#ifdef WARM_CACHE
+  // This should warm up the cache.
+  for (long long i = 0; i < N; i++) {
+    a[i] = i;
+    b[i] = i;
+    c[i] = i;
+  }
+#endif
+
+  DETAILED_SIM_START();
+  volatile Value ret = foo(a, b, c, N);
+  DETAILED_SIM_START();
+
+#ifdef CHECK
+  Value expected = 0;
+  Value computed = 0;
+  for (int i = 0; i < N; i += STRIDE) {
+    expected += a[i] + b[i];
+    computed += c[i];
+  }
+  printf("Ret = %llu, Expected = %llu.\n", computed, expected);
+#endif
+
   return 0;
 }
