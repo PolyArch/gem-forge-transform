@@ -19,8 +19,6 @@ class GemForgeMicroBenchmark(Benchmark):
         self.benchmark_name = os.path.basename(self.src_path)
         self.source = self.benchmark_name + '.c'
         self.stream_whitelist_fn = os.path.join(self.src_path, 'stream_whitelist.txt')
-        self.gem5_pseudo_source = os.path.join(
-            self.src_path, '../gem5_pseudo.cpp')
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -34,7 +32,7 @@ class GemForgeMicroBenchmark(Benchmark):
         return 'gfm.{b}'.format(b=self.benchmark_name)
 
     def get_links(self):
-        return [self.gem5_pseudo_source]
+        return []
 
     def get_args(self):
         return None

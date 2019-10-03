@@ -71,6 +71,8 @@ GEM5_LLVM_TRACE_SE_CONFIG = os.path.join(
 GEM5_SE_CONFIG = os.path.join(
     GEM5_DIR, 'configs/example/se.py')
 GEM5_M5OPS_X86 = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
+GEM5_M5OPS_RISCV = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_riscv.S')
+GEM5_M5OPS_EMPTY = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_empty.cpp')
 
 HOFFMAN2_GEM5_DIR = '/u/home/s/seanzw/llvm-trace-cpu'
 HOFFMAN2_GEM5_X86 = os.path.join(HOFFMAN2_GEM5_DIR, 'build/X86/gem5.opt')
@@ -83,7 +85,8 @@ HOFFMAN2_GEM5_SE_CONFIG = os.path.join(
 Gem5 parameters.
 """
 # CPU_TYPE = 'DerivO3CPU'
-CPU_TYPE = 'TimingSimpleCPU'
+# CPU_TYPE = 'TimingSimpleCPU'
+CPU_TYPE = 'MinorCPU'
 ISSUE_WIDTH = 8
 STORE_QUEUE_SIZE = 32
 GEM5_L1D_SIZE = '32kB'

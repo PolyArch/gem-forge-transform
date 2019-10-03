@@ -413,6 +413,8 @@ class Benchmark(object):
                 self.get_profile_bin(),
             ]
         trace_links = self.get_links() + [
+            '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
+            C.GEM5_M5OPS_EMPTY,
             '-lz',
             '-pthread',
             C.PROTOBUF_LIB,
@@ -541,6 +543,8 @@ class Benchmark(object):
                 self.get_trace_bin(),
             ]
         trace_links = self.get_links() + [
+            '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
+            C.GEM5_M5OPS_EMPTY,
             '-lz',
             '-pthread',
             C.PROTOBUF_LIB,
@@ -697,6 +701,10 @@ class Benchmark(object):
             transformed_obj,
         ]
         link_cmd += self.get_links()
+        link_cmd += [
+            '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
+            C.GEM5_M5OPS_RISCV,
+        ]
         Util.call_helper(link_cmd)
 
     def transform(self, transform_config, trace, tdg):
