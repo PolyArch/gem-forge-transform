@@ -1,29 +1,32 @@
 /**
- * Simple array sum.
+ * Simple dense vector dot product.
  */
+
 #include "../gem5_pseudo.h"
 #include <stdio.h>
 
 typedef long long Value;
 
-#define STRIDE 1 
+#define STRIDE 1
 #define CHECK
 #define WARM_CACHE
 
-__attribute__((noinline)) Value foo(Value **pa, int N) {
-  Value sum = 0.0f;
+__attribute__((noinline)) Value foo(Value **pa, Value **pb, int N) {
+  Value c = 0.0f;
   Value *a = *pa;
+  Value *b = *pb;
 #pragma clang loop vectorize(disable)
 #pragma clang loop unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
-    sum += a[i];
+    c += a[i] * b[i];
   }
-  return sum;
+  return c;
 }
 
-// 65536*8 is 512kB.
-const int N = 65536 * 2;
+// 65536*4 is 512kB.
+const int N = 65536 / 2;
 Value a[N];
+Value b[N];
 
 int main() {
 
@@ -31,18 +34,20 @@ int main() {
   // This should warm up the cache.
   for (long long i = 0; i < N; i++) {
     a[i] = i;
+    b[i] = i;
   }
 #endif
 
   Value *pa = a;
+  Value *pb = b;
   DETAILED_SIM_START();
-  volatile Value c = foo(&pa, N);
+  volatile Value c = foo(&pa, &pb, N);
   DETAILED_SIM_STOP();
 
 #ifdef CHECK
   Value expected = 0;
   for (int i = 0; i < N; i += STRIDE) {
-    expected += a[i];
+    expected += a[i] * b[i];
   }
   printf("Ret = %llu, Expected = %llu.\n", c, expected);
 #endif
