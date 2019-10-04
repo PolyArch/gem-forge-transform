@@ -29,6 +29,10 @@ class ParsecBenchmark(Benchmark):
         self.benchmark_path = benchmark_path
         self.obj_path = os.path.join(
             self.benchmark_path, 'obj/amd64-linux.clang-pthreads')
+        self.hook_lib_path = os.path.join(
+            os.path.dirname(os.path.dirname(self.benchmark_path)),
+            'libs/hooks/inst/amd64-linux.clang-pthreads/lib'
+        )
 
         self.input_size = 'test'
         # Override the input_size if use-specified.
@@ -75,7 +79,12 @@ class ParsecBenchmark(Benchmark):
         return 'parsec.{b}'.format(b=self.benchmark_name)
 
     def get_links(self):
-        return ['-lm', '-lpthread']
+        return [
+            '-lm', 
+            '-lpthread', 
+            # '-L{hook_path}'.format(hook_path=self.hook_lib_path),
+            # '-lhooks',
+        ]
 
     def get_args(self):
         args = ParsecBenchmark.ARGS[self.benchmark_name][self.input_size]
@@ -132,6 +141,15 @@ class ParsecBenchmark(Benchmark):
         # Remember to name every instruction.
         Util.call_helper(
             [C.OPT, '-instnamer', self.get_raw_bc(), '-o', self.get_raw_bc()])
+        # Strip away the m5 pseudo instructions.
+        Util.call_helper([
+            C.OPT,
+            '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
+            '-strip-m5-pass',
+            self.get_raw_bc(),
+            '-o',
+            self.get_raw_bc(),
+        ])
         # Copy to exe_path
         cp_cmd = [
             'cp',
