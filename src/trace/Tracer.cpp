@@ -48,16 +48,6 @@ enum TypeID {
   VectorTyID    ///< 16: SIMD 'packed' format, or other vector type
 };
 
-// Contain some common definitions
-const char *DEFAULT_TRACE_FILE_NAME = "llvm";
-std::string getProfileFileName() {
-  const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
-  if (!traceFileName) {
-    traceFileName = DEFAULT_TRACE_FILE_NAME;
-  }
-  return std::string(traceFileName) + ".profile";
-}
-
 namespace {
 // This flag controls if I am already inside myself.
 // This helps to solve the problem when the tracer runtime calls some functions
@@ -104,16 +94,12 @@ enum TraceMode {
 
 static TraceROI traceROI = TraceROI::All;
 static TraceMode traceMode = TraceMode::Profile;
+static const char *DEFAULT_TRACE_FILE_NAME = "llvm";
+static const char *traceFileName = DEFAULT_TRACE_FILE_NAME;
 
 /********************************************************************
  * Parameters for Profile mode.
  *******************************************************************/
-// Global profile log.
-static std::string allProfileFileName;
-static ProfileLogger *allProfile = nullptr;
-// Traced profile log.
-static std::string tracedProfileFileName;
-static ProfileLogger *tracedProfile = nullptr;
 
 /********************************************************************
  * Parameters for TraceUniformInterval mode.
@@ -188,35 +174,10 @@ static void initializeIntervals() {
   }
 }
 
-static void cleanup() {
-  if (traceMode == TraceMode::Profile) {
-    allProfile->serializeToFile(allProfileFileName);
-    tracedProfile->serializeToFile(tracedProfileFileName);
-    delete allProfile;
-    allProfile = nullptr;
-    delete tracedProfile;
-    tracedProfile = nullptr;
-  }
-  /**
-   * FIX IT!!
-   * We really should deallocate this one, but it will cause
-   * segment fault in the destructor and I have no idea how to fix it.
-   * Since the memory will be recollected by the OS anyway, I leave it here.
-   */
-  printf("Done!\n");
-}
-
 static void initializeTraceMode() {
   traceMode = static_cast<TraceMode>(getUint64Env("LLVM_TDG_TRACE_MODE"));
   printf("Initializing traceMode to %d.\n", static_cast<int>(traceMode));
-  if (traceMode == TraceMode::Profile) {
-    auto profileIntervalSize = getUint64Env("LLVM_TDG_PROFILE_INTERVAL_SIZE");
-    if (profileIntervalSize == 0) {
-      profileIntervalSize = 10000000;
-    }
-    allProfile = new ProfileLogger(profileIntervalSize);
-    tracedProfile = new ProfileLogger(profileIntervalSize);
-  } else if (traceMode == TraceMode::TraceUniformInterval) {
+  if (traceMode == TraceMode::TraceUniformInterval) {
     START_INST = getUint64Env("LLVM_TDG_START_INST");
     SKIP_INST = getUint64Env("LLVM_TDG_SKIP_INST");
     MAX_INST = getUint64Env("LLVM_TDG_MAX_INST");
@@ -230,17 +191,17 @@ static void initializeTraceROI() {
   traceROI = static_cast<TraceROI>(getUint64Env("LLVM_TDG_TRACE_ROI"));
 }
 
+static void cleanup();
+
 static void initialize() {
   static bool initialized = false;
   if (!initialized) {
     printf("initializing tracer...\n");
 
-    const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
+    traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
     if (!traceFileName) {
       traceFileName = DEFAULT_TRACE_FILE_NAME;
     }
-    allProfileFileName = std::string(traceFileName) + ".profile";
-    tracedProfileFileName = std::string(traceFileName) + ".traced.profile";
 
     // Create the instruction uid file.
     const char *instUIDMapFileName = std::getenv("LLVM_TDG_INST_UID_FILE");
@@ -313,6 +274,10 @@ public:
   uint64_t hardExitCount = 1e10;
   const LLVM::TDG::InstructionDescriptor *currentInstDescriptor = nullptr;
   size_t currentInstValueDescriptorId = 0;
+
+  // Profile the code.
+  ProfileLogger profile;
+
   /**
    * The tracer will maintain a stack at run time to determine if we are in a
    * specified function region.
@@ -329,8 +294,11 @@ public:
 
   size_t samples = 0;
   char fileName[128];
+  static constexpr size_t MaxProfileFileNameBytes = 128;
+  char profileFileName[MaxProfileFileNameBytes];
 
   const char *getNewTraceFileName();
+  void getProfileFileName(char *buf, size_t size);
   bool isInROI();
   bool shouldLog();
   bool shouldSwitchTraceFile();
@@ -344,10 +312,32 @@ public:
 TracerThreadState threadStates[MaxNThreads];
 pthread_mutex_t threadStatesAllocationLock;
 
+static void cleanup() {
+  static constexpr size_t profileFileNameSize = 128;
+  static char profileFileName[profileFileNameSize];
+  for (auto i = 0; i < MaxNThreads; ++i) {
+    auto &tts = threadStates[i];
+    if (tts.initialized) {
+      tts.getProfileFileName(profileFileName, profileFileNameSize);
+      std::string profileFileNameStr(profileFileName);
+      tts.profile.serializeToFile(profileFileNameStr);
+    }
+  }
+  /**
+   * FIX IT!!
+   * We really should deallocate this one, but it will cause
+   * segment fault in the destructor and I have no idea how to fix it.
+   * Since the memory will be recollected by the OS anyway, I leave it here.
+   */
+  printf("Done!\n");
+}
+
 TracerThreadState &getOrInitializeThreadState() {
   /**
    * ! This function is not protected by insideMyself.
    * ! Must contain no code that may trigger recursive call chain.
+   * ! Also it is called before initialize(). So anything initialized in
+   * ! initialize() should not be used.
    */
   auto tid = pthread_self();
   for (size_t i = 0; i < MaxNThreads; ++i) {
@@ -366,6 +356,13 @@ TracerThreadState &getOrInitializeThreadState() {
         tts.tid = tid;
         tts.initialized = true;
         tts.seqTid = i;
+        // Initialize the profiler.
+        auto profileIntervalSize =
+            getUint64Env("LLVM_TDG_PROFILE_INTERVAL_SIZE");
+        if (profileIntervalSize == 0) {
+          profileIntervalSize = 10000000;
+        }
+        tts.profile.initialize(profileIntervalSize);
         pthread_mutex_unlock(&threadStatesAllocationLock);
         return tts;
       } else {
@@ -386,17 +383,19 @@ const char *getNewTraceFileName(int tid) {
 }
 
 const char *TracerThreadState::getNewTraceFileName() {
-  const char *traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
-  if (traceFileName) {
-    if (std::strlen(traceFileName) > 100) {
-      assert(false && "Too long trace name.");
-    }
-  } else {
-    traceFileName = DEFAULT_TRACE_FILE_NAME;
-  }
   std::sprintf(fileName, "%s.%d.%zu.trace", traceFileName, seqTid, samples);
   samples++;
   return fileName;
+}
+
+void TracerThreadState::getProfileFileName(char *buf, size_t size) {
+  auto writtenBytes =
+      std::snprintf(buf, size, "%s.%d.profile", traceFileName, seqTid);
+  if (writtenBytes >= 0 && writtenBytes < size) {
+    return;
+  }
+  printf("Failed to get profile file name.\n");
+  std::exit(1);
 }
 
 /**
@@ -686,17 +685,15 @@ void printInst(const char *FunctionName, uint64_t UID) {
 
   std::string FuncStr(FunctionName);
   std::string BBStr(BBName);
-  if (traceMode == TraceMode::Profile) {
-    /**
-     * Profile if we are in ROI.
-     * Normally we should profile for every basic block,
-     * but it is similar to profile for every dynamic instruction,
-     * and the profiler needs to know the instruction count to
-     * correctly partition the profiling interval.
-     */
-    if (tts.isInROI()) {
-      allProfile->addBasicBlock(FuncStr, BBStr);
-    }
+  /**
+   * Profile if we are in ROI.
+   * Normally we should profile for every basic block,
+   * but it is similar to profile for every dynamic instruction,
+   * and the profiler needs to know the instruction count to
+   * correctly partition the profiling interval.
+   */
+  if (tts.isInROI()) {
+    tts.profile.addBasicBlock(FuncStr, BBStr);
   }
 
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
