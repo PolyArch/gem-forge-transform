@@ -26,3 +26,5 @@ build/*
 *.txt
 *.pdf
 *_pb2.py
+
+.vscode
