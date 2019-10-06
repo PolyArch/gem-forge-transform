@@ -17,11 +17,23 @@ class ParsecBenchmark(Benchmark):
     # Hardcode the input arguments.
     ARGS = {
         'blackscholes': {
-            'test': ['in_4.txt', 'prices.txt'],
-            'simdev': ['in_16.txt', 'prices.txt'],
-            'simsmall': ['in_4K.txt', 'prices.txt'],
-            'simmedium': ['in_16K.txt', 'prices.txt'],
-        }
+            'test': ['$NTHREADS', 'in_4.txt', 'prices.txt'],
+            'simdev': ['$NTHREADS', 'in_16.txt', 'prices.txt'],
+            'simsmall': ['$NTHREADS', 'in_4K.txt', 'prices.txt'],
+            'simmedium': ['$NTHREADS', 'in_16K.txt', 'prices.txt'],
+        },
+        'bodytrack': {
+            'test': ['sequenceB_1', '4', '1', '5', '1', '0', '$NTHREADS'],
+            'simdev': ['sequenceB_1', '4', '1', '100', '3', '0', '$NTHREADS'],
+            'simsmall': ['sequenceB_1', '4', '1', '1000', '5', '0', '$NTHREADS'],
+            'simmedium': ['sequenceB_2', '4', '2', '2000', '5', '0', '$NTHREADS'],
+        },
+        'canneal': {
+            'test':      ['$NTHREADS', '5', '100', '10.nets', '1'],
+            'simdev':    ['$NTHREADS', '100', '300', '100.nets', '2'],
+            'simsmall':  ['$NTHREADS', '10000', '2000', '100000.nets', '32'],
+            'simmedium': ['$NTHREADS', '15000', '2000', '200000.nets', '64'],
+        },
     }
 
     def __init__(self, benchmark_args, benchmark_path):
@@ -80,20 +92,26 @@ class ParsecBenchmark(Benchmark):
 
     def get_links(self):
         return [
-            '-lm', 
-            '-lpthread', 
-            # '-L{hook_path}'.format(hook_path=self.hook_lib_path),
-            # '-lhooks',
+            '-lm',
+            '-lpthread',
         ]
 
     def get_args(self):
-        args = ParsecBenchmark.ARGS[self.benchmark_name][self.input_size]
-        args = [str(self.n_thread)] + args
+        args = list()
+        for arg in ParsecBenchmark.ARGS[self.benchmark_name][self.input_size]:
+            if arg == '$NTHREADS':
+                args.append(str(self.n_thread))
+            else:
+                args.append(arg)
         return args
 
     def get_trace_func(self):
         if self.benchmark_name == 'blackscholes':
             return 'bs_thread(void*)'
+        elif self.benchmark_name == 'bodytrack':
+            return 'ParticleFilterPthread<TrackingModel>::Exec(unsigned short, unsigned int)'
+        elif self.benchmark_name == 'canneal':
+            return 'annealer_thread::Run()'
         return None
 
     def get_lang(self):
@@ -107,6 +125,9 @@ class ParsecBenchmark(Benchmark):
 
     def get_run_path(self):
         return self.work_path
+
+    def get_profile_roi(self):
+        return TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value
 
     def build_raw_bc(self):
         uninstall_cmd = [
@@ -150,13 +171,6 @@ class ParsecBenchmark(Benchmark):
             '-o',
             self.get_raw_bc(),
         ])
-        # Copy to exe_path
-        cp_cmd = [
-            'cp',
-            self.get_raw_bc(),
-            self.exe_path,
-        ]
-        Util.call_helper(cp_cmd)
         # Copy to work_path
         cp_cmd = [
             'cp',
@@ -174,7 +188,7 @@ class ParsecBenchmark(Benchmark):
         os.chdir(self.get_exe_path())
         self.build_trace(
             link_stdlib=False,
-            trace_reachable_only=True,
+            trace_reachable_only=False,
         )
 
         # For this benchmark, we only trace the target function.
@@ -238,22 +252,43 @@ class ParsecSuite:
     def __init__(self, benchmark_args):
         suite_folder = os.getenv('PARSEC_SUITE_PATH')
         # Every folder in the suite is a benchmark.
-        sub_folder = 'pkgs/apps'
-        items = os.listdir(os.path.join(suite_folder, sub_folder))
-        items.sort()
         self.benchmarks = list()
-        for item in items:
-            if item[0] == '.':
-                # Ignore special folders.
-                continue
-            benchmark_name = 'parsec.{b}'.format(b=os.path.basename(item))
-            if benchmark_name not in benchmark_args.options.benchmark:
-                # Ignore benchmark not required.
-                continue
-            abs_path = os.path.join(suite_folder, sub_folder, item)
-            if os.path.isdir(abs_path):
-                self.benchmarks.append(
-                    ParsecBenchmark(benchmark_args, abs_path))
+        sub_folders = ['pkgs/apps', 'pkgs/kernels']
+        for sub_folder in sub_folders:
+            items = os.listdir(os.path.join(suite_folder, sub_folder))
+            items.sort()
+            for item in items:
+                if item[0] == '.':
+                    # Ignore special folders.
+                    continue
+                benchmark_name = 'parsec.{b}'.format(b=os.path.basename(item))
+                if benchmark_name not in benchmark_args.options.benchmark:
+                    # Ignore benchmark not required.
+                    continue
+                abs_path = os.path.join(suite_folder, sub_folder, item)
+                if os.path.isdir(abs_path):
+                    self.benchmarks.append(
+                        ParsecBenchmark(benchmark_args, abs_path))
 
     def get_benchmarks(self):
         return self.benchmarks
+
+
+"""
+Parsec Kernel Function.
+
+Blackscholes: 
+100% bs_thread().
+Simple data-parallel float-intensive.
+Linear access.
+
+Bodytrack:
+Somehow I still feel this is compute intensive.
+18% void MultiCameraProjectedBody::ImageProjection()
+33% float ImageMeasurements::ImageErrorEdge() 
+40% float ImageMeasurements::ImageErrorInside()
+
+Canneal: annealer_thread && Assembly for atomic operation.
+
+
+"""

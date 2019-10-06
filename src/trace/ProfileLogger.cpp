@@ -5,8 +5,11 @@
 #include <fstream>
 #include <iomanip>
 
-ProfileLogger::ProfileLogger(uint64_t _INTERVAL_SIZE)
-    : INTERVAL_SIZE(_INTERVAL_SIZE), IntervalLHS(0), BBCount(0) {}
+void ProfileLogger::initialize(uint64_t _INTERVAL_SIZE) {
+  assert(!this->initialized && "Already initialized.");
+  this->initialized = true;
+  this->INTERVAL_SIZE = _INTERVAL_SIZE;
+}
 
 void ProfileLogger::addBasicBlock(const std::string &Func,
                                   const std::string &BB) {
@@ -22,8 +25,8 @@ void ProfileLogger::addBasicBlock(const std::string &Func,
   this->FuncProfile.emplace(Func, 0).first->second++;
 
   // Update the Interval.
-  // If we reached the interval limit, store the current interval and create a
-  // new one.
+  // If we reached the interval limit, store the current interval and create
+  // a new one.
   if (this->BBCount - this->IntervalLHS == INTERVAL_SIZE) {
     auto ProtobufInterval = this->ProtobufProfile.add_intervals();
     ProtobufInterval->set_inst_lhs(this->IntervalLHS);
@@ -56,6 +59,12 @@ void ProfileLogger::convertFunctionProfileMapTToProtobufFunctionProfile(
 }
 
 void ProfileLogger::serializeToFile(const std::string &FileName) {
+
+  if (this->BBCount == 0) {
+    // There is no file traced.
+    return;
+  }
+
   this->ProtobufProfile.set_name("Whatever");
   auto &ProtobufFuncs = *(ProtobufProfile.mutable_funcs());
   this->convertFunctionProfileMapTToProtobufFunctionProfile(Profile,
@@ -98,8 +107,8 @@ void ProfileLogger::serializeToFile(const std::string &FileName) {
   }
 
   // std::string OutString;
-  // google::protobuf::TextFormat::PrintToString(ProtobufProfile, &OutString);
-  // std::cout << OutString << std::endl;
+  // google::protobuf::TextFormat::PrintToString(ProtobufProfile,
+  // &OutString); std::cout << OutString << std::endl;
 
   std::cout << "Profiled Basic Block #" << BBCount << std::endl;
 }

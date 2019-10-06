@@ -159,6 +159,9 @@ class Benchmark(object):
     def get_profile_bin(self):
         return '{name}.profiled.exe'.format(name=self.get_name())
 
+    def get_profile_roi(self):
+        return TraceFlagEnum.GemForgeTraceROI.All.value
+
     def get_trace_bc(self):
         return '{name}.traced.bc'.format(name=self.get_name())
 
@@ -184,7 +187,7 @@ class Benchmark(object):
         return '{name}.valid.exe'.format(name=self.get_name())
 
     def get_profile(self):
-        return '{name}.profile'.format(name=self.get_name())
+        return '{name}.pf.profile'.format(name=self.get_name())
 
     def get_traces(self):
         return self.traces
@@ -272,6 +275,13 @@ class Benchmark(object):
 
     def profile(self):
         os.chdir(self.get_exe_path())
+        # Copy bc from workpath.
+        Util.call_helper([
+            'cp',
+            '-f',
+            os.path.join(self.get_run_path(), self.get_raw_bc()),
+            '.',
+        ])
         self.build_profile()
         self.run_profile()
         os.chdir(self.cwd)
@@ -366,7 +376,7 @@ class Benchmark(object):
     Construct the profiled binary.
     """
 
-    def build_profile(self, link_stdlib=False, trace_reachable_only=False, debugs=[]):
+    def build_profile(self, link_stdlib=False, trace_reachable_only=False):
         # Notice that profile does not generate inst uid.
         bc = self.get_profile_bc()
         trace_cmd = [
@@ -384,10 +394,9 @@ class Benchmark(object):
             trace_cmd.append('-trace-function=' + self.get_trace_func())
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
-        if debugs:
-            print(debugs)
+        if self.options.transform_debug:
             trace_cmd.append(
-                '-debug-only={debugs}'.format(debugs=','.join(debugs)))
+                '-debug-only={debugs}'.format(debugs=self.options.transform_debug))
         print('# Instrumenting profiler...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
@@ -433,7 +442,8 @@ class Benchmark(object):
         os.putenv('LLVM_TDG_TRACE_MODE', str(
             TraceFlagEnum.GemForgeTraceMode.Profile.value
         ))
-        os.putenv('LLVM_TDG_TRACE_FILE', self.get_name())
+        os.putenv('LLVM_TDG_TRACE_ROI', str(self.get_profile_roi()))
+        os.putenv('LLVM_TDG_TRACE_FILE', self.get_name() + '.pf')
         os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
         os.putenv('LLVM_TDG_HARD_EXIT_IN_BILLION',
                   str(self.get_hard_exit_in_billion()))
@@ -692,7 +702,7 @@ class Benchmark(object):
         transformed_exe = self.get_replay_exe(transform_config, trace, 'exe')
         link_cmd = [
             os.path.join(C.RISCV_GNU_INSTALL_PATH,
-                         'bin/riscv64-unknown-linux-gnu-gcc'),
+                         'bin/riscv64-unknown-linux-gnu-g++'),
             '-static',
             '-march=rv64g',
             '-mabi=lp64d',

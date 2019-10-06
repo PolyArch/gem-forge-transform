@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-static const size_t MaxNThreads = 2;
+static const size_t MaxNThreads = 10;
 
 /**
  * Allocate a new trace file name, starting from "xxx.trace.0"
