@@ -130,3 +130,20 @@ else:
 
 HOFFMAN2_SSH_SCRATCH = 'seanzw@hoffman2.idre.ucla.edu:/u/flashscratch/s/seanzw'
 HOFFMAN2_SCRATCH = '/u/flashscratch/s/seanzw'
+
+# Additional path to look for libstdc++.
+LIBSTDCXX_SYSTEM = os.getenv('LIBSTDCXX_SYSTEM')
+LIBSTDCXX_INCLUDE = os.getenv('LIBSTDCXX_INCLUDE')
+LIBSTDCXX_LIBRARY = os.getenv('LIBSTDCXX_LIBRARY')
+
+def get_cxx_cmd(CXX):
+    if LIBSTDCXX_SYSTEM is None:
+        return [CXX]
+    return [
+        CXX,
+        '-isystem={S}'.format(S=LIBSTDCXX_SYSTEM),
+        '-I{S}'.format(S=LIBSTDCXX_INCLUDE),
+        '-L{S}'.format(S=LIBSTDCXX_LIBRARY),
+    ]
+
+

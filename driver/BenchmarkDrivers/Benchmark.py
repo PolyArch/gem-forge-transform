@@ -400,8 +400,8 @@ class Benchmark(object):
         print('# Instrumenting profiler...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
-            link_cmd = [
-                C.CXX,
+            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd += [
                 '-O3',
                 '-nostdlib',
                 '-static',
@@ -413,9 +413,8 @@ class Benchmark(object):
                 self.get_profile_bin(),
             ]
         else:
-            link_cmd = [
-                C.CXX,
-                # '-O0',
+            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd += [
                 bc,
                 self.trace_lib,
                 '-o',
@@ -531,8 +530,8 @@ class Benchmark(object):
         print('# Instrumenting tracer...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
-            link_cmd = [
-                C.CXX,
+            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd += [
                 '-O3',
                 '-nostdlib',
                 '-static',
@@ -544,9 +543,9 @@ class Benchmark(object):
                 self.get_trace_bin(),
             ]
         else:
-            link_cmd = [
-                C.CXX,
-                # '-O3',
+            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd += [
+		'-v',
                 self.get_trace_bc(),
                 self.trace_lib,
                 '-o',
