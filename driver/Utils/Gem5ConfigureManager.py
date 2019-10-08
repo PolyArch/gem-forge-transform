@@ -108,12 +108,15 @@ class Gem5ReplayConfigureManager(object):
             with open(fn, 'r') as f:
                 json_obj = json.load(f)
                 assert('options' in json_obj)
-                assert('id' in json_obj)
-                # Prepend the id with the folder structure.
+                # Generate the id from folder.fn
                 relative_folder = os.path.dirname(
                     os.path.relpath(fn, self.simulation_folder_root))
-                json_obj['id'] = relative_folder.replace(
-                    os.sep, '.') + '.' + json_obj['id']
+                id_prefix = relative_folder.replace(os.sep, '.')
+                id_body = os.path.basename(fn)[:-5]
+                json_obj['id'] = '{prefix}.{body}'.format(
+                    prefix=id_prefix,
+                    body=id_body,
+                )
             if 'design_space' in json_obj:
                 configs = self.generate_config_for_design_space(json_obj)
             else:

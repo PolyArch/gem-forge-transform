@@ -1,5 +1,4 @@
 {
-    "id": "o8",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
@@ -11,6 +10,7 @@
         "--l2_mshrs=32",
         "--l2_assoc=8",
         "--l2bus_width=32",
+        "--mem-channels=2",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2"
     ],

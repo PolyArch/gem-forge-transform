@@ -1,5 +1,4 @@
 {
-    "id": "adfa.s.unroll.bank",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
