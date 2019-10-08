@@ -1,0 +1,8 @@
+{
+    "id": "stream.ai",
+    "options": [
+        "-stream-pass",
+        "-stream-pass-choose-strategy=inner",
+        "-stream-pass-allow-aliased-stream"
+    ]
+}

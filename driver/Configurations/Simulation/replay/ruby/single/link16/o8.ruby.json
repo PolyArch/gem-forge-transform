@@ -1,0 +1,36 @@
+{
+    "id": "o8",
+    "options": [
+        "--llvm-issue-width=8",
+        "--num-cpus=4",
+        "--gem-forge-num-active-cpus=1",
+        "--l1i_size=32kB",
+        "--l1i_assoc=8",
+        "--l1d_size=32kB",
+        "--l1d_lat=2",
+        "--l1d_mshrs=8",
+        "--l1d_assoc=8",
+        "--l1_5d_size=256kB",
+        "--l1_5d_assoc=16",
+        "--l1_5d_mshrs=16",
+        "--num-dirs=4",
+        "--num-l2caches=4",
+        "--l2_size=1MB",
+        "--l2_assoc=16",
+        "--ruby",
+        "--topology=Mesh_XY",
+        "--mesh-rows=2",
+        "--network=garnet2.0",
+        "--router-latency=2",
+        "--link-latency=1",
+        "--link-width-bits=128",
+        "--llc-select-low-bit=12",
+        "--mem-channels=2",
+        "--gem-forge-cache-load-ports=2",
+        "--gem-forge-cache-store-ports=2"
+    ],
+    "support-transform-ids": [
+        "replay",
+        "valid"
+    ]
+}

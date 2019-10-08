@@ -1,0 +1,8 @@
+{
+    "id": "stream.pai",
+    "options": [
+        "-stream-prefetch-pass",
+        "-stream-pass-choose-strategy=inner",
+        "-stream-pass-allow-aliased-stream"
+    ]
+}

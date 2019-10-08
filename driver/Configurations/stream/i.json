@@ -1,0 +1,7 @@
+{
+    "id": "stream.i",
+    "options": [
+        "-stream-pass",
+        "-stream-pass-choose-strategy=inner"
+    ]
+}
