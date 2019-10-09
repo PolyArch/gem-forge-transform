@@ -187,7 +187,9 @@ class Benchmark(object):
         return '{name}.valid.exe'.format(name=self.get_name())
 
     def get_profile(self):
-        return '{name}.pf.profile'.format(name=self.get_name())
+        # This only works for single thread workloads (0 -> main thread).
+        # TODO: Search for profile for non-main thread.
+        return '{name}.pf.0.profile'.format(name=self.get_name())
 
     def get_traces(self):
         return self.traces
@@ -276,12 +278,13 @@ class Benchmark(object):
     def profile(self):
         os.chdir(self.get_exe_path())
         # Copy bc from workpath.
-        Util.call_helper([
-            'cp',
-            '-f',
-            os.path.join(self.get_run_path(), self.get_raw_bc()),
-            '.',
-        ])
+        if self.get_run_path() != self.get_exe_path():
+            Util.call_helper([
+                'cp',
+                '-f',
+                os.path.join(self.get_run_path(), self.get_raw_bc()),
+                '.',
+            ])
         self.build_profile()
         self.run_profile()
         os.chdir(self.cwd)
