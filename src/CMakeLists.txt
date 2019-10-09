@@ -41,6 +41,7 @@ add_library(LLVMTDGPass SHARED
     Gem5ProtobufSerializer.cpp
     TDGSerializer.cpp
     CacheWarmer.cpp
+    RegionStatRecorder.cpp
     # SIMD
     simd/SIMDPass.cpp
     # Abstract data flow accelerator

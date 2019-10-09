@@ -23,20 +23,27 @@ const std::unordered_set<std::string> LoopUtils::SupportedMathFunctions{
     "exp",  "sin", "sqrt", "sqrtf", "acos",
     "fabs", "abs", "rand", "log",   "lgamma"};
 
+std::unordered_map<const llvm::Loop *, bool>
+    LoopUtils::MemorizedIsLoopContinuous;
+
 std::string printLoop(const llvm::Loop *Loop) {
   return std::string(Loop->getHeader()->getParent()->getName()) +
          "::" + std::string(Loop->getName());
 }
 
-bool LoopUtils::isStaticInstLoopHead(llvm::Loop *Loop,
-                                     llvm::Instruction *StaticInst) {
+bool LoopUtils::isStaticInstLoopHead(const llvm::Loop *Loop,
+                                     const llvm::Instruction *StaticInst) {
   assert(Loop != nullptr && "Null loop for isStaticInstLoopHead.");
   return (Loop->getHeader() == StaticInst->getParent()) &&
          (StaticInst->getParent()->getFirstNonPHI() == StaticInst);
 }
 
 bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
+  if (MemorizedIsLoopContinuous.count(Loop)) {
+    return MemorizedIsLoopContinuous.at(Loop);
+  }
   // Check if there is any calls to unsupported function.
+  bool IsContinuous = true;
   for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
        BBIter != BBEnd; ++BBIter) {
     for (auto InstIter = (*BBIter)->begin(), InstEnd = (*BBIter)->end();
@@ -50,7 +57,8 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
         LLVM_DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
                                 << " is statically not continuous because it "
                                    "contains indirect call.\n");
-        return false;
+        IsContinuous = false;
+        break;
       }
       if (Callee->isIntrinsic()) {
         continue;
@@ -65,10 +73,15 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
                               << " is statically not continuous because it "
                                  "contains unsupported call to "
                               << Callee->getName() << "\n");
-      return false;
+      IsContinuous = false;
+      break;
+    }
+    if (!IsContinuous) {
+      break;
     }
   }
-  return true;
+  MemorizedIsLoopContinuous.emplace(Loop, IsContinuous);
+  return IsContinuous;
 }
 
 std::string LoopUtils::getLoopId(const llvm::Loop *Loop) {
@@ -77,7 +90,7 @@ std::string LoopUtils::getLoopId(const llvm::Loop *Loop) {
   return Utils::formatLLVMFunc(Func) + "::" + Loop->getName().str();
 }
 
-uint64_t LoopUtils::getNumStaticInstInLoop(llvm::Loop *Loop) {
+uint64_t LoopUtils::getNumStaticInstInLoop(const llvm::Loop *Loop) {
   uint64_t StaticInsts = 0;
   for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
        BBIter != BBEnd; ++BBIter) {

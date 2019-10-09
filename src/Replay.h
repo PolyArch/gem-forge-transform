@@ -6,6 +6,7 @@
 #include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
 #include "LoopUnroller.h"
+#include "RegionStatRecorder.h"
 #include "TDGSerializer.h"
 #include "Utils.h"
 
@@ -53,6 +54,7 @@ protected:
 
   TDGSerializer *Serializer;
   CacheWarmer *CacheWarmerPtr;
+  RegionStatRecorder *RegionStatRecorderPtr;
 
   llvm::Module *Module;
 
