@@ -25,5 +25,7 @@
         "--gem-forge-adfa-break-rv-dep=1",
         "--gem-forge-adfa-break-unrollable-ctr-dep=1"
     ],
-    "support-transform-ids": ["replay"]
+    "support-transform-ids": [
+        "replay"
+    ]
 }

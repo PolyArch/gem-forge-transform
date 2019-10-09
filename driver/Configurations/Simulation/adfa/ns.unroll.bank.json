@@ -3,21 +3,29 @@
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
         "--l1d_lat=2",
-        "--l1d_mshrs=4",
+        "--l1d_mshrs=8",
         "--l1d_assoc=8",
-        "--l2_size=1MB",
+        "--l1_5dcache",
+        "--l1_5d_size=256kB",
+        "--l1_5d_assoc=16",
+        "--l1_5d_mshrs=16",
+        "--l2_size=8MB",
         "--l2_lat=20",
-        "--l2_mshrs=32",
+        "--l2_mshrs=20",
         "--l2_assoc=8",
-        "--l2bus_width=32",
-        "--gem-forge-adfa-core-issue-width=16",
+        "--l2bus_width=16",
+        "--mem-channels=2",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2",
+        "--gem-forge-adfa-enable",
+        "--gem-forge-adfa-core-issue-width=16",
         "--gem-forge-adfa-num-ports-per-bank=2",
         "--gem-forge-adfa-num-banks=4",
         "--gem-forge-adfa-break-iv-dep=1",
         "--gem-forge-adfa-break-rv-dep=1",
         "--gem-forge-adfa-break-unrollable-ctr-dep=1"
     ],
-    "support-transform-ids": ["adfa"]
+    "support-transform-ids": [
+        "replay"
+    ]
 }

@@ -22,5 +22,7 @@
         "--gem-forge-adfa-num-ports-per-bank=2",
         "--gem-forge-adfa-num-banks=1"
     ],
-    "support-transform-ids": ["replay"]
+    "support-transform-ids": [
+        "replay"
+    ]
 }
