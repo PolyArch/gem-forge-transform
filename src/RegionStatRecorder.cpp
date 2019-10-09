@@ -4,12 +4,13 @@
 
 void RegionStatRecorder::addInst(const llvm::Loop *Region,
                                  const llvm::Instruction *StaticInst) {
-  if (!Region) {
+  if (this->CurrentRegion && !this->CurrentRegion->contains(Region)) {
     this->InRegion = false;
+  }
+  if (!Region) {
     return;
   }
   if (!LoopUtils::isLoopContinuous(Region)) {
-    this->InRegion = false;
     return;
   }
   // Allocate and update the stats.
