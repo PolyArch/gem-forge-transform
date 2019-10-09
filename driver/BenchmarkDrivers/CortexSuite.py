@@ -9,30 +9,33 @@ import os
 
 class CortexBenchmark(Benchmark):
 
+    O2 = ['O2']
+    O2_NO_VECTORIZE = ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops']
+
     FLAGS_STREAM = {
         # Advanced stream experiments.
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
-        'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sphinx': ['O2'],
-        'srr': ['O2'],
-        'lda': ['O2'],
-        'svd3': ['O2'],
-        'pca': ['O2'],
-        'motion-estimation': ['O2'],
-        'liblinear': ['O2'],
+        'rbm'              : O2_NO_VECTORIZE,
+        'sphinx'           : O2_NO_VECTORIZE,
+        'srr'              : O2_NO_VECTORIZE,
+        'lda'              : O2_NO_VECTORIZE,
+        'svd3'             : O2_NO_VECTORIZE,
+        'pca'              : O2_NO_VECTORIZE,
+        'motion-estimation': O2_NO_VECTORIZE,
+        'liblinear'        : O2_NO_VECTORIZE,
     }
 
     FLAGS_FRACTAL = {
         # Fractal experiments.
-        'rbm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sphinx': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'srr': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'lda': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'svd3': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'pca': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'motion-estimation': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'liblinear': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'rbm'              : O2_NO_VECTORIZE,
+        'sphinx'           : O2_NO_VECTORIZE,
+        'srr'              : O2_NO_VECTORIZE,
+        'lda'              : O2_NO_VECTORIZE,
+        'svd3'             : O2_NO_VECTORIZE,
+        'pca'              : O2_NO_VECTORIZE,
+        'motion-estimation': O2_NO_VECTORIZE,
+        'liblinear'        : O2_NO_VECTORIZE,
     }
 
     DEFINES = {

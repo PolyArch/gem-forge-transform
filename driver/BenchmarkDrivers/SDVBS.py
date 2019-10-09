@@ -6,32 +6,89 @@ from Utils import TraceFlagEnum
 
 import os
 
+"""
+disparity.fullhd
+26% finalSAD
+24% integralImage2D2D
+17% padarray4
+16% computeSAD
+14% findDisparity
+
+=================================
+localization.fullhd
+82% weightedSample
+
+=================================
+mser.fullhd
+96% mser 
+
+=================================
+multi_ncut.fullhd
+90% fSortIndices 
+
+=================================
+sift.fullhd
+95% imsmooth 
+    2D convolution.
+
+=================================
+stitch.fullhd
+47% ffConv2 
+    2D convolution.
+25% getANMS
+19% fDeepCopy
+
+=================================
+svm.fullhd
+33% calc_learned_func
+28% fMtimes
+26% polynomial
+10% fDeepCopyRange
+
+=================================
+texture_synthesis.fullhd
+52% compare_neighb
+41% compare_rest
+
+=================================
+tracking.fullhd
+27% imageBlur 
+20% calcSobel_dY
+18% calcSobel_dX
+10% imageResize
+
+"""
+
 
 class SDVBSBenchmark(Benchmark):
+
+    O2 = ['O2']
+    O2_NO_VECTORIZE = ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops']
+
     # Fractal experiments.
     FLAGS_FRACTAL = {
-        'disparity': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'localization': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'mser': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sift': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'stitch': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'svm': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'texture_synthesis': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        # 'tracking': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
+        'disparity'        : O2_NO_VECTORIZE,
+        'localization'     : O2_NO_VECTORIZE,
+        'mser'             : O2_NO_VECTORIZE,
+        'multi_ncut'       : O2_NO_VECTORIZE,
+        'sift'             : O2_NO_VECTORIZE,
+        'stitch'           : O2_NO_VECTORIZE,
+        'svm'              : O2_NO_VECTORIZE,
+        'texture_synthesis': O2_NO_VECTORIZE,
+        'tracking'         : O2_NO_VECTORIZE,
     }
 
     # Stream experiments.
     FLAGS_STREAM = {
-        'disparity': ['O2'],
-        'localization': ['O2'],
-        'mser': ['O2'],
-        'multi_ncut': ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops'],
-        'sift': ['O2'],
-        'stitch': ['O2'],
-        'svm': ['O2'],
-        'texture_synthesis': ['O2'],
-        'tracking': ['O2'],
+        'disparity'        : O2_NO_VECTORIZE,
+        'localization'     : O2_NO_VECTORIZE,
+        'mser'             : O2_NO_VECTORIZE,
+        'multi_ncut'       : O2_NO_VECTORIZE,
+        'sift'             : O2_NO_VECTORIZE,
+        'stitch'           : O2_NO_VECTORIZE,
+        'svm'              : O2_NO_VECTORIZE,
+        'texture_synthesis': O2_NO_VECTORIZE,
+        'tracking'         : O2_NO_VECTORIZE,
     }
 
     DEFINES = {
