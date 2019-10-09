@@ -43,13 +43,13 @@ public:
   /**
    * Determine if the static inst is the head of a loop.
    */
-  static bool isStaticInstLoopHead(llvm::Loop *Loop,
-                                   llvm::Instruction *StaticInst);
+  static bool isStaticInstLoopHead(const llvm::Loop *Loop,
+                                   const llvm::Instruction *StaticInst);
 
   /**
    * Count the number of instructions in a loop, excluding PHINodes.
    */
-  static uint64_t getNumStaticInstInLoop(llvm::Loop *Loop);
+  static uint64_t getNumStaticInstInLoop(const llvm::Loop *Loop);
 
   /**
    * Count the number of possible path from the header of the loop to exit.
@@ -72,6 +72,8 @@ private:
       const llvm::Loop *Loop,
       std::unordered_set<const llvm::BasicBlock *> &OnPathBBs,
       const llvm::BasicBlock *CurrentBB);
+
+  static std::unordered_map<const llvm::Loop *, bool> MemorizedIsLoopContinuous;
 };
 
 class LoopIterCounter {

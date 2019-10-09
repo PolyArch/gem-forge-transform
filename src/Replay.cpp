@@ -111,7 +111,7 @@ public:
 ReplayTrace::ReplayTrace(char _ID)
     : llvm::ModulePass(_ID), Trace(nullptr), OutTraceName("llvm.tdg"),
       OutputExtraFolderPath("llvm.tdg.extra"), Serializer(nullptr),
-      CacheWarmerPtr(nullptr) {}
+      CacheWarmerPtr(nullptr), RegionStatRecorderPtr(nullptr) {}
 
 ReplayTrace::~ReplayTrace() {}
 
@@ -197,6 +197,7 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
       this->OutTraceName, GemForgeOutputDataGraphTextMode.getValue());
   this->CacheWarmerPtr = new CacheWarmer(this->OutputExtraFolderPath,
                                          this->OutTraceName + ".cache");
+  this->RegionStatRecorderPtr = new RegionStatRecorder();
 
   // Initialize the static information.
   this->computeStaticInfo();
@@ -217,6 +218,8 @@ bool ReplayTrace::finalize(llvm::Module &Module) {
                           << this->CacheWarmerPtr << '\n');
   delete this->CacheWarmerPtr;
   this->CacheWarmerPtr = nullptr;
+  delete this->RegionStatRecorderPtr;
+  this->RegionStatRecorderPtr = nullptr;
   LLVM_DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
   delete this->Trace;
   this->Trace = nullptr;
@@ -703,6 +706,10 @@ void ReplayTrace::transform() {
       if (Utils::isMemAccessInst(StaticInst)) {
         this->CacheWarmerPtr->addAccess(*Iter, this->Trace->DataLayout);
       }
+      // Update the region stats.
+      auto Loop = this->CachedLI->getLoopInfo(StaticInst->getFunction())
+                      ->getLoopFor(StaticInst->getParent());
+      this->RegionStatRecorderPtr->addInst(Loop, StaticInst);
       if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(StaticInst)) {
         // Collect the called function stats.
         auto Callee = CallInst->getCalledFunction();
@@ -771,6 +778,8 @@ void ReplayTrace::dumpStats(std::ostream &O) {
       O << CalledFunc.second << ' ' << "Annoymous Function" << '\n';
     }
   }
+
+  this->RegionStatRecorderPtr->dumpStats(O);
 }
 
 #undef DEBUG_TYPE
