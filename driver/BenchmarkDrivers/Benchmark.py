@@ -201,30 +201,6 @@ class Benchmark(object):
         """
         return 10
 
-    def get_trace_fn(self, trace_id):
-        trace_fn = '{run_path}/{name}.{i}.trace'.format(
-            run_path=self.get_run_path(),
-            name=self.get_name(),
-            i=trace_id)
-        return trace_fn
-
-    """
-    Find the trace ids. The default implementation will search
-    in the run_path. Derived class can override this behavior.
-    """
-
-    def init_trace_ids(self):
-        trace_ids = list()
-        trace_id = 0
-        while True:
-            trace_fn = self.get_trace_fn(trace_id)
-            if os.path.isfile(trace_fn):
-                trace_ids.append(trace_id)
-                trace_id += 1
-            else:
-                break
-        return trace_ids
-
     def init_traces(self):
         """
         Originally for single thread workloads, the trace id will
