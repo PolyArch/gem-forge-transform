@@ -1,5 +1,4 @@
 {
-    "id": "stream.o8.ch2.l3.lsq.coalesce.gb.cache",
     "options": [
         "--llvm-issue-width=8",
         "--l1d_size=32kB",
@@ -22,13 +21,13 @@
         "--gem-forge-stream-engine-max-total-run-ahead-length=256",
         "--gem-forge-stream-engine-enable-lsq",
         "--gem-forge-stream-engine-enable-coalesce",
-        "--gem-forge-stream-engine-throttling=global",
-        "--gem-forge-stream-engine-placement=placement-expr-fp#imm.sub.rst"
+        "--gem-forge-stream-engine-throttling=global"
     ],
     "support-transform-ids": [
         "stream",
         "stream.alias",
-        "stream.inner",
+        "stream.i",
+        "stream.ai",
         "stream.static-outer"
     ]
 }
