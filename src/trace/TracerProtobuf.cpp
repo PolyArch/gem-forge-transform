@@ -47,7 +47,7 @@ inline google::protobuf::io::CodedOutputStream &getTraceFile(int tid) {
 static uint64_t count = 0;
 
 void cleanup(int tid) {
-  std::cout << "Clean up." << std::endl;
+  std::cout << "Clean up tid " << tid << ".\n";
   auto &ts = states.at(tid);
   if (ts.o.is_open()) {
     delete ts.codedStream;
