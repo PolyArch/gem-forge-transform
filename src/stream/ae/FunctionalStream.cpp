@@ -45,10 +45,7 @@ void FunctionalStream::configure(DataGraph *DG) {
   LLVM_DEBUG(llvm::errs() << '\n');
 }
 
-void FunctionalStream::step(DataGraph *DG) {
-  static int StackDepth = 0;
-  StackDepth++;
-
+void FunctionalStream::updateHistory() {
   /**
    * Remember to update the history entry before we step.
    * Note that our idx starts from 1.
@@ -65,6 +62,13 @@ void FunctionalStream::step(DataGraph *DG) {
   History->set_valid(this->IsAddressValid);
   History->set_addr(this->CurrentAddress);
   History->set_used(this->CurrentEntryUsed);
+}
+
+void FunctionalStream::step(DataGraph *DG) {
+  static int StackDepth = 0;
+  StackDepth++;
+
+  this->updateHistory();
 
   /**
    * Add the memory footprint.
@@ -121,6 +125,10 @@ void FunctionalStream::setValue(const DynamicValue &DynamicVal) {
 }
 
 void FunctionalStream::endStream() {
+
+  // We need to record the last element value.
+  this->updateHistory();
+
   // Add footprint information.
   if (this->S->SStream->Type == StaticStream::TypeT::MEM) {
     this->CurrentProtobufHistory->set_num_cache_lines(
