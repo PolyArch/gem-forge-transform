@@ -207,6 +207,11 @@ bool MemStream::isCandidate() const {
     // More than 1 step streams.
     return false;
   }
+
+  // ! Ignore constant stream.
+  if (this->BaseStepRootStreams.size() == 0) {
+    return false;
+  }
   return true;
 }
 
