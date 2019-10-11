@@ -713,7 +713,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
       printf("%s (%u) -> ", tts.stackName[i], tts.stack[i]);
     }
     printf(" %s %u %s\n", BBName, Id, OpCodeName);
-    if (tts.count % PRINT_INTERVAL == 0) {
+    if (tts.count % PRINT_INTERVAL == 4) {
       printf("\n");
     }
   }
