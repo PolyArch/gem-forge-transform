@@ -210,17 +210,30 @@ class Benchmark(object):
         the main thread always be assigned to 0.
         We find all traces and sort them to have a consistant scalar
         trace id assigned to all traces.
+        ! Notice that we can't sort directly, which will mess the 
+        ! relationship between the trace and simpoint weight for
+        ! single-thread workload.
         """
         trace_fns = glob.glob(os.path.join(
             self.get_run_path(),
             '{name}.*.trace'.format(name=self.get_name())
         ))
         # Sort them.
-        trace_fns.sort()
+        def sort_by(a, b):
+            a_fields = a.split('.')
+            b_fields = b.split('.')
+            a_thread_id = int(a_fields[-3])
+            b_thread_id = int(b_fields[-3])
+            a_trace_id = int(a_fields[-2])
+            b_trace_id = int(b_fields[-2])
+            if a_thread_id == b_thread_id:
+                return a_trace_id - b_trace_id
+            else:
+                return a_thread_id - b_thread_id
+        trace_fns.sort(cmp=sort_by)
         self.traces = list()
         for trace_id in range(len(trace_fns)):
             trace_fn = trace_fns[trace_id]
-            print(trace_fn, trace_id)
             # Ignore the trace id not specified by the user.
             if self.options.trace_id:
                 if trace_id not in self.options.trace_id:
