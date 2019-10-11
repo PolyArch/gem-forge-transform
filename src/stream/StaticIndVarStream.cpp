@@ -187,6 +187,8 @@ void StaticIndVarStream::analyzeIsCandidate() {
     }
     this->IsCandidate = true;
 
+#ifdef GenerateIVPattern
+    // ! Disable it for now as it's too fragile.
     /**
      * If this is LINEAR pattern, we generate the parameters.
      */
@@ -265,7 +267,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
         assert(false && "Cannot generate IVPattern for LINEAR IV Stream.");
       }
     }
-
+#endif
     return;
   }
 
@@ -287,6 +289,9 @@ void StaticIndVarStream::addInputParam(const llvm::SCEV *SCEV, bool Signed) {
   } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {
     ProtoParam->set_valid(false);
     this->InputValues.push_back(UnknownSCEV->getValue());
+  } else if (auto ZExtSCEV = llvm::dyn_cast<llvm::SCEVZeroExtendExpr>(SCEV)) {
+    // Ignore the ZExtSCEV?
+    this->addInputParam(ZExtSCEV->getOperand(), Signed);
   } else {
     // Search through the child compute nodes.
     const auto &PHIMNode = this->PHIMetaNodes.front();
