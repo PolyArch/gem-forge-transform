@@ -187,93 +187,96 @@ void StaticIndVarStream::analyzeIsCandidate() {
     }
     this->IsCandidate = true;
 
-#ifdef GenerateIVPattern
-    // ! Disable it for now as it's too fragile.
-    /**
-     * If this is LINEAR pattern, we generate the parameters.
-     */
-    if (this->StaticStreamInfo.val_pattern() ==
-        LLVM::TDG::StreamValuePattern::LINEAR) {
-      // Careful, we should use SCEV for ourselve to get correct start value.
-      auto PHINodeSCEV = this->SE->getSCEV(this->PHINode);
-      if (auto PHINodeAddRecSCEV =
-              llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
-        this->InputValuesValid = true;
-        auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
-        ProtoIVPattern->set_val_pattern(LLVM::TDG::StreamValuePattern::LINEAR);
-
-        /**
-         * Linear pattern has two parameters, base and stride.
-         * TODO: Handle non-constant params in the future.
-         */
-        auto BaseSCEV = PHINodeAddRecSCEV->getStart();
-        this->addInputParam(BaseSCEV, false);
-        auto StrideSCEV = PHINodeAddRecSCEV->getOperand(1);
-        this->addInputParam(StrideSCEV, true);
-      } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(
-                     FirstNonEmptyComputeMNode->SCEV)) {
-        llvm::errs() << "FirstNonEmptyComputeMNode->SCEV is ";
-        PHINodeSCEV->print(llvm::errs());
-        llvm::errs() << '\n';
-
-        this->InputValuesValid = true;
-        auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
-        ProtoIVPattern->set_val_pattern(LLVM::TDG::StreamValuePattern::LINEAR);
-
-        /**
-         * If one of the operand is loop invariant, and the other one is our
-         * PHINode, then we can handle this as LINEAR.
-         */
-
-        auto NumOperands = AddSCEV->getNumOperands();
-        assert(NumOperands == 2 && "More than 2 operands for AddSCEV.");
-        const llvm::SCEV *LoopVariantSCEV = nullptr;
-        const llvm::SCEV *LoopInvariantSCEV = nullptr;
-        for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
-          auto OpSCEV = AddSCEV->getOperand(OperandIdx);
-          if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
-            // Loop invariant.
-            assert(!LoopInvariantSCEV && "More than one LoopInvariantSCEV.");
-            LoopInvariantSCEV = OpSCEV;
-          } else {
-            assert(!LoopVariantSCEV && "More than one LoopVariantSCEV.");
-            LoopVariantSCEV = OpSCEV;
-          }
-        }
-        // Check if the other one is myself.
-        assert(LoopVariantSCEV == PHINodeSCEV &&
-               "LoopVariantSCEV must be myself.");
-
-        // The base should be the incoming value of PHINode.
-        for (unsigned IncomingIdx = 0,
-                      NumIncomingValues = PHINode->getNumIncomingValues();
-             IncomingIdx != NumIncomingValues; ++IncomingIdx) {
-          auto BB = PHINode->getIncomingBlock(IncomingIdx);
-          if (this->InnerMostLoop->contains(BB)) {
-            continue;
-          }
-          auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
-          assert(ProtoIVPattern->params_size() == 0 &&
-                 "More than one base value.");
-          auto IncomingComputeMNode =
-              this->ConstructedComputeMetaNodeMap.at(IncomingValue);
-          assert(IncomingComputeMNode->SCEV && "No SCEV for incoming value.");
-          this->addInputParam(IncomingComputeMNode->SCEV, false /* Signed */);
-        }
-
-        // The stride should be the LoopInvariantSCEV.
-        this->addInputParam(LoopInvariantSCEV, true /* Signed */);
-      } else {
-        assert(false && "Cannot generate IVPattern for LINEAR IV Stream.");
-      }
-    }
-#endif
+    this->generateIVPattern(FirstNonEmptyComputeMNode);
     return;
   }
 
   llvm::errs() << "Done\n";
 
   this->IsCandidate = true;
+}
+
+void StaticIndVarStream::generateIVPattern(
+    const ComputeMetaNode *FirstNonEmptyComputeMNode) {
+
+  if (this->StaticStreamInfo.val_pattern() !=
+      LLVM::TDG::StreamValuePattern::LINEAR) {
+    return;
+  }
+
+  /**
+   * If this is LINEAR pattern, we generate the parameters.
+   */
+  // Careful, we should use SCEV for ourselve to get correct start value.
+  auto PHINodeSCEV = this->SE->getSCEV(this->PHINode);
+  if (auto PHINodeAddRecSCEV =
+          llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
+    this->InputValuesValid = true;
+    auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
+    ProtoIVPattern->set_val_pattern(LLVM::TDG::StreamValuePattern::LINEAR);
+
+    /**
+     * Linear pattern has two parameters, base and stride.
+     * TODO: Handle non-constant params in the future.
+     */
+    auto BaseSCEV = PHINodeAddRecSCEV->getStart();
+    this->addInputParam(BaseSCEV, false);
+    auto StrideSCEV = PHINodeAddRecSCEV->getOperand(1);
+    this->addInputParam(StrideSCEV, true);
+  } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(
+                 FirstNonEmptyComputeMNode->SCEV)) {
+    llvm::errs() << "FirstNonEmptyComputeMNode->SCEV is ";
+    PHINodeSCEV->print(llvm::errs());
+    llvm::errs() << '\n';
+
+    this->InputValuesValid = true;
+    auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
+    ProtoIVPattern->set_val_pattern(LLVM::TDG::StreamValuePattern::LINEAR);
+
+    /**
+     * If one of the operand is loop invariant, and the other one is our
+     * PHINode, then we can handle this as LINEAR.
+     */
+
+    auto NumOperands = AddSCEV->getNumOperands();
+    assert(NumOperands == 2 && "More than 2 operands for AddSCEV.");
+    const llvm::SCEV *LoopVariantSCEV = nullptr;
+    const llvm::SCEV *LoopInvariantSCEV = nullptr;
+    for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
+      auto OpSCEV = AddSCEV->getOperand(OperandIdx);
+      if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
+        // Loop invariant.
+        assert(!LoopInvariantSCEV && "More than one LoopInvariantSCEV.");
+        LoopInvariantSCEV = OpSCEV;
+      } else {
+        assert(!LoopVariantSCEV && "More than one LoopVariantSCEV.");
+        LoopVariantSCEV = OpSCEV;
+      }
+    }
+    // Check if the other one is myself.
+    assert(LoopVariantSCEV == PHINodeSCEV && "LoopVariantSCEV must be myself.");
+
+    // The base should be the incoming value of PHINode.
+    for (unsigned IncomingIdx = 0,
+                  NumIncomingValues = PHINode->getNumIncomingValues();
+         IncomingIdx != NumIncomingValues; ++IncomingIdx) {
+      auto BB = PHINode->getIncomingBlock(IncomingIdx);
+      if (this->InnerMostLoop->contains(BB)) {
+        continue;
+      }
+      auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
+      assert(ProtoIVPattern->params_size() == 0 && "More than one base value.");
+      auto IncomingComputeMNode =
+          this->ConstructedComputeMetaNodeMap.at(IncomingValue);
+      assert(IncomingComputeMNode->SCEV && "No SCEV for incoming value.");
+      this->addInputParam(IncomingComputeMNode->SCEV, false /* Signed */);
+    }
+
+    // The stride should be the LoopInvariantSCEV.
+    this->addInputParam(LoopInvariantSCEV, true /* Signed */);
+  } else {
+    assert(false && "Cannot generate IVPattern for LINEAR IV Stream.");
+  }
 }
 
 void StaticIndVarStream::addInputParam(const llvm::SCEV *SCEV, bool Signed) {
