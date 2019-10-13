@@ -57,7 +57,7 @@ class SDVBSValidBenchmark(SDVBSBenchmark):
         os.putenv('LLVM_TDG_TRACE_MODE', str(TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
         os.putenv('LLVM_TDG_TRACE_ROI', str(TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
 
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
     def get_additional_gem5_simulate_command(self):

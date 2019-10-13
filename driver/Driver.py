@@ -531,6 +531,8 @@ if __name__ == '__main__':
 
     parser.add_option('--input-size', type='string', action='store',
                       dest='input_size', default=None)
+    parser.add_option('--sim-input-size', type='string', action='store',
+                      dest='sim_input_size', default=None)
 
     parser.add_option('--stream-plot', type='string', action='callback',
                       dest='stream_plot', callback=parse_stream_plot)

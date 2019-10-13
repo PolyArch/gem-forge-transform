@@ -117,9 +117,6 @@ class ParsecBenchmark(Benchmark):
     def get_lang(self):
         return 'CPP'
 
-    def get_raw_bc(self):
-        return '{name}.bc'.format(name=self.get_name())
-
     def get_exe_path(self):
         return self.exe_path
 
@@ -196,7 +193,7 @@ class ParsecBenchmark(Benchmark):
             TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
         os.putenv('LLVM_TDG_TRACE_ROI', str(
             TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
-        self.run_trace(self.get_name())
+        self.run_trace()
 
         os.chdir(self.cwd)
 

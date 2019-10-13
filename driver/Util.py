@@ -21,6 +21,12 @@ def mkdir_p(path):
     call_helper(['mkdir', '-p', path])
 
 
+def mkdir_f(path):
+    if os.path.isdir(path):
+        call_helper(['rm', '-r', path])
+    mkdir_p(path)
+
+
 def mkdir_chain(path):
     if os.path.isdir(path):
         return

@@ -131,9 +131,6 @@ class SPEC2017Benchmark(Benchmark):
     def get_run_path(self):
         return self.run_path
 
-    def get_raw_bc(self):
-        return self.target + '.bc'
-
     def get_hard_exit_in_billion(self):
         if self.get_name() == 'spec.620.omnetpp_s':
             return 50
@@ -307,9 +304,9 @@ class SPEC2017Benchmark(Benchmark):
         os.putenv('LLVM_TDG_TRACE_MODE', str(
             TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value
         ))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.putenv('LLVM_TDG_INTERVALS_FILE', self.get_simpoint_abs())
         os.unsetenv('LLVM_TDG_TRACE_ROI')
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
     def get_additional_gem5_simulate_command(self):

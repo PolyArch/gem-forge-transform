@@ -10,7 +10,7 @@ import os
 
 
 class SimPoint:
-    def __init__(self, fn):
+    def __init__(self, fn, out_fn):
         self.fn = fn
         self.directory = os.path.dirname(fn)
         self.profile = ProfileMessage_pb2.Profile()
@@ -29,7 +29,7 @@ class SimPoint:
         self.X_projected = self._PCA(15)
         self._kmeans(15)
         self._findSimPoints()
-        self._dumpSimPoints()
+        self._dumpSimPoints(out_fn)
 
     def _createBBVMap(self):
         self.static_bb_count = 0
@@ -161,9 +161,9 @@ class SimPoint:
         self.weights = dict(
             zip(unique, [v / float(sum(counts)) for v in counts]))
 
-    def _dumpSimPoints(self):
-        print('dumpSimPoints')
-        points = open(os.path.join(self.directory, 'simpoints.txt'), 'w')
+    def _dumpSimPoints(self, out_fn):
+        print('dumpSimPoints to {out_fn}.'.format(out_fn=out_fn))
+        points = open(out_fn, 'w')
 
         for i in xrange(len(self.simpoints)):
             simpoint = self.simpoints[i]

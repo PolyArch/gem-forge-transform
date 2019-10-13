@@ -274,9 +274,6 @@ class CortexBenchmark(Benchmark):
     def get_run_path(self):
         return self.work_path
 
-    def get_raw_bc(self):
-        return '{name}.bc'.format(name=self.get_name())
-
     def find_all_sources(self, folder):
         sources = list()
         for root, dirs, files in os.walk(folder):
@@ -342,10 +339,10 @@ class CortexBenchmark(Benchmark):
         os.putenv('LLVM_TDG_TRACE_MODE', str(
             TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value
         ))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.putenv('LLVM_TDG_INTERVALS_FILE', self.get_simpoint_abs())
         os.unsetenv('LLVM_TDG_TRACE_ROI')
 
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
 

@@ -236,9 +236,6 @@ class MediaBenchmark(Benchmark):
     def get_run_path(self):
         return self.work_path
 
-    def get_raw_bc(self):
-        return '{name}.bc'.format(name=self.get_name())
-
     def get_perf_frequency(self):
         # multi_ncut runs for too long.
         if 'multi_ncut' in self.get_name():
@@ -313,7 +310,7 @@ class MediaBenchmark(Benchmark):
             TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
         os.putenv('LLVM_TDG_TRACE_ROI', str(TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
 
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
     def get_additional_gem5_simulate_command(self):

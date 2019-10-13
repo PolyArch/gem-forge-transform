@@ -127,9 +127,6 @@ class SPUBenchmark(Benchmark):
     def get_trace_ids(self):
         return [0]
 
-    def get_raw_bc(self):
-        return '{name}.bc'.format(name=self.get_name())
-
     def build_raw_bc(self):
         # By defining the TEST we control which test cases
         # we want to run.
@@ -154,7 +151,7 @@ class SPUBenchmark(Benchmark):
             trace_reachable_only=self.trace_stdlib,
             # debugs=['TracePass']
         )
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
 

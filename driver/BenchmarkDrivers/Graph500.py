@@ -58,9 +58,6 @@ class Graph500Benchmark(Benchmark):
     def get_lang(self):
         return 'C'
 
-    def get_raw_bc(self):
-        return '{name}.bc'.format(name=self.get_name())
-
     def get_exe_path(self):
         return self.work_path
 
@@ -136,10 +133,10 @@ class Graph500Benchmark(Benchmark):
         # For this benchmark, we only trace the target function.
         os.putenv('LLVM_TDG_TRACE_MODE', str(
             TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
+        os.putenv('LLVM_TDG_INTERVALS_FILE', self.get_simpoint_abs())
         os.putenv('LLVM_TDG_TRACE_ROI', str(
             TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
 

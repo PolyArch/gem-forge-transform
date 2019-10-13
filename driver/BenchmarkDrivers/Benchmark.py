@@ -18,13 +18,13 @@ class BenchmarkArgs(object):
 
 
 class TraceObj(object):
-    def __init__(self, fn, trace_id):
+    def __init__(self, fn, trace_id, simpoint_fn):
         self.fn = fn
         self.trace_id = trace_id
         self.lhs = 0
         self.rhs = 0
         self.weight = 1
-        self._init_simpoints_info()
+        self._init_simpoints_info(simpoint_fn)
         print('Find trace {weight}: {fn}'.format(
             weight=self.weight, fn=self.fn))
 
@@ -37,13 +37,11 @@ class TraceObj(object):
     def get_trace_fn(self):
         return self.fn
 
-    def _init_simpoints_info(self):
+    def _init_simpoints_info(self, simpoint_fn):
         """
         Read through the simpoints file to find information for myself.
         """
-        folder = os.path.dirname(self.fn)
         try:
-            simpoint_fn = os.path.join(folder, 'simpoints.txt')
             if os.path.isfile(simpoint_fn):
                 with open(simpoint_fn, 'r') as f:
                     trace_id = 0
@@ -75,6 +73,8 @@ class Benchmark(object):
     The traces will be moved to run_path
 
     run_path/                               -- bc, profile, traces.
+    run_path/profile/                       -- profile results.
+    run_path/trace/                         -- trace results.
     run_path/transform_id/                  -- transformed data graphs.
     run_path/transform_id/simulation_id/    -- simulation results.
 
@@ -85,7 +85,6 @@ class Benchmark(object):
     get_trace_func()
     get_lang()
     get_run_path()
-    get_raw_bc() 
 
     """
 
@@ -119,10 +118,6 @@ class Benchmark(object):
     def get_run_path(self):
         return
 
-    @abc.abstractmethod
-    def get_raw_bc(self):
-        return
-
     def __init__(self, benchmark_args, standalone=True):
 
         self.transform_manager = benchmark_args.transform_manager
@@ -147,35 +142,22 @@ class Benchmark(object):
     def get_name(self):
         assert('get_name is not implemented by derived class')
 
+    def get_input_size(self):
+        # Please override if the suite has various input_size.
+        return None
+
+    def get_sim_input_size(self):
+        # Please override if the suite has various input_size.
+        return None
+
     def get_perf_frequency(self):
         return 100
 
+    def get_raw_bc(self):
+        return 'raw.bc'
+
     def get_unmodified_bin(self):
         return '{name}.exe'.format(name=self.get_name())
-
-    def get_profile_bc(self):
-        return '{name}.profiled.bc'.format(name=self.get_name())
-
-    def get_profile_bin(self):
-        return '{name}.profiled.exe'.format(name=self.get_name())
-
-    def get_profile_roi(self):
-        return TraceFlagEnum.GemForgeTraceROI.All.value
-
-    def get_trace_bc(self):
-        return '{name}.traced.bc'.format(name=self.get_name())
-
-    def get_profile_inst_uid(self):
-        return '{name}.profile.inst.uid.txt'.format(name=self.get_name())
-
-    def get_inst_uid(self):
-        return '{name}.inst.uid'.format(name=self.get_name())
-
-    def get_inst_uid_txt(self):
-        return '{name}.inst.uid.txt'.format(name=self.get_name())
-
-    def get_trace_bin(self):
-        return '{name}.traced.exe'.format(name=self.get_name())
 
     def get_replay_bc(self):
         return '{name}.replay.bc'.format(name=self.get_name())
@@ -186,13 +168,77 @@ class Benchmark(object):
     def get_valid_bin(self):
         return '{name}.valid.exe'.format(name=self.get_name())
 
+    """
+    Get some constant values for profile.
+    """
+
+    def get_profile_base(self):
+        ret = 'profile'
+        if self.get_input_size():
+            ret += '.' + self.get_input_size()
+        return ret
+
+    def get_profile_folder_abs(self):
+        return os.path.join(self.get_run_path(), self.get_profile_base())
+
+    def get_profile_bc(self):
+        return '{b}.bc'.format(b=self.get_profile_base())
+
+    def get_profile_bin(self):
+        return '{b}.exe'.format(b=self.get_profile_base())
+
+    def get_profile_inst_uid(self):
+        return os.path.join(self.get_profile_folder_abs(), 'inst.uid')
+
+    def get_profile_roi(self):
+        return TraceFlagEnum.GemForgeTraceROI.All.value
+
     def get_profile(self):
         # This only works for single thread workloads (0 -> main thread).
         # TODO: Search for profile for non-main thread.
-        return '{name}.pf.0.profile'.format(name=self.get_name())
+        return os.path.join(self.get_profile_folder_abs(), '0.profile')
+
+    """
+    Get some constant values for simpoint.
+    """
+
+    def get_simpoint_abs(self):
+        return os.path.join(self.get_profile_folder_abs(), 'simpoints.txt')
+
+    """
+    Get some constant values for trace.
+    """
+
+    def get_trace_base(self):
+        ret = 'trace'
+        if self.get_input_size():
+            ret += '.' + self.get_input_size()
+        return ret
+
+    def get_trace_folder_abs(self):
+        return os.path.join(self.get_run_path(), self.get_trace_base())
+
+    def get_trace_bc(self):
+        return '{b}.bc'.format(b=self.get_trace_base())
+
+    def get_trace_bin(self):
+        return '{b}.exe'.format(b=self.get_trace_base())
+
+    def get_trace_inst_uid(self):
+        return os.path.join(self.get_trace_folder_abs(), 'inst.uid')
+
+    def get_trace_inst_uid_txt(self):
+        return self.get_trace_inst_uid() + '.txt'
 
     def get_traces(self):
         return self.traces
+
+    def get_sim_args(self):
+        """
+        As an extension, we support execution simulation with different
+        input than the trace. Default to get_args().
+        """
+        return self.get_args()
 
     def get_hard_exit_in_billion(self):
         """
@@ -215,10 +261,11 @@ class Benchmark(object):
         ! single-thread workload.
         """
         trace_fns = glob.glob(os.path.join(
-            self.get_run_path(),
-            '{name}.*.trace'.format(name=self.get_name())
+            self.get_trace_folder_abs(),
+            '*.trace',
         ))
         # Sort them.
+
         def sort_by(a, b):
             a_fields = a.split('.')
             b_fields = b.split('.')
@@ -239,7 +286,7 @@ class Benchmark(object):
                 if trace_id not in self.options.trace_id:
                     continue
             self.traces.append(
-                TraceObj(trace_fn, trace_id)
+                TraceObj(trace_fn, trace_id, self.get_simpoint_abs())
             )
 
     def get_transform_path(self, transform_id):
@@ -249,13 +296,19 @@ class Benchmark(object):
         return [self.get_tdg(transform_config, trace) for trace in self.traces]
 
     def get_tdg(self, transform_config, trace):
-        return '{transform_path}/{name}.{transform_id}.{trace_id}.tdg'.format(
-            transform_path=self.get_transform_path(
-                transform_config.get_transform_id()),
-            name=self.get_name(),
-            transform_id=transform_config.get_transform_id(),
-            trace_id=trace.get_trace_id()
-        )
+        if self.get_input_size():
+            return '{transform_path}/{input_size}.{trace_id}.tdg'.format(
+                transform_path=self.get_transform_path(
+                    transform_config.get_transform_id()),
+                input_size=self.get_input_size(),
+                trace_id=trace.get_trace_id(),
+            )
+        else:
+            return '{transform_path}/{trace_id}.tdg'.format(
+                transform_path=self.get_transform_path(
+                    transform_config.get_transform_id()),
+                trace_id=trace.get_trace_id(),
+            )
 
     def get_tdg_extra_path(self, transform_config, trace):
         return self.get_tdg(transform_config, trace) + '.extra'
@@ -264,32 +317,10 @@ class Benchmark(object):
         transform_path = self.get_transform_path(transform_id)
         Util.mkdir_p(transform_path)
 
-    def profile(self):
-        os.chdir(self.get_exe_path())
-        # Copy bc from workpath.
-        if self.get_run_path() != self.get_exe_path():
-            Util.call_helper([
-                'cp',
-                '-f',
-                os.path.join(self.get_run_path(), self.get_raw_bc()),
-                '.',
-            ])
-        self.build_profile()
-        self.run_profile()
-        os.chdir(self.cwd)
-
     def simpoint(self):
         os.chdir(self.get_exe_path())
         print('Doing simpoints')
-        SimPoint.SimPoint(self.get_profile())
-        # Copy the result to run_path.
-        if self.get_exe_path() != self.get_run_path():
-            simpont_fn = 'simpoints.txt'
-            Util.call_helper([
-                'cp',
-                simpont_fn,
-                self.get_run_path()
-            ])
+        SimPoint.SimPoint(self.get_profile(), self.get_simpoint_abs())
         os.chdir(self.cwd)
 
     def perf(self):
@@ -364,6 +395,23 @@ class Benchmark(object):
             Util.call_helper(opt_cmd, stdout=f)
         os.chdir(self.cwd)
 
+    def profile(self):
+        os.chdir(self.get_exe_path())
+        # Remove the existing profile.
+        profile_folder = self.get_profile_folder_abs()
+        Util.mkdir_f(profile_folder)
+        # Copy bc from workpath.
+        if self.get_run_path() != self.get_exe_path():
+            Util.call_helper([
+                'cp',
+                '-f',
+                os.path.join(self.get_run_path(), self.get_raw_bc()),
+                '.',
+            ])
+        self.build_profile()
+        self.run_profile()
+        os.chdir(self.cwd)
+
     """
     Construct the profiled binary.
     """
@@ -434,7 +482,7 @@ class Benchmark(object):
             TraceFlagEnum.GemForgeTraceMode.Profile.value
         ))
         os.putenv('LLVM_TDG_TRACE_ROI', str(self.get_profile_roi()))
-        os.putenv('LLVM_TDG_TRACE_FILE', self.get_name() + '.pf')
+        os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_profile_folder_abs())
         os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
         os.putenv('LLVM_TDG_HARD_EXIT_IN_BILLION',
                   str(self.get_hard_exit_in_billion()))
@@ -448,26 +496,15 @@ class Benchmark(object):
         # Clean the profile bin.
         os.remove(self.get_profile_bc())
         os.remove(self.get_profile_bin())
-        # Move profile result to run_path.
-        if self.get_exe_path() == self.get_run_path():
-            return
-        Util.call_helper([
-            'cp',
-            self.get_profile(),
-            self.get_run_path()
-        ])
 
     """
     Generate the trace.
     """
 
-    def run_trace(self, trace_file='llvm_trace'):
-        # Remeber to remove all the old traces.
-        Util.call_helper(
-            ['rm', '-f', '{name}.*.trace'.format(name=self.get_name())])
+    def run_trace(self):
         # Remember to set the environment for trace.
-        os.putenv('LLVM_TDG_TRACE_FILE', trace_file)
-        os.putenv('LLVM_TDG_INST_UID_FILE', self.get_inst_uid())
+        os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_trace_base())
+        os.putenv('LLVM_TDG_INST_UID_FILE', self.get_trace_inst_uid())
         run_cmd = [
             './' + self.get_trace_bin(),
         ]
@@ -478,30 +515,15 @@ class Benchmark(object):
         # Clean the trace bc and bin.
         os.remove(self.get_trace_bc())
         os.remove(self.get_trace_bin())
-        # Move all the traces to run_path.
-        if self.get_exe_path() == self.get_run_path():
-            return
-        trace_fns = glob.glob('{name}.*.trace'.format(
-            name=self.get_name(),
-        ))
-        for trace_fn in trace_fns:
-            Util.call_helper(['mv', trace_fn, self.get_run_path()])
-        Util.call_helper([
-            'mv',
-            self.get_inst_uid(),
-            self.get_run_path()
-        ])
-        Util.call_helper([
-            'mv',
-            self.get_inst_uid_txt(),
-            self.get_run_path()
-        ])
 
     """
     Construct the traced binary.
     """
 
     def build_trace(self, link_stdlib=False, trace_reachable_only=False, debugs=[]):
+        # Remeber to clear the trace folder.
+        trace_folder = self.get_trace_folder_abs()
+        Util.mkdir_f(trace_folder)
         trace_cmd = [
             C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
@@ -510,7 +532,7 @@ class Benchmark(object):
             '-o',
             self.get_trace_bc(),
             '-trace-inst-uid-file',
-            self.get_inst_uid(),
+            self.get_trace_inst_uid(),
         ]
         if self.get_trace_func() is not None and len(self.get_trace_func()) > 0:
             trace_cmd.append('-trace-function=' + self.get_trace_func())
@@ -537,7 +559,7 @@ class Benchmark(object):
         else:
             link_cmd = C.get_cxx_cmd(C.CXX)
             link_cmd += [
-		'-v',
+                '-v',
                 self.get_trace_bc(),
                 self.trace_lib,
                 '-o',
@@ -588,7 +610,7 @@ class Benchmark(object):
         opt_cmd += [
             '-trace-file={trace_file}'.format(trace_file=trace.get_trace_fn()),
             '-datagraph-inst-uid-file={inst_uid}'.format(
-                inst_uid=self.get_inst_uid()),
+                inst_uid=self.get_trace_inst_uid()),
             '-tdg-profile-file={profile_file}'.format(
                 profile_file=self.get_profile()),
             '-trace-format={format}'.format(format=self.trace_format),
@@ -770,9 +792,9 @@ class Benchmark(object):
         gem5_args += self.get_additional_gem5_simulate_command()
 
         # Append the arguments.
-        if self.get_args() is not None:
+        if self.get_sim_args() is not None:
             gem5_args.append(
-                '--options={binary_args}'.format(binary_args=' '.join(self.get_args())))
+                '--options={binary_args}'.format(binary_args=' '.join(self.get_sim_args())))
         return gem5_args
 
     """
@@ -785,7 +807,8 @@ class Benchmark(object):
     def simulate_execution_transform(self, trace, transform_config, simulation_config):
         assert(transform_config.is_execution_transform())
         tdg = self.get_tdg(transform_config, trace)
-        gem5_out_dir = simulation_config.get_gem5_dir(tdg)
+        gem5_out_dir = simulation_config.get_gem5_dir(
+            tdg, self.get_sim_input_size())
         gem5_args = self.get_gem5_simulate_command(
             simulation_config=simulation_config,
             binary=self.get_replay_exe(transform_config, trace, 'exe'),
@@ -814,6 +837,7 @@ class Benchmark(object):
 
         print('# Simulating the datagraph')
         tdg = self.get_tdg(transform_config, trace)
+        # There is no sim_input_size for trace based simulation.
         gem5_out_dir = simulation_config.get_gem5_dir(tdg)
         Util.call_helper(['mkdir', '-p', gem5_out_dir])
         gem5_args = self.get_gem5_simulate_command(

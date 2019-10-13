@@ -36,9 +36,6 @@ class TestHelloWorldBenchmark(Benchmark):
     def get_trace_ids(self):
         return [0]
 
-    def get_raw_bc(self):
-        return 'a.bc'
-
     def build_raw_bc(self):
         os.chdir(self.work_path)
 
@@ -84,7 +81,7 @@ class TestHelloWorldBenchmark(Benchmark):
     def trace(self):
         os.chdir(self.work_path)
         self.build_trace()
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
 

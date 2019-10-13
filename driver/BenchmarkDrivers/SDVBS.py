@@ -63,32 +63,33 @@ tracking.fullhd
 class SDVBSBenchmark(Benchmark):
 
     O2 = ['O2']
-    O2_NO_VECTORIZE = ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops']
+    O2_NO_VECTORIZE = ['O2', 'fno-vectorize',
+                       'fno-slp-vectorize', 'fno-unroll-loops']
 
     # Fractal experiments.
     FLAGS_FRACTAL = {
-        'disparity'        : O2_NO_VECTORIZE,
-        'localization'     : O2_NO_VECTORIZE,
-        'mser'             : O2_NO_VECTORIZE,
-        'multi_ncut'       : O2_NO_VECTORIZE,
-        'sift'             : O2_NO_VECTORIZE,
-        'stitch'           : O2_NO_VECTORIZE,
-        'svm'              : O2_NO_VECTORIZE,
+        'disparity': O2_NO_VECTORIZE,
+        'localization': O2_NO_VECTORIZE,
+        'mser': O2_NO_VECTORIZE,
+        'multi_ncut': O2_NO_VECTORIZE,
+        'sift': O2_NO_VECTORIZE,
+        'stitch': O2_NO_VECTORIZE,
+        'svm': O2_NO_VECTORIZE,
         'texture_synthesis': O2_NO_VECTORIZE,
-        'tracking'         : O2_NO_VECTORIZE,
+        'tracking': O2_NO_VECTORIZE,
     }
 
     # Stream experiments.
     FLAGS_STREAM = {
-        'disparity'        : O2_NO_VECTORIZE,
-        'localization'     : O2_NO_VECTORIZE,
-        'mser'             : O2_NO_VECTORIZE,
-        'multi_ncut'       : O2_NO_VECTORIZE,
-        'sift'             : O2_NO_VECTORIZE,
-        'stitch'           : O2_NO_VECTORIZE,
-        'svm'              : O2_NO_VECTORIZE,
+        'disparity': O2_NO_VECTORIZE,
+        'localization': O2_NO_VECTORIZE,
+        'mser': O2_NO_VECTORIZE,
+        'multi_ncut': O2_NO_VECTORIZE,
+        'sift': O2_NO_VECTORIZE,
+        'stitch': O2_NO_VECTORIZE,
+        'svm': O2_NO_VECTORIZE,
         'texture_synthesis': O2_NO_VECTORIZE,
-        'tracking'         : O2_NO_VECTORIZE,
+        'tracking': O2_NO_VECTORIZE,
     }
 
     DEFINES = {
@@ -110,12 +111,12 @@ class SDVBSBenchmark(Benchmark):
             'finalSAD',
             'findDisparity'
         ],
-        'localization': ['workload'],
+        'localization': ['gem_forge_work'],
         'mser': ['mser'],
         'multi_ncut': ['segment_image'],
         'sift': ['sift', 'normalizeImage'],
         'stitch': ['getANMS', 'harris', 'extractFeatures'],
-        'svm': ['workload'],
+        'svm': ['gem_forge_work'],
         'texture_synthesis': ['create_all_candidates', 'create_candidates', 'compare_neighb', 'compare_rest', 'compare_full_neighb'],
         'tracking': [
             'imageBlur',
@@ -151,20 +152,29 @@ class SDVBSBenchmark(Benchmark):
         'tracking': [0, 1, 5, 6, 7, 8, 9]
     }
 
+    LEGAL_INPUT_SIZE = ('test', 'sim_fast', 'sim',
+                        'sqcif', 'qcif', 'cif', 'vga', 'fullhd')
+
     def __init__(self,
                  benchmark_args,
-                 folder, benchmark_name, input_name,
+                 folder, benchmark_name,
                  suite='sdvbs'):
         self.top_folder = folder
         self.benchmark_name = benchmark_name
-        self.input_name = input_name
+        self.input_size = 'fullhd'
+        if benchmark_args.options.input_size:
+            self.input_size = benchmark_args.options.input_size
+        assert(self.input_size in SDVBSBenchmark.LEGAL_INPUT_SIZE)
+        self.sim_input_size = 'fullhd'
+        if benchmark_args.options.sim_input_size:
+            self.sim_input_size = benchmark_args.options.sim_input_size
+        assert(self.sim_input_size in SDVBSBenchmark.LEGAL_INPUT_SIZE)
+
         self.suite = suite
 
         # Find the directories.
         self.benchmark_dir = os.path.join(
             self.top_folder, 'benchmarks', self.benchmark_name)
-        self.input_dir = os.path.join(
-            self.benchmark_dir, 'data', self.input_name)
         self.source_dir = os.path.join(self.benchmark_dir, 'src', 'c')
         self.common_src_dir = os.path.join(self.top_folder, 'common', 'c')
 
@@ -172,7 +182,7 @@ class SDVBSBenchmark(Benchmark):
 
         # Create the result directory outside of the source tree.
         self.work_path = os.path.join(
-            C.LLVM_TDG_RESULT_DIR, self.suite, self.benchmark_name, input_name)
+            C.LLVM_TDG_RESULT_DIR, self.suite, self.benchmark_name)
         Util.mkdir_chain(self.work_path)
 
         self.source_bc_dir = os.path.join(self.work_path, 'obj')
@@ -186,8 +196,6 @@ class SDVBSBenchmark(Benchmark):
             self.flags = SDVBSBenchmark.FLAGS_FRACTAL[self.benchmark_name]
         self.flags.append('gline-tables-only')
         self.defines = SDVBSBenchmark.DEFINES[self.benchmark_name]
-        # Also define the input name.
-        self.defines[self.input_name] = None
         self.includes = [self.source_dir, self.common_src_dir]
         self.trace_functions = '.'.join(
             SDVBSBenchmark.TRACE_FUNC[self.benchmark_name])
@@ -198,25 +206,34 @@ class SDVBSBenchmark(Benchmark):
         self.skip_inst = 1e8
         self.end_inst = 10e8
 
-        # Create the args.
-        self.args = [self.input_dir, self.work_path]
-
         super(SDVBSBenchmark, self).__init__(
             benchmark_args
         )
 
     def get_name(self):
-        return '{suite}.{benchmark_name}.{input_name}'.format(
+        return '{suite}.{benchmark_name}'.format(
             suite=self.suite,
-            benchmark_name=self.benchmark_name,
-            input_name=self.input_name,
+            benchmark_name=self.benchmark_name
         )
+
+    def get_input_size(self):
+        return self.input_size
+
+    def get_sim_input_size(self):
+        return self.sim_input_size
 
     def get_links(self):
         return ['-lm']
 
     def get_args(self):
-        return self.args
+        input_dir = os.path.join(
+            self.benchmark_dir, 'data', self.input_size)
+        return [input_dir]
+
+    def get_sim_args(self):
+        input_dir = os.path.join(
+            self.benchmark_dir, 'data', self.sim_input_size)
+        return [input_dir]
 
     def get_trace_func(self):
         return self.trace_functions
@@ -229,9 +246,6 @@ class SDVBSBenchmark(Benchmark):
 
     def get_run_path(self):
         return self.work_path
-
-    def get_raw_bc(self):
-        return '{name}.bc'.format(name=self.get_name())
 
     def get_perf_frequency(self):
         # multi_ncut runs for too long.
@@ -303,17 +317,27 @@ class SDVBSBenchmark(Benchmark):
         self.build_trace(
             link_stdlib=False,
             trace_reachable_only=False,
-            # debugs=['TracePass']
         )
 
-        # Fractal experiments.
-        os.putenv('LLVM_TDG_TRACE_MODE', str(
-            TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value
-        ))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', 'simpoints.txt')
-        os.unsetenv('LLVM_TDG_TRACE_ROI')
+        if self.input_size != 'fullhd':
+            # For not fullhd input we trace only the traced function.
+            os.putenv('LLVM_TDG_TRACE_ROI', str(
+                TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value
+            ))
+            os.putenv('LLVM_TDG_TRACE_MODE', str(
+                TraceFlagEnum.GemForgeTraceMode.TraceAll.value
+            ))
+        else:
+            # Otherwise we trace the simpoint region.
+            os.putenv('LLVM_TDG_TRACE_ROI', str(
+                TraceFlagEnum.GemForgeTraceROI.All.value
+            ))
+            os.putenv('LLVM_TDG_TRACE_MODE', str(
+                TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value
+            ))
+            os.putenv('LLVM_TDG_INTERVALS_FILE', self.get_simpoint_abs())
 
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
 
@@ -322,19 +346,11 @@ class SDVBSSuite:
     def __init__(self, benchmark_args):
         self.folder = os.getenv('SDVBS_SUITE_PATH')
         self.benchmarks = list()
-        input_names = [
-            # 'sqcif',
-            # 'qcif',
-            # 'cif',
-            # 'vga',
-            'fullhd',
-        ]
-        for input_name in input_names:
-            for benchmark_name in SDVBSBenchmark.FLAGS_FRACTAL:
-                benchmark = SDVBSBenchmark(
-                    benchmark_args,
-                    self.folder, benchmark_name, input_name)
-                self.benchmarks.append(benchmark)
+        for benchmark_name in SDVBSBenchmark.FLAGS_FRACTAL:
+            benchmark = SDVBSBenchmark(
+                benchmark_args,
+                self.folder, benchmark_name)
+            self.benchmarks.append(benchmark)
 
     def get_benchmarks(self):
         return self.benchmarks

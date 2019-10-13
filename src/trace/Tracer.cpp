@@ -94,8 +94,8 @@ enum TraceMode {
 
 static TraceROI traceROI = TraceROI::All;
 static TraceMode traceMode = TraceMode::Profile;
-static const char *DEFAULT_TRACE_FILE_NAME = "llvm";
-static const char *traceFileName = DEFAULT_TRACE_FILE_NAME;
+static const char *DEFAULT_TRACE_FOLDER = "llvm";
+static const char *traceFolder = DEFAULT_TRACE_FOLDER;
 
 /********************************************************************
  * Parameters for Profile mode.
@@ -198,9 +198,9 @@ static void initialize() {
   if (!initialized) {
     printf("initializing tracer...\n");
 
-    traceFileName = std::getenv("LLVM_TDG_TRACE_FILE");
-    if (!traceFileName) {
-      traceFileName = DEFAULT_TRACE_FILE_NAME;
+    traceFolder = std::getenv("LLVM_TDG_TRACE_FOLDER");
+    if (!traceFolder) {
+      traceFolder = DEFAULT_TRACE_FOLDER;
     }
 
     // Create the instruction uid file.
@@ -293,7 +293,7 @@ public:
   uint8_t tlsBuffer[MaxTLSBytes];
 
   size_t samples = 0;
-  char fileName[128];
+  char fileName[1024];
   static constexpr size_t MaxProfileFileNameBytes = 128;
   char profileFileName[MaxProfileFileNameBytes];
 
@@ -383,14 +383,14 @@ const char *getNewTraceFileName(int tid) {
 }
 
 const char *TracerThreadState::getNewTraceFileName() {
-  std::sprintf(fileName, "%s.%d.%zu.trace", traceFileName, seqTid, samples);
+  std::sprintf(fileName, "%s/%d.%zu.trace", traceFolder, seqTid, samples);
   samples++;
   return fileName;
 }
 
 void TracerThreadState::getProfileFileName(char *buf, size_t size) {
   auto writtenBytes =
-      std::snprintf(buf, size, "%s.%d.profile", traceFileName, seqTid);
+      std::snprintf(buf, size, "%s/%d.profile", traceFolder, seqTid);
   if (writtenBytes >= 0 && writtenBytes < size) {
     return;
   }

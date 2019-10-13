@@ -36,9 +36,6 @@ class TestInputBenchmark(Benchmark):
     def get_lang(self):
         return 'C'
 
-    def get_raw_bc(self):
-        return '{name}.bc'.format(name=self.get_name())
-
     def get_exe_path(self):
         return self.work_path
 
@@ -98,7 +95,7 @@ class TestInputBenchmark(Benchmark):
         # Remember to set the flag to trace traced function.
         os.putenv('LLVM_TDG_TRACE_MODE', str(TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
         os.putenv('LLVM_TDG_TRACE_ROI', str(TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
-        self.run_trace(self.get_name())
+        self.run_trace()
         os.chdir(self.cwd)
 
     def clean(self):
