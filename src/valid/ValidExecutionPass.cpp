@@ -21,7 +21,7 @@ namespace {
 
 /**
  * This pass simply clones the module. This is used to represent a validation
- * build.
+ * build. We override runOnModule() to require only the module and extra path.
  */
 
 class ValidExecutionPass : public ReplayTrace {
@@ -29,24 +29,25 @@ public:
   static char ID;
   ValidExecutionPass() : ReplayTrace(ID) {}
 
-protected:
-  void transform() override;
+  bool runOnModule(llvm::Module &Module) override {
+    if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
+      this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
+    }
+    // Copy the module.
+    LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
+    this->ClonedModule = llvm::CloneModule(Module, this->ClonedValueMap);
+    // Generate the module.
+    LLVM_DEBUG(llvm::errs() << "Write the module.\n");
+    this->writeModule();
+    return false;
+  }
 
+protected:
   std::unique_ptr<llvm::Module> ClonedModule;
   llvm::ValueToValueMapTy ClonedValueMap;
 
   void writeModule();
 };
-
-void ValidExecutionPass::transform() {
-
-  // Copy the module.
-  LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
-  this->ClonedModule = llvm::CloneModule(*(this->Module), this->ClonedValueMap);
-  // Generate the module.
-  LLVM_DEBUG(llvm::errs() << "Write the module.\n");
-  this->writeModule();
-}
 
 void ValidExecutionPass::writeModule() {
   auto ModuleBCPath = this->OutputExtraFolderPath + "/valid.ex.bc";
