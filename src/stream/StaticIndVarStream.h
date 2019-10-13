@@ -79,6 +79,11 @@ private:
     return this->StaticStreamInfo.stp_pattern();
   }
 
+  /**
+   * Generate the IV patter for execution simulation.
+   * TODO: Improve this part.
+   */
+  void generateIVPattern(const ComputeMetaNode *FirstNonEmptyComputeMNode);
   void addInputParam(const llvm::SCEV *SCEV, bool Signed);
 };
 #endif

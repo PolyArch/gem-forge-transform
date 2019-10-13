@@ -40,11 +40,17 @@ protected:
    * it and modify the new one.
    */
   std::unique_ptr<llvm::Module> ClonedModule;
+  std::string ClonedModuleBCPath;
+  std::string ClonedModuleLLPath;
+
   llvm::ValueToValueMapTy ClonedValueMap;
   std::unique_ptr<CachedLoopInfo> ClonedCachedLI;
 
   // Instructions waiting to be removed at the end.
   std::unordered_set<llvm::Instruction *> PendingRemovedInsts;
+
+  // All transformed functions.
+  std::unordered_set<const llvm::Function *> TransformedFunctions;
 
   /**
    * All the configured stream regions, in the order of configured.
@@ -100,6 +106,7 @@ protected:
 
   void writeModule();
   void writeAllConfiguredRegions();
+  void writeAllTransformedFunctions();
 };
 
 void StreamExecutionPass::transformStream() {
@@ -114,6 +121,8 @@ void StreamExecutionPass::transformStream() {
   // Initialize the CachedLI for the cloned module.
   this->ClonedCachedLI =
       std::make_unique<CachedLoopInfo>(this->ClonedModule.get());
+  this->ClonedModuleBCPath = this->OutputExtraFolderPath + "/stream.ex.bc";
+  this->ClonedModuleLLPath = this->OutputExtraFolderPath + "/stream.ex.ll";
 
   // Transform region.
   for (auto &SelectedRegion : SelectedStreamRegionAnalyzers) {
@@ -128,6 +137,8 @@ void StreamExecutionPass::transformStream() {
   LLVM_DEBUG(llvm::errs() << "Write the module.\n");
   this->writeModule();
   this->writeAllConfiguredRegions();
+  // * Must be called after writeModule().
+  this->writeAllTransformedFunctions();
 
   // So far we still need to generate the history for testing purpose.
   // TODO: Remove this once we are done.
@@ -173,9 +184,8 @@ StreamExecutionPass::selectStreamRegionAnalyzers() {
 }
 
 void StreamExecutionPass::writeModule() {
-  auto ModuleBCPath = this->OutputExtraFolderPath + "/stream.ex.bc";
   std::error_code EC;
-  llvm::raw_fd_ostream ModuleFStream(ModuleBCPath, EC,
+  llvm::raw_fd_ostream ModuleFStream(this->ClonedModuleBCPath, EC,
                                      llvm::sys::fs::OpenFlags::F_None);
   assert(!ModuleFStream.has_error() &&
          "Failed to open the cloned module bc file.");
@@ -186,9 +196,8 @@ void StreamExecutionPass::writeModule() {
     /**
      * Write to text mode for debug purpose.
      */
-    auto ModuleLLPath = this->OutputExtraFolderPath + "/stream.ex.ll";
     std::error_code EC;
-    llvm::raw_fd_ostream ModuleFStream(ModuleLLPath, EC,
+    llvm::raw_fd_ostream ModuleFStream(this->ClonedModuleLLPath, EC,
                                        llvm::sys::fs::OpenFlags::F_None);
     assert(!ModuleFStream.has_error() &&
            "Failed to open the cloned module ll file.");
@@ -220,11 +229,39 @@ void StreamExecutionPass::writeAllConfiguredRegions() {
   }
 }
 
+void StreamExecutionPass::writeAllTransformedFunctions() {
+  auto TransformedFunctionFolder = this->OutputExtraFolderPath + "/funcs";
+  auto ErrCode = llvm::sys::fs::create_directory(TransformedFunctionFolder);
+  if (ErrCode) {
+    llvm::errs() << "Failed to create TransformedFunctionFolder: "
+                 << TransformedFunctionFolder
+                 << ". Reason: " << ErrCode.message() << '\n';
+  }
+  assert(!ErrCode && "Failed to create TransformedFunctionFolder.");
+  for (auto Func : this->TransformedFunctions) {
+    auto ClonedFunc = this->getClonedValue(Func);
+    std::string TransformedLL = TransformedFunctionFolder + "/stream." +
+                                ClonedFunc->getName().str() + ".ll";
+    std::string ExtractCMD;
+    llvm::raw_string_ostream ExtractCMDSS(ExtractCMD);
+    ExtractCMDSS << "llvm-extract -func " << ClonedFunc->getName() << " -o "
+                 << TransformedLL << " -S " << this->ClonedModuleBCPath;
+    // We need to flush it to the string.
+    ExtractCMDSS.str();
+    assert(system(ExtractCMD.c_str()) == 0 &&
+           "Failed to write transformed function.");
+  }
+}
+
 void StreamExecutionPass::transformStreamRegion(
     StreamRegionAnalyzer *Analyzer) {
   auto TopLoop = Analyzer->getTopLoop();
   LLVM_DEBUG(llvm::errs() << "Transform stream region "
                           << LoopUtils::getLoopId(TopLoop) << '\n');
+
+  // Insert the function into the transformed set.
+  this->TransformedFunctions.insert(TopLoop->getHeader()->getParent());
+
   // BFS to iterate all loops and configure them.
   std::queue<llvm::Loop *> LoopQueue;
   LoopQueue.push(TopLoop);
