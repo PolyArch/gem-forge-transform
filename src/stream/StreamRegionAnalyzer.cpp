@@ -2,8 +2,6 @@
 
 #include "llvm/Support/FileSystem.h"
 
-#include "google/protobuf/util/json_util.h"
-
 #include <iomanip>
 #include <sstream>
 
@@ -39,14 +37,7 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   }
   Gem5ProtobufSerializer Serializer(this->Path);
   Serializer.serialize(ProtobufStreamRegion);
-  std::ofstream InfoTextFStream(this->JsonPath);
-  assert(InfoTextFStream.is_open() &&
-         "Failed to open the output info text file.");
-  std::string InfoJsonString;
-  ::google::protobuf::util::MessageToJsonString(ProtobufStreamRegion,
-                                                &InfoJsonString);
-  InfoTextFStream << InfoJsonString;
-  InfoTextFStream.close();
+  Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, this->JsonPath);
 }
 
 StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
@@ -571,13 +562,7 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
     }
 
     auto InfoTextPath = this->AnalyzePath + "/streams.json";
-    std::ofstream InfoTextFStream(InfoTextPath);
-    assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
-    std::string InfoJsonString;
-    google::protobuf::util::MessageToJsonString(ProtobufStreamRegion,
-                                                &InfoJsonString);
-    InfoTextFStream << InfoJsonString << '\n';
-    InfoTextFStream.close();
+    Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, InfoTextPath);
 
     std::ofstream InfoFStream(this->AnalyzePath + "/streams.info");
     assert(InfoFStream.is_open() &&
@@ -595,13 +580,7 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
     }
 
     auto InfoTextPath = this->AnalyzePath + "/chosen_streams.json";
-    std::ofstream InfoTextFStream(InfoTextPath);
-    assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
-    std::string InfoJsonString;
-    google::protobuf::util::MessageToJsonString(ProtobufStreamRegion,
-                                                &InfoJsonString);
-    InfoTextFStream << InfoJsonString << '\n';
-    InfoTextFStream.close();
+    Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, InfoTextPath);
   }
 }
 

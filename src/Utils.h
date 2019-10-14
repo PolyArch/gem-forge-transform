@@ -9,6 +9,8 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instruction.h"
 
+#include "google/protobuf/message.h"
+
 class Utils {
 public:
   static constexpr uint64_t CacheLineSize = 64;
@@ -214,6 +216,10 @@ public:
 
   // Singleton InstUIDMap.
   static InstructionUIDMap &getInstUIDMap() { return Utils::InstUIDMap; }
+
+  static void
+  dumpProtobufMessageToJson(const ::google::protobuf::Message &Message,
+                            const ::std::string &FileName);
 
 private:
   static InstructionUIDMap InstUIDMap;

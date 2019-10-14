@@ -15,9 +15,9 @@ public:
   bool checkIsQualifiedWithBackEdgeDep() const override;
   void finalizePattern() override;
 
-private:
   llvm::PHINode *PHINode;
 
+private:
   struct ComputePath {
     std::vector<ComputeMetaNode *> ComputeMetaNodes;
     bool isEmpty() const {
@@ -71,6 +71,10 @@ private:
                                 ComputePath &CurrentPath,
                                 std::list<ComputePath> &AllComputePaths) const;
 
+  /**
+   * Analyze the pattern from the SCEV.
+   * If it's random, it also sets the not_stream_reason.
+   */
   LLVM::TDG::StreamValuePattern
   analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const;
 
@@ -78,12 +82,5 @@ private:
     // No computation required.
     return this->StaticStreamInfo.stp_pattern();
   }
-
-  /**
-   * Generate the IV patter for execution simulation.
-   * TODO: Improve this part.
-   */
-  void generateIVPattern(const ComputeMetaNode *FirstNonEmptyComputeMNode);
-  void addInputParam(const llvm::SCEV *SCEV, bool Signed);
 };
 #endif

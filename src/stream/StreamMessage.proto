@@ -48,6 +48,7 @@ message StaticStreamInfo {
     NOT_SCEVABLE_COMPUTEMNODE = 4;
     RANDOM_PATTERN = 5;
     MULTI_STEP_ROOT = 6;
+    VARIANT_BACKEDGE_TAKEN = 7;
     // Not Qualified Reason.
     BASE_STREAM_NOT_QUALIFIED = 8;
     NO_STATIC_MAPPING = 9;
