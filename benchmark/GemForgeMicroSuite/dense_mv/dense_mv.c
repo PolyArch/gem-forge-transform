@@ -1,6 +1,6 @@
 
 /**
- * Simple correlation matrix. Used to test multi-level loops.
+ * Dense Matrix-Vector multiply. Used to test multiple level streams.
  */
 
 #include "../gem5_pseudo.h"
@@ -16,20 +16,16 @@ __attribute__((noinline)) void foo(Value *a, Value *b, uint64_t width,
                                    uint64_t height, Value *c) {
 #pragma clang loop vectorize(disable)
 #pragma clang loop unroll(disable)
-  for (uint64_t i = 0; i < width; ++i) {
+  for (uint64_t i = 0; i < height; ++i) {
+    Value value = 0;
 #pragma clang loop vectorize(disable)
 #pragma clang loop unroll(disable)
     for (uint64_t j = i; j < width; ++j) {
-      const uint64_t c_idx = i * width + j;
-      c[c_idx] = 0;
-#pragma clang loop vectorize(disable)
-#pragma clang loop unroll(disable)
-      for (uint64_t k = 0; k < height; ++k) {
-        const uint64_t a_idx = k * width + i;
-        const uint64_t b_idx = k * width + j;
-        c[c_idx] += a[a_idx] * b[b_idx];
-      }
+      const uint64_t a_idx = i * width + j;
+      const uint64_t b_idx = j;
+      value += a[a_idx] * b[b_idx];
     }
+    c[i] = value;
   }
 }
 
@@ -37,8 +33,8 @@ __attribute__((noinline)) void foo(Value *a, Value *b, uint64_t width,
 #define height 1024
 
 Value a[height][width];
-Value b[height][width];
-Value c[width][width];
+Value b[width];
+Value c[height];
 
 int main() {
 
@@ -46,7 +42,7 @@ int main() {
   for (uint64_t i = 0; i < height; ++i) {
     for (uint64_t j = 0; j < width; ++j) {
       a[i][j] = i * j;
-      b[i][j] = i * j;
+      b[j] = j;
     }
   }
 #endif
@@ -57,17 +53,13 @@ int main() {
 
 #ifdef CHECK
   int mismatched = 0;
-  for (uint64_t i = 0; i < width; ++i) {
+  for (uint64_t i = 0; i < height; ++i) {
+    Value value = 0;
     for (uint64_t j = i; j < width; ++j) {
-      Value expected = 0;
-      for (uint64_t k = 0; k < height; ++k) {
-        const uint64_t a_idx = k * width + i;
-        const uint64_t b_idx = k * width + j;
-        expected += a[k][i] * b[k][j];
-      }
-      if (expected != c[i][j]) {
-        mismatched++;
-      }
+      value += a[i][j] * b[j];
+    }
+    if (value != c[i]) {
+      mismatched++;
     }
   }
   printf("Mismatched %d.\n", mismatched);

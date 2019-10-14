@@ -1,0 +1,9 @@
+{
+    "id": "stream.ex.i",
+    "is_execution_transform": true,
+    "options": [
+        "-stream-execution-pass",
+        "-stream-pass-choose-strategy=inner",
+        "-stream-pass-allow-aliased-stream"
+    ]
+}

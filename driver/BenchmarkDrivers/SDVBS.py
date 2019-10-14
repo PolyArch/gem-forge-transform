@@ -16,6 +16,7 @@ disparity.fullhd
 
 =================================
 localization.fullhd
+! Multiple startTiming()
 82% weightedSample
 
 =================================
@@ -52,6 +53,7 @@ texture_synthesis.fullhd
 
 =================================
 tracking.fullhd
+! Multiple startTiming()
 27% imageBlur 
 20% calcSobel_dY
 18% calcSobel_dX

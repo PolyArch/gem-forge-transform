@@ -1,5 +1,4 @@
 {
-    "id": "o8",
     "options": [
         "--llvm-issue-width=8",
         "--num-cpus=4",
@@ -36,6 +35,7 @@
         "replay",
         "valid.ex",
         "stream.i",
-        "stream.ex"
+        "stream.ex.i",
+        "stream.ex.so"
     ]
 }

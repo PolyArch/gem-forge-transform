@@ -1,0 +1,8 @@
+{
+    "id": "stream.ex.o",
+    "is_execution_transform": true,
+    "options": [
+        "-stream-execution-pass",
+        "-stream-pass-allow-aliased-stream"
+    ]
+}

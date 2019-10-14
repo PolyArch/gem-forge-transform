@@ -662,9 +662,8 @@ class Benchmark(object):
     def get_replay_exe(self, transform_config, trace, suffix):
         return os.path.join(
             self.get_tdg_extra_path(transform_config, trace),
-            # So far the bc is named after transform_id.bc
-            '{tid}.{suffix}'.format(
-                tid=transform_config.get_transform_id(),
+            # So far the bc is named after ex.bc
+            'ex.{suffix}'.format(
                 suffix=suffix,
             ),
         )

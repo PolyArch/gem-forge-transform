@@ -1,9 +1,9 @@
 {
-    "id": "stream.ex",
+    "id": "stream.ex.so",
     "is_execution_transform": true,
     "options": [
         "-stream-execution-pass",
-        "-stream-pass-choose-strategy=inner",
+        "-stream-pass-choose-strategy=static-outer",
         "-stream-pass-allow-aliased-stream"
     ]
 }

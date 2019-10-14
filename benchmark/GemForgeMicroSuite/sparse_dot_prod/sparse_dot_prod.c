@@ -31,7 +31,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, int *ia, int *ib,
 }
 
 // 65536*4 is 512kB.
-const int N = 128;
+const int N = 65536;
 Value a[N];
 Value b[N];
 int ia[N];
