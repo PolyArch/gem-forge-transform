@@ -50,7 +50,7 @@ protected:
 };
 
 void ValidExecutionPass::writeModule() {
-  auto ModuleBCPath = this->OutputExtraFolderPath + "/valid.ex.bc";
+  auto ModuleBCPath = this->OutputExtraFolderPath + "/ex.bc";
   std::error_code EC;
   llvm::raw_fd_ostream ModuleFStream(ModuleBCPath, EC,
                                      llvm::sys::fs::OpenFlags::F_None);
@@ -63,7 +63,7 @@ void ValidExecutionPass::writeModule() {
     /**
      * Write to text mode for debug purpose.
      */
-    auto ModuleLLPath = this->OutputExtraFolderPath + "/valid.ex.ll";
+    auto ModuleLLPath = this->OutputExtraFolderPath + "/ex.ll";
     std::error_code EC;
     llvm::raw_fd_ostream ModuleFStream(ModuleLLPath, EC,
                                        llvm::sys::fs::OpenFlags::F_None);

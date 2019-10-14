@@ -1,4 +1,4 @@
-#include "stream/StreamPass.h"
+#include "StreamExecutionPass.h"
 
 #include "TransformUtils.h"
 
@@ -6,111 +6,16 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
 
-#include "google/protobuf/util/json_util.h"
-
 #include <queue>
-#include <unordered_set>
 
 #define DEBUG_TYPE "StreamExecutionPass"
 #if !defined(LLVM_DEBUG) && defined(DEBUG)
 #define LLVM_DEBUG DEBUG
 #endif
 
-namespace {
-
-/**
- * This pass will actually clone the module and transform it using identified
- * stream. This is used for execution-driven simulation.
- */
-
-class StreamExecutionPass : public StreamPass {
-public:
-  static char ID;
-  StreamExecutionPass() : StreamPass(ID) {}
-
-protected:
-  void transformStream() override;
-
-  /**
-   * The trasnformed module.
-   * Since the original module is heavily referenced by the datagraph, we clone
-   * it and modify the new one.
-   */
-  std::unique_ptr<llvm::Module> ClonedModule;
-  std::string ClonedModuleBCPath;
-  std::string ClonedModuleLLPath;
-
-  llvm::ValueToValueMapTy ClonedValueMap;
-  std::unique_ptr<CachedLoopInfo> ClonedCachedLI;
-
-  // Instructions waiting to be removed at the end.
-  std::unordered_set<llvm::Instruction *> PendingRemovedInsts;
-
-  // All transformed functions.
-  std::unordered_set<const llvm::Function *> TransformedFunctions;
-
-  /**
-   * All the configured stream regions, in the order of configured.
-   * Used to generate allStreamRegion.
-   * * There should be no duplicate in this vector.
-   */
-  std::vector<const StreamConfigureLoopInfo *> AllConfiguredLoopInfos;
-
-  /**
-   * Since we are purely static trasnformation, we have to first select
-   * StreamRegionAnalyzer as our candidate. Here I sort them by the number of
-   * dynamic memory accesses and exclude overlapped regions.
-   */
-  std::vector<StreamRegionAnalyzer *> selectStreamRegionAnalyzers();
-
-  void transformStreamRegion(StreamRegionAnalyzer *Analyzer);
-  void configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop);
-  void insertStreamConfigAtLoop(StreamRegionAnalyzer *Analyzer,
-                                llvm::Loop *Loop,
-                                llvm::Constant *ConfigIdxValue);
-  void insertStreamEndAtLoop(llvm::Loop *Loop, llvm::Constant *ConfigIdxValue);
-  void transformLoadInst(StreamRegionAnalyzer *Analyzer,
-                         llvm::LoadInst *LoadInst);
-  void transformStoreInst(StreamRegionAnalyzer *Analyzer,
-                          llvm::StoreInst *StoreInst);
-  void transformStepInst(StreamRegionAnalyzer *Analyzer,
-                         llvm::Instruction *StepInst);
-  void cleanClonedModule();
-
-  /**
-   * Utility functions.
-   */
-  template <typename T>
-  std::enable_if_t<std::is_base_of<llvm::Value, T>::value, T *>
-  getClonedValue(const T *Value) {
-    auto ClonedValueIter = this->ClonedValueMap.find(Value);
-    LLVM_DEBUG({
-      if (ClonedValueIter == this->ClonedValueMap.end()) {
-        llvm::errs() << "Failed to find cloned value "
-                     << Utils::formatLLVMValue(Value) << '\n';
-      }
-    });
-
-    assert(ClonedValueIter != this->ClonedValueMap.end() &&
-           "Failed to find cloned value.");
-    auto ClonedValue = llvm::dyn_cast<T>(ClonedValueIter->second);
-    assert(ClonedValue != nullptr && "Mismatched cloned value type.");
-    return ClonedValue;
-  }
-
-  llvm::Loop *getOrCreateLoopInClonedModule(llvm::Loop *Loop);
-  llvm::BasicBlock *getOrCreateLoopPreheaderInClonedModule(llvm::Loop *Loop);
-
-  void writeModule();
-  void writeAllConfiguredRegions();
-  void writeAllTransformedFunctions();
-};
-
 void StreamExecutionPass::transformStream() {
-
   // First we select the StreamRegionAnalyzer we want to use.
   LLVM_DEBUG(llvm::errs() << "Select StreamRegionAnalyzer.\n");
   auto SelectedStreamRegionAnalyzers = this->selectStreamRegionAnalyzers();
@@ -118,11 +23,13 @@ void StreamExecutionPass::transformStream() {
   // Copy the module.
   LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
   this->ClonedModule = llvm::CloneModule(*(this->Module), this->ClonedValueMap);
+  this->ClonedDataLayout =
+      std::make_unique<llvm::DataLayout>(this->ClonedModule.get());
   // Initialize the CachedLI for the cloned module.
   this->ClonedCachedLI =
       std::make_unique<CachedLoopInfo>(this->ClonedModule.get());
-  this->ClonedModuleBCPath = this->OutputExtraFolderPath + "/stream.ex.bc";
-  this->ClonedModuleLLPath = this->OutputExtraFolderPath + "/stream.ex.ll";
+  this->ClonedModuleBCPath = this->OutputExtraFolderPath + "/ex.bc";
+  this->ClonedModuleLLPath = this->OutputExtraFolderPath + "/ex.ll";
 
   // Transform region.
   for (auto &SelectedRegion : SelectedStreamRegionAnalyzers) {
@@ -218,14 +125,7 @@ void StreamExecutionPass::writeAllConfiguredRegions() {
   Serializer.serialize(ProtoAllRegions);
   if (GemForgeOutputDataGraphTextMode) {
     auto AllRegionJsonPath = this->OutputExtraFolderPath + "/all.stream.json";
-    std::ofstream InfoTextFStream(AllRegionJsonPath);
-    assert(InfoTextFStream.is_open() &&
-           "Failed to open the output info text file.");
-    std::string InfoJsonString;
-    ::google::protobuf::util::MessageToJsonString(ProtoAllRegions,
-                                                  &InfoJsonString);
-    InfoTextFStream << InfoJsonString;
-    InfoTextFStream.close();
+    Utils::dumpProtobufMessageToJson(ProtoAllRegions, AllRegionJsonPath);
   }
 }
 
@@ -377,11 +277,19 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
       StreamConfigArgs);
 
   for (auto S : ConfigureInfo.getSortedStreams()) {
-    for (auto Input : S->getInputValues()) {
+    InputValueVec ClonedInputValues;
+    if (S->SStream->Type == StaticStream::TypeT::IV) {
+      this->generateIVStreamConfiguration(S, ClonedPreheaderTerminator,
+                                          ClonedInputValues);
+    } else {
+      this->generateMemStreamConfiguration(S, ClonedPreheaderTerminator,
+                                           ClonedInputValues);
+    }
+    for (auto ClonedInput : ClonedInputValues) {
       // This is a live in?
       LLVM_DEBUG(llvm::errs()
                  << "Insert StreamInput for Stream " << S->formatName()
-                 << " Input " << Utils::formatLLVMValue(Input) << '\n');
+                 << " Input " << ClonedInput->getName() << '\n');
 
       auto StreamId = S->getRegionStreamId();
       assert(StreamId >= 0 && StreamId < 64 &&
@@ -389,7 +297,6 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
       auto StreamIdValue = llvm::ConstantInt::get(
           llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
           StreamId, false);
-      auto ClonedInput = this->getClonedValue(Input);
       std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue, ClonedInput};
       std::array<llvm::Type *, 1> StreamInputType{ClonedInput->getType()};
       auto StreamInputInst = Builder.CreateCall(
@@ -407,7 +314,6 @@ void StreamExecutionPass::insertStreamConfigAtLoop(
 
 void StreamExecutionPass::insertStreamEndAtLoop(
     llvm::Loop *Loop, llvm::Constant *ConfigIdxValue) {
-
   /**
    * 1. Format dedicated exit block.
    * 2. Insert StreamEnd at every exit block.
@@ -439,7 +345,7 @@ void StreamExecutionPass::insertStreamEndAtLoop(
 }
 
 llvm::Loop *
-StreamExecutionPass::getOrCreateLoopInClonedModule(llvm::Loop *Loop) {
+StreamExecutionPass::getOrCreateLoopInClonedModule(const llvm::Loop *Loop) {
   auto Func = Loop->getHeader()->getParent();
   auto ClonedFunc = this->getClonedValue(Func);
   auto ClonedLI = this->ClonedCachedLI->getLoopInfo(ClonedFunc);
@@ -591,7 +497,238 @@ void StreamExecutionPass::cleanClonedModule() {
   }
 }
 
-} // namespace
+void StreamExecutionPass::generateIVStreamConfiguration(
+    Stream *S, llvm::Instruction *InsertBefore,
+    std::vector<llvm::Value *> &ClonedInputValues) {
+  assert(S->SStream->Type == StaticStream::TypeT::IV && "Must be IV stream.");
+  auto SS = static_cast<const StaticIndVarStream *>(S->SStream);
+  auto ProtoConfiguration = SS->StaticStreamInfo.mutable_iv_pattern();
+
+  auto PHINode = SS->PHINode;
+  auto ClonedPHINode = this->getClonedValue(PHINode);
+  auto ClonedSE =
+      this->ClonedCachedLI->getScalarEvolution(ClonedPHINode->getFunction());
+  auto ClonedSEExpander =
+      this->ClonedCachedLI->getSCEVExpander(ClonedPHINode->getFunction());
+  auto ClonedConfigureLoop =
+      this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
+  auto ClonedInnerMostLoop =
+      this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
+
+  auto PHINodeSCEV = SS->SE->getSCEV(SS->PHINode);
+  auto ClonedPHINodeSCEV = ClonedSE->getSCEV(ClonedPHINode);
+  LLVM_DEBUG({
+    llvm::errs() << "Generate IVStreamConfiguration "
+                 << S->SStream->formatName() << " PHINode ";
+    PHINodeSCEV->dump();
+  });
+
+  if (auto PHINodeAddRecSCEV =
+          llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
+    auto ClonedPHINodeAddRecSCEV =
+        llvm::dyn_cast<llvm::SCEVAddRecExpr>(ClonedPHINodeSCEV);
+    assert(ClonedPHINodeAddRecSCEV && "Cloned SCEV is not AddRec anymore.");
+    this->generateAddRecStreamConfiguration(
+        ClonedConfigureLoop, ClonedInnerMostLoop, ClonedPHINodeAddRecSCEV,
+        InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
+        ProtoConfiguration);
+  } else {
+    assert(false && "Can't handle this PHI node.");
+  }
+}
+
+void StreamExecutionPass::generateMemStreamConfiguration(
+    Stream *S, llvm::Instruction *InsertBefore,
+    InputValueVec &ClonedInputValues) {
+
+  /**
+   * Some sanity check here.
+   */
+  assert(S->getChosenBaseStepRootStreams().size() == 1 &&
+         "Missing step root stream.");
+  for (auto StepRootS : S->getChosenBaseStepRootStreams()) {
+    if (StepRootS->SStream->ConfigureLoop != S->SStream->ConfigureLoop) {
+      llvm::errs() << "StepRootStream is not configured at the same loop: "
+                   << S->formatName() << '\n';
+      assert(false);
+    }
+  }
+
+  assert(S->SStream->Type == StaticStream::TypeT::MEM && "Must be MEM stream.");
+  auto SS = static_cast<const StaticMemStream *>(S->SStream);
+  auto ProtoConfiguration = SS->StaticStreamInfo.mutable_iv_pattern();
+
+  auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
+  auto ClonedAddr = this->getClonedValue(Addr);
+  auto ClonedFunction = this->getClonedValue(SS->Inst->getFunction());
+
+  auto ClonedSE = this->ClonedCachedLI->getScalarEvolution(ClonedFunction);
+  auto ClonedSEExpander = this->ClonedCachedLI->getSCEVExpander(ClonedFunction);
+
+  auto AddrSCEV = SS->SE->getSCEV(Addr);
+
+  LLVM_DEBUG({
+    llvm::errs() << "Generate MemStreamConfiguration "
+                 << S->SStream->formatName() << " Addr ";
+    AddrSCEV->dump();
+  });
+
+  if (llvm::isa<llvm::SCEVAddRecExpr>(AddrSCEV)) {
+    auto ClonedConfigureLoop =
+        this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
+    auto ClonedInnerMostLoop =
+        this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
+    auto ClonedAddrSCEV = ClonedSE->getSCEV(ClonedAddr);
+    auto ClonedAddrAddRecSCEV =
+        llvm::dyn_cast<llvm::SCEVAddRecExpr>(ClonedAddrSCEV);
+    this->generateAddRecStreamConfiguration(
+        ClonedConfigureLoop, ClonedInnerMostLoop, ClonedAddrAddRecSCEV,
+        InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
+        ProtoConfiguration);
+  } else {
+    assert(false && "Can't handle this Addr.");
+  }
+}
+
+void StreamExecutionPass::generateAddRecStreamConfiguration(
+    const llvm::Loop *ClonedConfigureLoop,
+    const llvm::Loop *ClonedInnerMostLoop,
+    const llvm::SCEVAddRecExpr *ClonedAddRecSCEV,
+    llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
+    llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
+    ProtoStreamConfiguration *ProtoConfiguration) {
+  assert(ClonedAddRecSCEV->isAffine() &&
+         "Can only handle affine AddRecSCEV so far.");
+  ProtoConfiguration->set_val_pattern(::LLVM::TDG::StreamValuePattern::LINEAR);
+
+  // ! These are all cloned SCEV.
+  int RecurLevel = 0;
+  const llvm::Loop *CurrentLoop = ClonedInnerMostLoop;
+  const llvm::SCEV *CurrentSCEV = ClonedAddRecSCEV;
+  // Peeling up nested loops.
+  while (ClonedConfigureLoop->contains(CurrentLoop)) {
+    RecurLevel++;
+    LLVM_DEBUG({
+      llvm::errs() << "Peeling " << CurrentLoop->getName() << ' ';
+      CurrentSCEV->dump();
+    });
+    if (!ClonedSE->isLoopInvariant(CurrentSCEV, CurrentLoop)) {
+      // We only allow AddRec for LoopVariant SCEV.
+      if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(CurrentSCEV)) {
+        assert(AddRecSCEV->isAffine() && "Cannot handle Quadratic AddRecSCEV.");
+        auto StrideSCEV = AddRecSCEV->getOperand(1);
+        assert(ClonedSE->isLoopInvariant(StrideSCEV, ClonedConfigureLoop) &&
+               "LoopVariant stride.");
+        // Add the stride input.
+        this->addStreamInputValue(StrideSCEV, true /* Signed */, InsertBefore,
+                                  ClonedSEExpander, ClonedInputValues,
+                                  ProtoConfiguration);
+        auto StartSCEV = AddRecSCEV->getStart();
+        CurrentSCEV = StartSCEV;
+      } else {
+        assert(false && "Cannot handle this LoopVariant SCEV.");
+      }
+    } else {
+      /**
+       * If this is LoopInvariant, we can add a 0 stride
+       * and skip to the ConfigureLoop. This means that we do not need the
+       * backedge taken count to be LoopInvariant at ConfigureLoop.
+       */
+      auto ZeroStrideSCEV = ClonedSE->getZero(
+          llvm::IntegerType::get(this->ClonedModule->getContext(), 64));
+      this->addStreamInputValue(ZeroStrideSCEV, true /* Signed */, InsertBefore,
+                                ClonedSEExpander, ClonedInputValues,
+                                ProtoConfiguration);
+      // No need to update the SCEV.
+      if (ClonedSE->isLoopInvariant(CurrentSCEV, ClonedConfigureLoop)) {
+        break;
+      }
+    }
+    // We need the back-edge taken times if this is not ConfigureLoop.
+    if (CurrentLoop != ClonedConfigureLoop) {
+      auto BackEdgeTakenSCEV = ClonedSE->getBackedgeTakenCount(CurrentLoop);
+      LLVM_DEBUG({
+        llvm::errs() << "BackEdgeTakenCount ";
+        BackEdgeTakenSCEV->dump();
+      });
+      assert(!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
+             "BackEdgeCount could not taken.");
+      assert(ClonedSE->isLoopInvariant(BackEdgeTakenSCEV, ClonedConfigureLoop));
+      this->addStreamInputValue(BackEdgeTakenSCEV, false /* Signed */,
+                                InsertBefore, ClonedSEExpander,
+                                ClonedInputValues, ProtoConfiguration);
+    }
+    CurrentLoop = CurrentLoop->getParentLoop();
+  }
+  // Finally we should be left with the start value.
+  LLVM_DEBUG({
+    llvm::errs() << "StartSCEV ";
+    CurrentSCEV->dump();
+    llvm::errs() << '\n';
+  });
+  assert(ClonedSE->isLoopInvariant(CurrentSCEV, ClonedConfigureLoop) &&
+         "LoopVariant StartValue.");
+  this->addStreamInputValue(CurrentSCEV, false /*Signed */, InsertBefore,
+                            ClonedSEExpander, ClonedInputValues,
+                            ProtoConfiguration);
+}
+
+void StreamExecutionPass::addStreamInputValue(
+    const llvm::SCEV *ClonedSCEV, bool Signed, llvm::Instruction *InsertBefore,
+    llvm::SCEVExpander *ClonedSCEVExpander, InputValueVec &ClonedInputValues,
+    LLVM::TDG::IVPattern *ProtoConfiguration) {
+  auto ProtoInput = ProtoConfiguration->add_params();
+  auto ClonedInputValue =
+      ClonedSCEVExpander->expandCodeFor(ClonedSCEV, nullptr, InsertBefore);
+
+  if (auto ConstInputValue =
+          llvm::dyn_cast<llvm::ConstantInt>(ClonedInputValue)) {
+    // This is constant.
+    ProtoInput->set_valid(true);
+    if (Signed) {
+      ProtoInput->set_param(ConstInputValue->getSExtValue());
+    } else {
+      ProtoInput->set_param(ConstInputValue->getZExtValue());
+    }
+  } else {
+    // Runtime input.
+    ProtoInput->set_valid(false);
+    ClonedInputValues.push_back(ClonedInputValue);
+  }
+
+  return;
+
+  if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(ClonedSCEV)) {
+    ProtoInput->set_valid(true);
+    if (Signed) {
+      ProtoInput->set_param(ConstSCEV->getValue()->getSExtValue());
+    } else {
+      ProtoInput->set_param(ConstSCEV->getValue()->getZExtValue());
+    }
+  } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(ClonedSCEV)) {
+    ProtoInput->set_valid(false);
+    ClonedInputValues.push_back(UnknownSCEV->getValue());
+    // } else if (auto ZExtSCEV =
+    // llvm::dyn_cast<llvm::SCEVZeroExtendExpr>(SCEV)) {
+    //   // Ignore the ZExtSCEV?
+    //   this->addInputParam(ZExtSCEV->getOperand(), Signed);
+  } else {
+    // Search through the child compute nodes.
+    // const auto &PHIMNode = this->PHIMetaNodes.front();
+    // for (const auto &ComputeMNode : PHIMNode.ComputeMetaNodes) {
+    //   if (ComputeMNode->SCEV == SCEV) {
+    //     ProtoInput->set_valid(false);
+    //     // We found the SCEV, check if the ComputeMetaNode is empty.
+    //     if (ComputeMNode->isEmpty()) {
+    //       this->InputValues.push_back(ComputeMNode->RootValue);
+    //       return;
+    //     }
+    //   }
+    // }
+    ClonedSCEV->print(llvm::errs());
+    assert(false && "Cannot handle this SCEV so far.");
+  }
+}
 
 #undef DEBUG_TYPE
 

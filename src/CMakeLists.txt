@@ -64,12 +64,12 @@ add_library(LLVMTDGPass SHARED
     stream/StaticStreamRegionAnalyzer.cpp
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp
-    stream/StreamExecutionPass.cpp
     stream/ae/AddressDataGraph.cpp
     stream/ae/FunctionalStreamPattern.cpp
     stream/ae/FunctionalStream.cpp
     stream/ae/FunctionalStreamEngine.cpp
     stream/ae/DynamicStreamCoalescer.cpp
+    stream/execution/StreamExecutionPass.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
     # Speculative Precomputation.

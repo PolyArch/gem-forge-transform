@@ -4,6 +4,8 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
 
+#include "google/protobuf/util/json_util.h"
+
 #include <sstream>
 
 #define DEBUG_TYPE "LLVM_TDG_UTILS"
@@ -218,6 +220,21 @@ bool Utils::isAsmIndirectBranchInst(const llvm::Instruction *Inst) {
 
   default: { return false; }
   }
+}
+
+void Utils::dumpProtobufMessageToJson(
+    const ::google::protobuf::Message &Message, const ::std::string &FileName) {
+  std::ofstream InfoTextFStream(FileName);
+  assert(InfoTextFStream.is_open() &&
+         "Failed to open the output info text file.");
+  std::string InfoJsonString;
+  ::google::protobuf::util::JsonPrintOptions JsonPrintOptions;
+  JsonPrintOptions.add_whitespace = true;
+  JsonPrintOptions.always_print_primitive_fields = true;
+  ::google::protobuf::util::MessageToJsonString(Message, &InfoJsonString,
+                                                JsonPrintOptions);
+  InfoTextFStream << InfoJsonString;
+  InfoTextFStream.close();
 }
 
 #undef DEBUG_TYPE

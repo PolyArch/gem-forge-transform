@@ -331,6 +331,10 @@ void StaticInnerMostLoop::computeLiveInOutValues(llvm::Loop *Loop) {
 }
 
 CachedLoopInfo::~CachedLoopInfo() {
+  for (auto &Entry : this->SEExpanderCache) {
+    delete Entry.second;
+  }
+  this->SEExpanderCache.clear();
   for (auto &Entry : this->SECache) {
     delete Entry.second;
   }
@@ -350,7 +354,10 @@ CachedLoopInfo::~CachedLoopInfo() {
   }
   this->ACCache.clear();
 
+  delete this->DL;
+  this->DL = nullptr;
   delete this->TLI;
+  this->TLI = nullptr;
 }
 
 llvm::AssumptionCache *
@@ -390,6 +397,16 @@ CachedLoopInfo::getScalarEvolution(llvm::Function *Func) {
         *Func, *this->TLI, *this->getAssumptionCache(Func),
         *this->getDominatorTree(Func), *this->getLoopInfo(Func));
     Iter = this->SECache.emplace(Func, SE).first;
+  }
+  return Iter->second;
+}
+
+llvm::SCEVExpander *CachedLoopInfo::getSCEVExpander(llvm::Function *Func) {
+  auto Iter = this->SEExpanderCache.find(Func);
+  if (Iter == this->SEExpanderCache.end()) {
+    auto SEExpander =
+        new llvm::SCEVExpander(*this->getScalarEvolution(Func), *this->DL, "");
+    Iter = this->SEExpanderCache.emplace(Func, SEExpander).first;
   }
   return Iter->second;
 }

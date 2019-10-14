@@ -4,6 +4,7 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpander.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/Dominators.h"
 
@@ -196,6 +197,7 @@ public:
   CachedLoopInfo(llvm::Module *Module) : TLI(nullptr) {
     TLI = new llvm::TargetLibraryInfo(
         llvm::TargetLibraryInfoImpl(llvm::Triple(Module->getTargetTriple())));
+    DL = new llvm::DataLayout(Module);
   }
   ~CachedLoopInfo();
 
@@ -204,15 +206,18 @@ public:
   llvm::LoopInfo *getLoopInfo(llvm::Function *Func);
   llvm::DominatorTree *getDominatorTree(llvm::Function *Func);
   llvm::ScalarEvolution *getScalarEvolution(llvm::Function *Func);
+  llvm::SCEVExpander *getSCEVExpander(llvm::Function *Func);
   llvm::Instruction *getUnrollableTerminator(llvm::Loop *Loop);
 
 private:
   llvm::TargetLibraryInfo *TLI;
+  llvm::DataLayout *DL;
 
   std::unordered_map<llvm::Function *, llvm::AssumptionCache *> ACCache;
   std::unordered_map<llvm::Function *, llvm::LoopInfo *> LICache;
   std::unordered_map<llvm::Function *, llvm::DominatorTree *> DTCache;
   std::unordered_map<llvm::Function *, llvm::ScalarEvolution *> SECache;
+  std::unordered_map<llvm::Function *, llvm::SCEVExpander *> SEExpanderCache;
   std::unordered_map<llvm::Loop *, llvm::Instruction *>
       UnrollableTerminatorCache;
 };
