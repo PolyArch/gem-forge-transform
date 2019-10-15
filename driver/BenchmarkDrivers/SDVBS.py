@@ -65,7 +65,7 @@ tracking.fullhd
 class SDVBSBenchmark(Benchmark):
 
     O2 = ['O2']
-    O2_NO_VECTORIZE = ['O2', 'fno-vectorize',
+    O2_NO_VECTORIZE = ['O3', 'fno-vectorize',
                        'fno-slp-vectorize', 'fno-unroll-loops']
 
     # Fractal experiments.
@@ -322,13 +322,15 @@ class SDVBSBenchmark(Benchmark):
         )
 
         if self.input_size != 'fullhd':
-            # For not fullhd input we trace only the traced function.
+            # For non fullhd input we trace only the traced function.
             os.putenv('LLVM_TDG_TRACE_ROI', str(
                 TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value
             ))
             os.putenv('LLVM_TDG_TRACE_MODE', str(
                 TraceFlagEnum.GemForgeTraceMode.TraceAll.value
             ))
+            # We trace at most 1 million instructions.
+            os.putenv('LLVM_TDG_HARD_EXIT_IN_MILLION', str(1))
         else:
             # Otherwise we trace the simpoint region.
             os.putenv('LLVM_TDG_TRACE_ROI', str(

@@ -49,10 +49,6 @@ enum TypeID {
 };
 
 namespace {
-// This flag controls if I am already inside myself.
-// This helps to solve the problem when the tracer runtime calls some functions
-// which is also traced (so no recursion).
-static uint64_t hardExitCount = 1e10;
 
 static InstructionUIDMapReader instUIDMap;
 
@@ -209,15 +205,6 @@ static void initialize() {
            "Please provide the inst uid file.");
     instUIDMap.parseFrom(instUIDMapFileName);
 
-    // Initialize the hard exit count.
-    {
-      auto hardExitInBillion = getUint64Env("LLVM_TDG_HARD_EXIT_IN_BILLION");
-      if (hardExitInBillion > 0) {
-        hardExitCount = hardExitInBillion * 1e9;
-      }
-      printf("initialize hardExitCount to %lu.\n", hardExitCount);
-    }
-
     initializeTraceMode();
     initializeTraceROI();
 
@@ -356,6 +343,16 @@ TracerThreadState &getOrInitializeThreadState() {
         tts.tid = tid;
         tts.initialized = true;
         tts.seqTid = i;
+        // Initialize the hard exit count.
+        {
+          auto hardExitInMillion =
+              getUint64Env("LLVM_TDG_HARD_EXIT_IN_MILLION");
+          if (hardExitInMillion > 0) {
+            tts.hardExitCount = hardExitInMillion * 1e6;
+          }
+          printf("initialize hardExitCount to %lu.\n", tts.hardExitCount);
+        }
+
         // Initialize the profiler.
         auto profileIntervalSize =
             getUint64Env("LLVM_TDG_PROFILE_INTERVAL_SIZE");
@@ -493,7 +490,7 @@ bool TracerThreadState::shouldSwitchTraceFile() {
 
 bool TracerThreadState::shouldExit() {
   // Hard exit condition.
-  if (count == hardExitCount) {
+  if (count == this->hardExitCount) {
     std::exit(0);
   }
 

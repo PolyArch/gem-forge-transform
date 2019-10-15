@@ -264,11 +264,12 @@ class Benchmark(object):
             self.get_trace_folder_abs(),
             '*.trace',
         ))
+        print(trace_fns)
         # Sort them.
 
         def sort_by(a, b):
-            a_fields = a.split('.')
-            b_fields = b.split('.')
+            a_fields = os.path.basename(a).split('.')
+            b_fields = os.path.basename(b).split('.')
             a_thread_id = int(a_fields[-3])
             b_thread_id = int(b_fields[-3])
             a_trace_id = int(a_fields[-2])
@@ -484,8 +485,8 @@ class Benchmark(object):
         os.putenv('LLVM_TDG_TRACE_ROI', str(self.get_profile_roi()))
         os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_profile_folder_abs())
         os.putenv('LLVM_TDG_INST_UID_FILE', self.get_profile_inst_uid())
-        os.putenv('LLVM_TDG_HARD_EXIT_IN_BILLION',
-                  str(self.get_hard_exit_in_billion()))
+        os.putenv('LLVM_TDG_HARD_EXIT_IN_MILLION',
+                  str(self.get_hard_exit_in_billion() * 1000))
         run_cmd = [
             './' + self.get_profile_bin(),
         ]
