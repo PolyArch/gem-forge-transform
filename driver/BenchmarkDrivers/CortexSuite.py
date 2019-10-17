@@ -10,32 +10,33 @@ import os
 class CortexBenchmark(Benchmark):
 
     O2 = ['O2']
-    O2_NO_VECTORIZE = ['O2', 'fno-vectorize', 'fno-slp-vectorize', 'fno-unroll-loops']
+    O2_NO_VECTORIZE = ['O3', 'fno-vectorize',
+                       'fno-slp-vectorize', 'fno-unroll-loops']
 
     FLAGS_STREAM = {
         # Advanced stream experiments.
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
-        'rbm'              : O2_NO_VECTORIZE,
-        'sphinx'           : O2_NO_VECTORIZE,
-        'srr'              : O2_NO_VECTORIZE,
-        'lda'              : O2_NO_VECTORIZE,
-        'svd3'             : O2_NO_VECTORIZE,
-        'pca'              : O2_NO_VECTORIZE,
+        'rbm': O2_NO_VECTORIZE,
+        'sphinx': O2_NO_VECTORIZE,
+        'srr': O2_NO_VECTORIZE,
+        'lda': O2_NO_VECTORIZE,
+        'svd3': O2_NO_VECTORIZE,
+        'pca': O2_NO_VECTORIZE,
         'motion-estimation': O2_NO_VECTORIZE,
-        'liblinear'        : O2_NO_VECTORIZE,
+        'liblinear': O2_NO_VECTORIZE,
     }
 
     FLAGS_FRACTAL = {
         # Fractal experiments.
-        'rbm'              : O2_NO_VECTORIZE,
-        'sphinx'           : O2_NO_VECTORIZE,
-        'srr'              : O2_NO_VECTORIZE,
-        'lda'              : O2_NO_VECTORIZE,
-        'svd3'             : O2_NO_VECTORIZE,
-        'pca'              : O2_NO_VECTORIZE,
+        'rbm': O2_NO_VECTORIZE,
+        'sphinx': O2_NO_VECTORIZE,
+        'srr': O2_NO_VECTORIZE,
+        'lda': O2_NO_VECTORIZE,
+        'svd3': O2_NO_VECTORIZE,
+        'pca': O2_NO_VECTORIZE,
         'motion-estimation': O2_NO_VECTORIZE,
-        'liblinear'        : O2_NO_VECTORIZE,
+        'liblinear': O2_NO_VECTORIZE,
     }
 
     DEFINES = {
@@ -105,33 +106,6 @@ class CortexBenchmark(Benchmark):
             'small': {},
             'medium': {},
             'large': {},
-        },
-    }
-
-    INCLUDES = {
-        'rbm': {
-            'includes'
-        },
-        'sphinx': {
-            'includes'
-        },
-        'srr': {
-            'includes'
-        },
-        'lda': {
-            'includes'
-        },
-        'svd3': {
-            'includes'
-        },
-        'pca': {
-            'includes'
-        },
-        'motion-estimation': {
-            'includes'
-        },
-        'liblinear': {
-            'includes'
         },
     }
 
@@ -208,17 +182,28 @@ class CortexBenchmark(Benchmark):
         'liblinear': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     }
 
+    LEGAL_INPUT_SIZE = ('small', 'medium', 'large')
+
     def __init__(self, benchmark_args,
-                 folder, benchmark_name, input_size, suite='cortex'):
+                 folder, benchmark_name, suite='cortex'):
         self.benchmark_name = benchmark_name
-        self.input_size = input_size
+
+        self.input_size = 'large'
+        if benchmark_args.options.input_size:
+            self.input_size = benchmark_args.options.input_size
+        assert(self.input_size in CortexBenchmark.LEGAL_INPUT_SIZE)
+        self.sim_input_size = 'large'
+        if benchmark_args.options.sim_input_size:
+            self.sim_input_size = benchmark_args.options.sim_input_size
+        assert(self.sim_input_size in CortexBenchmark.LEGAL_INPUT_SIZE)
+
         self.suite = suite
         self.top_folder = folder
 
         self.src_dir = os.path.join(self.top_folder, benchmark_name)
 
         self.work_path = os.path.join(
-            C.LLVM_TDG_RESULT_DIR, self.suite, self.benchmark_name, input_size)
+            C.LLVM_TDG_RESULT_DIR, self.suite, self.benchmark_name)
         Util.mkdir_chain(self.work_path)
 
         # Create a symbolic link for everything in the source dir.
@@ -234,8 +219,11 @@ class CortexBenchmark(Benchmark):
         elif C.EXPERIMENTS == 'fractal':
             self.flags = CortexBenchmark.FLAGS_FRACTAL[self.benchmark_name]
         self.flags.append('gline-tables-only')
+
         self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_size]
-        self.includes = CortexBenchmark.INCLUDES[self.benchmark_name]
+        assert(len(self.defines) == 0)
+
+        self.includes = ['includes']
         self.trace_functions = '.'.join(
             CortexBenchmark.TRACE_FUNC[self.benchmark_name])
 
@@ -245,22 +233,33 @@ class CortexBenchmark(Benchmark):
         self.skip_inst = 1e8
         self.end_inst = 11e8
 
-        self.args = CortexBenchmark.ARGS[self.benchmark_name][self.input_size]
-
         super(CortexBenchmark, self).__init__(benchmark_args)
 
     def get_name(self):
-        return '{suite}.{benchmark_name}.{input_size}'.format(
+        return '{suite}.{benchmark_name}'.format(
             suite=self.suite,
             benchmark_name=self.benchmark_name,
-            input_size=self.input_size,
         )
+
+    def get_input_size(self):
+        return self.input_size
+
+    def get_sim_input_size(self):
+        return self.sim_input_size
+
+    def get_profile_roi(self):
+        if self.input_size == 'small':
+            return TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value
+        return TraceFlagEnum.GemForgeTraceROI.All.value
 
     def get_links(self):
         return ['-lm']
 
     def get_args(self):
-        return self.args
+        return CortexBenchmark.ARGS[self.benchmark_name][self.input_size]
+
+    def get_sim_args(self):
+        return CortexBenchmark.ARGS[self.benchmark_name][self.sim_input_size]
 
     def get_trace_func(self):
         return self.trace_functions
@@ -333,37 +332,44 @@ class CortexBenchmark(Benchmark):
         self.build_trace(
             link_stdlib=False,
             trace_reachable_only=False,
-            # debugs=['TracePass']
         )
 
-        os.putenv('LLVM_TDG_TRACE_MODE', str(
-            TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value
-        ))
-        os.putenv('LLVM_TDG_INTERVALS_FILE', self.get_simpoint_abs())
-        os.unsetenv('LLVM_TDG_TRACE_ROI')
+        if self.input_size != 'large':
+            # For non fullhd input we trace only the traced function.
+            os.putenv('LLVM_TDG_TRACE_ROI', str(
+                TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value
+            ))
+            os.putenv('LLVM_TDG_TRACE_MODE', str(
+                TraceFlagEnum.GemForgeTraceMode.TraceAll.value
+            ))
+        else:
+            # Otherwise we trace the simpoint region.
+            os.putenv('LLVM_TDG_TRACE_ROI', str(
+                TraceFlagEnum.GemForgeTraceROI.All.value
+            ))
+            os.putenv('LLVM_TDG_TRACE_MODE', str(
+                TraceFlagEnum.GemForgeTraceMode.TraceSpecifiedInterval.value
+            ))
+            os.putenv('LLVM_TDG_INTERVALS_FILE', self.get_simpoint_abs())
 
         self.run_trace()
         os.chdir(self.cwd)
 
 
 class CortexSuite:
-    # FOLDER = '/home/zhengrong/Documents/CortexSuite/cortex'
-    FOLDER = '/media/zhengrong/My Passport/Documents/CortexSuite/cortex'
-
     def __init__(self, benchmark_args):
         folder = os.getenv('CORTEX_SUITE_PATH')
         assert(folder is not None)
         self.benchmarks = list()
-        input_sizes = [
-            # 'small',
-            # 'medium',
-            'large',
-        ]
-        for input_size in input_sizes:
-            for benchmark_name in CortexBenchmark.FLAGS_STREAM:
-                benchmark = CortexBenchmark(
-                    benchmark_args, folder, benchmark_name, input_size)
-                self.benchmarks.append(benchmark)
+        for benchmark_name in CortexBenchmark.FLAGS_STREAM:
+            if benchmark_args.options.benchmark:
+                full_name = 'cortex.{b}'.format(b=benchmark_name)
+                if full_name not in benchmark_args.options.benchmark:
+                    # Ignore benchmark not required.
+                    continue
+            benchmark = CortexBenchmark(
+                benchmark_args, folder, benchmark_name)
+            self.benchmarks.append(benchmark)
 
     def get_benchmarks(self):
         return self.benchmarks

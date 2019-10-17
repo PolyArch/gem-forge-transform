@@ -26,6 +26,7 @@ mser.fullhd
 =================================
 multi_ncut.fullhd
 90% fSortIndices 
+Top level is segment_image(), but I trace fSortIndices.
 
 =================================
 sift.fullhd
@@ -115,7 +116,7 @@ class SDVBSBenchmark(Benchmark):
         ],
         'localization': ['gem_forge_work'],
         'mser': ['mser'],
-        'multi_ncut': ['segment_image'],
+        'multi_ncut': ['fSortIndices'],
         'sift': ['sift', 'normalizeImage'],
         'stitch': ['getANMS', 'harris', 'extractFeatures'],
         'svm': ['gem_forge_work'],

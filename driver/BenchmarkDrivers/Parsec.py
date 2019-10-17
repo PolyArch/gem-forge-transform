@@ -34,7 +34,16 @@ class ParsecBenchmark(Benchmark):
             'simsmall':  ['$NTHREADS', '10000', '2000', '100000.nets', '32'],
             'simmedium': ['$NTHREADS', '15000', '2000', '200000.nets', '64'],
         },
+        'fluidanimate': {
+            'test':      ['$NTHREADS', '1', 'in_5K.fluid', 'out.fluid'],
+            'simdev':    ['$NTHREADS', '3', 'in_15K.fluid', 'out.fluid'],
+            'simsmall':  ['$NTHREADS', '5', 'in_35K.fluid', 'out.fluid'],
+            'simmedium': ['$NTHREADS', '1', 'in_100K.fluid', 'out.fluid'],
+        }
     }
+
+    LEGAL_INPUT_SIZE = {'test', 'simdev',
+                        'simsmall', 'simmedium', 'simlarge', 'native'}
 
     def __init__(self, benchmark_args, benchmark_path):
         self.cwd = os.getcwd()
@@ -50,12 +59,18 @@ class ParsecBenchmark(Benchmark):
         # Override the input_size if use-specified.
         if benchmark_args.options.input_size:
             self.input_size = benchmark_args.options.input_size
-        assert(self.input_size in {'test', 'simdev',
-                                   'simsmall', 'simmedium', 'simlarge', 'native'})
+        assert(self.input_size in ParsecBenchmark.LEGAL_INPUT_SIZE)
+        self.sim_input_size = 'test'
+        if benchmark_args.options.sim_input_size:
+            self.sim_input_size = benchmark_args.options.sim_input_size
+        assert(self.sim_input_size in ParsecBenchmark.LEGAL_INPUT_SIZE)
 
         self.exe_path = os.path.join(
             self.benchmark_path, 'run', self.input_size)
-        self.setup_input()
+        self.setup_input(self.input_size)
+        self.sim_exe_path = os.path.join(
+            self.benchmark_path, 'run', self.sim_input_size)
+        self.setup_input(self.sim_input_size)
 
         self.benchmark_name = os.path.basename(self.benchmark_path)
         self.n_thread = 1
@@ -68,27 +83,35 @@ class ParsecBenchmark(Benchmark):
 
         super(ParsecBenchmark, self).__init__(benchmark_args)
 
-    def setup_input(self):
-        if os.path.isdir(self.exe_path):
-            # We assume the input is there.
-            return
-        elif os.path.isfile(self.exe_path):
+    def setup_input(self, input_size):
+        if os.path.isfile(self.exe_path):
             # Exe path is not a folder.
             assert(False)
         Util.mkdir_p(self.exe_path)
-        input_tar = os.path.join(
-            self.benchmark_path, 'inputs', 'input_{size}.tar'.format(size=self.input_size))
         os.chdir(self.exe_path)
+        input_ready_file = 'input_ready_{size}'
+        if os.path.isfile(input_ready_file):
+            # We assume the input is there.
+            return
+        input_tar = os.path.join(
+            self.benchmark_path, 'inputs', 'input_{size}.tar'.format(size=input_size))
         untar_cmd = [
             'tar',
             'xvf',
             input_tar,
         ]
         Util.call_helper(untar_cmd)
+        Util.call_helper(['touch', input_ready_file])
         os.chdir(self.cwd)
 
     def get_name(self):
         return 'parsec.{b}'.format(b=self.benchmark_name)
+
+    def get_input_size(self):
+        return self.input_size
+
+    def get_sim_input_size(self):
+        return self.sim_input_size
 
     def get_links(self):
         return [
@@ -112,6 +135,8 @@ class ParsecBenchmark(Benchmark):
             return 'ParticleFilterPthread<TrackingModel>::Exec(unsigned short, unsigned int)'
         elif self.benchmark_name == 'canneal':
             return 'annealer_thread::Run()'
+        elif self.benchmark_name == 'fluidanimate':
+            return 'AdvanceFrameMT(int)'
         return None
 
     def get_lang(self):
@@ -119,6 +144,9 @@ class ParsecBenchmark(Benchmark):
 
     def get_exe_path(self):
         return self.exe_path
+
+    def get_sim_exe_path(self):
+        return self.sim_exe_path
 
     def get_run_path(self):
         return self.work_path
@@ -193,13 +221,11 @@ class ParsecBenchmark(Benchmark):
             TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
         os.putenv('LLVM_TDG_TRACE_ROI', str(
             TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
+        # So for we just trace 1 million to get a fake trace so that valid.ex can run.
+        os.putenv('LLVM_TDG_HARD_EXIT_IN_MILLION', str(10))
         self.run_trace()
 
         os.chdir(self.cwd)
-
-    # def get_additional_gem5_simulate_command(self):
-    #     # For validation, we disable cache warm.
-    #     return ['--gem-forge-cold-cache']
 
     def build_validation(self, transform_config, trace, output_tdg):
         # Build the validation binary.
@@ -274,18 +300,28 @@ class ParsecSuite:
 """
 Parsec Kernel Function.
 
+==========================================================
 Blackscholes: 
+Works with RISCV.
 100% bs_thread().
 Simple data-parallel float-intensive.
 Linear access.
 
+==========================================================
 Bodytrack:
+Works with RISCV.
 Somehow I still feel this is compute intensive.
 18% void MultiCameraProjectedBody::ImageProjection()
 33% float ImageMeasurements::ImageErrorEdge() 
 40% float ImageMeasurements::ImageErrorInside()
 
-Canneal: annealer_thread && Assembly for atomic operation.
+==========================================================
+Canneal: annealer_thread.
+Not work with RISCV due to assembly for atomic operation.
 
+==========================================================
+Fluidanimate: AdvanceFrameMT(int)
+47% ComputeForcesMT
+45% ComputeDensitiesMT
 
 """

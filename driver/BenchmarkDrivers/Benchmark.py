@@ -114,6 +114,9 @@ class Benchmark(object):
     def get_exe_path(self):
         return
 
+    def get_sim_exe_path(self):
+        return self.get_exe_path()
+
     @abc.abstractmethod
     def get_run_path(self):
         return
@@ -504,7 +507,7 @@ class Benchmark(object):
 
     def run_trace(self):
         # Remember to set the environment for trace.
-        os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_trace_base())
+        os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_trace_folder_abs())
         os.putenv('LLVM_TDG_INST_UID_FILE', self.get_trace_inst_uid())
         run_cmd = [
             './' + self.get_trace_bin(),
@@ -818,7 +821,7 @@ class Benchmark(object):
         # Do not add the tdg file, so that gem5 will simulate the binary.
         # For execution simulation, we would like to be in the exe_path.
         cwd = os.getcwd()
-        os.chdir(self.get_exe_path())
+        os.chdir(self.get_sim_exe_path())
         Util.call_helper(gem5_args)
         os.chdir(cwd)
 
