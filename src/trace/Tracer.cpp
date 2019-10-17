@@ -219,6 +219,7 @@ static void initialize() {
 
     std::atexit(cleanup);
 
+    printf("Initializing traceFolder to %s.\n", traceFolder);
     printf("Initializing traceROI to %d.\n", static_cast<int>(traceROI));
     printf("Initializing SKIP_INST to %lu...\n", SKIP_INST);
     printf("Initializing MAX_INST to %lu...\n", MAX_INST);
@@ -705,7 +706,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
   }
   if (tts.count % PRINT_INTERVAL < 5) {
     // Print every PRINT_INTERVAL instructions.
-    printf("%lu:", tts.count);
+    printf("[%d]%lu:", tts.seqTid, tts.count);
     for (size_t i = 0; i < tts.stackName.size(); ++i) {
       printf("%s (%u) -> ", tts.stackName[i], tts.stack[i]);
     }
