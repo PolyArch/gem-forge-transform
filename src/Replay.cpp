@@ -11,10 +11,6 @@
 
 #include <fstream>
 
-llvm::cl::opt<std::string> InstUIDFileName(
-    "datagraph-inst-uid-file",
-    llvm::cl::desc("Inst UID Map file for datagraph building."));
-
 llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel(
     "datagraph-detail",
     llvm::cl::desc("Choose how detail the datagraph should be:"),
@@ -35,6 +31,13 @@ llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath(
 llvm::cl::opt<bool> GemForgeOutputDataGraphTextMode(
     "output-datagraph-text-mode", llvm::cl::init(false),
     llvm::cl::desc("Output datagraph in text mode."));
+
+/**
+ * Whether this is not a GemForgeTrace, but a region simpoint.
+ */
+llvm::cl::opt<bool> GemForgeRegionSimpoint(
+    "gem-forge-region-simpoint", llvm::cl::init(false),
+    llvm::cl::desc("Input is a region simpoint description."));
 
 #define DEBUG_TYPE "ReplayPass"
 #if !defined(LLVM_DEBUG) && defined(DEBUG)
@@ -109,17 +112,16 @@ public:
 };
 
 ReplayTrace::ReplayTrace(char _ID)
-    : llvm::ModulePass(_ID), Trace(nullptr), OutTraceName("llvm.tdg"),
+    : GemForgeBasePass(_ID), Trace(nullptr), OutTraceName("llvm.tdg"),
       OutputExtraFolderPath("llvm.tdg.extra"), Serializer(nullptr),
       CacheWarmerPtr(nullptr), RegionStatRecorderPtr(nullptr) {}
 
 ReplayTrace::~ReplayTrace() {}
 
 void ReplayTrace::getAnalysisUsage(llvm::AnalysisUsage &Info) const {
+  GemForgeBasePass::getAnalysisUsage(Info);
   Info.addRequired<LocateAccelerableFunctions>();
   Info.addPreserved<LocateAccelerableFunctions>();
-  Info.addRequired<llvm::TargetLibraryInfoWrapperPass>();
-  Info.addRequired<llvm::AssumptionCacheTracker>();
 }
 
 bool ReplayTrace::runOnModule(llvm::Module &Module) {
@@ -153,7 +155,7 @@ bool ReplayTrace::runOnModule(llvm::Module &Module) {
 
 bool ReplayTrace::initialize(llvm::Module &Module) {
   LLVM_DEBUG(llvm::errs() << "ReplayTrace::doInitialization.\n");
-  this->Module = &Module;
+  GemForgeBasePass::initialize(Module);
 
   // Register the external ioctl function.
   registerFunction(Module);
@@ -172,6 +174,8 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
            "User specified detail level is lower than standalone.");
     this->DGDetailLevel = DataGraphDetailLevel;
   }
+  LLVM_DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
+                          << this->DGDetailLevel << ".\n");
 
   if (GemForgeOutputDataGraphFileName.getNumOccurrences() == 1) {
     this->OutTraceName = GemForgeOutputDataGraphFileName.getValue();
@@ -179,17 +183,6 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
   if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
     this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
   }
-
-  // Initialize the InstUIDMap.
-  assert(InstUIDFileName.getNumOccurrences() > 0 &&
-         "You must provide instruction uid file.");
-  Utils::getInstUIDMap().parseFrom(InstUIDFileName.getValue(), this->Module);
-
-  LLVM_DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
-                          << this->DGDetailLevel << ".\n");
-  this->CachedLI = new CachedLoopInfo(this->Module);
-  this->CachedPDF = new CachedPostDominanceFrontier();
-  this->CachedLU = new CachedLoopUnroller();
 
   this->Trace = new DataGraph(this->Module, this->CachedLI, this->CachedPDF,
                               this->CachedLU, this->DGDetailLevel);
@@ -223,13 +216,7 @@ bool ReplayTrace::finalize(llvm::Module &Module) {
   LLVM_DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
   delete this->Trace;
   this->Trace = nullptr;
-  // Release the cached static loops.
-  delete this->CachedLI;
-  this->CachedLI = nullptr;
-  delete this->CachedLU;
-  this->CachedLU = nullptr;
-  delete this->CachedPDF;
-  this->CachedPDF = nullptr;
+  GemForgeBasePass::finalize(Module);
   return true;
 }
 

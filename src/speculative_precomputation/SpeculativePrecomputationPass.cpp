@@ -1,5 +1,7 @@
 #include "SpeculativePrecomputationPass.h"
 
+#include "Utils.h"
+
 llvm::cl::opt<std::string>
     LoadProfileFileName("speculative-precomputation-load-profile-file",
                         llvm::cl::desc("Load profile file."));

@@ -73,7 +73,7 @@ void TestInput::setUpLLVMOptions(const std::string &Pass) const {
   TraceFileName.addOccurrence(0, "trace-file", this->getTraceFile());
 
   InstUIDFileName.reset();
-  InstUIDFileName.addOccurrence(0, "datagraph-inst-uid-file",
+  InstUIDFileName.addOccurrence(0, "gem-forge-inst-uid-file",
                                 this->getInstUidMapFile());
 
   TraceFileFormat.reset();

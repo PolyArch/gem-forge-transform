@@ -6,6 +6,8 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 
+extern llvm::cl::opt<std::string> ProfileFolder;
+
 class ProfileParser {
 public:
   // Parse from a file.
@@ -14,7 +16,6 @@ public:
   // Get the counter of the specific basic block.
   uint64_t countBasicBlock(llvm::BasicBlock *BB) const;
 
-private:
   LLVM::TDG::Profile Profile;
 };
 

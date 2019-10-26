@@ -22,6 +22,7 @@ add_library(LLVMTDGPass SHARED
     trace/TraceParserProtobuf.cpp
     trace/ProfileParser.cpp
     trace/InstructionUIDMap.cpp
+    trace/ProfileAnalyzePass.cpp
     $<TARGET_OBJECTS:ProtobufTraceMessage>
     ${TDG_PROTOBUF_SRCS}
     DynamicInstruction.cpp
@@ -36,6 +37,7 @@ add_library(LLVMTDGPass SHARED
     DynamicLoopTree.cpp
     MemoryFootprint.cpp
     LocateAccelerableFunctions.cpp
+    GemForgeBasePass.cpp
     Replay.cpp
     TraceStatisticPass.cpp
     Gem5ProtobufSerializer.cpp
