@@ -18,13 +18,12 @@ class BenchmarkArgs(object):
 
 
 class TraceObj(object):
-    def __init__(self, fn, trace_id, simpoint_fn):
+    def __init__(self, fn, trace_id, weight):
         self.fn = fn
         self.trace_id = trace_id
         self.lhs = 0
         self.rhs = 0
-        self.weight = 1
-        self._init_simpoints_info(simpoint_fn)
+        self.weight = weight
         print('Find trace {weight}: {fn}'.format(
             weight=self.weight, fn=self.fn))
 
@@ -36,29 +35,6 @@ class TraceObj(object):
 
     def get_trace_fn(self):
         return self.fn
-
-    def _init_simpoints_info(self, simpoint_fn):
-        """
-        Read through the simpoints file to find information for myself.
-        """
-        try:
-            if os.path.isfile(simpoint_fn):
-                with open(simpoint_fn, 'r') as f:
-                    trace_id = 0
-                    for line in f:
-                        if line.startswith('#'):
-                            continue
-                        if trace_id == self.trace_id:
-                            # Found myself.
-                            fields = line.split(' ')
-                            assert(len(fields) == 3)
-                            self.lhs = int(fields[0])
-                            self.rhs = int(fields[1])
-                            self.weight = float(fields[2])
-                            break
-                        trace_id += 1
-        except Exception:
-            return
 
 
 class Benchmark(object):
@@ -208,6 +184,9 @@ class Benchmark(object):
     def get_simpoint_abs(self):
         return os.path.join(self.get_profile_folder_abs(), 'simpoints.txt')
 
+    def get_region_simpoint_abs(self):
+        return os.path.join(self.get_profile_folder_abs(), 'region.simpoints.txt')
+
     """
     Get some constant values for trace.
     """
@@ -251,11 +230,86 @@ class Benchmark(object):
         return 10
 
     def init_traces(self):
+        # First try to init from simpoint.
+        self.traces = list()
+        if self.options.region_simpoint and os.path.isfile(self.get_region_simpoint_abs()):
+            self.init_traces_from_region_simpoint(
+                self.get_region_simpoint_abs())
+            return
+        if os.path.isfile(self.get_simpoint_abs()):
+            self.init_traces_from_simpoint(self.get_simpoint_abs())
+            return
+        self.init_traces_from_glob()
+
+    def init_traces_from_simpoint(self, simpoint_fn):
+        """
+        Read in the simpoint and try to find the trace.
+        Since simpoint only works for single thread workloads,
+        we will always assume thread id to be zero.
+        """
+        with open(simpoint_fn, 'r') as f:
+            trace_id = 0
+            for line in f:
+                if line.startswith('#'):
+                    continue
+                fields = line.split(' ')
+                assert(len(fields) == 3)
+                lhs = int(fields[0])
+                rhs = int(fields[1])
+                weight = float(fields[2])
+                trace_fn = os.path.join(
+                    self.get_trace_folder_abs(),
+                    '0.{tid}.trace'.format(tid=trace_id),
+                )
+                assert(os.path.isfile(trace_fn))
+                self.traces.append(
+                    TraceObj(trace_fn, trace_id, weight)
+                )
+                trace_id += 1
+
+    def init_traces_fake(self):
+        trace_fn = os.path.join(
+            self.get_trace_folder_abs(),
+            'fake.trace',
+        )
+        trace_id = 0
+        weight = 1.0
+        self.traces.append(
+            TraceObj(trace_fn, trace_id, weight)
+        )
+
+    def init_traces_from_region_simpoint(self, region_simpoint_fn):
+        Util.mkdir_p(self.get_trace_folder_abs())
+        with open(region_simpoint_fn, 'r') as f:
+            trace_id = 0
+            for line in f:
+                if line.startswith('#'):
+                    continue
+                fields = line.split()
+                print(fields)
+                assert(len(fields) == 6)
+                weight = float(fields[0])
+                func = fields[4]
+                bb = fields[5]
+                # Write the fake trace file.
+                trace_fn = os.path.join(
+                    self.get_trace_folder_abs(),
+                    'region.{tid}.trace'.format(tid=trace_id)
+                )
+                with open(trace_fn, 'w') as trace:
+                    trace.write(func + '\n')
+                    trace.write(bb + '\n')
+                self.traces.append(
+                    TraceObj(trace_fn, trace_id, weight)
+                )
+                trace_id += 1
+
+    def init_traces_from_glob(self):
         """
         Originally for single thread workloads, the trace id will
         be encoded in the trace file name. However, after we enable
         tracing for multi-threaded workloads, the trace file name 
-        will be {benchmark_name}.{thread_id}.{trace_id}.trace, with
+        will be {thread_id}.{trace_id}.trace, with
         the main thread always be assigned to 0.
         We find all traces and sort them to have a consistant scalar
         trace id assigned to all traces.
@@ -267,9 +321,11 @@ class Benchmark(object):
             self.get_trace_folder_abs(),
             '*.trace',
         ))
+        # Filter out those region traces.
+        trace_fns = [t for t in trace_fns if not os.path.basename(
+            t).startswith('region.')]
         print(trace_fns)
         # Sort them.
-
         def sort_by(a, b):
             a_fields = os.path.basename(a).split('.')
             b_fields = os.path.basename(b).split('.')
@@ -282,7 +338,6 @@ class Benchmark(object):
             else:
                 return a_thread_id - b_thread_id
         trace_fns.sort(cmp=sort_by)
-        self.traces = list()
         for trace_id in range(len(trace_fns)):
             trace_fn = trace_fns[trace_id]
             # Ignore the trace id not specified by the user.
@@ -290,7 +345,7 @@ class Benchmark(object):
                 if trace_id not in self.options.trace_id:
                     continue
             self.traces.append(
-                TraceObj(trace_fn, trace_id, self.get_simpoint_abs())
+                TraceObj(trace_fn, trace_id, 1.0)
             )
 
     def get_transform_path(self, transform_id):
@@ -414,6 +469,7 @@ class Benchmark(object):
             ])
         self.build_profile()
         self.run_profile()
+        # self.analyze_profile()
         os.chdir(self.cwd)
 
     """
@@ -502,20 +558,50 @@ class Benchmark(object):
         os.remove(self.get_profile_bin())
 
     """
+    Analyze the profile.
+    """
+
+    def analyze_profile(self):
+        analyze_cmd = [
+            C.OPT,
+            '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
+            '-profile-analyze-pass',
+            self.get_raw_bc(),
+            '-gem-forge-inst-uid-file',
+            self.get_profile_inst_uid(),
+            '-gem-forge-profile-folder',
+            self.get_profile_folder_abs(),
+        ]
+        Util.call_helper(analyze_cmd)
+
+    """
     Generate the trace.
     """
 
     def run_trace(self):
-        # Remember to set the environment for trace.
-        os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_trace_folder_abs())
-        os.putenv('LLVM_TDG_INST_UID_FILE', self.get_trace_inst_uid())
-        run_cmd = [
-            './' + self.get_trace_bin(),
-        ]
-        if self.get_args() is not None:
-            run_cmd += self.get_args()
-        print('# Run traced binary...')
-        Util.call_helper(run_cmd)
+        if self.options.fake_trace:
+            # Do not bother really run the trace
+            # but generate a fake one.
+            trace_fn = os.path.join(
+                self.get_trace_folder_abs(),
+                'fake.0.0.trace',
+            )
+            if os.path.isfile(trace_fn):
+                rm_cmd = ['rm', trace_fn]
+                Util.call_helper(trace_fn)
+            touch_cmd = ['touch', trace_fn]
+            Util.call_helper(touch_cmd)
+        else:
+            # Remember to set the environment for trace.
+            os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_trace_folder_abs())
+            os.putenv('LLVM_TDG_INST_UID_FILE', self.get_trace_inst_uid())
+            run_cmd = [
+                './' + self.get_trace_bin(),
+            ]
+            if self.get_args() is not None:
+                run_cmd += self.get_args()
+            print('# Run traced binary...')
+            Util.call_helper(run_cmd)
         # Clean the trace bc and bin.
         os.remove(self.get_trace_bc())
         os.remove(self.get_trace_bin())
@@ -613,10 +699,8 @@ class Benchmark(object):
         opt_cmd += transform_options
         opt_cmd += [
             '-trace-file={trace_file}'.format(trace_file=trace.get_trace_fn()),
-            '-datagraph-inst-uid-file={inst_uid}'.format(
-                inst_uid=self.get_trace_inst_uid()),
-            '-tdg-profile-file={profile_file}'.format(
-                profile_file=self.get_profile()),
+            '-gem-forge-profile-folder={profile_folder}'.format(
+                profile_folder=self.get_profile_folder_abs()),
             '-trace-format={format}'.format(format=self.trace_format),
             '-datagraph-detail={detail}'.format(detail=tdg_detail),
             self.get_raw_bc(),
@@ -625,6 +709,18 @@ class Benchmark(object):
         ]
         if self.options.transform_text:
             opt_cmd.append('-output-datagraph-text-mode=true')
+        if self.options.region_simpoint:
+            opt_cmd.append('-gem-forge-region-simpoint=true')
+            # Region simpoint requires profile inst uid.
+            opt_cmd.append(
+                '-gem-forge-inst-uid-file={inst_uid}'.format(
+                    inst_uid=self.get_profile_inst_uid()),
+            )
+        else:
+            opt_cmd.append(
+                '-gem-forge-inst-uid-file={inst_uid}'.format(
+                    inst_uid=self.get_trace_inst_uid()),
+            )
         # Add the additional options.
         opt_cmd += self.get_additional_transform_options()
         if output_tdg is not None:
@@ -769,8 +865,6 @@ class Benchmark(object):
             '--outdir={outdir}'.format(outdir=outdir),
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=binary),
-            '--llvm-issue-width={ISSUE_WIDTH}'.format(
-                ISSUE_WIDTH=C.ISSUE_WIDTH),
             '--llvm-store-queue-size={STORE_QUEUE_SIZE}'.format(
                 STORE_QUEUE_SIZE=C.STORE_QUEUE_SIZE),
             '--llvm-mcpat={use_mcpat}'.format(use_mcpat=C.GEM5_USE_MCPAT),
@@ -781,6 +875,9 @@ class Benchmark(object):
         if self.options.gem5_debug is not None:
             gem5_args.insert(
                 1, '--debug-flags={debug}'.format(debug=self.options.gem5_debug))
+        if self.options.gem5_debug_start is not None:
+            gem5_args.insert(
+                1, '--debug-start={d}'.format(d=self.options.gem5_debug_start))
         if self.options.gem5_max_insts is not None:
             gem5_args.append(
                 '--maxinsts={max_insts}'.format(max_insts=self.options.gem5_max_insts))
@@ -818,6 +915,8 @@ class Benchmark(object):
             outdir=gem5_out_dir,
             standalone=False,
         )
+        # ! Always fast forward.
+        gem5_args.append('--fast-forward=-1')
         # Do not add the tdg file, so that gem5 will simulate the binary.
         # For execution simulation, we would like to be in the exe_path.
         cwd = os.getcwd()

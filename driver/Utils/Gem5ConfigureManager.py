@@ -119,6 +119,8 @@ class Gem5ReplayConfigureManager(object):
                     prefix=id_prefix,
                     body=id_body,
                 )
+            if 'snippts' in json_obj:
+                json_obj = self.insert_snippts(json_obj)
             if 'design_space' in json_obj:
                 configs = self.generate_config_for_design_space(json_obj)
             else:
@@ -164,3 +166,60 @@ class Gem5ReplayConfigureManager(object):
 
     def get_all_gem_forge_system_configs(self):
         return self.gem_forge_system_configs
+
+    def insert_snippts(self, json_obj):
+        for snippt_name in json_obj['snippts']:
+            snippt = Gem5ReplayConfigureManager.SNIPPTS[snippt_name]
+            json_obj['options'] += snippt
+        return json_obj
+
+    """
+    Common snippts.
+    """
+    RUBY_L3 = [
+        "--l1i_size=32kB",
+        "--l1i_assoc=8",
+        "--l1d_size=32kB",
+        "--l1d_lat=2",
+        "--l1d_mshrs=8",
+        "--l1d_assoc=8",
+        "--l1_5d_size=256kB",
+        "--l1_5d_assoc=16",
+        "--l1_5d_mshrs=16",
+        "--l2_size=1MB",
+        "--l2_assoc=4",
+        "--ruby",
+        "--topology=Mesh_XY",
+        "--network=garnet2.0",
+        "--router-latency=2",
+        "--link-latency=1",
+        "--llc-select-low-bit=12",
+        "--mem-channels=2",
+    ]
+    SNIPPTS = {
+        '2x2.l3.ruby': [
+            "--num-cpus=4",
+            "--num-dirs=4",
+            "--num-l2caches=4",
+            "--mesh-rows=2",
+        ] + RUBY_L3,
+        '3x3.l3.ruby': [
+            "--num-cpus=9",
+            "--num-dirs=9",
+            "--num-l2caches=9",
+            "--mesh-rows=3",
+        ] + RUBY_L3,
+        '4x4.l3.ruby': [
+            "--num-cpus=16",
+            "--num-dirs=16",
+            "--num-l2caches=16",
+            "--mesh-rows=4",
+        ] + RUBY_L3,
+        'o8': [
+            "--cpu-type=DerivO3CPU",
+            "--llvm-issue-width=8",
+        ],
+        "i2": [
+            "--cpu-type=MinorCPU",
+        ]
+    }

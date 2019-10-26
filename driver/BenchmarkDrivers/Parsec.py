@@ -21,12 +21,16 @@ class ParsecBenchmark(Benchmark):
             'simdev': ['$NTHREADS', 'in_16.txt', 'prices.txt'],
             'simsmall': ['$NTHREADS', 'in_4K.txt', 'prices.txt'],
             'simmedium': ['$NTHREADS', 'in_16K.txt', 'prices.txt'],
+            'simlarge': ['$NTHREADS', 'in_64K.txt', 'prices.txt'],
+            'native': ['$NTHREADS', 'in_10M.txt', 'prices.txt'],
         },
         'bodytrack': {
             'test': ['sequenceB_1', '4', '1', '5', '1', '0', '$NTHREADS'],
             'simdev': ['sequenceB_1', '4', '1', '100', '3', '0', '$NTHREADS'],
             'simsmall': ['sequenceB_1', '4', '1', '1000', '5', '0', '$NTHREADS'],
             'simmedium': ['sequenceB_2', '4', '2', '2000', '5', '0', '$NTHREADS'],
+            'simlarge': ['sequenceB_4', '4', '4', '4000', '5', '0', '$NTHREADS'],
+            'native': ['sequenceB_261', '4', '261', '4000', '5', '0', '$NTHREADS'],
         },
         'canneal': {
             'test':      ['$NTHREADS', '5', '100', '10.nets', '1'],
@@ -39,6 +43,7 @@ class ParsecBenchmark(Benchmark):
             'simdev':    ['$NTHREADS', '3', 'in_15K.fluid', 'out.fluid'],
             'simsmall':  ['$NTHREADS', '5', 'in_35K.fluid', 'out.fluid'],
             'simmedium': ['$NTHREADS', '1', 'in_100K.fluid', 'out.fluid'],
+            'simlarge': ['$NTHREADS', '5', 'in_300K.fluid', 'out.fluid'],
         }
     }
 
@@ -67,13 +72,13 @@ class ParsecBenchmark(Benchmark):
 
         self.exe_path = os.path.join(
             self.benchmark_path, 'run', self.input_size)
-        self.setup_input(self.input_size)
+        self.setup_input(self.exe_path, self.input_size)
         self.sim_exe_path = os.path.join(
             self.benchmark_path, 'run', self.sim_input_size)
-        self.setup_input(self.sim_input_size)
+        self.setup_input(self.sim_exe_path, self.sim_input_size)
 
         self.benchmark_name = os.path.basename(self.benchmark_path)
-        self.n_thread = 1
+        self.n_thread = benchmark_args.options.input_threads
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -83,13 +88,13 @@ class ParsecBenchmark(Benchmark):
 
         super(ParsecBenchmark, self).__init__(benchmark_args)
 
-    def setup_input(self, input_size):
-        if os.path.isfile(self.exe_path):
+    def setup_input(self, exe_path, input_size):
+        if os.path.isfile(exe_path):
             # Exe path is not a folder.
             assert(False)
-        Util.mkdir_p(self.exe_path)
-        os.chdir(self.exe_path)
-        input_ready_file = 'input_ready_{size}'
+        Util.mkdir_p(exe_path)
+        os.chdir(exe_path)
+        input_ready_file = 'input_ready_{size}'.format(size=input_size)
         if os.path.isfile(input_ready_file):
             # We assume the input is there.
             return
@@ -119,14 +124,20 @@ class ParsecBenchmark(Benchmark):
             '-lpthread',
         ]
 
-    def get_args(self):
+    def _get_args(self, input_size):
         args = list()
-        for arg in ParsecBenchmark.ARGS[self.benchmark_name][self.input_size]:
+        for arg in ParsecBenchmark.ARGS[self.benchmark_name][input_size]:
             if arg == '$NTHREADS':
                 args.append(str(self.n_thread))
             else:
                 args.append(arg)
         return args
+
+    def get_args(self):
+        return self._get_args(self.input_size)
+
+    def get_sim_args(self):
+        return self._get_args(self.sim_input_size)
 
     def get_trace_func(self):
         if self.benchmark_name == 'blackscholes':
@@ -221,8 +232,9 @@ class ParsecBenchmark(Benchmark):
             TraceFlagEnum.GemForgeTraceMode.TraceAll.value))
         os.putenv('LLVM_TDG_TRACE_ROI', str(
             TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value))
-        # So for we just trace 1 million to get a fake trace so that valid.ex can run.
-        os.putenv('LLVM_TDG_HARD_EXIT_IN_MILLION', str(10))
+        # So for we just trace 10 million to get a fake trace so that valid.ex can run.
+        if self.benchmark_name == 'fluidanimate':
+            os.putenv('LLVM_TDG_HARD_EXIT_IN_MILLION', str(10))
         self.run_trace()
 
         os.chdir(self.cwd)

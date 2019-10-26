@@ -18,7 +18,8 @@ class GemForgeMicroBenchmark(Benchmark):
         self.src_path = src_path
         self.benchmark_name = os.path.basename(self.src_path)
         self.source = self.benchmark_name + '.c'
-        self.stream_whitelist_fn = os.path.join(self.src_path, 'stream_whitelist.txt')
+        self.stream_whitelist_fn = os.path.join(
+            self.src_path, 'stream_whitelist.txt')
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -49,6 +50,9 @@ class GemForgeMicroBenchmark(Benchmark):
     def get_run_path(self):
         return self.work_path
 
+    def get_profile_roi(self):
+        return TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value
+
     def build_raw_bc(self):
         os.chdir(self.src_path)
         bc = os.path.join(self.work_path, self.get_raw_bc())
@@ -63,7 +67,7 @@ class GemForgeMicroBenchmark(Benchmark):
             '-emit-llvm',
             '-std=c99',
             '-gline-tables-only',
-            '-I{INCLUDE}'.format(INCLUDE=os.path.dirname(self.src_path)),
+            '-I{INCLUDE}'.format(INCLUDE=C.GEM5_INCLUDE_DIR),
             '-o',
             bc
         ]
@@ -80,7 +84,8 @@ class GemForgeMicroBenchmark(Benchmark):
         """
         if os.path.isfile(self.stream_whitelist_fn):
             return [
-                '-stream-whitelist-file={whitelist}'.format(whitelist=self.stream_whitelist_fn)
+                '-stream-whitelist-file={whitelist}'.format(
+                    whitelist=self.stream_whitelist_fn)
             ]
         return list()
 

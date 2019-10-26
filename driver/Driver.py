@@ -2,6 +2,7 @@ from BenchmarkDrivers import Benchmark
 from BenchmarkDrivers import MultiProgramBenchmark
 from BenchmarkDrivers import SPEC2017
 from BenchmarkDrivers import Parsec
+from BenchmarkDrivers import Rodinia
 from BenchmarkDrivers import MachSuite
 from BenchmarkDrivers import TestHelloWorld
 from BenchmarkDrivers import SPU
@@ -146,6 +147,8 @@ class Driver:
                 suite = SPEC2017.SPEC2017Benchmarks(benchmark_args)
             elif suite_name == 'parsec':
                 suite = Parsec.ParsecSuite(benchmark_args)
+            elif suite_name == 'rodinia':
+                suite = Rodinia.RodiniaSuite(benchmark_args)
             elif suite_name == 'spu':
                 suite = SPU.SPUBenchmarks(benchmark_args)
             elif suite_name == 'mach':
@@ -519,6 +522,10 @@ if __name__ == '__main__':
                       dest='simulations', callback=parse_simulate_configurations)
     parser.add_option('--perf-command', action='store_true',
                       dest='perf_command', default=False)
+    parser.add_option('--region-simpoint', action='store_true',
+                      dest='region_simpoint', default=False)
+    parser.add_option('--fake-trace', action='store_true',
+                      dest='fake_trace', default=False)
 
     parser.add_option('--suite', type='string', action='callback',
                       dest='suite', callback=parse_suites)
@@ -531,6 +538,8 @@ if __name__ == '__main__':
 
     parser.add_option('--input-size', type='string', action='store',
                       dest='input_size', default=None)
+    parser.add_option('--input-threads', type='int', action='store',
+                      dest='input_threads', default=1)
     parser.add_option('--sim-input-size', type='string', action='store',
                       dest='sim_input_size', default=None)
 
@@ -543,6 +552,8 @@ if __name__ == '__main__':
     # Parse gem5 debug flag.
     parser.add_option('--gem5-debug', type='string',
                       action='store', dest='gem5_debug', default=None)
+    parser.add_option('--gem5-debug-start', type='int',
+                      action='store', dest='gem5_debug_start', default=None)
     parser.add_option('--gem5-max-insts', type='int',
                       action='store', dest='gem5_max_insts', default=None)
 

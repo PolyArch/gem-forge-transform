@@ -67,7 +67,7 @@ GEM5_INCLUDE_DIR = os.path.join(GEM5_DIR, 'include')
 GEM5_X86 = os.path.join(GEM5_DIR, 'build/X86/gem5.opt')
 GEM5_RISCV = os.path.join(GEM5_DIR, 'build/RISCV/gem5.opt')
 GEM5_LLVM_TRACE_SE_CONFIG = os.path.join(
-    GEM5_DIR, 'configs/example/llvm_trace_replay.py')
+    GEM5_DIR, 'configs/example/gem_forge/run.py')
 GEM5_SE_CONFIG = os.path.join(
     GEM5_DIR, 'configs/example/se.py')
 GEM5_M5OPS_X86 = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_x86.S')
