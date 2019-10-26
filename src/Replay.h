@@ -2,27 +2,26 @@
 #ifndef LLVM_TDG_REPLAY_TRACE_H
 #define LLVM_TDG_REPLAY_TRACE_H
 
+#include "GemForgeBasePass.h"
+
 #include "CacheWarmer.h"
 #include "DataGraph.h"
 #include "LocateAccelerableFunctions.h"
-#include "LoopUnroller.h"
 #include "RegionStatRecorder.h"
 #include "TDGSerializer.h"
-#include "Utils.h"
 
 #include "llvm/IR/Function.h"
-#include "llvm/Pass.h"
 
 #include <map>
 #include <string>
 
-extern llvm::cl::opt<std::string> InstUIDFileName;
 extern llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel;
 extern llvm::cl::opt<std::string> GemForgeOutputDataGraphFileName;
 extern llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath;
 extern llvm::cl::opt<bool> GemForgeOutputDataGraphTextMode;
+extern llvm::cl::opt<bool> GemForgeRegionSimpoint;
 
-class ReplayTrace : public llvm::ModulePass {
+class ReplayTrace : public GemForgeBasePass {
 public:
   using DynamicId = DataGraph::DynamicId;
   static char ID;
@@ -30,15 +29,14 @@ public:
   virtual ~ReplayTrace();
 
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override;
-
   bool runOnModule(llvm::Module &Module) override;
 
   bool processFunction(llvm::Function &Function);
 
 protected:
-  virtual bool initialize(llvm::Module &Module);
+  bool initialize(llvm::Module &Module) override;
+  bool finalize(llvm::Module &Module) override;
   virtual void transform();
-  virtual bool finalize(llvm::Module &Module);
   virtual void dumpStats(std::ostream &O);
 
   /**
@@ -55,8 +53,6 @@ protected:
   TDGSerializer *Serializer;
   CacheWarmer *CacheWarmerPtr;
   RegionStatRecorder *RegionStatRecorderPtr;
-
-  llvm::Module *Module;
 
   CachedLoopInfo *CachedLI;
   CachedPostDominanceFrontier *CachedPDF;

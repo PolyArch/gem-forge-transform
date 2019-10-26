@@ -9,25 +9,25 @@
 
 /**
  * Reading in the UIDMap.
- * Maintains a simple uid for each instruction.
- * For now just use the instruction's address.
+ * We need this for the tracer, which doesn't have access to llvm.
  */
 class InstructionUIDMapReader {
- public:
+public:
   using InstructionUID = uint64_t;
 
   InstructionUIDMapReader() = default;
   InstructionUIDMapReader(const InstructionUIDMapReader &Other) = delete;
   InstructionUIDMapReader(InstructionUIDMapReader &&Other) = delete;
-  InstructionUIDMapReader &operator=(const InstructionUIDMapReader &Other) =
-      delete;
+  InstructionUIDMapReader &
+  operator=(const InstructionUIDMapReader &Other) = delete;
   InstructionUIDMapReader &operator=(InstructionUIDMapReader &&Other) = delete;
 
   void parseFrom(const std::string &FileName);
 
-  const LLVM::TDG::InstructionDescriptor &getDescriptor(const InstructionUID UID) const;
+  const LLVM::TDG::InstructionDescriptor &
+  getDescriptor(const InstructionUID UID) const;
 
- private:
+private:
   LLVM::TDG::UIDMap Map;
 };
 

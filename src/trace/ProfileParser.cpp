@@ -2,15 +2,14 @@
 
 #include <fstream>
 
-static llvm::cl::opt<std::string>
-    ProfileFileName("tdg-profile-file",
-                    llvm::cl::desc("LLVM TDG Profile file."));
+llvm::cl::opt<std::string>
+    ProfileFolder("gem-forge-profile-folder",
+                  llvm::cl::desc("GemForge profile folder."));
 
 ProfileParser::ProfileParser() {
-  std::string FileName("llvm.profile");
-  if (ProfileFileName.getNumOccurrences() > 0) {
-    FileName = ProfileFileName.getValue();
-  }
+  assert(ProfileFolder.getNumOccurrences() > 0 &&
+         "Please specify GemForgeProfileFolder.");
+  std::string FileName = ProfileFolder.getValue() + "/0.profile";
   std::ifstream File(FileName);
   assert(File.is_open() && "Failed openning profile file.");
   this->Profile.ParseFromIstream(&File);
