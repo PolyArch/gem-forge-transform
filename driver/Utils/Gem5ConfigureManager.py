@@ -195,6 +195,7 @@ class Gem5ReplayConfigureManager(object):
         "--link-latency=1",
         "--llc-select-low-bit=12",
         "--mem-channels=2",
+        "--mem-size=2GB",
     ]
     SNIPPTS = {
         '2x2.l3.ruby': [
@@ -221,5 +222,6 @@ class Gem5ReplayConfigureManager(object):
         ],
         "i2": [
             "--cpu-type=MinorCPU",
+            "--prog-interval=1000",
         ]
     }

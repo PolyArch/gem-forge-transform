@@ -1,7 +1,7 @@
 /**
  * Simple array sum.
  */
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -46,9 +46,9 @@ int main() {
 #endif
 
   Value *pa = a;
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   foo(&pa, N);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
 
 #ifdef CHECK
   int mismatched = 0;

@@ -33,9 +33,9 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < ASIZE; ++i) {
     arr[i].p1 = i;
   }
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   int t = loop(argc, arr);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
   volatile int a = t;
   printf("result %d.\n", a);
   free(arr);

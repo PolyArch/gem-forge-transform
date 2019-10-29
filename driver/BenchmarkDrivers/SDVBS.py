@@ -96,15 +96,8 @@ class SDVBSBenchmark(Benchmark):
     }
 
     DEFINES = {
-        'disparity': {'GCC': None},
-        'localization': {'GCC': None},
-        'mser': {'GCC': None},
-        'multi_ncut': {'GCC': None},
-        'sift': {'GCC': None},
-        'stitch': {'GCC': None},
-        'svm': {'GCC': None},
-        'texture_synthesis': {'GCC': None},
-        'tracking': {'GCC': None},
+        'GCC': None,
+        'GEM_FORGE': None,
     }
 
     TRACE_FUNC = {
@@ -198,8 +191,12 @@ class SDVBSBenchmark(Benchmark):
         elif C.EXPERIMENTS == 'fractal':
             self.flags = SDVBSBenchmark.FLAGS_FRACTAL[self.benchmark_name]
         self.flags.append('gline-tables-only')
-        self.defines = SDVBSBenchmark.DEFINES[self.benchmark_name]
-        self.includes = [self.source_dir, self.common_src_dir]
+        self.defines = SDVBSBenchmark.DEFINES
+        self.includes = [
+            self.source_dir,
+            self.common_src_dir,
+            C.GEM5_INCLUDE_DIR,
+        ]
         self.trace_functions = '.'.join(
             SDVBSBenchmark.TRACE_FUNC[self.benchmark_name])
 
@@ -331,7 +328,7 @@ class SDVBSBenchmark(Benchmark):
                 TraceFlagEnum.GemForgeTraceMode.TraceAll.value
             ))
             # We trace at most 1 million instructions.
-            os.putenv('LLVM_TDG_HARD_EXIT_IN_MILLION', str(1))
+            os.putenv('LLVM_TDG_HARD_EXIT_IN_MILLION', str(100))
         else:
             # Otherwise we trace the simpoint region.
             os.putenv('LLVM_TDG_TRACE_ROI', str(

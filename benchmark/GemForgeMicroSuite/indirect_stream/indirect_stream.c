@@ -1,4 +1,4 @@
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 #include <stdlib.h>
 
 // Simple indirect access.
@@ -47,8 +47,8 @@ int main() {
   volatile Value ret;
   // First warm up it.
   ret = foo_warm(a, ia, N);
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   ret = foo(a, ia, N);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
   return 0;
 }

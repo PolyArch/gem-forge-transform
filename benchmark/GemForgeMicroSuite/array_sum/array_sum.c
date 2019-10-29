@@ -1,12 +1,12 @@
 /**
  * Simple array sum.
  */
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 #include <stdio.h>
 
 typedef long long Value;
 
-#define STRIDE 1 
+#define STRIDE 1
 #define CHECK
 #define WARM_CACHE
 
@@ -35,9 +35,9 @@ int main() {
 #endif
 
   Value *pa = a;
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   volatile Value c = foo(&pa, N);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
 
 #ifdef CHECK
   Value expected = 0;
