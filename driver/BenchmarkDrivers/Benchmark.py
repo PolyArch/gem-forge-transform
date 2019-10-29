@@ -500,7 +500,7 @@ class Benchmark(object):
         print('# Instrumenting profiler...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
-            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd = C.get_native_cxx_compiler(C.CXX)
             link_cmd += [
                 '-O3',
                 '-nostdlib',
@@ -513,7 +513,7 @@ class Benchmark(object):
                 self.get_profile_bin(),
             ]
         else:
-            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd = C.get_native_cxx_compiler(C.CXX)
             link_cmd += [
                 bc,
                 self.trace_lib,
@@ -634,7 +634,7 @@ class Benchmark(object):
         print('# Instrumenting tracer...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
-            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd = C.get_native_cxx_compiler(C.CXX)
             link_cmd += [
                 '-O3',
                 '-nostdlib',
@@ -647,7 +647,7 @@ class Benchmark(object):
                 self.get_trace_bin(),
             ]
         else:
-            link_cmd = C.get_cxx_cmd(C.CXX)
+            link_cmd = C.get_native_cxx_compiler(C.CXX)
             link_cmd += [
                 '-v',
                 self.get_trace_bc(),
@@ -771,14 +771,10 @@ class Benchmark(object):
     def build_replay_exe(self, transform_config, trace):
         transformed_bc = self.get_replay_exe(transform_config, trace, 'bc')
         transformed_obj = self.get_replay_exe(transform_config, trace, 'o')
-        compile_cmd = [
-            # Use DEBUG compiler?
-            C.CC_DEBUG if self.get_lang() == 'C' else C.CXX_DEBUG,
+        compiler = C.CC_DEBUG if self.get_lang() == 'C' else C.CXX_DEBUG
+        compile_cmd = C.get_sim_compiler(compiler) + [
             '-c',
             '-O3',
-            '--target=riscv64-unknown-linux-gnu',
-            '-march=rv64g',
-            '-mabi=lp64d',
             transformed_bc,
             '-o',
             transformed_obj,
@@ -787,15 +783,10 @@ class Benchmark(object):
         if self.options.transform_text:
             # Disassembly it for debug purpose.
             transformed_asm = self.get_replay_exe(transform_config, trace, 's')
-            disasm_cmd = [
-                # Use DEBUG compiler?
-                C.CC_DEBUG if self.get_lang() == 'C' else C.CXX_DEBUG,
+            disasm_cmd = C.get_sim_compiler(compiler) + [
                 '-c',
                 '-S',
                 '-O3',
-                '--target=riscv64-unknown-linux-gnu',
-                '-march=rv64g',
-                '-mabi=lp64d',
                 transformed_bc,
                 '-o',
                 transformed_asm,
@@ -812,12 +803,8 @@ class Benchmark(object):
             #     Util.call_helper(disasm_cmd, stdout=asm)
         # Link them into code.
         transformed_exe = self.get_replay_exe(transform_config, trace, 'exe')
-        link_cmd = [
-            os.path.join(C.RISCV_GNU_INSTALL_PATH,
-                         'bin/riscv64-unknown-linux-gnu-g++'),
+        link_cmd = C.get_sim_gxx() + [
             '-static',
-            '-march=rv64g',
-            '-mabi=lp64d',
             '-o',
             transformed_exe,
             transformed_obj,
@@ -825,7 +812,7 @@ class Benchmark(object):
         link_cmd += self.get_links()
         link_cmd += [
             '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
-            C.GEM5_M5OPS_RISCV,
+            C.get_gem5_m5ops(),
         ]
         Util.call_helper(link_cmd)
 
@@ -861,7 +848,7 @@ class Benchmark(object):
         hoffman2 = False
         gem5_args = [
             # C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
-            C.GEM5_RISCV,
+            C.get_gem5(),
             '--outdir={outdir}'.format(outdir=outdir),
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=binary),

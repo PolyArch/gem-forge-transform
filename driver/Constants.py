@@ -130,7 +130,11 @@ LIBSTDCXX_SYSTEM = os.getenv('LIBSTDCXX_SYSTEM')
 LIBSTDCXX_INCLUDE = os.getenv('LIBSTDCXX_INCLUDE')
 LIBSTDCXX_LIBRARY = os.getenv('LIBSTDCXX_LIBRARY')
 
-def get_cxx_cmd(CXX):
+ISA = 'x86'
+# ISA = 'riscv'
+
+
+def get_native_cxx_compiler(CXX):
     if LIBSTDCXX_SYSTEM is None:
         return [CXX]
     return [
@@ -141,3 +145,41 @@ def get_cxx_cmd(CXX):
     ]
 
 
+def get_sim_compiler(compiler):
+    if ISA == 'x86':
+        return [compiler]
+    if ISA == 'riscv':
+        return [
+            compiler,
+            '--target=riscv64-unknown-linux-gnu',
+            '-march=rv64g',
+            '-mabi=lp64d',
+        ]
+
+
+def get_sim_gxx():
+    if ISA == 'x86':
+        return [
+            'g++',
+        ]
+    if ISA == 'riscv':
+        return [
+            os.path.join(RISCV_GNU_INSTALL_PATH,
+                         'bin/riscv64-unknown-linux-gnu-g++'),
+            '-march=rv64g',
+            '-mabi=lp64d',
+        ]
+
+
+def get_gem5_m5ops():
+    if ISA == 'x86':
+        return GEM5_M5OPS_X86
+    if ISA == 'riscv':
+        return GEM5_M5OPS_RISCV
+
+
+def get_gem5():
+    if ISA == 'x86':
+        return GEM5_X86
+    if ISA == 'riscv':
+        return GEM5_RISCV
