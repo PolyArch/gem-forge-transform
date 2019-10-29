@@ -3,7 +3,7 @@
  * Simple correlation matrix. Used to test multi-level loops.
  */
 
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -51,9 +51,9 @@ int main() {
   }
 #endif
 
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   foo(a, b, width, height, c);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
 
 #ifdef CHECK
   int mismatched = 0;

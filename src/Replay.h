@@ -54,10 +54,6 @@ protected:
   CacheWarmer *CacheWarmerPtr;
   RegionStatRecorder *RegionStatRecorderPtr;
 
-  CachedLoopInfo *CachedLI;
-  CachedPostDominanceFrontier *CachedPDF;
-  CachedLoopUnroller *CachedLU;
-
   /**
    * Statistics.
    */

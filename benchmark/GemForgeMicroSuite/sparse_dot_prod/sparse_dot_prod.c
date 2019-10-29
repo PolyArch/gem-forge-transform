@@ -1,7 +1,7 @@
 /**
  * Simple write after read for memory accesses.
  */
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,9 +51,9 @@ int main() {
 
   int ia[] = {0, 2, 4, 6, 8};
   int ib[] = {1, 2, 3, 8, 9};
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   volatile Value ret = foo(a, b, ia, ib, N);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
 
 #ifdef CHECK
   {

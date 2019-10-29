@@ -28,8 +28,8 @@ int loop(int zero) {
 
 int main(int argc, char* argv[]) {
    argc&=10000;
-   DETAILED_SIM_START(); 
+   m5_detail_sim_start(); 
    int t=loop(argc); 
-   DETAILED_SIM_STOP();
+   m5_detail_sim_end();
    volatile int a = t;
 }

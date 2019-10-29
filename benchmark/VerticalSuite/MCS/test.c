@@ -41,8 +41,8 @@ int main(int argc, char* argv[]) {
    //loop1(argc);
    //loop2(argc);
 
-   DETAILED_SIM_START(); 
+   m5_detail_sim_start(); 
    float f =loop(argc);
-   DETAILED_SIM_STOP();
+   m5_detail_sim_end();
    volatile float a = f;
 }

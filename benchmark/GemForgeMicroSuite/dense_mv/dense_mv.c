@@ -3,7 +3,7 @@
  * Dense Matrix-Vector multiply. Used to test multiple level streams.
  */
 
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -20,7 +20,7 @@ __attribute__((noinline)) void foo(Value *a, Value *b, uint64_t width,
     Value value = 0;
 #pragma clang loop vectorize(disable)
 #pragma clang loop unroll(disable)
-    for (uint64_t j = i; j < width; ++j) {
+    for (uint64_t j = 0; j < width; ++j) {
       const uint64_t a_idx = i * width + j;
       const uint64_t b_idx = j;
       value += a[a_idx] * b[b_idx];
@@ -47,15 +47,15 @@ int main() {
   }
 #endif
 
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   foo(a, b, width, height, c);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
 
 #ifdef CHECK
   int mismatched = 0;
   for (uint64_t i = 0; i < height; ++i) {
     Value value = 0;
-    for (uint64_t j = i; j < width; ++j) {
+    for (uint64_t j = 0; j < width; ++j) {
       value += a[i][j] * b[j];
     }
     if (value != c[i]) {

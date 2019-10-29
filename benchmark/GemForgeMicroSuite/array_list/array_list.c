@@ -1,4 +1,4 @@
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 #include <stdlib.h>
 
 // Simple pointer chasing access of a list implement using array.
@@ -42,8 +42,8 @@ int main() {
   next[ia[N - 1]] = -1;
 
   volatile Value ret;
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   ret = foo(next, ia[0]);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
   return 0;
 }

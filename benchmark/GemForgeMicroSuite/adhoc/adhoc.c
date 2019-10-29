@@ -1,5 +1,5 @@
 
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 typedef int Value;
 
 /**
@@ -32,8 +32,8 @@ int main() {
   for (long long i = 0; i < N; i++) {
     a[i] = i;
   }
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   c = foo(&pa, N);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
   return 0;
 }

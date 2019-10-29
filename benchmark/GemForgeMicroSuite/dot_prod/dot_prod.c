@@ -2,7 +2,7 @@
  * Simple dense vector dot product.
  */
 
-#include "../gem5_pseudo.h"
+#include "gem5/m5ops.h"
 #include <stdio.h>
 
 typedef long long Value;
@@ -40,9 +40,9 @@ int main() {
 
   Value *pa = a;
   Value *pb = b;
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   volatile Value c = foo(&pa, &pb, N);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
 
 #ifdef CHECK
   Value expected = 0;

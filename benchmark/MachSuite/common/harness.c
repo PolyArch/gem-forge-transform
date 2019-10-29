@@ -41,9 +41,9 @@ int main(int argc, char **argv) {
   input_to_data(in_fd, data);
 
   // Unpack and call
-  DETAILED_SIM_START();
+  m5_detail_sim_start();
   run_benchmark(data);
-  DETAILED_SIM_STOP();
+  m5_detail_sim_end();
 
 #ifdef WRITE_OUTPUT
   int out_fd;

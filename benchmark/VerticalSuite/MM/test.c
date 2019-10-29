@@ -47,9 +47,9 @@ int main(int argc, char* argv[]) {
    cur->val=100;
    cur->_next=NULL;
 
-   DETAILED_SIM_START(); 
+   m5_detail_sim_start(); 
    int t=loop(argc,n);
-   DETAILED_SIM_STOP();
+   m5_detail_sim_end();
 
    volatile int a = t;
 }
