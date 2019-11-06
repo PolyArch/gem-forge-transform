@@ -71,8 +71,9 @@ add_library(LLVMTDGPass SHARED
     stream/ae/FunctionalStream.cpp
     stream/ae/FunctionalStreamEngine.cpp
     stream/ae/DynamicStreamCoalescer.cpp
-    stream/execution/StreamExecutionPass.cpp
     stream/execution/StreamExecutionTransformer.cpp
+    stream/execution/StreamExecutionPass.cpp
+    stream/execution/StreamExecutionStaticPass.cpp
     # CCA.cpp
     # StreamAnalyzeTrace.cpp
     # Speculative Precomputation.
