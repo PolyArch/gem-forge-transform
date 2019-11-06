@@ -5,8 +5,11 @@
 
 #include "llvm/Pass.h"
 
+#include <unordered_set>
+
 extern llvm::cl::opt<std::string> InstUIDFileName;
 extern llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath;
+extern llvm::cl::opt<std::string> GemForgeROIFunctionNames;
 
 /**
  * Served as the base pass for all GemForgePass.
@@ -31,6 +34,8 @@ protected:
   CachedLoopInfo *CachedLI = nullptr;
   CachedPostDominanceFrontier *CachedPDF = nullptr;
   CachedLoopUnroller *CachedLU = nullptr;
+
+  std::unordered_set<llvm::Function *> ROIFunctions;
 
   std::string OutputExtraFolderPath;
 };

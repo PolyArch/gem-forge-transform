@@ -221,6 +221,16 @@ public:
   dumpProtobufMessageToJson(const ::google::protobuf::Message &Message,
                             const ::std::string &FileName);
 
+  /**
+   * Decode functions from FuncNames.
+   * Used to get ROI functions from command line options.
+   * Function names will be demangled.
+   * Must be dot separated.
+   */
+  static std::unordered_set<llvm::Function *>
+  decodeFunctions(std::string FuncNames, llvm::Module *Module);
+  static constexpr char FuncNameSeparator = '.';
+
 private:
   static InstructionUIDMap InstUIDMap;
 };

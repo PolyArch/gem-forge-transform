@@ -1,5 +1,6 @@
 #include "Utils.h"
 
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
@@ -235,6 +236,64 @@ void Utils::dumpProtobufMessageToJson(
                                                 JsonPrintOptions);
   InfoTextFStream << InfoJsonString;
   InfoTextFStream.close();
+}
+
+std::unordered_set<llvm::Function *>
+Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
+  std::unordered_set<std::string> UnmatchedNames;
+  std::unordered_set<llvm::Function *> MatchedFunctions;
+
+  size_t Prev = 0;
+  for (size_t Curr = 0; Curr <= FuncNames.size(); ++Curr) {
+    if (FuncNames[Curr] == FuncNameSeparator || Curr == FuncNames.size()) {
+      if (Prev < Curr) {
+        auto Name = FuncNames.substr(Prev, Curr - Prev);
+
+        // Make sure that either this name is in the function, or there
+        // is a demangled name for this name.
+        auto Function = Module->getFunction(Name);
+        if (Function != nullptr) {
+          // We found the function directly.
+          // After this point we use mangled name everywhere.
+          MatchedFunctions.insert(Function);
+          LLVM_DEBUG(llvm::errs()
+                     << "Add function " << Function->getName() << '\n');
+        } else {
+          UnmatchedNames.insert(Name);
+        }
+      }
+      Prev = Curr + 1;
+    }
+  }
+
+  // Try to demangle the names in the module, to find a match for unmatched
+  // names.
+  for (auto FuncIter = Module->begin(), FuncEnd = Module->end();
+       FuncIter != FuncEnd; ++FuncIter) {
+    if (FuncIter->isDeclaration()) {
+      // Ignore declaration.
+      continue;
+    }
+    std::string MangledName = FuncIter->getName();
+    std::string DemangledName = llvm::demangle(MangledName);
+    LLVM_DEBUG(llvm::errs() << "Demangled " << MangledName << " into "
+                            << DemangledName << '\n');
+    auto UnmatchedNameIter = UnmatchedNames.find(DemangledName);
+    if (UnmatchedNameIter != UnmatchedNames.end()) {
+      // We found a match.
+      // We always use mangled name hereafter for simplicity.
+      MatchedFunctions.insert(&*FuncIter);
+      LLVM_DEBUG(llvm::errs() << "Add traced function " << MangledName << '\n');
+      UnmatchedNames.erase(UnmatchedNameIter);
+    }
+  }
+
+  for (const auto &Name : UnmatchedNames) {
+    llvm::errs() << "Unable to find match for trace function " << Name << '\n';
+  }
+  assert(UnmatchedNames.empty() &&
+         "Unabled to find match for some trace function.");
+  return MatchedFunctions;
 }
 
 #undef DEBUG_TYPE
