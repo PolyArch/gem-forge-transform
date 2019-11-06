@@ -8,6 +8,10 @@ llvm::cl::opt<std::string> InstUIDFileName(
 llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath(
     "output-extra-folder-path",
     llvm::cl::desc("Output extra information folder path, excluding the /"));
+llvm::cl::opt<std::string> GemForgeROIFunctionNames(
+    "gem-forge-roi-function",
+    llvm::cl::desc("ROI function names. For C functions, just the name. For "
+                   "C++ Functions, the signature is required. Dot separated."));
 
 #define DEBUG_TYPE "GemForgeBasePass"
 
@@ -34,6 +38,11 @@ bool GemForgeBasePass::initialize(llvm::Module &Module) {
 
   if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
     this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
+  }
+
+  if (GemForgeROIFunctionNames.getNumOccurrences() == 1) {
+    this->ROIFunctions = Utils::decodeFunctions(
+        GemForgeROIFunctionNames.getValue(), this->Module);
   }
 
   return true;

@@ -1,7 +1,6 @@
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
@@ -103,7 +102,8 @@ public:
     if (TraceFunctionNames.getNumOccurrences() == 1) {
       size_t Prev = 0;
       // Append a comma to eliminate a corner case.
-      this->parseTraceFunctions(TraceFunctionNames.getValue());
+      this->tracedFunctions =
+          Utils::decodeFunctions(TraceFunctionNames.getValue(), this->Module);
       if (TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
           TraceReachableFunctionOnly.getValue()) {
         this->findReachableFunctions();
@@ -184,10 +184,10 @@ private:
   llvm::Value *PrintFuncEnterEndFunc;
 
   // Contains all the traced functions, if specified.
-  std::unordered_set<std::string> tracedFunctionNames;
+  std::unordered_set<llvm::Function *> tracedFunctions;
 
   /**
-   * Store the reachable function from tracedFunctionNames.
+   * Store the reachable function from tracedFunctions.
    */
   std::unordered_set<llvm::Function *> reachableFunctions;
 
@@ -199,12 +199,6 @@ private:
   llvm::Value *getOrCreateVectorStoreBuffer(llvm::VectorType *Type,
                                             llvm::IRBuilder<> &Builder);
 
-  /**
-   * Parse the trace function list.
-   * It will check if the function is actuall defined in the module, if not
-   * found, check the compare the demangled name.
-   */
-  void parseTraceFunctions(const std::string &Names);
   void findReachableFunctions();
 
   // Insert all the print function declaration into the module.
@@ -292,13 +286,7 @@ private:
     }
     llvm::IRBuilder<> Builder(IP->getParent(), IP);
 
-    bool IsTraced = true;
-    if (this->tracedFunctionNames.size() != 0) {
-      // The user has specified the traced functions.
-      std::string FunctionName = Function.getName();
-      IsTraced = this->tracedFunctionNames.find(FunctionName) !=
-                 this->tracedFunctionNames.end();
-    }
+    bool IsTraced = this->tracedFunctions.count(&Function);
     auto IsTracedValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt32Ty(this->Module->getContext()),
         (IsTraced ? 1 : 0), false);
@@ -731,113 +719,13 @@ private:
   }
 };
 
-void TracePass::parseTraceFunctions(const std::string &Names) {
-  std::unordered_set<std::string> UnmatchedNames;
-
-  size_t Prev = 0;
-  for (size_t Curr = 0; Curr <= Names.size(); ++Curr) {
-    if (Names[Curr] == TraceFunctionNameSeparator || Curr == Names.size()) {
-      if (Prev < Curr) {
-        auto Name = Names.substr(Prev, Curr - Prev);
-
-        // Make sure that either this name is in the function, or there
-        // is a demangled name for this name.
-        auto Function = this->Module->getFunction(Name);
-        if (Function != nullptr) {
-          // We found the function directly.
-          // After this point we use mangled name everywhere.
-          this->tracedFunctionNames.insert(Function->getName());
-          LLVM_DEBUG(llvm::errs()
-                     << "Add traced function " << Function->getName() << '\n');
-        } else {
-          UnmatchedNames.insert(Name);
-        }
-      }
-      Prev = Curr + 1;
-    }
-  }
-
-  // Try to demangle the names in the module, to find a match for unmatched
-  // names.
-  size_t BufferSize = 1024;
-  // The buffer may be reallocated by the demangler. To be safe, here I will
-  // use malloc to allocate the memory. Looking into the source code of
-  // demangle, it looks like we can not get the new size of the reallocated
-  // buffer (BufferSize will return the size of the demangled name).
-  char *Buffer = static_cast<char *>(std::malloc(BufferSize));
-  for (auto FuncIter = this->Module->begin(), FuncEnd = this->Module->end();
-       FuncIter != FuncEnd; ++FuncIter) {
-    if (FuncIter->isDeclaration()) {
-      // Ignore declaration.
-      continue;
-    }
-    std::string MangledName = FuncIter->getName();
-    int DemangleStatus;
-    size_t DemangledNameSize = BufferSize;
-    auto DemangledName = llvm::itaniumDemangle(
-        MangledName.c_str(), Buffer, &DemangledNameSize, &DemangleStatus);
-
-    if (DemangledName == nullptr) {
-      LLVM_DEBUG(llvm::errs()
-                 << "Failed demangling name " << MangledName << " due to ");
-      switch (DemangleStatus) {
-      case -4: {
-        LLVM_DEBUG(llvm::errs() << "unknown error.\n");
-        break;
-      }
-      case -3: {
-        LLVM_DEBUG(llvm::errs() << "invalid args.\n");
-        break;
-      }
-      case -2: {
-        LLVM_DEBUG(llvm::errs() << "invalid mangled name.\n");
-        break;
-      }
-      case -1: {
-        LLVM_DEBUG(llvm::errs() << "memory alloc failure.\n");
-        break;
-      }
-      default: { llvm_unreachable("Illegal demangle status."); }
-      }
-      // When failed, there is no realloc. We can safely go to the next one.
-      continue;
-    }
-
-    LLVM_DEBUG(llvm::errs() << "Demangled " << MangledName << " into "
-                            << DemangledName << '\n');
-    auto UnmatchedNameIter = UnmatchedNames.find(DemangledName);
-    if (UnmatchedNameIter != UnmatchedNames.end()) {
-      // We found a match.
-      // We always use mangled name hereafter for simplicity.
-      this->tracedFunctionNames.insert(MangledName);
-      LLVM_DEBUG(llvm::errs() << "Add traced function " << MangledName << '\n');
-      UnmatchedNames.erase(UnmatchedNameIter);
-    }
-
-    if (DemangledName != Buffer || DemangledNameSize >= BufferSize) {
-      // Realloc happened.
-      BufferSize = DemangledNameSize;
-      Buffer = DemangledName;
-    }
-  }
-  std::free(Buffer);
-
-  for (const auto &Name : UnmatchedNames) {
-    llvm::errs() << "Unable to find match for trace function " << Name << '\n';
-  }
-  assert(UnmatchedNames.empty() &&
-         "Unabled to find match for some trace function.");
-}
-
 void TracePass::findReachableFunctions() {
   assert(TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
          "TraceReachableFunctionOnly should be specified.");
   assert(TraceReachableFunctionOnly.getValue() &&
          "TraceReachableFunctionOnly should be specified as true.");
   std::list<llvm::Function *> Queue;
-  for (const auto &FunctionName : this->tracedFunctionNames) {
-    auto Func = this->Module->getFunction(FunctionName);
-    assert(Func != nullptr && "Failed to look up function in the module.");
+  for (const auto &Func : this->tracedFunctions) {
     Queue.push_back(Func);
   }
   while (!Queue.empty()) {
