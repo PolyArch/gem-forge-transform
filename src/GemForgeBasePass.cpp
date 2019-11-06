@@ -5,10 +5,14 @@
 llvm::cl::opt<std::string> InstUIDFileName(
     "gem-forge-inst-uid-file",
     llvm::cl::desc("Inst UID Map file for datagraph building."));
+llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath(
+    "output-extra-folder-path",
+    llvm::cl::desc("Output extra information folder path, excluding the /"));
 
 #define DEBUG_TYPE "GemForgeBasePass"
 
-GemForgeBasePass::GemForgeBasePass(char _ID) : llvm::ModulePass(_ID) {}
+GemForgeBasePass::GemForgeBasePass(char _ID)
+    : llvm::ModulePass(_ID), OutputExtraFolderPath("llvm.tdg.extra") {}
 GemForgeBasePass::~GemForgeBasePass() {}
 
 void GemForgeBasePass::getAnalysisUsage(llvm::AnalysisUsage &Info) const {
@@ -27,6 +31,10 @@ bool GemForgeBasePass::initialize(llvm::Module &Module) {
   this->CachedLI = new CachedLoopInfo(this->Module);
   this->CachedPDF = new CachedPostDominanceFrontier();
   this->CachedLU = new CachedLoopUnroller();
+
+  if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
+    this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
+  }
 
   return true;
 }

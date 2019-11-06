@@ -25,9 +25,6 @@ llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel(
 llvm::cl::opt<std::string> GemForgeOutputDataGraphFileName(
     "output-datagraph", llvm::cl::desc("Output datagraph file name."));
 
-llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath(
-    "output-extra-folder-path",
-    llvm::cl::desc("Output extra information folder path, excluding the /"));
 llvm::cl::opt<bool> GemForgeOutputDataGraphTextMode(
     "output-datagraph-text-mode", llvm::cl::init(false),
     llvm::cl::desc("Output datagraph in text mode."));
@@ -113,8 +110,8 @@ public:
 
 ReplayTrace::ReplayTrace(char _ID)
     : GemForgeBasePass(_ID), Trace(nullptr), OutTraceName("llvm.tdg"),
-      OutputExtraFolderPath("llvm.tdg.extra"), Serializer(nullptr),
-      CacheWarmerPtr(nullptr), RegionStatRecorderPtr(nullptr) {}
+      Serializer(nullptr), CacheWarmerPtr(nullptr),
+      RegionStatRecorderPtr(nullptr) {}
 
 ReplayTrace::~ReplayTrace() {}
 
@@ -179,9 +176,6 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
 
   if (GemForgeOutputDataGraphFileName.getNumOccurrences() == 1) {
     this->OutTraceName = GemForgeOutputDataGraphFileName.getValue();
-  }
-  if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
-    this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
   }
 
   this->Trace = new DataGraph(this->Module, this->CachedLI, this->CachedPDF,
