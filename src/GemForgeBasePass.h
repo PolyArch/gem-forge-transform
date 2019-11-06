@@ -6,6 +6,7 @@
 #include "llvm/Pass.h"
 
 extern llvm::cl::opt<std::string> InstUIDFileName;
+extern llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath;
 
 /**
  * Served as the base pass for all GemForgePass.
@@ -30,6 +31,8 @@ protected:
   CachedLoopInfo *CachedLI = nullptr;
   CachedPostDominanceFrontier *CachedPDF = nullptr;
   CachedLoopUnroller *CachedLU = nullptr;
+
+  std::string OutputExtraFolderPath;
 };
 
 #endif

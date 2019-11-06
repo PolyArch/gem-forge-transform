@@ -182,7 +182,9 @@ void StreamPass::analyzeStream() {
        * Notify all region analyzer to wrap up.
        */
       for (auto &LoopStreamAnalyzer : this->LoopStreamAnalyzerMap) {
-        LoopStreamAnalyzer.second->endRegion(StreamPassChooseStrategy);
+        // By default we use dynamic information.
+        LoopStreamAnalyzer.second->endRegion(
+            StreamPassQualifySeedStrategyE::DYNAMIC, StreamPassChooseStrategy);
       }
 
       break;

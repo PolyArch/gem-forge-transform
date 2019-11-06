@@ -76,9 +76,6 @@ bool ValidExecutionPass::initialize(llvm::Module &Module) {
   GemForgeBasePass::initialize(Module);
   LLVM_DEBUG(llvm::errs() << "My Module " << this->Module << " " << &Module
                           << "\n");
-  if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
-    this->OutputExtraFolderPath = ::GemForgeOutputExtraFolderPath.getValue();
-  }
   // Copy the module.
   LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
   this->ClonedModule = llvm::CloneModule(Module, this->ClonedValueMap);

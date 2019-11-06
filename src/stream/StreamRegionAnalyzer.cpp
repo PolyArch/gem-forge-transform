@@ -253,6 +253,7 @@ void StreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
 }
 
 void StreamRegionAnalyzer::endRegion(
+    StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
     StreamPassChooseStrategyE StreamPassChooseStrategy) {
   // Finalize all patterns.
   // This will dump the pattern to file.
@@ -262,7 +263,8 @@ void StreamRegionAnalyzer::endRegion(
     }
   }
 
-  this->markQualifiedStreams(StreamPassChooseStrategy);
+  this->markQualifiedStreams(StreamPassQualifySeedStrategy,
+                             StreamPassChooseStrategy);
   this->disqualifyStreams();
   if (StreamPassChooseStrategy ==
       StreamPassChooseStrategyE::DYNAMIC_OUTER_MOST) {
@@ -379,17 +381,24 @@ Stream *StreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
 }
 
 void StreamRegionAnalyzer::markQualifiedStreams(
+    StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
     StreamPassChooseStrategyE StreamPassChooseStrategy) {
 
-  auto IsQualifySeed = [StreamPassChooseStrategy](Stream *S) -> bool {
-    if (!S->isQualifySeed()) {
-      return false;
-    }
+  auto IsQualifySeed = [StreamPassQualifySeedStrategy,
+                        StreamPassChooseStrategy](Stream *S) -> bool {
     if (StreamPassChooseStrategy == StreamPassChooseStrategyE::INNER_MOST) {
-      return S->SStream->ConfigureLoop == S->SStream->InnerMostLoop;
-    } else {
-      return true;
+      if (S->SStream->ConfigureLoop != S->SStream->InnerMostLoop) {
+        // Enforce the inner most loop constraint.
+        return false;
+      }
     }
+    if (StreamPassQualifySeedStrategy ==
+        StreamPassQualifySeedStrategyE::STATIC) {
+      // Only use static information.
+      return S->SStream->isQualified();
+    }
+    // Use dynamic information.
+    return S->isQualifySeed();
   };
 
   std::list<Stream *> Queue;

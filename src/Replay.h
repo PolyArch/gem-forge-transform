@@ -17,7 +17,6 @@
 
 extern llvm::cl::opt<DataGraph::DataGraphDetailLv> DataGraphDetailLevel;
 extern llvm::cl::opt<std::string> GemForgeOutputDataGraphFileName;
-extern llvm::cl::opt<std::string> GemForgeOutputExtraFolderPath;
 extern llvm::cl::opt<bool> GemForgeOutputDataGraphTextMode;
 extern llvm::cl::opt<bool> GemForgeRegionSimpoint;
 
@@ -48,7 +47,6 @@ protected:
   DataGraph::DataGraphDetailLv DGDetailLevel;
 
   std::string OutTraceName;
-  std::string OutputExtraFolderPath;
 
   TDGSerializer *Serializer;
   CacheWarmer *CacheWarmerPtr;

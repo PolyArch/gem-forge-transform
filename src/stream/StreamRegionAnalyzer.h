@@ -13,12 +13,6 @@
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
 
-enum StreamPassChooseStrategyE {
-  DYNAMIC_OUTER_MOST,
-  STATIC_OUTER_MOST,
-  INNER_MOST
-};
-
 /**
  * Aggreate all the information for a stream configure loop.
  */
@@ -85,7 +79,8 @@ public:
   void addIVAccess(DynamicInstruction *DynamicInst);
   void endIter(const llvm::Loop *Loop);
   void endLoop(const llvm::Loop *Loop);
-  void endRegion(StreamPassChooseStrategyE StreamPassChooseStrategy);
+  void endRegion(StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
+                 StreamPassChooseStrategyE StreamPassChooseStrategy);
   void endTransform();
   void dumpStats() const;
 
@@ -188,7 +183,9 @@ private:
                                   const llvm::Loop *ConfigureLoop) const;
   void buildStreamDependenceGraph();
 
-  void markQualifiedStreams(StreamPassChooseStrategyE StreamPassChooseStrategy);
+  void markQualifiedStreams(
+      StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
+      StreamPassChooseStrategyE StreamPassChooseStrategy);
   void disqualifyStreams();
 
   void chooseStreamAtInnerMost();
