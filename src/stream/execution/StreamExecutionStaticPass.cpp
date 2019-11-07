@@ -38,12 +38,14 @@ bool StreamExecutionStaticPass::runOnModule(llvm::Module &Module) {
 bool StreamExecutionStaticPass::initialize(llvm::Module &Module) {
   GemForgeBasePass::initialize(Module);
   this->DataLayout = new llvm::DataLayout(this->Module);
+  return true;
 }
 
 bool StreamExecutionStaticPass::finalize(llvm::Module &Module) {
   delete this->DataLayout;
   this->DataLayout = nullptr;
   GemForgeBasePass::finalize(Module);
+  return true;
 }
 
 std::vector<StreamRegionAnalyzer *>

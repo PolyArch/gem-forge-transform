@@ -84,10 +84,12 @@ bool ValidExecutionPass::initialize(llvm::Module &Module) {
   // Initialize the CachedLI for the cloned module.
   this->ClonedCachedLI =
       std::make_unique<CachedLoopInfo>(this->ClonedModule.get());
+  return true;
 }
 
 bool ValidExecutionPass::finalize(llvm::Module &Module) {
   GemForgeBasePass::finalize(Module);
+  return true;
 }
 
 void ValidExecutionPass::transformModule() {
