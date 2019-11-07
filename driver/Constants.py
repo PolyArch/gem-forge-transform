@@ -163,9 +163,7 @@ def get_sim_linker():
     """
     if ISA == 'x86':
         # Simply use native clang++ to link.
-        return [
-            CXX,
-        ]
+        return get_native_cxx_compiler(CXX)
     if ISA == 'riscv':
         # Clang support for linking RISCV is not working.
         # Use the cross compiler of g++.
