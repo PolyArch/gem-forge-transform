@@ -854,6 +854,7 @@ class Benchmark(object):
             # C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
             C.get_gem5(),
             '--outdir={outdir}'.format(outdir=outdir),
+            '--listener-mode=off',
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=binary),
             '--llvm-store-queue-size={STORE_QUEUE_SIZE}'.format(
