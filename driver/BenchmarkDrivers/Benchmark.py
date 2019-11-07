@@ -326,6 +326,7 @@ class Benchmark(object):
             t).startswith('region.')]
         print(trace_fns)
         # Sort them.
+
         def sort_by(a, b):
             a_fields = os.path.basename(a).split('.')
             b_fields = os.path.basename(b).split('.')
@@ -709,6 +710,9 @@ class Benchmark(object):
         ]
         if self.options.transform_text:
             opt_cmd.append('-output-datagraph-text-mode=true')
+        if self.get_trace_func():
+            opt_cmd.append(
+                '-gem-forge-roi-function={f}'.format(f=self.get_trace_func()))
         if self.options.region_simpoint:
             opt_cmd.append('-gem-forge-region-simpoint=true')
             # Region simpoint requires profile inst uid.
@@ -803,7 +807,7 @@ class Benchmark(object):
             #     Util.call_helper(disasm_cmd, stdout=asm)
         # Link them into code.
         transformed_exe = self.get_replay_exe(transform_config, trace, 'exe')
-        link_cmd = C.get_sim_gxx() + [
+        link_cmd = C.get_sim_linker() + [
             '-static',
             '-o',
             transformed_exe,

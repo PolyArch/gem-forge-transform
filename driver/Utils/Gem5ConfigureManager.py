@@ -176,6 +176,14 @@ class Gem5ReplayConfigureManager(object):
     """
     Common snippts.
     """
+    LLC_1MB = [
+        '--l2_size=1MB',
+        '--l2_assoc=4',
+    ]
+    LLC_4MB = [
+        '--l2_size=4MB',
+        '--l2_assoc=4',
+    ]
     RUBY_L3 = [
         "--l1i_size=32kB",
         "--l1i_assoc=8",
@@ -186,16 +194,15 @@ class Gem5ReplayConfigureManager(object):
         "--l1_5d_size=256kB",
         "--l1_5d_assoc=16",
         "--l1_5d_mshrs=16",
-        "--l2_size=1MB",
-        "--l2_assoc=4",
         "--ruby",
+        "--access-backing-store",
         "--topology=Mesh_XY",
         "--network=garnet2.0",
         "--router-latency=2",
         "--link-latency=1",
         "--llc-select-low-bit=12",
         "--mem-channels=2",
-        "--mem-size=2GB",
+        "--mem-size=8GB",
     ]
     SNIPPTS = {
         '2x2.l3.ruby': [
@@ -203,25 +210,37 @@ class Gem5ReplayConfigureManager(object):
             "--num-dirs=4",
             "--num-l2caches=4",
             "--mesh-rows=2",
-        ] + RUBY_L3,
+        ] + RUBY_L3 + LLC_1MB,
         '3x3.l3.ruby': [
             "--num-cpus=9",
             "--num-dirs=9",
             "--num-l2caches=9",
             "--mesh-rows=3",
-        ] + RUBY_L3,
+        ] + RUBY_L3 + LLC_1MB,
         '4x4.l3.ruby': [
             "--num-cpus=16",
             "--num-dirs=16",
             "--num-l2caches=16",
             "--mesh-rows=4",
-        ] + RUBY_L3,
+        ] + RUBY_L3 + LLC_1MB,
+        '4x4.l3.4MB.ruby': [
+            "--num-cpus=16",
+            "--num-dirs=16",
+            "--num-l2caches=16",
+            "--mesh-rows=4",
+        ] + RUBY_L3 + LLC_4MB,
         'o8': [
             "--cpu-type=DerivO3CPU",
             "--llvm-issue-width=8",
         ],
-        "i2": [
+        'i2': [
             "--cpu-type=MinorCPU",
+            "--llvm-issue-width=2",
             "--prog-interval=1000",
-        ]
+        ],
+        'i4': [
+            "--cpu-type=MinorCPU",
+            "--llvm-issue-width=4",
+            "--prog-interval=1000",
+        ],
     }

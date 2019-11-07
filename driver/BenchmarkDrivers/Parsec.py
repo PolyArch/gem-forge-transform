@@ -221,6 +221,13 @@ class ParsecBenchmark(Benchmark):
         return list()
 
     def trace(self):
+        # Copy the bc to the exe path.
+        Util.call_helper([
+            'cp',
+            '-f',
+            os.path.join(self.get_run_path(), self.get_raw_bc()),
+            os.path.join(self.get_exe_path(), self.get_raw_bc()),
+        ])
         os.chdir(self.get_exe_path())
         self.build_trace(
             link_stdlib=False,

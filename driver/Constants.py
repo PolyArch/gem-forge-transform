@@ -157,12 +157,18 @@ def get_sim_compiler(compiler):
         ]
 
 
-def get_sim_gxx():
+def get_sim_linker():
+    """
+    Get the linker to generate binary for gem5 simulation.
+    """
     if ISA == 'x86':
+        # Simply use native clang++ to link.
         return [
-            'g++',
+            CXX,
         ]
     if ISA == 'riscv':
+        # Clang support for linking RISCV is not working.
+        # Use the cross compiler of g++.
         return [
             os.path.join(RISCV_GNU_INSTALL_PATH,
                          'bin/riscv64-unknown-linux-gnu-g++'),

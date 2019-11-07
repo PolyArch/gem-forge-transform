@@ -21,6 +21,8 @@ class GemForgeMicroBenchmark(Benchmark):
         self.stream_whitelist_fn = os.path.join(
             self.src_path, 'stream_whitelist.txt')
 
+        self.is_omp = 'omp' in self.benchmark_name
+
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
             C.LLVM_TDG_RESULT_DIR, 'gfm', self.benchmark_name
@@ -33,6 +35,13 @@ class GemForgeMicroBenchmark(Benchmark):
         return 'gfm.{b}'.format(b=self.benchmark_name)
 
     def get_links(self):
+        if self.is_omp:
+            return [
+                '-lomp',
+                '-lpthread',
+                '-Wl,--no-as-needed',
+                '-ldl',
+            ]
         return []
 
     def get_args(self):
@@ -56,14 +65,19 @@ class GemForgeMicroBenchmark(Benchmark):
     def build_raw_bc(self):
         os.chdir(self.src_path)
         bc = os.path.join(self.work_path, self.get_raw_bc())
+        flags = [
+            # '-fno-unroll-loops',
+            # '-fno-vectorize',
+            # '-fno-slp-vectorize',
+        ]
+        if self.is_omp:
+            flags.append('-fopenmp')
         compile_cmd = [
             C.CC,
             self.source,
             '-O3',
             '-c',
-            # '-fno-unroll-loops',
-            # '-fno-vectorize',
-            # '-fno-slp-vectorize',
+        ] + flags + [
             '-emit-llvm',
             '-std=c99',
             '-gline-tables-only',
