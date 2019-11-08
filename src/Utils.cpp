@@ -9,7 +9,7 @@
 
 #include <sstream>
 
-#define DEBUG_TYPE "LLVM_TDG_UTILS"
+#define DEBUG_TYPE "GEM_FORGE_UTILS"
 #if !defined(LLVM_DEBUG) && defined(DEBUG)
 #define LLVM_DEBUG DEBUG
 #endif
@@ -26,61 +26,18 @@ const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
   auto MemorizedIter = Utils::MemorizedDemangledFunctionNames.find(Func);
   if (MemorizedIter == Utils::MemorizedDemangledFunctionNames.end()) {
 
-    size_t BufferSize = 1024;
-    char *Buffer = static_cast<char *>(std::malloc(BufferSize));
     std::string MangledName = Func->getName();
-    int DemangleStatus;
-    size_t DemangledNameSize = BufferSize;
-    auto DemangledName = llvm::itaniumDemangle(
-        MangledName.c_str(), Buffer, &DemangledNameSize, &DemangleStatus);
-
-    if (DemangledName == nullptr) {
-      LLVM_DEBUG(llvm::errs()
-                 << "Failed demangling name " << MangledName << " due to ");
-      switch (DemangleStatus) {
-      case -4: {
-        LLVM_DEBUG(llvm::errs() << "unknown error.\n");
-        break;
-      }
-      case -3: {
-        LLVM_DEBUG(llvm::errs() << "invalid args.\n");
-        break;
-      }
-      case -2: {
-        LLVM_DEBUG(llvm::errs() << "invalid mangled name.\n");
-        break;
-      }
-      case -1: {
-        LLVM_DEBUG(llvm::errs() << "memory alloc failure.\n");
-        break;
-      }
-      default: { llvm_unreachable("Illegal demangle status."); }
-      }
-      // When failed, we return the original name.
-      MemorizedIter =
-          Utils::MemorizedDemangledFunctionNames.emplace(Func, MangledName)
-              .first;
-
-    } else {
-      // Succeeded.
-      std::string DemangledNameStr(DemangledName);
-      auto Pos = DemangledNameStr.find('(');
-      if (Pos != std::string::npos) {
-        DemangledNameStr = DemangledNameStr.substr(0, Pos);
-      }
-      MemorizedIter =
-          Utils::MemorizedDemangledFunctionNames.emplace(Func, DemangledNameStr)
-              .first;
+    auto DemangledName = llvm::demangle(MangledName);
+    LLVM_DEBUG(llvm::errs() << "Demangled " << MangledName << " into "
+                            << DemangledName << '\n');
+    std::string DemangledNameStr(DemangledName);
+    auto Pos = DemangledNameStr.find('(');
+    if (Pos != std::string::npos) {
+      DemangledNameStr = DemangledNameStr.substr(0, Pos);
     }
-
-    if (DemangledName != Buffer || DemangledNameSize >= BufferSize) {
-      // Realloc happened.
-      BufferSize = DemangledNameSize;
-      Buffer = DemangledName;
-    }
-
-    // Deallocate the buffer.
-    std::free(Buffer);
+    MemorizedIter =
+        Utils::MemorizedDemangledFunctionNames.emplace(Func, DemangledNameStr)
+            .first;
   }
 
   return MemorizedIter->second;
@@ -274,16 +231,14 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
       // Ignore declaration.
       continue;
     }
-    std::string MangledName = FuncIter->getName();
-    std::string DemangledName = llvm::demangle(MangledName);
-    LLVM_DEBUG(llvm::errs() << "Demangled " << MangledName << " into "
-                            << DemangledName << '\n');
+    auto DemangledName = getDemangledFunctionName(&*FuncIter);
     auto UnmatchedNameIter = UnmatchedNames.find(DemangledName);
     if (UnmatchedNameIter != UnmatchedNames.end()) {
       // We found a match.
       // We always use mangled name hereafter for simplicity.
       MatchedFunctions.insert(&*FuncIter);
-      LLVM_DEBUG(llvm::errs() << "Add traced function " << MangledName << '\n');
+      LLVM_DEBUG(llvm::errs()
+                 << "Add traced function " << DemangledName << '\n');
       UnmatchedNames.erase(UnmatchedNameIter);
     }
   }

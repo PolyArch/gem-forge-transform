@@ -229,7 +229,7 @@ public:
    */
   static std::unordered_set<llvm::Function *>
   decodeFunctions(std::string FuncNames, llvm::Module *Module);
-  static constexpr char FuncNameSeparator = '.';
+  static constexpr char FuncNameSeparator = '|';
 
 private:
   static InstructionUIDMap InstUIDMap;
