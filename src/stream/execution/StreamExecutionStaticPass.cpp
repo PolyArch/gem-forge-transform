@@ -54,6 +54,7 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
 
   // Search through all ROI functions.
   for (auto Func : this->ROIFunctions) {
+    LLVM_DEBUG(llvm::errs() << "Searching " << Func->getName() << '\n');
     auto LI = this->CachedLI->getLoopInfo(Func);
     llvm::Loop *PrevAnalyzedLoop = nullptr;
     for (auto Loop : LI->getLoopsInPreorder()) {
@@ -61,6 +62,8 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
         // Skip this as it's already contained by other analyzer.
         continue;
       }
+      LLVM_DEBUG(llvm::errs()
+                 << "Processing loop " << LoopUtils::getLoopId(Loop) << '\n');
       if (LoopUtils::isLoopContinuous(Loop)) {
         // Check if loop is continuous.
         auto Analyzer = new StreamRegionAnalyzer(
@@ -75,6 +78,9 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
         Analyzers.push_back(Analyzer);
 
         PrevAnalyzedLoop = Loop;
+      } else {
+        LLVM_DEBUG(llvm::errs() << "Loop not continuous "
+                                << LoopUtils::getLoopId(Loop) << '\n');
       }
     }
   }
