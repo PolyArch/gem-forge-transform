@@ -50,6 +50,19 @@ void StaticMemStream::analyzeIsCandidate() {
         LLVM::TDG::StaticStreamInfo::MULTI_STEP_ROOT);
     return;
   }
+  /**
+   * ! Disable constant stream and store so far.
+   */
+  if (this->BaseStepRootStreams.size() == 0) {
+    this->IsCandidate = false;
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::NO_STEP_ROOT);
+    return;
+  }
+  if (llvm::isa<llvm::StoreInst>(this->Inst)) {
+    this->IsCandidate = false;
+    return;
+  }
   assert(this->ComputeMetaNodes.size() == 1 &&
          "StaticMemStream should always have one ComputeMetaNode.");
   const auto &ComputeMNode = this->ComputeMetaNodes.front();

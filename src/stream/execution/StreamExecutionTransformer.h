@@ -17,12 +17,15 @@
 class StreamExecutionTransformer {
 public:
   StreamExecutionTransformer(
-      llvm::Module *_Module, std::string _OutputExtraFolderPath,
+      llvm::Module *_Module,
+      CachedLoopInfo *_CachedLI,
+      std::string _OutputExtraFolderPath,
       bool _TransformTextMode,
       const std::vector<StreamRegionAnalyzer *> &Analyzers);
 
 private:
   llvm::Module *Module;
+  CachedLoopInfo *CachedLI;
   std::string OutputExtraFolderPath;
   bool TransformTextMode;
 
@@ -64,6 +67,8 @@ private:
                           llvm::StoreInst *StoreInst);
   void transformStepInst(StreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
+  llvm::Instruction * findStepPosition(Stream *StepStream,
+                                      llvm::Instruction *StepInst);
   void cleanClonedModule();
 
   /**
