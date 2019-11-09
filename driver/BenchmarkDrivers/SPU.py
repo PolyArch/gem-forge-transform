@@ -103,7 +103,7 @@ class SPUBenchmark(Benchmark):
         self.work_path = os.path.join(self.cwd, folder, self.test_name)
 
         self.defines = []
-        self.trace_functions = '.'.join(
+        self.trace_functions = '|'.join(
             SPUBenchmark.TRACE_FUNCS[self.test_name])
         self.trace_stdlib = SPUBenchmark.TRACE_STDLIB[self.test_name]
         super(SPUBenchmark, self).__init__(

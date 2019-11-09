@@ -224,7 +224,7 @@ class CortexBenchmark(Benchmark):
         assert(len(self.defines) == 0)
 
         self.includes = ['includes']
-        self.trace_functions = '.'.join(
+        self.trace_functions = '|'.join(
             CortexBenchmark.TRACE_FUNC[self.benchmark_name])
 
         self.trace_ids = CortexBenchmark.TRACE_IDS[self.benchmark_name]

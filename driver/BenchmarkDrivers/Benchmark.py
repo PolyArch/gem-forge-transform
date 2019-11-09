@@ -97,6 +97,11 @@ class Benchmark(object):
     def get_run_path(self):
         return
 
+    """
+    Used to separate multiple functions.
+    """
+    ROI_FUNC_SEPARATOR = '|'
+
     def __init__(self, benchmark_args, standalone=True):
 
         self.transform_manager = benchmark_args.transform_manager

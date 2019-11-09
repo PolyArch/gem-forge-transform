@@ -71,6 +71,12 @@ class RodiniaBenchmark(Benchmark):
         },
     }
 
+    ROI_FUNCS = {
+        'pathfinder': [
+            '.omp_outlined.',
+        ],
+    }
+
     def __init__(self, benchmark_args, benchmark_path):
         self.cwd = os.getcwd()
         self.benchmark_path = benchmark_path
@@ -99,6 +105,11 @@ class RodiniaBenchmark(Benchmark):
         ]
 
     def get_trace_func(self):
+        if self.benchmark_name in RodiniaBenchmark.ROI_FUNCS:
+            roi_funcs = RodiniaBenchmark.ROI_FUNCS[self.benchmark_name]
+            return Benchmark.ROI_FUNC_SEPARATOR.join(
+                roi_funcs
+            )
         return None
 
     def _get_args(self, input_size):

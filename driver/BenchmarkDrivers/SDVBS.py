@@ -197,7 +197,7 @@ class SDVBSBenchmark(Benchmark):
             self.common_src_dir,
             C.GEM5_INCLUDE_DIR,
         ]
-        self.trace_functions = '.'.join(
+        self.trace_functions = '|'.join(
             SDVBSBenchmark.TRACE_FUNC[self.benchmark_name])
 
         self.trace_ids = SDVBSBenchmark.TRACE_IDS[self.benchmark_name]
