@@ -10,7 +10,7 @@ bool StreamExecutionStaticPass::runOnModule(llvm::Module &Module) {
   auto SelectedStreamRegionAnalyzers = this->selectStreamRegionAnalyzers();
 
   // Use the transformer to transform the regions.
-  StreamExecutionTransformer(this->Module, this->OutputExtraFolderPath,
+  StreamExecutionTransformer(this->Module, this->CachedLI, this->OutputExtraFolderPath,
                              GemForgeOutputDataGraphTextMode,
                              SelectedStreamRegionAnalyzers);
 

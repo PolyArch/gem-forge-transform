@@ -2,6 +2,7 @@
 
 #include "TransformUtils.h"
 
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Intrinsics.h"
@@ -24,10 +25,12 @@
 #define GENERATE_STREAM_END
 
 StreamExecutionTransformer::StreamExecutionTransformer(
-    llvm::Module *_Module, std::string _OutputExtraFolderPath,
+    llvm::Module *_Module, 
+    CachedLoopInfo *_CachedLI,
+    std::string _OutputExtraFolderPath,
     bool _TransformTextMode,
     const std::vector<StreamRegionAnalyzer *> &Analyzers)
-    : Module(_Module), OutputExtraFolderPath(_OutputExtraFolderPath),
+    : Module(_Module), CachedLI(_CachedLI), OutputExtraFolderPath(_OutputExtraFolderPath),
       TransformTextMode(_TransformTextMode) {
   // Copy the module.
   LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
@@ -418,11 +421,13 @@ void StreamExecutionTransformer::transformStoreInst(
 
 void StreamExecutionTransformer::transformStepInst(
     StreamRegionAnalyzer *Analyzer, llvm::Instruction *StepInst) {
-  auto ClonedStepInst = this->getClonedValue(StepInst);
-  llvm::IRBuilder<> Builder(ClonedStepInst);
-
   const auto &TransformPlan = Analyzer->getTransformPlanByInst(StepInst);
   for (auto StepStream : TransformPlan.getStepStreams()) {
+
+    auto StepPosition = this->findStepPosition(StepStream, StepInst);
+    auto ClonedStepPosition = this->getClonedValue(StepPosition);
+    llvm::IRBuilder<> Builder(ClonedStepPosition);
+
     auto StreamId = StepStream->getRegionStreamId();
     assert(StreamId >= 0 && StreamId < 64 &&
            "Illegal RegionStreamId for StreamStep.");
@@ -436,6 +441,86 @@ void StreamExecutionTransformer::transformStepInst(
         StreamStepArgs);
   }
 }
+
+
+llvm::Instruction * StreamExecutionTransformer::findStepPosition(Stream *StepStream,
+                                      llvm::Instruction *StepInst) {
+  /**
+   * It is tricky to find the correct insertion point of the step instruction.
+   * It changes the meaning of the induction variable as well as all dependent
+   * streams.
+   * One naive solution is to insert StreamStep after the increment instruction,
+   * usually like i++. However, when the loop body contains a[i+1], the compiler
+   * will try to avoid compute i+1 twice. Thus, it will generate IR like these:
+   * 
+   * next.i = i + 1
+   * value  = load a[next.i]
+   * ended  = cmp next.i, N
+   * br
+   * 
+   * Therefore, inserting StreamStep after next.i will cause the next StreamLoad
+   * to be stepped early. I have no general solution so far, but luckily, in the
+   * current implementation, the original induction variable is not removed,
+   * which simplifies the semantic of StreamStep. It only controls the memory
+   * streams, and the induction variable streams are not exposed to the original
+   * program. So I came up with a adhoc solution.
+   * 1. Check if the basic block dominates all loop latches. If so, then this is
+   * an uncondtionally step, and we simply insert one StreamStep before the
+   * terminator of all loop latches.
+   * 2. If not, then this is a conditional step. I am not sure how to handle this
+   * yet, but we perform a sanity check if any dependent stream load comes after
+   * the basic block. If no StreamLoad comes after me, then we simply insert the
+   * StreamStep before the terminator of the step basic block.
+   */
+  auto Loop = StepStream->SStream->InnerMostLoop;
+  auto LI = this->CachedLI->getLoopInfo(StepInst->getFunction());
+  auto DT = this->CachedLI->getDominatorTree(StepInst->getFunction());
+  auto StepBB = StepInst->getParent();
+  auto Latch = Loop->getLoopLatch();
+  /**
+   * So far only consider the case with single latch.
+   * Multiple latches is compilcated, if one latch can lead to another latch.
+   */
+  if (!Latch) {
+    LLVM_DEBUG(llvm::errs() << "Multiple latches for " << LoopUtils::getLoopId(Loop) << '\n');
+  }
+  if (DT->dominates(StepBB, Latch)) {
+    // Simple case.
+    return Latch->getTerminator();
+  }
+
+  // Sanity check for all dependent streams.
+  std::unordered_set<llvm::BasicBlock *> DependentStreamBBs;
+  std::queue<Stream *> DependentStreamQueue;
+  for (auto S : StepStream->getDependentStreams()) {
+    DependentStreamQueue.push(S);
+  }
+  while (!DependentStreamQueue.empty()) {
+    auto S = DependentStreamQueue.front();
+    DependentStreamQueue.pop();
+    auto BB = const_cast<llvm::BasicBlock *>(S->SStream->Inst->getParent());
+    if (BB == StepBB) {
+      // StepBB is fine.
+      continue;
+    }
+    DependentStreamBBs.insert(BB);
+    for (auto DepS : S->getDependentStreams()) {
+      DependentStreamQueue.push(DepS);
+    }
+  }
+  // Check if it is reachable from StepBB to DependentBB.
+  llvm::SmallVector<llvm::BasicBlock *, 1> StartBB = { StepBB };
+  llvm::SmallPtrSet<llvm::BasicBlock *, 1> ExclusionBB = { Latch };
+  for (auto DepBB : DependentStreamBBs) {
+    if (llvm::isPotentiallyReachableFromMany(StartBB, DepBB, &ExclusionBB, DT, LI)) {
+      llvm::errs() << "Potential MemStream after StreamStep " << StepStream->formatName() << " BB " << DepBB->getName() << '\n';
+      assert(false && "MemStream after Step.");
+    }
+  }
+  // Passed sanity check.
+  return StepBB->getTerminator();
+}
+
 void StreamExecutionTransformer::cleanClonedModule() {
   // ! After this point, the ClonedValueMap is no longer injective.
   for (auto *Inst : this->PendingRemovedInsts) {
@@ -508,6 +593,9 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
 void StreamExecutionTransformer::generateMemStreamConfiguration(
     Stream *S, llvm::Instruction *InsertBefore,
     InputValueVec &ClonedInputValues) {
+
+  LLVM_DEBUG(llvm::errs() << "StreamExTrans: Generating configuration for: "
+                          << S->formatName() << '\n');
 
   /**
    * Some sanity check here.
