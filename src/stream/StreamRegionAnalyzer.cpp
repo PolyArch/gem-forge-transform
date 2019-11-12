@@ -319,7 +319,7 @@ void StreamRegionAnalyzer::finalizeStreamConfigureLoopInfo(
   std::unordered_set<int> CoalescedGroupSet;
   for (auto &S : SortedStreams) {
     auto CoalesceGroup = S->getCoalesceGroup();
-    if (CoalesceGroup == -1) {
+    if (CoalesceGroup == Stream::InvalidCoalesceGroup) {
       // This is not coalesced.
       Info.SortedCoalescedStreams.push_back(S);
     } else if (CoalescedGroupSet.count(CoalesceGroup) == 0) {

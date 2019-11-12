@@ -70,9 +70,15 @@ public:
     this->RegionStreamId = Id;
   }
   int getRegionStreamId() const { return this->RegionStreamId; }
-  void setCoalesceGroup(int CoalesceGroup) {
-    assert(this->CoalesceGroup == -1 && "Coalesce group is already set.");
+
+  static constexpr uint64_t InvalidCoalesceGroup = 0;
+  void setCoalesceGroup(uint64_t CoalesceGroup, int32_t CoalesceOffset = -1) {
+    assert(this->CoalesceGroup == InvalidCoalesceGroup &&
+           "Coalesce group is already set.");
+    assert(CoalesceGroup != InvalidCoalesceGroup &&
+           "Coalesce group is invalid.");
     this->CoalesceGroup = CoalesceGroup;
+    this->CoalesceOffset = CoalesceOffset;
   }
   int getCoalesceGroup() const { return this->CoalesceGroup; }
   const llvm::Loop *getLoop() const { return this->SStream->ConfigureLoop; }
@@ -271,7 +277,8 @@ protected:
    */
   int RegionStreamId;
 
-  int CoalesceGroup;
+  uint64_t CoalesceGroup = InvalidCoalesceGroup;
+  int32_t CoalesceOffset = -1;
   /**
    * Stores the total iterations for this stream
    */

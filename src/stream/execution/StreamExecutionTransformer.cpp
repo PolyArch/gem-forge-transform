@@ -25,12 +25,11 @@
 #define GENERATE_STREAM_END
 
 StreamExecutionTransformer::StreamExecutionTransformer(
-    llvm::Module *_Module, 
-    CachedLoopInfo *_CachedLI,
-    std::string _OutputExtraFolderPath,
-    bool _TransformTextMode,
+    llvm::Module *_Module, CachedLoopInfo *_CachedLI,
+    std::string _OutputExtraFolderPath, bool _TransformTextMode,
     const std::vector<StreamRegionAnalyzer *> &Analyzers)
-    : Module(_Module), CachedLI(_CachedLI), OutputExtraFolderPath(_OutputExtraFolderPath),
+    : Module(_Module), CachedLI(_CachedLI),
+      OutputExtraFolderPath(_OutputExtraFolderPath),
       TransformTextMode(_TransformTextMode) {
   // Copy the module.
   LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
@@ -142,6 +141,7 @@ void StreamExecutionTransformer::transformStreamRegion(
       LoopQueue.push(SubLoop);
     }
     this->configureStreamsAtLoop(Analyzer, CurrentLoop);
+    this->coalesceStreamsAtLoop(Analyzer, CurrentLoop);
   }
 
   // Insert address computation function in the cloned module.
@@ -219,6 +219,100 @@ void StreamExecutionTransformer::configureStreamsAtLoop(
       ConfigIdx, false);
   this->insertStreamConfigAtLoop(Analyzer, Loop, ConfigIdxValue);
   this->insertStreamEndAtLoop(Loop, ConfigIdxValue);
+}
+
+void StreamExecutionTransformer::coalesceStreamsAtLoop(
+    StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop) {
+  const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
+  if (ConfigureInfo.TotalConfiguredStreams == 0) {
+    // No streams here.
+    return;
+  }
+  /**
+   * We coalesce memory streams if:
+   * 1. They share the same step root.
+   * 2. They are affine.
+   * 3. Their SCEV has a constant offset within a cache line (64 bytes).
+   */
+  std::list<std::vector<std::pair<Stream *, int64_t>>> CoalescedGroup;
+  for (auto S : ConfigureInfo.getSortedStreams()) {
+    if (S->SStream->Type == StaticStream::TypeT::IV) {
+      continue;
+    }
+    if (S->getBaseStepRootStreams().size() != 1) {
+      continue;
+    }
+    LLVM_DEBUG(llvm::errs()
+               << "Try to coalesce stream: " << S->formatName() << '\n');
+    auto SS = S->SStream;
+    auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
+    auto AddrSCEV = SS->SE->getSCEV(Addr);
+
+    bool Coalesced = false;
+    if (AddrSCEV) {
+      LLVM_DEBUG(llvm::errs() << "AddrSCEV: "; AddrSCEV->dump());
+      for (auto &Group : CoalescedGroup) {
+        auto TargetS = Group.front().first;
+        if (TargetS->getBaseStepRootStreams() != S->getBaseStepRootStreams()) {
+          // Do not share the same step root.
+          continue;
+        }
+        auto TargetSS = TargetS->SStream;
+        auto TargetAddr =
+            const_cast<llvm::Value *>(Utils::getMemAddrValue(TargetSS->Inst));
+        auto TargetAddrSCEV = TargetSS->SE->getSCEV(TargetAddr);
+        if (!TargetAddrSCEV) {
+          continue;
+        }
+        // Check the scev.
+        LLVM_DEBUG(llvm::errs() << "TargetAddrSCEV: "; TargetAddrSCEV->dump());
+        auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(
+            SS->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV));
+        if (!OffsetSCEV) {
+          // Not constant offset.
+          continue;
+        }
+        LLVM_DEBUG(llvm::errs() << "OffsetSCEV: "; OffsetSCEV->dump());
+        int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
+        if (Offset > 64 || Offset < -64) {
+          continue;
+        }
+        LLVM_DEBUG(llvm::errs()
+                   << "Coalesced, offset: " << Offset
+                   << " with stream: " << TargetS->formatName() << '\n');
+        Coalesced = true;
+        Group.emplace_back(S, Offset);
+        break;
+      }
+    }
+
+    if (!Coalesced) {
+      LLVM_DEBUG(llvm::errs() << "New coalesce group\n");
+      CoalescedGroup.emplace_back();
+      CoalescedGroup.back().emplace_back(S, 0);
+    }
+  }
+
+  // Find the lowest one as the base for each group.
+  for (auto &Group : CoalescedGroup) {
+    if (Group.size() == 1) {
+      // Ignore single streams.
+      continue;
+    }
+    auto BaseS = Group.front().first;
+    auto MinOffset = Group.front().second;
+    for (const auto &Entry : Group) {
+      if (Entry.second < MinOffset) {
+        MinOffset = Entry.second;
+        BaseS = Entry.first;
+      }
+    }
+    // Generate the coalesced info.
+    for (auto &Entry : Group) {
+      auto S = Entry.first;
+      S->setCoalesceGroup(BaseS->getStreamId(), Entry.second - MinOffset);
+    }
+  }
 }
 
 void StreamExecutionTransformer::insertStreamConfigAtLoop(
@@ -442,9 +536,9 @@ void StreamExecutionTransformer::transformStepInst(
   }
 }
 
-
-llvm::Instruction * StreamExecutionTransformer::findStepPosition(Stream *StepStream,
-                                      llvm::Instruction *StepInst) {
+llvm::Instruction *
+StreamExecutionTransformer::findStepPosition(Stream *StepStream,
+                                             llvm::Instruction *StepInst) {
   /**
    * It is tricky to find the correct insertion point of the step instruction.
    * It changes the meaning of the induction variable as well as all dependent
@@ -452,12 +546,12 @@ llvm::Instruction * StreamExecutionTransformer::findStepPosition(Stream *StepStr
    * One naive solution is to insert StreamStep after the increment instruction,
    * usually like i++. However, when the loop body contains a[i+1], the compiler
    * will try to avoid compute i+1 twice. Thus, it will generate IR like these:
-   * 
+   *
    * next.i = i + 1
    * value  = load a[next.i]
    * ended  = cmp next.i, N
    * br
-   * 
+   *
    * Therefore, inserting StreamStep after next.i will cause the next StreamLoad
    * to be stepped early. I have no general solution so far, but luckily, in the
    * current implementation, the original induction variable is not removed,
@@ -467,10 +561,10 @@ llvm::Instruction * StreamExecutionTransformer::findStepPosition(Stream *StepStr
    * 1. Check if the basic block dominates all loop latches. If so, then this is
    * an uncondtionally step, and we simply insert one StreamStep before the
    * terminator of all loop latches.
-   * 2. If not, then this is a conditional step. I am not sure how to handle this
-   * yet, but we perform a sanity check if any dependent stream load comes after
-   * the basic block. If no StreamLoad comes after me, then we simply insert the
-   * StreamStep before the terminator of the step basic block.
+   * 2. If not, then this is a conditional step. I am not sure how to handle
+   * this yet, but we perform a sanity check if any dependent stream load comes
+   * after the basic block. If no StreamLoad comes after me, then we simply
+   * insert the StreamStep before the terminator of the step basic block.
    */
   auto Loop = StepStream->SStream->InnerMostLoop;
   auto LI = this->CachedLI->getLoopInfo(StepInst->getFunction());
@@ -482,7 +576,8 @@ llvm::Instruction * StreamExecutionTransformer::findStepPosition(Stream *StepStr
    * Multiple latches is compilcated, if one latch can lead to another latch.
    */
   if (!Latch) {
-    LLVM_DEBUG(llvm::errs() << "Multiple latches for " << LoopUtils::getLoopId(Loop) << '\n');
+    LLVM_DEBUG(llvm::errs() << "Multiple latches for "
+                            << LoopUtils::getLoopId(Loop) << '\n');
   }
   if (DT->dominates(StepBB, Latch)) {
     // Simple case.
@@ -509,11 +604,14 @@ llvm::Instruction * StreamExecutionTransformer::findStepPosition(Stream *StepStr
     }
   }
   // Check if it is reachable from StepBB to DependentBB.
-  llvm::SmallVector<llvm::BasicBlock *, 1> StartBB = { StepBB };
-  llvm::SmallPtrSet<llvm::BasicBlock *, 1> ExclusionBB = { Latch };
+  llvm::SmallVector<llvm::BasicBlock *, 1> StartBB = {StepBB};
+  llvm::SmallPtrSet<llvm::BasicBlock *, 1> ExclusionBB = {Latch};
   for (auto DepBB : DependentStreamBBs) {
-    if (llvm::isPotentiallyReachableFromMany(StartBB, DepBB, &ExclusionBB, DT, LI)) {
-      llvm::errs() << "Potential MemStream after StreamStep " << StepStream->formatName() << " BB " << DepBB->getName() << '\n';
+    if (llvm::isPotentiallyReachableFromMany(StartBB, DepBB, &ExclusionBB, DT,
+                                             LI)) {
+      llvm::errs() << "Potential MemStream after StreamStep "
+                   << StepStream->formatName() << " BB " << DepBB->getName()
+                   << '\n';
       assert(false && "MemStream after Step.");
     }
   }
