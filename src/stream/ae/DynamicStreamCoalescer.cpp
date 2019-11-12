@@ -1,9 +1,10 @@
 #include "DynamicStreamCoalescer.h"
 
-int DynamicStreamCoalescer::AllocatedGlobalCoalesceGroup = 0;
+int DynamicStreamCoalescer::AllocatedGlobalCoalesceGroup =
+    Stream::InvalidCoalesceGroup;
 
 int DynamicStreamCoalescer::allocateGlobalCoalesceGroup() {
-  // Make the coalesce group starts from 1.
+  // Make the coalesce group starts from InvalidCoalesceGroup + 1.
   return ++AllocatedGlobalCoalesceGroup;
 }
 

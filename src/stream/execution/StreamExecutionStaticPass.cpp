@@ -10,14 +10,17 @@ bool StreamExecutionStaticPass::runOnModule(llvm::Module &Module) {
   auto SelectedStreamRegionAnalyzers = this->selectStreamRegionAnalyzers();
 
   // Use the transformer to transform the regions.
-  StreamExecutionTransformer(this->Module, this->CachedLI, this->OutputExtraFolderPath,
-                             GemForgeOutputDataGraphTextMode,
-                             SelectedStreamRegionAnalyzers);
+  StreamExecutionTransformer(
+      this->Module, this->CachedLI, this->OutputExtraFolderPath,
+      GemForgeOutputDataGraphTextMode, SelectedStreamRegionAnalyzers);
 
   for (auto &Analyzer : SelectedStreamRegionAnalyzers) {
-    // Fake the finalize CoalesceInfo.
-    // Since there is no step, no stream will be coalesced.
-    Analyzer->getFuncSE()->finalizeCoalesceInfo();
+    /**
+     * Normally we would call Analyzer->getFuncSE()->finalizeCoalesceInfo().
+     * However, there is no trace, so we identify coalesced streams in
+     * StreamExecutionTransformer.
+     */
+    // Analyzer->getFuncSE()->finalizeCoalesceInfo();
 
     // End transformation.
     // This will make sure the info are dumped.

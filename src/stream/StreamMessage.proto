@@ -29,6 +29,12 @@ message IVPattern {
   repeated PatternParam params = 2;
 }
 
+// Describe the static coalesce information.
+message StaticCoalesceInfo {
+  uint64 base_stream = 1;
+  int32 offset = 2;
+}
+
 message StaticStreamInfo {
   bool is_candidate = 1;
   bool is_qualified = 2;
@@ -85,7 +91,7 @@ message StreamInfo {
   int32 element_size = 6;
   string pattern_path = 7;
   string history_path = 8;
-  int32 coalesce_group = 9;
+  StaticCoalesceInfo coalesce_info = 9;
 
   DynamicStreamInfo dynamic_info = 10;
   int32 region_stream_id = 11;

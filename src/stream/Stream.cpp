@@ -8,9 +8,9 @@ Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
                const StaticStream *_SStream, llvm::DataLayout *DataLayout)
     : SStream(_SStream), Folder(_Folder), RelativeFolder(_RelativeFolder),
       HasMissingBaseStream(false), Qualified(false), Chosen(false),
-      RegionStreamId(-1), CoalesceGroup(-1), TotalIters(0), TotalAccesses(0),
-      TotalStreams(0), Iters(1), LastAccessIters(0),
-      StartId(DynamicInstruction::InvalidId), Pattern() {
+      RegionStreamId(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
+      Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
+      Pattern() {
   this->ElementSize = this->getElementSize(DataLayout);
 
   auto PatternFolder = this->Folder + "/pattern";
@@ -184,7 +184,10 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   // Dump the address function.
   this->fillProtobufAddrFuncInfo(DataLayout, ProtobufInfo);
 
-  ProtobufInfo->set_coalesce_group(this->CoalesceGroup);
+  auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
+  ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);
+  ProtobufCoalesceInfo->set_offset(this->CoalesceOffset);
+
   auto DynamicStreamInfo = ProtobufInfo->mutable_dynamic_info();
   DynamicStreamInfo->set_is_candidate(this->isCandidate());
   DynamicStreamInfo->set_is_qualified(this->isQualified());
