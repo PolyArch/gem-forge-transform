@@ -3,6 +3,8 @@
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Support/raw_ostream.h"
 
+#define DEBUG_TYPE "StaticIndVarStream"
+
 LLVM::TDG::StreamValuePattern
 StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
   if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
@@ -13,8 +15,14 @@ StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
        */
       auto CurrentLoop = this->InnerMostLoop;
       while (CurrentLoop != this->ConfigureLoop) {
-        auto BackEdgeSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
-        if (!this->SE->isLoopInvariant(BackEdgeSCEV, this->ConfigureLoop)) {
+        bool hasConstantTripCount = false;
+        if (this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
+          auto BackEdgeSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
+          if (this->SE->isLoopInvariant(BackEdgeSCEV, this->ConfigureLoop)) {
+            hasConstantTripCount = true;
+          }
+        }
+        if (!hasConstantTripCount) {
           this->StaticStreamInfo.set_not_stream_reason(
               LLVM::TDG::StaticStreamInfo::VARIANT_BACKEDGE_TAKEN);
           return LLVM::TDG::StreamValuePattern::RANDOM;
@@ -180,8 +188,15 @@ void StaticIndVarStream::analyzeIsCandidate() {
       FirstNonEmptyComputeMNode = ComputeMNode;
       break;
     }
+    LLVM_DEBUG(llvm::errs() << "StaticIVStream: FirstNonEmpty Value: "
+                            << FirstNonEmptyComputeMNode->RootValue->getName()
+                            << " SCEV: ";
+               FirstNonEmptyComputeMNode->SCEV->dump());
     this->StaticStreamInfo.set_val_pattern(
         this->analyzeValuePatternFromSCEV(FirstNonEmptyComputeMNode->SCEV));
+    LLVM_DEBUG(llvm::errs() << this->formatName() << ": Value pattern "
+                            << this->StaticStreamInfo.val_pattern() << '\n');
+
     if (this->StaticStreamInfo.val_pattern() ==
         LLVM::TDG::StreamValuePattern::RANDOM) {
       // This is not a recognizable pattern.
