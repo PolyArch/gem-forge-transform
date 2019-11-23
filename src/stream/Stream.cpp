@@ -182,7 +182,8 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
 
   // Dump the address function.
-  this->fillProtobufAddrFuncInfo(DataLayout, ProtobufInfo);
+  auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
+  this->fillProtobufAddrFuncInfo(DataLayout, AddrFuncInfo);
 
   auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
   ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);

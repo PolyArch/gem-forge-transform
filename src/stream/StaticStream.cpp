@@ -5,6 +5,8 @@
 
 #define DEBUG_TYPE "StaticStream"
 
+uint64_t StaticStream::AllocatedStreamId = 0;
+
 void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   SSI.CopyFrom(this->StaticStreamInfo);
   SSI.set_is_candidate(this->IsCandidate);
