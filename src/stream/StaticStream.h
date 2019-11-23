@@ -25,6 +25,7 @@
  */
 class StaticStream {
 public:
+  const uint64_t StreamId;
   enum TypeT {
     IV,
     MEM,
@@ -44,9 +45,9 @@ public:
   StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
-      : Type(_Type), Inst(_Inst), ConfigureLoop(_ConfigureLoop),
-        InnerMostLoop(_InnerMostLoop), SE(_SE), IsCandidate(false),
-        IsQualified(false), IsStream(false) {}
+      : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
+        ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop), SE(_SE),
+        IsCandidate(false), IsQualified(false), IsStream(false) {}
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
 
@@ -159,6 +160,12 @@ public:
   std::list<const llvm::Value *> InputValues;
 
 protected:
+  static uint64_t AllocatedStreamId;
+  static uint64_t allocateStreamId() {
+    // Make sure 0 is reserved as invalid stream id.
+    return ++AllocatedStreamId;
+  }
+
   struct MetaNode {
     enum TypeE {
       PHIMetaNodeEnum,

@@ -86,7 +86,7 @@ public:
     return this->SStream->InnerMostLoop;
   }
   const llvm::Instruction *getInst() const { return this->SStream->Inst; }
-  uint64_t getStreamId() const { return reinterpret_cast<uint64_t>(this); }
+  uint64_t getStreamId() const { return SStream->StreamId; }
   std::string getPatternFullPath() const {
     return this->Folder + "/" + this->PatternFileName;
   }
@@ -234,9 +234,6 @@ public:
    * Get the input value for this stream when configure it.
    */
   virtual std::list<const llvm::Value *> getInputValues() const {
-    if (this->SStream->InputValuesValid) {
-      return this->SStream->InputValues;
-    }
     return std::list<const llvm::Value *>();
   }
 
@@ -316,7 +313,7 @@ protected:
   virtual void formatAdditionalInfoText(std::ostream &OStream) const {}
   virtual void
   fillProtobufAddrFuncInfo(::llvm::DataLayout *DataLayout,
-                           ::LLVM::TDG::StreamInfo *ProtobufInfo) const {}
+                           ::LLVM::TDG::AddrFuncInfo *AddrFuncInfo) const {}
 
   void addBaseStream(Stream *Other);
   void addBackEdgeBaseStream(Stream *Other);

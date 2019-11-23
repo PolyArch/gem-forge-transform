@@ -248,10 +248,6 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
 }
 
 std::list<const llvm::Value *> MemStream::getInputValues() const {
-  if (this->SStream->InputValuesValid) {
-    return this->SStream->InputValues;
-  }
-
   assert(this->isChosen() && "Only consider chosen stream's input values.");
   std::list<const llvm::Value *> InputValues;
   auto FindBaseStream = [this](const llvm::Value *Value) -> Stream * {
@@ -278,13 +274,12 @@ std::list<const llvm::Value *> MemStream::getInputValues() const {
 
 void MemStream::fillProtobufAddrFuncInfo(
     ::llvm::DataLayout *DataLayout,
-    ::LLVM::TDG::StreamInfo *ProtobufInfo) const {
+    ::LLVM::TDG::AddrFuncInfo *AddrFuncInfo) const {
 
   if (!this->isChosen()) {
     return;
   }
 
-  auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
   AddrFuncInfo->set_name(this->AddressFunctionName);
 
   auto FindBaseStream = [this](const llvm::Value *Value) -> Stream * {
@@ -301,8 +296,10 @@ void MemStream::fillProtobufAddrFuncInfo(
   for (const auto &Input : this->AddrDG.getInputs()) {
     auto ProtobufArg = AddrFuncInfo->add_args();
     auto Type = Input->getType();
-    if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(Type)) {
-      
+    if (!Type->isIntOrPtrTy()) {
+      llvm::errs() << "Invalid type, Value: " << Utils::formatLLVMValue(Input)
+                   << '\n';
+      assert(false && "Invalid type for input.");
     }
     if (auto BaseStream = FindBaseStream(Input)) {
       // This comes from the base stream.

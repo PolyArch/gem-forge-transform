@@ -231,7 +231,7 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
   /**
    * We coalesce memory streams if:
    * 1. They share the same step root.
-   * 2. They are affine.
+   * 2. They have scev.
    * 3. Their SCEV has a constant offset within a cache line (64 bytes).
    */
   std::list<std::vector<std::pair<Stream *, int64_t>>> CoalescedGroup;
@@ -243,7 +243,7 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
       continue;
     }
     LLVM_DEBUG(llvm::errs()
-               << "Try to coalesce stream: " << S->formatName() << '\n');
+               << "====== Try to coalesce stream: " << S->formatName() << '\n');
     auto SS = S->SStream;
     auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
     auto AddrSCEV = SS->SE->getSCEV(Addr);
@@ -266,8 +266,9 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
         }
         // Check the scev.
         LLVM_DEBUG(llvm::errs() << "TargetAddrSCEV: "; TargetAddrSCEV->dump());
-        auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(
-            SS->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV));
+        auto MinusSCEV = SS->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
+        LLVM_DEBUG(llvm::errs() << "MinusSCEV: "; MinusSCEV->dump());
+        auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(MinusSCEV);
         if (!OffsetSCEV) {
           // Not constant offset.
           continue;
@@ -669,7 +670,7 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
   auto PHINodeSCEV = SS->SE->getSCEV(SS->PHINode);
   auto ClonedPHINodeSCEV = ClonedSE->getSCEV(ClonedPHINode);
   LLVM_DEBUG({
-    llvm::errs() << "Generate IVStreamConfiguration "
+    llvm::errs() << "====== Generate IVStreamConfiguration "
                  << S->SStream->formatName() << " PHINode ";
     PHINodeSCEV->dump();
   });
@@ -692,7 +693,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     Stream *S, llvm::Instruction *InsertBefore,
     InputValueVec &ClonedInputValues) {
 
-  LLVM_DEBUG(llvm::errs() << "StreamExTrans: Generating configuration for: "
+  LLVM_DEBUG(llvm::errs() << "===== Generate MemStreamConfiguration "
                           << S->formatName() << '\n');
 
   /**
@@ -722,8 +723,8 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   auto AddrSCEV = SS->SE->getSCEV(Addr);
 
   LLVM_DEBUG({
-    llvm::errs() << "Generate MemStreamConfiguration "
-                 << S->SStream->formatName() << " Addr ";
+    llvm::errs() << "Generate MemStreamConfiguration " << SS->formatName()
+                 << " Addr ";
     AddrSCEV->dump();
   });
 
@@ -739,9 +740,33 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
         ClonedConfigureLoop, ClonedInnerMostLoop, ClonedAddrAddRecSCEV,
         InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
         ProtoConfiguration);
-  } else {
-    assert(false && "Can't handle this Addr.");
+    return;
   }
+  if (SS->StaticStreamInfo.val_pattern() ==
+      ::LLVM::TDG::StreamValuePattern::INDIRECT) {
+    // Check if this is indirect stream.
+    LLVM_DEBUG(llvm::errs() << "This is Indirect MemStream.\n");
+    for (auto BaseS : S->getChosenBaseStreams()) {
+      auto BaseSS = BaseS->SStream;
+      if (BaseSS->ConfigureLoop != SS->ConfigureLoop ||
+          BaseSS->InnerMostLoop != SS->InnerMostLoop) {
+        llvm::errs() << "Cannot handle indirect streams with mismatch loop: \n";
+        llvm::errs() << "Base: " << BaseSS->formatName() << '\n';
+        llvm::errs() << "Dep:  " << SS->formatName() << '\n';
+        assert(false && "Mismatch in configure loop for indirect streams.");
+      }
+    }
+    // Set the IV pattern to indirect, and the stream will fill in AddrFunc
+    // info.
+    ProtoConfiguration->set_val_pattern(
+        ::LLVM::TDG::StreamValuePattern::INDIRECT);
+    // Handle the input values.
+    for (auto Input : S->getInputValues()) {
+      ClonedInputValues.push_back(this->getClonedValue(Input));
+    }
+    return;
+  }
+  assert(false && "Can't handle this Addr.");
 }
 
 void StreamExecutionTransformer::generateAddRecStreamConfiguration(

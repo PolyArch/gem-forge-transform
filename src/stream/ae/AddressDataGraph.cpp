@@ -210,6 +210,8 @@ llvm::Function *AddressDataGraph::generateComputeFunction(
       FuncType, llvm::GlobalValue::LinkageTypes::ExternalLinkage, FuncName,
       Module.get());
   assert(Function != nullptr && "Failed to insert the function.");
+  // Make sure we are using C calling convention.
+  Function->setCallingConv(llvm::CallingConv::C);
 
   // Create the first and only basic block.
   auto &Context = Module->getContext();
