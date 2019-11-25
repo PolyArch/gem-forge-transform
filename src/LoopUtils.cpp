@@ -21,7 +21,7 @@
 
 const std::unordered_set<std::string> LoopUtils::SupportedMathFunctions{
     "exp",  "sin", "sqrt", "sqrtf", "acos",
-    "fabs", "abs", "rand", "log",   "lgamma"};
+    "fabs", "abs", "rand", "log",   "lgamma", "printf"};
 
 std::unordered_map<const llvm::Loop *, bool>
     LoopUtils::MemorizedIsLoopContinuous;
