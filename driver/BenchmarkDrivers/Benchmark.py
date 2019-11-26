@@ -918,6 +918,8 @@ class Benchmark(object):
         # For execution simulation, we would like to be in the exe_path.
         cwd = os.getcwd()
         os.chdir(self.get_sim_exe_path())
+        if self.options.perf_command:
+            gem5_args = ['perf', 'record'] + gem5_args
         Util.call_helper(gem5_args)
         os.chdir(cwd)
 

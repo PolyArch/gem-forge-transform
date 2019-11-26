@@ -1,0 +1,9 @@
+{
+    "id": "stream.ex.static.so",
+    "is_execution_transform": true,
+    "options": [
+        "-stream-execution-static-pass",
+        "-stream-pass-choose-strategy=static-outer",
+        "-stream-pass-allow-aliased-stream"
+    ]
+}

@@ -241,6 +241,6 @@ class Gem5ReplayConfigureManager(object):
         'i4': [
             "--cpu-type=MinorCPU",
             "--llvm-issue-width=4",
-            "--prog-interval=1000",
+            "--prog-interval=10000", # Hz
         ],
     }

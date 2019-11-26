@@ -39,21 +39,21 @@ class RodiniaBenchmark(Benchmark):
             'medium': ['512', '10', '$NTHREADS'],
             'large': ['2048', '10', '$NTHREADS'],
         },
-        'backprop': {
-            'test': ['1024', '$NTHREADS'],
-            'medium': ['16384', '$NTHREADS'],
-            'large': ['65536', '$NTHREADS'],
-        },
+        # 'backprop': {
+        #     'test': ['1024', '$NTHREADS'],
+        #     'medium': ['16384', '$NTHREADS'],
+        #     'large': ['65536', '$NTHREADS'],
+        # },
         'cfd': {
             'test':   ['{DATA}/fvcorr.domn.097K.data', '$NTHREADS'],
             'medium': ['{DATA}/fvcorr.domn.193K.data', '$NTHREADS'],
             'large':  ['{DATA}/fvcorr.domn.193K.data', '$NTHREADS'],
         },
-        'srad_v1': {
-            'test':   ['100', '0.5', '502', '458', '$NTHREADS'],
-            'medium': ['100', '0.5', '502', '458', '$NTHREADS'],
-            'large':  ['100', '0.5', '502', '458', '$NTHREADS'],
-        },
+        # 'srad_v1': {
+        #     'test':   ['100', '0.5', '502', '458', '$NTHREADS'],
+        #     'medium': ['100', '0.5', '502', '458', '$NTHREADS'],
+        #     'large':  ['100', '0.5', '502', '458', '$NTHREADS'],
+        # },
         'srad_v2': {
             'test': ['128', '128', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
             'medium': ['512', '512', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
@@ -72,6 +72,47 @@ class RodiniaBenchmark(Benchmark):
     }
 
     ROI_FUNCS = {
+        'bfs': [
+            '.omp_outlined.',
+            '.omp_outlined..6',
+        ],
+        'kmeans': [
+            '.omp_outlined.',
+            'kmeans_kernel',
+        ],
+        'hotspot': [
+            '.omp_outlined.',
+        ],
+        'hotspot3D': [
+            '.omp_outlined.',
+        ],
+        'nw': [
+            '.omp_outlined.',
+            '.omp_outlined..6',
+        ],
+        'cfd': [
+            # '.omp_outlined.',   # initialize_variables()
+            '.omp_outlined..5', # compute_step_factor()
+            '.omp_outlined..6', # compute_flux()
+            '.omp_outlined..7', # time_step()
+            '.omp_outlined..12', # copy()
+        ],
+        'srad_v2': [
+            '.omp_outlined.',
+            '.omp_outlined..14',
+        ],
+        'particlefilter': [
+            '.omp_outlined.',  # applyMotionModel()
+            '.omp_outlined..2', # computeLikelihood()
+            '.omp_outlined..4', # updateWeight(): exp(likelihood)
+            '.omp_outlined..5', # updateWeight(): sum(weights)
+            '.omp_outlined..6', # updateWeight(): normalize(weight)
+            '.omp_outlined..8', # averageParticles()
+            'resampleParticles', # resampleParticles(): compute(CDF)
+            '.omp_outlined..12', # resampleParticles(): compute(U)
+            '.omp_outlined..14', # resampleParticles(): resample
+            '.omp_outlined..16', # resampleParticles(): reset
+        ],
         'pathfinder': [
             '.omp_outlined.',
         ],
@@ -222,6 +263,12 @@ A lot of file IO in the ROI.
 
 nw:
 Needleman-Wunsch. The problem is that it is tiled for better temporal locality.
+And inplace computing makes it frequently aliased.
+
+cfd:
+compute_step_factor.
+compute_flux. (with indirect access).
+time_step.
 
 stream cluster:
 Same as Parsec. So this should not work as there is a lot of file IO in the ROI.
