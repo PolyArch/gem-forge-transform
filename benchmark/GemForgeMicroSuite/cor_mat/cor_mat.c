@@ -20,15 +20,16 @@ __attribute__((noinline)) void foo(Value *a, Value *b, uint64_t width,
 #pragma clang loop vectorize(disable)
 #pragma clang loop unroll(disable)
     for (uint64_t j = i; j < width; ++j) {
-      const uint64_t c_idx = i * width + j;
-      c[c_idx] = 0;
+      Value sum = 0;
 #pragma clang loop vectorize(disable)
 #pragma clang loop unroll(disable)
       for (uint64_t k = 0; k < height; ++k) {
         const uint64_t a_idx = k * width + i;
         const uint64_t b_idx = k * width + j;
-        c[c_idx] += a[a_idx] * b[b_idx];
+        sum += a[a_idx] * b[b_idx];
       }
+      const uint64_t c_idx = i * width + j;
+      c[c_idx] = sum;
     }
   }
 }
@@ -42,6 +43,7 @@ Value c[width][width];
 
 int main() {
 
+  m5_detail_sim_start();
 #ifdef WARM_CACHE
   for (uint64_t i = 0; i < height; ++i) {
     for (uint64_t j = 0; j < width; ++j) {
@@ -51,7 +53,7 @@ int main() {
   }
 #endif
 
-  m5_detail_sim_start();
+  m5_reset_stats(0, 0);
   foo(a, b, width, height, c);
   m5_detail_sim_end();
 
