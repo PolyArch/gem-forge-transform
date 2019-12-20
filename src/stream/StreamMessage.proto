@@ -45,6 +45,7 @@ message StaticStreamInfo {
   uint32 loop_possible_path = 7;
   uint32 config_loop_possible_path = 8;
   IVPattern iv_pattern = 9;
+  bool float_manual = 10;
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
