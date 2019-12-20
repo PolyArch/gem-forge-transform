@@ -61,15 +61,7 @@ public:
     }
   }
 
-  std::string formatName() const {
-    // We need a more compact encoding of a stream name. Since the function is
-    // always the same, let it be (type function loop_header_bb inst_bb
-    // inst_name)
-    return "(" + this->formatType() + " " +
-           Utils::formatLLVMFunc(this->Inst->getFunction()) + " " +
-           this->ConfigureLoop->getHeader()->getName().str() + " " +
-           Utils::formatLLVMInstWithoutFunc(this->Inst) + ")";
-  }
+  std::string formatName() const;
 
   /**
    * This represents the bidirectional dependence graph between streams.
