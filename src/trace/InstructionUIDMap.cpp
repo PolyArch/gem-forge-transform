@@ -92,8 +92,7 @@ void InstructionUIDMap::allocateFunctionUID(const llvm::Function *Func) {
   auto FuncUIDBase = Func->getName().str();
   auto DebugMDNode = Func->getMetadata(llvm::LLVMContext::MD_dbg);
   if (DebugMDNode != nullptr) {
-    if (auto DISubprogram = llvm::dyn_cast<llvm::DISubprogram>(
-            Func->getMetadata(llvm::LLVMContext::MD_dbg))) {
+    if (auto DISubprogram = llvm::dyn_cast<llvm::DISubprogram>(DebugMDNode)) {
       if (auto DIFile = DISubprogram->getFile()) {
         std::stringstream SS;
         SS << llvm::sys::path::filename(DIFile->getFilename()).str()
