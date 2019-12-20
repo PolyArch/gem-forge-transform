@@ -1,7 +1,12 @@
 #include "StaticMemStream.h"
 
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/raw_ostream.h"
+
+llvm::cl::opt<bool>
+    StreamPassEnableStore("stream-enable-store", llvm::cl::init(false),
+                          llvm::cl::desc("Enable store stream."));
 
 void StaticMemStream::initializeMetaGraphConstruction(
     std::list<DFSNode> &DFSStack,
@@ -51,7 +56,7 @@ void StaticMemStream::analyzeIsCandidate() {
     return;
   }
   /**
-   * ! Disable constant stream and store so far.
+   * ! Disable constant stream so far.
    */
   if (this->BaseStepRootStreams.size() == 0) {
     this->IsCandidate = false;
@@ -59,7 +64,7 @@ void StaticMemStream::analyzeIsCandidate() {
         LLVM::TDG::StaticStreamInfo::NO_STEP_ROOT);
     return;
   }
-  if (llvm::isa<llvm::StoreInst>(this->Inst)) {
+  if (!StreamPassEnableStore && llvm::isa<llvm::StoreInst>(this->Inst)) {
     this->IsCandidate = false;
     return;
   }
@@ -264,6 +269,40 @@ void StaticMemStream::finalizePattern() {
       LoopUtils::countPossiblePath(this->InnerMostLoop));
   this->StaticStreamInfo.set_config_loop_possible_path(
       LoopUtils::countPossiblePath(this->ConfigureLoop));
+
+  /**
+   * Manually set float decision for some workloads.
+   */
+  const auto &DebugLoc = this->Inst->getDebugLoc();
+  assert(DebugLoc && "Missing DebugLoc for MemStream.");
+  auto Line = DebugLoc.getLine();
+  auto Scope = llvm::dyn_cast<llvm::DIScope>(DebugLoc.getScope());
+  auto SourceFile = Scope->getFilename();
+
+  if (SourceFile == "hotspot.cpp" && Line == 78) {
+    // rodinia.hotspot, power[], no reuse.
+    this->StaticStreamInfo.set_float_manual(true);
+  } else if (SourceFile == "pathfinder.cpp" && Line == 95) {
+    this->StaticStreamInfo.set_float_manual(true);
+  } else if (SourceFile == "3D.c") {
+    if (Line == 153 || Line == 154) {
+      // rodinia.hotspot3D, tIn_t[top/bottom]
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line == 147) {
+      // rodinia.hotspot3D, pIn_t[c]
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "srad.cpp") {
+    if (Line >= 196 && Line <= 199) {
+      // rodinia.srad_v2, delta[], no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "needle.cpp") {
+    if (Line == 107 || Line == 149) {
+      // rodinia.nw, reference[], no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  }
 }
 
 void StaticMemStream::addInputParam(const llvm::SCEV *SCEV, bool Signed) {
