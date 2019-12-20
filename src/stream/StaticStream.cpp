@@ -1,7 +1,10 @@
 #include "stream/StaticStream.h"
 
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include <sstream>
 
 #define DEBUG_TYPE "StaticStream"
 
@@ -299,4 +302,21 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     }
   }
   return true;
+}
+
+std::string StaticStream::formatName() const {
+  // We need a more compact encoding of a stream name. Since the function is
+  // always the same, let it be (function line loop_header_bb inst_bb
+  // inst_name)
+
+  auto Line = 0;
+  const auto &DebugLoc = this->Inst->getDebugLoc();
+  if (DebugLoc) {
+    Line = DebugLoc.getLine();
+  }
+  std::stringstream SS;
+  SS << "(" << Utils::formatLLVMFunc(this->Inst->getFunction()) << " " << Line
+     << " " << this->ConfigureLoop->getHeader()->getName().str() << " "
+     << Utils::formatLLVMInstWithoutFunc(this->Inst) << ")";
+  return SS.str();
 }
