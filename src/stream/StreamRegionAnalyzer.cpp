@@ -887,7 +887,7 @@ void StreamRegionAnalyzer::allocateRegionStreamId(
     UsedRegionId += ParentConfigureLoopInfo.getSortedStreams().size();
   }
   for (auto S : ConfigureLoopInfo.getSortedStreams()) {
-    const int MaxRegionStreamId = 64;
+    const int MaxRegionStreamId = 128;
     assert(UsedRegionId < MaxRegionStreamId && "RegionStreamId overflow.");
     S->setRegionStreamId(UsedRegionId++);
   }

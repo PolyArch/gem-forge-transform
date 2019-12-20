@@ -258,6 +258,10 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
           continue;
         }
         auto TargetSS = TargetS->SStream;
+        // Check the load/store.
+        if (TargetSS->Inst->getOpcode() != SS->Inst->getOpcode()) {
+          continue;
+        }
         auto TargetAddr =
             const_cast<llvm::Value *>(Utils::getMemAddrValue(TargetSS->Inst));
         auto TargetAddrSCEV = TargetSS->SE->getSCEV(TargetAddr);
@@ -357,7 +361,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
                  << " Input " << ClonedInput->getName() << '\n');
 
       auto StreamId = S->getRegionStreamId();
-      assert(StreamId >= 0 && StreamId < 64 &&
+      assert(StreamId >= 0 && StreamId < 128 &&
              "Illegal RegionStreamId for StreamInput.");
       auto StreamIdValue = llvm::ConstantInt::get(
           llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
@@ -461,7 +465,7 @@ void StreamExecutionTransformer::transformLoadInst(
 
   // Here we should RegionStreamId to fit in immediate field.
   auto StreamId = S->getRegionStreamId();
-  assert(StreamId >= 0 && StreamId < 64 &&
+  assert(StreamId >= 0 && StreamId < 128 &&
          "Illegal RegionStreamId for StreamLoad.");
   auto StreamIdValue = llvm::ConstantInt::get(
       llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()), StreamId,
@@ -511,7 +515,12 @@ void StreamExecutionTransformer::transformStoreInst(
     return;
   }
 
-  assert(false && "StoreStream not supported yet.");
+  /**
+   * For execution-driven simulation, to aovid complicated interaction
+   * with the core's LSQ, we make store stream implicit so far,
+   * i.e. the original store is kept there, and the data is consumed 
+   * through the cache.
+   */
 }
 
 void StreamExecutionTransformer::transformStepInst(
