@@ -518,7 +518,7 @@ void StreamExecutionTransformer::transformStoreInst(
   /**
    * For execution-driven simulation, to aovid complicated interaction
    * with the core's LSQ, we make store stream implicit so far,
-   * i.e. the original store is kept there, and the data is consumed 
+   * i.e. the original store is kept there, and the data is consumed
    * through the cache.
    */
 }
@@ -833,18 +833,20 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
       }
     }
     // We need the back-edge taken times if this is not ConfigureLoop.
-    if (CurrentLoop != ClonedConfigureLoop) {
-      auto BackEdgeTakenSCEV = ClonedSE->getBackedgeTakenCount(CurrentLoop);
-      LLVM_DEBUG({
-        llvm::errs() << "BackEdgeTakenCount ";
-        BackEdgeTakenSCEV->dump();
-      });
-      assert(!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
-             "BackEdgeCount could not taken.");
-      assert(ClonedSE->isLoopInvariant(BackEdgeTakenSCEV, ClonedConfigureLoop));
+    // Otherwise it's optional.
+    auto BackEdgeTakenSCEV = ClonedSE->getBackedgeTakenCount(CurrentLoop);
+    LLVM_DEBUG({
+      llvm::errs() << "BackEdgeTakenCount ";
+      BackEdgeTakenSCEV->dump();
+    });
+    if (!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
+        ClonedSE->isLoopInvariant(BackEdgeTakenSCEV, ClonedConfigureLoop)) {
       this->addStreamInputValue(BackEdgeTakenSCEV, false /* Signed */,
                                 InsertBefore, ClonedSEExpander,
                                 ClonedInputValues, ProtoConfiguration);
+    } else {
+      assert(CurrentLoop == ClonedConfigureLoop &&
+             "Need const BackEdgeTakenCount for nested loop.");
     }
     CurrentLoop = CurrentLoop->getParentLoop();
   }
@@ -885,37 +887,6 @@ void StreamExecutionTransformer::addStreamInputValue(
   }
 
   return;
-
-  if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(ClonedSCEV)) {
-    ProtoInput->set_valid(true);
-    if (Signed) {
-      ProtoInput->set_param(ConstSCEV->getValue()->getSExtValue());
-    } else {
-      ProtoInput->set_param(ConstSCEV->getValue()->getZExtValue());
-    }
-  } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(ClonedSCEV)) {
-    ProtoInput->set_valid(false);
-    ClonedInputValues.push_back(UnknownSCEV->getValue());
-    // } else if (auto ZExtSCEV =
-    // llvm::dyn_cast<llvm::SCEVZeroExtendExpr>(SCEV)) {
-    //   // Ignore the ZExtSCEV?
-    //   this->addInputParam(ZExtSCEV->getOperand(), Signed);
-  } else {
-    // Search through the child compute nodes.
-    // const auto &PHIMNode = this->PHIMetaNodes.front();
-    // for (const auto &ComputeMNode : PHIMNode.ComputeMetaNodes) {
-    //   if (ComputeMNode->SCEV == SCEV) {
-    //     ProtoInput->set_valid(false);
-    //     // We found the SCEV, check if the ComputeMetaNode is empty.
-    //     if (ComputeMNode->isEmpty()) {
-    //       this->InputValues.push_back(ComputeMNode->RootValue);
-    //       return;
-    //     }
-    //   }
-    // }
-    ClonedSCEV->print(llvm::errs());
-    assert(false && "Cannot handle this SCEV so far.");
-  }
 }
 
 #undef DEBUG_TYPE
