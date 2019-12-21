@@ -818,19 +818,14 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
       }
     } else {
       /**
-       * If this is LoopInvariant, we can add a 0 stride
-       * and skip to the ConfigureLoop. This means that we do not need the
-       * backedge taken count to be LoopInvariant at ConfigureLoop.
+       * If this is LoopInvariant, we can add a 0 stride and do not update
+       * the SCEV.
        */
       auto ZeroStrideSCEV = ClonedSE->getZero(
           llvm::IntegerType::get(this->ClonedModule->getContext(), 64));
       this->addStreamInputValue(ZeroStrideSCEV, true /* Signed */, InsertBefore,
                                 ClonedSEExpander, ClonedInputValues,
                                 ProtoConfiguration);
-      // No need to update the SCEV.
-      if (ClonedSE->isLoopInvariant(CurrentSCEV, ClonedConfigureLoop)) {
-        break;
-      }
     }
     // We need the back-edge taken times if this is not ConfigureLoop.
     // Otherwise it's optional.
