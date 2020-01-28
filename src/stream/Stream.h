@@ -237,6 +237,8 @@ public:
     return std::list<const llvm::Value *>();
   }
 
+  int getElementSize(llvm::DataLayout *DataLayout) const;
+
 protected:
   /**
    * Stores the information of the stream.
@@ -304,8 +306,6 @@ protected:
   DynamicInstruction::DynamicId StartId;
 
   StreamPattern Pattern;
-
-  int getElementSize(llvm::DataLayout *DataLayout) const;
 
   /**
    * Used for subclass to add additionl dumping information.
