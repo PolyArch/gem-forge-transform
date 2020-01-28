@@ -19,12 +19,16 @@ __attribute__((noinline)) Value foo(Value **pa, int N, Value **pb) {
 #pragma clang loop unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
     Value x = a[i];
+#define MIN(x, y) x > y ? y : x;
     if (i > 0) {
       x += a[i - 1];
+      // x = MIN(x, a[i - 1]);
     }
     if (i + 1 < N) {
       x += a[i + 1];
+      // x = MIN(x, a[i + 1]);
     }
+#undef MIN
     b[i] = x;
   }
   return sum;
@@ -51,6 +55,7 @@ int main() {
   m5_reset_stats(0, 0);
   volatile Value c = foo(&pa, N, &pb);
   m5_detail_sim_end();
+  exit(0);
 
 #ifdef CHECK
   uint64_t mismatch = 0;
@@ -66,7 +71,7 @@ int main() {
       mismatch++;
     }
   }
-  printf("Found mismatch %llu.\n", mismatch);
+  printf("Found mismatch %lu.\n", mismatch);
 #endif
 
   return 0;

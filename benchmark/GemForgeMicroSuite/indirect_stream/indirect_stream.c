@@ -4,25 +4,33 @@
 
 // Simple indirect access.
 typedef int Value;
+typedef int64_t IndT;
 
 #define STRIDE 1
 #define CHECK
 #define WARM_CACHE
 
-__attribute__((noinline)) Value foo_warm(volatile Value *a, int *ia, int N) {
+__attribute__((noinline)) Value foo_warm(volatile Value *a, IndT *ia, int N) {
   Value sum = 0.0;
-#pragma nounroll
-  for (int i = 0; i < N; i += STRIDE) {
+  for (IndT i = 0; i < N; i += STRIDE) {
     sum += a[ia[i]];
   }
   return sum;
 }
 
-__attribute__((noinline)) Value foo(volatile Value *a, int *ia, int N) {
+__attribute__((noinline)) Value foo(volatile Value *a, IndT *ia, int N) {
   Value sum = 0.0;
 #pragma nounroll
-  for (int i = 0; i < N; i += STRIDE) {
-    sum += a[ia[i]];
+  for (IndT i = 0; i < N; i += STRIDE * 4) {
+#pragma nounroll
+    for (IndT j = 0; j < 4; ++j) {
+      // Test short stream.
+      IndT idx = i + j * STRIDE;
+      IndT iaValue = ia[idx];
+      sum += a[iaValue + 0];
+      sum += a[iaValue + 1];
+      sum += a[iaValue - 1];
+    }
   }
   return sum;
 }
@@ -32,7 +40,7 @@ const int N = 65536 * 2;
 const int NN = 65536 * 16;
 // const int NN = N;
 Value a[NN];
-int ia[N];
+IndT ia[N];
 
 int main() {
   // Initialize the index array.
@@ -49,10 +57,12 @@ int main() {
   // Shuffle it.
   for (int j = N - 1; j > 0; --j) {
     int i = (int)(((float)(rand()) / (float)(RAND_MAX)) * j);
-    int tmp = ia[i];
+    IndT tmp = ia[i];
     ia[i] = ia[j];
     ia[j] = tmp;
   }
+
+  printf("ia range %p %p.\n", ia, ia + N);
 
   m5_detail_sim_start();
   volatile Value ret;
