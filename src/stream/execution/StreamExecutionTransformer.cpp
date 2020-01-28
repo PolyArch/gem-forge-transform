@@ -279,9 +279,6 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
         }
         LLVM_DEBUG(llvm::errs() << "OffsetSCEV: "; OffsetSCEV->dump());
         int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
-        if (Offset > 64 || Offset < -64) {
-          continue;
-        }
         LLVM_DEBUG(llvm::errs()
                    << "Coalesced, offset: " << Offset
                    << " with stream: " << TargetS->formatName() << '\n');
@@ -298,24 +295,37 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
     }
   }
 
-  // Find the lowest one as the base for each group.
+  // Sort each group with increasing order of offset.
   for (auto &Group : CoalescedGroup) {
-    if (Group.size() == 1) {
+    std::sort(Group.begin(), Group.end(), [](const std::pair<Stream *, int64_t> &a, const std::pair<Stream *, int64_t> & b)->bool {
+      return a.second < b.second;
+    });
+  }
+
+  // Resplit each group dependencing on the expansion.
+  for (auto GroupIter = CoalescedGroup.begin(); GroupIter != CoalescedGroup.end(); GroupIter++) {
+    if (GroupIter->size() == 1) {
       // Ignore single streams.
       continue;
     }
-    auto BaseS = Group.front().first;
-    auto MinOffset = Group.front().second;
-    for (const auto &Entry : Group) {
-      if (Entry.second < MinOffset) {
-        MinOffset = Entry.second;
-        BaseS = Entry.first;
+    auto BaseS = GroupIter->front().first;
+    int64_t BaseOffset = GroupIter->front().second;
+    int64_t EndOffset = GroupIter->front().second;
+    size_t NStream = 0;
+    for (auto StreamIter = GroupIter->begin(), StreamEnd = GroupIter->end(); StreamIter != StreamEnd; ++StreamIter, ++NStream) {
+      auto S = StreamIter->first;
+      auto Offset = StreamIter->second;
+      if (Offset > EndOffset) {
+        // The expansion is broken, split the group.
+        assert(NStream != 0 && "Empty LHS group.");
+        CoalescedGroup.emplace_back(StreamIter, StreamEnd);
+        GroupIter->resize(NStream);
+        break;
+      } else {
+        // The expansion keeps going.
+        S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
+        EndOffset = std::max(EndOffset, Offset + S->getElementSize(this->CachedLI->getDataLayout()));
       }
-    }
-    // Generate the coalesced info.
-    for (auto &Entry : Group) {
-      auto S = Entry.first;
-      S->setCoalesceGroup(BaseS->getStreamId(), Entry.second - MinOffset);
     }
   }
 }

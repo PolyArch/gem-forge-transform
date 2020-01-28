@@ -201,6 +201,7 @@ public:
   }
   ~CachedLoopInfo();
 
+  llvm::DataLayout *getDataLayout() { return this->DL; }
   llvm::TargetLibraryInfo *getTargetLibraryInfo() { return this->TLI; }
   llvm::AssumptionCache *getAssumptionCache(llvm::Function *Func);
   llvm::LoopInfo *getLoopInfo(llvm::Function *Func);
