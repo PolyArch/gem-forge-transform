@@ -5,7 +5,7 @@
 #include "gem5/m5ops.h"
 #include <stdio.h>
 
-typedef long long Value;
+typedef float Value;
 
 #define STRIDE 1
 #define CHECK
@@ -22,7 +22,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
 }
 
 // 65536*4 is 512kB.
-const int N = 65536;
+const int N = 1024;
 Value a[N];
 Value b[N];
 Value c[N];
@@ -47,18 +47,21 @@ int main() {
   Value expected = 0;
   Value computed = 0;
   printf("Start c_x.\n");
+  #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
     c_x[i] = a[i] + b[i];
   }
   printf("Start expected.\n");
+  #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
     expected += c_x[i];
   }
   printf("Start computed.\n");
+  #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
     computed += c[i];
   }
-  printf("Ret = %llu, Expected = %llu Real = %d.\n", computed, expected, N * (N - 1) * 3 / 2);
+  printf("Ret = %f, Expected = %f Real = %d.\n", computed, expected, N * (N - 1) * 3 / 2);
   // for (int i = 0; i < N; i += STRIDE) {
   //   printf("i = %d a = %lld b = %lld c = %lld c_x = %lld.\n",
   //     i, a[i], b[i], c[i], c_x[i]);

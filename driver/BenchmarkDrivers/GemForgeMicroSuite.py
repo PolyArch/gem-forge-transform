@@ -65,10 +65,14 @@ class GemForgeMicroBenchmark(Benchmark):
     def build_raw_bc(self):
         os.chdir(self.src_path)
         bc = os.path.join(self.work_path, self.get_raw_bc())
+        # Disable the loop unswitch to test for fault_stream.
         flags = [
             # '-fno-unroll-loops',
             # '-fno-vectorize',
             # '-fno-slp-vectorize',
+            '-march=knl',
+            '-mllvm',
+            '-loop-unswitch-threshold=1',
         ]
         if self.is_omp:
             flags.append('-fopenmp')
