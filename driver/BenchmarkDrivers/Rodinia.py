@@ -14,17 +14,27 @@ import os
 class RodiniaBenchmark(Benchmark):
 
     ARGS = {
+        # 'backprop': {
+        #     'test': ['1024', '$NTHREADS'],
+        #     'medium': ['16384', '$NTHREADS'],
+        #     'large': ['65536', '$NTHREADS'],
+        # },
         'bfs': {
             'test': ['$NTHREADS',    '{DATA}/graph4096.txt.data'],
             'medium': ['$NTHREADS', '{DATA}/graph65536.txt.data'],
             'large': ['$NTHREADS',  '{DATA}/graph1MW_6.txt.data'],
         },
-        'kmeans': {
-            'test':   ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/100.data'],
-            'medium': ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/204800.txt.data'],
-            'large':  ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/kdd_cup.data'],
+        'cfd': {
+            'test':   ['{DATA}/fvcorr.domn.097K.data', '$NTHREADS'],
+            'medium': ['{DATA}/fvcorr.domn.193K.data', '$NTHREADS'],
+            'large':  ['{DATA}/fvcorr.domn.193K.data', '$NTHREADS'],
         },
         'hotspot': {
+            'test':   ['64', '64', '2', '$NTHREADS', '{DATA}/temp_64.data', '{DATA}/power_64.data', 'output.txt'],
+            'medium': ['512', '512', '2', '$NTHREADS', '{DATA}/temp_512.data', '{DATA}/power_512.data', 'output.txt'],
+            'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
+        },
+        'hotspot-avx512': {
             'test':   ['64', '64', '2', '$NTHREADS', '{DATA}/temp_64.data', '{DATA}/power_64.data', 'output.txt'],
             'medium': ['512', '512', '2', '$NTHREADS', '{DATA}/temp_512.data', '{DATA}/power_512.data', 'output.txt'],
             'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
@@ -34,30 +44,20 @@ class RodiniaBenchmark(Benchmark):
             'medium': ['512', '2', '10', '$NTHREADS', '{DATA}/temp_512x2.data', '{DATA}/power_512x2.data', 'output.txt'],
             'large':  ['512', '8', '100', '$NTHREADS', '{DATA}/temp_512x8.data', '{DATA}/power_512x8.data', 'output.txt'],
         },
+        'hotspot3D-avx512': {
+            'test':   ['64', '8', '2', '$NTHREADS', '{DATA}/temp_64x8.data', '{DATA}/power_64x8.data', 'output.txt'],
+            'medium': ['512', '2', '10', '$NTHREADS', '{DATA}/temp_512x2.data', '{DATA}/power_512x2.data', 'output.txt'],
+            'large':  ['512', '8', '100', '$NTHREADS', '{DATA}/temp_512x8.data', '{DATA}/power_512x8.data', 'output.txt'],
+        },
+        'kmeans': {
+            'test':   ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/100.data'],
+            'medium': ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/204800.txt.data'],
+            'large':  ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/kdd_cup.data'],
+        },
         'nw': {
             'test': ['128', '10', '$NTHREADS'],
             'medium': ['512', '10', '$NTHREADS'],
             'large': ['2048', '10', '$NTHREADS'],
-        },
-        # 'backprop': {
-        #     'test': ['1024', '$NTHREADS'],
-        #     'medium': ['16384', '$NTHREADS'],
-        #     'large': ['65536', '$NTHREADS'],
-        # },
-        'cfd': {
-            'test':   ['{DATA}/fvcorr.domn.097K.data', '$NTHREADS'],
-            'medium': ['{DATA}/fvcorr.domn.193K.data', '$NTHREADS'],
-            'large':  ['{DATA}/fvcorr.domn.193K.data', '$NTHREADS'],
-        },
-        # 'srad_v1': {
-        #     'test':   ['100', '0.5', '502', '458', '$NTHREADS'],
-        #     'medium': ['100', '0.5', '502', '458', '$NTHREADS'],
-        #     'large':  ['100', '0.5', '502', '458', '$NTHREADS'],
-        # },
-        'srad_v2': {
-            'test': ['128', '128', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
-            'medium': ['512', '512', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
-            'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
         },
         'particlefilter': {
             'test':   ['-x', '100', '-y', '100', '-z', '10', '-np', '100', '-nt', '$NTHREADS'],
@@ -69,24 +69,25 @@ class RodiniaBenchmark(Benchmark):
             'medium': ['1000', '100', '$NTHREADS'],
             'large': ['100000', '100', '$NTHREADS'],
         },
+        'pathfinder-avx512': {
+            'test': ['100', '100', '$NTHREADS'],
+            'medium': ['1000', '100', '$NTHREADS'],
+            'large': ['100000', '100', '$NTHREADS'],
+        },
+        # 'srad_v1': {
+        #     'test':   ['100', '0.5', '502', '458', '$NTHREADS'],
+        #     'medium': ['100', '0.5', '502', '458', '$NTHREADS'],
+        #     'large':  ['100', '0.5', '502', '458', '$NTHREADS'],
+        # },
+        'srad_v2': {
+            'test': ['128', '128', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'medium': ['512', '512', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+        },
     }
 
     ROI_FUNCS = {
         'bfs': [
-            '.omp_outlined.',
-            '.omp_outlined..6',
-        ],
-        'kmeans': [
-            '.omp_outlined.',
-            'kmeans_kernel',
-        ],
-        'hotspot': [
-            '.omp_outlined.',
-        ],
-        'hotspot3D': [
-            '.omp_outlined.',
-        ],
-        'nw': [
             '.omp_outlined.',
             '.omp_outlined..6',
         ],
@@ -97,25 +98,67 @@ class RodiniaBenchmark(Benchmark):
             '.omp_outlined..7', # time_step()
             '.omp_outlined..12', # copy()
         ],
-        'srad_v2': [
+        'hotspot': [
             '.omp_outlined.',
-            '.omp_outlined..14',
+        ],
+        'hotspot-avx512': [
+            '.omp_outlined.',
+        ],
+        'hotspot3D': [
+            '.omp_outlined.',
+        ],
+        'hotspot3D-avx512': [
+            '.omp_outlined.',
+        ],
+        'kmeans': [
+            '.omp_outlined.',
+            'kmeans_kernel',
+        ],
+        'nw': [
+            '.omp_outlined.',
+            '.omp_outlined..5',
         ],
         'particlefilter': [
             '.omp_outlined.',  # applyMotionModel()
             '.omp_outlined..2', # computeLikelihood()
-            '.omp_outlined..4', # updateWeight(): exp(likelihood)
-            '.omp_outlined..5', # updateWeight(): sum(weights)
-            '.omp_outlined..6', # updateWeight(): normalize(weight)
-            '.omp_outlined..8', # averageParticles()
+            '.omp_outlined..4', # updateWeight(): exp(likelihood) + sum(weights)
+            '.omp_outlined..5', # updateWeight(): normalize(weight)
+            '.omp_outlined..7', # averageParticles()
             'resampleParticles', # resampleParticles(): compute(CDF)
-            '.omp_outlined..12', # resampleParticles(): compute(U)
-            '.omp_outlined..14', # resampleParticles(): resample
-            '.omp_outlined..16', # resampleParticles(): reset
+            '.omp_outlined..11', # resampleParticles(): compute(U)
+            '.omp_outlined..13', # resampleParticles(): resample
+            '.omp_outlined..15', # resampleParticles(): reset
         ],
         'pathfinder': [
             '.omp_outlined.',
         ],
+        'pathfinder-avx512': [
+            '.omp_outlined.',
+        ],
+        'srad_v2': [
+            '.omp_outlined.',
+            '.omp_outlined..14',
+        ],
+    }
+
+    """
+    For some benchmarks, it takes too long to finish the large input set.
+    We limit the number of work items here, by limiting the number of 
+    microops to be roughly 1e8.
+    """
+    WORK_ITEMS = {
+        'bfs': 2 * int(1e8 / 15e5),  # One iter takes 15e5 ops.
+        'cfd': 4 * int(1e8 / 2e7), 
+        'hotspot': 2, # Two iters takes 10 min.
+        'hotspot-avx512': 2, # Two iters takes 10 min.
+        'hotspot3D': 1 * int(1e8 / 2e7),
+        'hotspot3D-avx512': 1 * int(1e8 / 2e7),
+        'kmeans': 3 * 1, 
+        'nw': 2,                # nw can finish.
+        'particlefilter': 5 * 2, # Two iters takes 2e8.
+        'pathfinder': 99,        # pathfinder takes 99 iterations.
+        'pathfinder-avx512': 99,        # pathfinder takes 99 iterations.
+        'srad_v2': 2 * int(1e8 / 5e7),
     }
 
     def __init__(self, benchmark_args, benchmark_path):
@@ -188,6 +231,22 @@ class RodiniaBenchmark(Benchmark):
 
     def get_run_path(self):
         return self.work_path
+
+    def get_additional_gem5_simulate_command(self):
+        """
+        Some benchmarks takes too long to finish, so we use work item
+        to ensure that we simualte for the same amount of work.
+        """
+        if self.sim_input_size != 'large' and self.benchmark_name != 'pathfinder':
+            # Pathfinder has deadlock at exit stage.
+            return list()
+        work_items = RodiniaBenchmark.WORK_ITEMS[self.benchmark_name]
+        if work_items == -1:
+            # This benchmark can finish.
+            return list()
+        return [
+            '--work-end-exit-count={v}'.format(v=work_items)
+        ]
 
     def build_raw_bc(self):
         os.chdir(self.benchmark_path)
