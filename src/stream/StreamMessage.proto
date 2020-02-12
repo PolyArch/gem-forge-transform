@@ -46,6 +46,8 @@ message StaticStreamInfo {
   uint32 config_loop_possible_path = 8;
   IVPattern iv_pattern = 9;
   bool float_manual = 10;
+  bool has_update = 11; // The load stream has aliased store.
+  bool has_constant_update = 12; // This load stream is updated by a constant value.
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
@@ -57,9 +59,10 @@ message StaticStreamInfo {
     MULTI_STEP_ROOT = 6;
     NO_STEP_ROOT = 7;
     VARIANT_BACKEDGE_TAKEN = 8;
+    IS_UPDATE_STORE = 9;
     // Not Qualified Reason.
-    BASE_STREAM_NOT_QUALIFIED = 9;
-    NO_STATIC_MAPPING = 10;
+    BASE_STREAM_NOT_QUALIFIED = 10;
+    NO_STATIC_MAPPING = 11;
   }
 }
 

@@ -4,6 +4,8 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/raw_ostream.h"
 
+#define DEBUG_TYPE "StaticMemStream"
+
 llvm::cl::opt<bool>
     StreamPassEnableStore("stream-enable-store", llvm::cl::init(false),
                           llvm::cl::desc("Enable store stream."));
@@ -64,9 +66,20 @@ void StaticMemStream::analyzeIsCandidate() {
         LLVM::TDG::StaticStreamInfo::NO_STEP_ROOT);
     return;
   }
-  if (!StreamPassEnableStore && llvm::isa<llvm::StoreInst>(this->Inst)) {
-    this->IsCandidate = false;
-    return;
+  /**
+   * For store stream, ignore update streams.
+   */
+  if (llvm::isa<llvm::StoreInst>(this->Inst)) {
+    if (!StreamPassEnableStore) {
+      this->IsCandidate = false;
+      return;
+    }
+    if (this->UpdateStream) {
+      this->StaticStreamInfo.set_not_stream_reason(
+          ::LLVM::TDG::StaticStreamInfo::IS_UPDATE_STORE);
+      this->IsCandidate = false;
+      return;
+    }
   }
   assert(this->ComputeMetaNodes.size() == 1 &&
          "StaticMemStream should always have one ComputeMetaNode.");
@@ -173,6 +186,8 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
+    LLVM_DEBUG(llvm::errs()
+               << "[UnQualify]: NoStaticMap " << this->formatName() << '\n');
     return false;
   }
   return true;
@@ -193,7 +208,12 @@ LLVM::TDG::StreamStepPattern StaticMemStream::computeStepPattern() const {
     assert(this->BaseStepRootStreams.size() == 1 &&
            "More than one step root stream to finalize pattern.");
     auto StepRootStream = *(this->BaseStepRootStreams.begin());
-    return StepRootStream->StaticStreamInfo.stp_pattern();
+    auto StepRootStreamStpPattern =
+        StepRootStream->StaticStreamInfo.stp_pattern();
+    LLVM_DEBUG(llvm::errs()
+               << "Computed step pattern " << StepRootStreamStpPattern
+               << " for " << this->formatName() << '\n');
+    return StepRootStreamStpPattern;
   }
 }
 
@@ -212,56 +232,6 @@ void StaticMemStream::finalizePattern() {
       // This is likely our step root, copy its value pattern.
       this->StaticStreamInfo.set_val_pattern(
           BaseStream->StaticStreamInfo.val_pattern());
-      /**
-       * If this is LINEAR pattern, we generate the parameters.
-       * ! Too Hacky! Need a uniform way to express the pattern.
-       */
-      //       if (this->StaticStreamInfo.val_pattern() ==
-      //           LLVM::TDG::StreamValuePattern::LINEAR) {
-      //         // Careful, we should use SCEV for ourselve to get correct
-      //         start value. auto AddrSCEV =
-      //         this->ComputeMetaNodes.front().SCEV;
-      //         AddrSCEV->print(llvm::errs());
-      //         // So far we only handle AddRec.
-      //         // TODO: Handle Add.
-      //         if (auto AddrAddRecSCEV =
-      //                 llvm::dyn_cast<llvm::SCEVAddRecExpr>(AddrSCEV)) {
-      //           this->InputValuesValid = true;
-      //           auto ProtoIVPattern =
-      //           this->StaticStreamInfo.mutable_iv_pattern();
-      //           ProtoIVPattern->set_val_pattern(
-      //               LLVM::TDG::StreamValuePattern::LINEAR);
-
-      //           /**
-      //            * Linear pattern has two parameters, base and stride.
-      //            * TODO: Handle non-constant params in the future.
-      //            */
-      // #define AddParam(SCEV, Signed) \
-//   { \
-//     auto ProtoParam = ProtoIVPattern->add_params(); \
-//     if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) { \
-//       ProtoParam->set_valid(true); \
-//       if (Signed) \
-//         ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue()); \
-//       else \
-//         ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue()); \
-//     } else if (auto UnknownSCEV =
-      //     llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {   \
-//       ProtoParam->set_valid(false); \
-//       this->InputValues.push_back(UnknownSCEV->getValue()); \
-//     } else { \
-//       SCEV->print(llvm::errs()); \
-//       assert(false && "Can only handle this SCEV so far."); \
-//     } \
-//   }
-      //           auto BaseSCEV = AddrAddRecSCEV->getStart();
-      //           llvm::errs() << BaseSCEV->getSCEVType() << '\n';
-      //           AddParam(BaseSCEV, false);
-      //           auto StrideSCEV = AddrAddRecSCEV->getOperand(1);
-      //           AddParam(StrideSCEV, true);
-      // #undef AddParam
-      //         }
-      //       }
     }
   }
   // Compute the possible loop path.
@@ -279,27 +249,76 @@ void StaticMemStream::finalizePattern() {
   auto Scope = llvm::dyn_cast<llvm::DIScope>(DebugLoc.getScope());
   auto SourceFile = Scope->getFilename();
 
-  if (SourceFile == "hotspot.cpp" && Line == 78) {
+  if (SourceFile == "hotspot.cpp") {
     // rodinia.hotspot, power[], no reuse.
-    this->StaticStreamInfo.set_float_manual(true);
-  } else if (SourceFile == "pathfinder.cpp" && Line == 95) {
+    if (Line == 81) {
+      this->StaticStreamInfo.set_float_manual(true);
+      // } else if (Line >= 82 && Line <= 86) {
+      //   // rodinia.hotspot, temp[], reuse 8kB.
+      //   this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "pathfinder.cpp" && Line == 91) {
+    // rodinia.pathfinder, wall[], no reuse.
     this->StaticStreamInfo.set_float_manual(true);
   } else if (SourceFile == "3D.c") {
-    if (Line == 153 || Line == 154) {
+    if (Line == 176 || Line == 177) {
       // rodinia.hotspot3D, tIn_t[top/bottom]
       this->StaticStreamInfo.set_float_manual(true);
-    } else if (Line == 147) {
+    } else if (Line == 170) {
       // rodinia.hotspot3D, pIn_t[c]
       this->StaticStreamInfo.set_float_manual(true);
     }
   } else if (SourceFile == "srad.cpp") {
-    if (Line >= 196 && Line <= 199) {
+    if (Line >= 214 && Line <= 217) {
       // rodinia.srad_v2, delta[], no reuse.
       this->StaticStreamInfo.set_float_manual(true);
+      // } else if (Line >= 208 && Line <= 211) {
+      //   // rodinia.srad_v2, c[] reuse in MLC.
+      //   this->StaticStreamInfo.set_float_manual(true);
+      // } else if (Line >= 151 && Line <= 155) {
+      //   // rodinia.srad_v2, J[] reuse in MLC.
+      //   this->StaticStreamInfo.set_float_manual(true);
     }
   } else if (SourceFile == "needle.cpp") {
     if (Line == 107 || Line == 149) {
       // rodinia.nw, reference[], no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "kmeans_clustering.c") {
+    // rodinia.kmeans, No stream for floating.
+  } else if (SourceFile == "euler3d_cpu_double.cpp") {
+    // rodinia.cfd.
+    if (Line == 52) {
+      // src[] in copy(), no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line >= 160 && Line <= 164) {
+      // variables[], 471kB, no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line == 175) {
+      // area[], should we float it?
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line >= 199 && Line <= 205) {
+      // variables, no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line >= 238 && Line <= 242) {
+      // elements_surrounding_elements[], normals[], too large.
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line >= 248 && Line <= 252) {
+      // indirect access to variables[], so far not float.
+      // This is interesting.
+    } else if (Line == 378) {
+      // step_factors[], float.
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line >= 387 && Line <= 391) {
+      // old_variables, 471kB, no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line >= 393 && Line <= 397) {
+      // fluxes, 471kB, no reuse.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "hotspot_kernel.c") {
+    if (Line == 55) {
+      // a[]
       this->StaticStreamInfo.set_float_manual(true);
     }
   }

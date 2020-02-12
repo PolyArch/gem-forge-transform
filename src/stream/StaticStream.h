@@ -144,6 +144,10 @@ public:
   // Some bookkeeping information.
   mutable LLVM::TDG::StaticStreamInfo StaticStreamInfo;
 
+  // Update aliased stream.
+  // It should be rare to have more than one update stream?
+  StaticStream *UpdateStream = nullptr;
+
   /**
    * Stores all the input value for the analyzed pattern.
    * ! Only used this when the InputValuesValid is set.
