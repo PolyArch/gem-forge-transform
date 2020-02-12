@@ -97,6 +97,9 @@ class Benchmark(object):
     def get_run_path(self):
         return
 
+    def get_gem5_links(self):
+        return self.get_links()
+
     """
     Used to separate multiple functions.
     """
@@ -818,7 +821,7 @@ class Benchmark(object):
             transformed_exe,
             transformed_obj,
         ]
-        link_cmd += self.get_links()
+        link_cmd += self.get_gem5_links()
         link_cmd += [
             '-I{gem5_include}'.format(gem5_include=C.GEM5_INCLUDE_DIR),
             C.get_gem5_m5ops(),

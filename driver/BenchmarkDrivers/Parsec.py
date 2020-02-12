@@ -39,11 +39,11 @@ class ParsecBenchmark(Benchmark):
             'simmedium': ['$NTHREADS', '15000', '2000', '200000.nets', '64'],
         },
         'fluidanimate': {
-            'test':      ['$NTHREADS', '1', 'in_5K.fluid', 'out.fluid'],
-            'simdev':    ['$NTHREADS', '3', 'in_15K.fluid', 'out.fluid'],
-            'simsmall':  ['$NTHREADS', '5', 'in_35K.fluid', 'out.fluid'],
-            'simmedium': ['$NTHREADS', '1', 'in_100K.fluid', 'out.fluid'],
-            'simlarge': ['$NTHREADS', '5', 'in_300K.fluid', 'out.fluid'],
+            'test':      ['$NTHREADS', '1', 'in_5K.fluid',  ],
+            'simdev':    ['$NTHREADS', '3', 'in_15K.fluid', ],
+            'simsmall':  ['$NTHREADS', '5', 'in_35K.fluid', ],
+            'simmedium': ['$NTHREADS', '1', 'in_100K.fluid',],
+            'simlarge': ['$NTHREADS', '5', 'in_300K.fluid', ],
         }
     }
 
@@ -79,6 +79,10 @@ class ParsecBenchmark(Benchmark):
 
         self.benchmark_name = os.path.basename(self.benchmark_path)
         self.n_thread = benchmark_args.options.input_threads
+        if self.benchmark_name == 'bodytrack':
+            self.n_thread = max(1, self.n_thread - 2)
+        elif self.benchmark_name == 'fluidanimate':
+            self.n_thread = max(1, self.n_thread - 1)
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -123,6 +127,12 @@ class ParsecBenchmark(Benchmark):
             '-lm',
             '-lpthread',
         ]
+    
+    def get_gem5_links(self):
+        return [
+            '-lm',
+            C.M5_THREADS_LIB,
+        ]
 
     def _get_args(self, input_size):
         args = list()
@@ -141,13 +151,13 @@ class ParsecBenchmark(Benchmark):
 
     def get_trace_func(self):
         if self.benchmark_name == 'blackscholes':
-            return 'bs_thread(void*)'
+            return 'bs_thread'
         elif self.benchmark_name == 'bodytrack':
-            return 'ParticleFilterPthread<TrackingModel>::Exec(unsigned short, unsigned int)'
+            return 'ParticleFilterPthread<TrackingModel>::Exec'
         elif self.benchmark_name == 'canneal':
             return 'annealer_thread::Run()'
         elif self.benchmark_name == 'fluidanimate':
-            return 'AdvanceFrameMT(int)'
+            return 'AdvanceFrameMT'
         return None
 
     def get_lang(self):
@@ -342,5 +352,9 @@ Not work with RISCV due to assembly for atomic operation.
 Fluidanimate: AdvanceFrameMT(int)
 47% ComputeForcesMT
 45% ComputeDensitiesMT
+
+==========================================================
+x264:
+Kernel is assembly code.
 
 """
