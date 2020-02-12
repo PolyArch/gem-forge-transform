@@ -297,37 +297,51 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
 
   // Sort each group with increasing order of offset.
   for (auto &Group : CoalescedGroup) {
-    std::sort(Group.begin(), Group.end(), [](const std::pair<Stream *, int64_t> &a, const std::pair<Stream *, int64_t> & b)->bool {
-      return a.second < b.second;
-    });
+    std::sort(Group.begin(), Group.end(),
+              [](const std::pair<Stream *, int64_t> &a,
+                 const std::pair<Stream *, int64_t> &b) -> bool {
+                return a.second < b.second;
+              });
+    // Set the base/offset.
+    auto BaseS = Group.front().first;
+    int64_t BaseOffset = Group.front().second;
+    for (auto &StreamOffset : Group) {
+      auto S = StreamOffset.first;
+      auto Offset = StreamOffset.second;
+      S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
+    }
   }
 
-  // Resplit each group dependencing on the expansion.
-  for (auto GroupIter = CoalescedGroup.begin(); GroupIter != CoalescedGroup.end(); GroupIter++) {
-    if (GroupIter->size() == 1) {
-      // Ignore single streams.
-      continue;
-    }
-    auto BaseS = GroupIter->front().first;
-    int64_t BaseOffset = GroupIter->front().second;
-    int64_t EndOffset = GroupIter->front().second;
-    size_t NStream = 0;
-    for (auto StreamIter = GroupIter->begin(), StreamEnd = GroupIter->end(); StreamIter != StreamEnd; ++StreamIter, ++NStream) {
-      auto S = StreamIter->first;
-      auto Offset = StreamIter->second;
-      if (Offset > EndOffset) {
-        // The expansion is broken, split the group.
-        assert(NStream != 0 && "Empty LHS group.");
-        CoalescedGroup.emplace_back(StreamIter, StreamEnd);
-        GroupIter->resize(NStream);
-        break;
-      } else {
-        // The expansion keeps going.
-        S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
-        EndOffset = std::max(EndOffset, Offset + S->getElementSize(this->CachedLI->getDataLayout()));
-      }
-    }
-  }
+  // // Resplit each group dependencing on the expansion.
+  // for (auto GroupIter = CoalescedGroup.begin();
+  //      GroupIter != CoalescedGroup.end(); GroupIter++) {
+  //   if (GroupIter->size() == 1) {
+  //     // Ignore single streams.
+  //     continue;
+  //   }
+  //   auto BaseS = GroupIter->front().first;
+  //   int64_t BaseOffset = GroupIter->front().second;
+  //   int64_t EndOffset = GroupIter->front().second;
+  //   size_t NStream = 0;
+  //   for (auto StreamIter = GroupIter->begin(), StreamEnd = GroupIter->end();
+  //        StreamIter != StreamEnd; ++StreamIter, ++NStream) {
+  //     auto S = StreamIter->first;
+  //     auto Offset = StreamIter->second;
+  //     if (Offset > EndOffset) {
+  //       // The expansion is broken, split the group.
+  //       assert(NStream != 0 && "Empty LHS group.");
+  //       CoalescedGroup.emplace_back(StreamIter, StreamEnd);
+  //       GroupIter->resize(NStream);
+  //       break;
+  //     } else {
+  //       // The expansion keeps going.
+  //       S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
+  //       EndOffset = std::max(
+  //           EndOffset,
+  //           Offset + S->getElementSize(this->CachedLI->getDataLayout()));
+  //     }
+  //   }
+  // }
 }
 
 void StreamExecutionTransformer::insertStreamConfigAtLoop(
@@ -723,7 +737,8 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   for (auto StepRootS : S->getChosenBaseStepRootStreams()) {
     if (StepRootS->SStream->ConfigureLoop != S->SStream->ConfigureLoop) {
       llvm::errs() << "StepRootStream is not configured at the same loop: "
-                   << S->formatName() << '\n';
+                   << S->formatName() << " root " << StepRootS->formatName()
+                   << '\n';
       assert(false);
     }
   }
