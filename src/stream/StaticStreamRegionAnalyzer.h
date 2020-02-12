@@ -36,6 +36,8 @@ private:
 
   void initializeStreams();
   void initializeStreamForAllLoops(llvm::Instruction *StreamInst);
+  void markUpdateRelationship();
+  void markUpdateRelationshipForStore(const llvm::StoreInst *StoreInst);
   void buildStreamDependenceGraph();
   void markQualifiedStreams();
   void enforceBackEdgeDependence();

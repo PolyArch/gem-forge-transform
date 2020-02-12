@@ -273,6 +273,9 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     if (BaseStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
         BaseStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
       // Illegal base stream step pattern.
+      LLVM_DEBUG(llvm::errs()
+                 << "Illegal BaseStream StepPattern " << BaseStpPattern
+                 << " from " << BaseStream->formatName() << '\n');
       return false;
     }
     // Check my step pattern.
@@ -283,15 +286,20 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     // Most difficult part, check step count ratio is static.
     auto CurrentLoop = this->InnerMostLoop;
     while (CurrentLoop != BaseStream->InnerMostLoop) {
+      LLVM_DEBUG(llvm::errs()
+                 << "Checking " << LoopUtils::getLoopId(CurrentLoop) << '\n');
       if (!this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
+        LLVM_DEBUG(llvm::errs() << "No loop invariant backedge count.\n");
         return false;
       }
       auto BackEdgeTakenSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
       if (llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV)) {
+        LLVM_DEBUG(llvm::errs() << "No computable backedge count.\n");
         return false;
       }
       // The back edge should be invariant at ConfigureLoop.
       if (!this->SE->isLoopInvariant(BackEdgeTakenSCEV, this->ConfigureLoop)) {
+        LLVM_DEBUG(llvm::errs() << "No computable at configure loop.\n");
         return false;
       }
       /**

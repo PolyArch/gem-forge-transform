@@ -14,6 +14,8 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
                           << LoopUtils::getLoopId(this->TopLoop) << '\n');
   this->initializeStreams();
   LLVM_DEBUG(llvm::errs() << "Initializing streams done.\n");
+  this->markUpdateRelationship();
+  LLVM_DEBUG(llvm::errs() << "Mark update relationship done.\n");
   this->buildStreamDependenceGraph();
   LLVM_DEBUG(llvm::errs() << "Building stream dependence graph done.\n");
   this->markQualifiedStreams();
@@ -126,6 +128,68 @@ StaticStream *StaticStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
     }
   }
   llvm_unreachable("Failed to find the stream at specified loop level.");
+}
+
+void StaticStreamRegionAnalyzer::markUpdateRelationship() {
+  /**
+   * Search for load-store update relationship.
+   */
+  for (auto &InstStreams : this->InstStaticStreamMap) {
+    auto Inst = InstStreams.first;
+    if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(Inst)) {
+      this->markUpdateRelationshipForStore(StoreInst);
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::markUpdateRelationshipForStore(
+    const llvm::StoreInst *StoreInst) {
+  /**
+   * So far we just search for load in the same basic block and before me.
+   */
+  LLVM_DEBUG(llvm::errs() << "Search update stream for "
+                          << Utils::formatLLVMInst(StoreInst) << '\n');
+  auto BB = StoreInst->getParent();
+  auto StoreAddrValue = Utils::getMemAddrValue(StoreInst);
+  auto StoreValue = StoreInst->getOperand(0);
+  auto StoreValueSCEV = this->SE->getSCEV(StoreValue);
+  for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+       ++InstIter) {
+    auto Inst = &*InstIter;
+    if (Inst == StoreInst) {
+      // We have encounter ourself.
+      break;
+    }
+    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(Inst)) {
+      auto LoadAddrValue = Utils::getMemAddrValue(LoadInst);
+      // So far we just check for the same address.
+      if (StoreAddrValue == LoadAddrValue) {
+        // Found update relationship.
+        LLVM_DEBUG(llvm::errs() << "Found update load "
+                                << Utils::formatLLVMInst(LoadInst) << '\n');
+        for (auto StoreStream : this->InstStaticStreamMap.at(StoreInst)) {
+          auto ConfigureLoop = StoreStream->ConfigureLoop;
+          auto LoadStream =
+              this->getStreamByInstAndConfigureLoop(LoadInst, ConfigureLoop);
+          LLVM_DEBUG(llvm::errs() << "Update for LoadStream "
+                                  << LoadStream->formatName() << '\n');
+          assert(LoadStream->UpdateStream == nullptr &&
+                 "More than one update stream.");
+          assert(StoreStream->UpdateStream == nullptr &&
+                 "More than one update stream.");
+          LoadStream->UpdateStream = StoreStream;
+          LoadStream->StaticStreamInfo.set_has_update(true);
+          StoreStream->UpdateStream = LoadStream;
+          StoreStream->StaticStreamInfo.set_has_update(true);
+          auto IsConstantStore =
+              this->SE->isLoopInvariant(StoreValueSCEV, ConfigureLoop);
+          StoreStream->StaticStreamInfo.set_has_constant_update(
+              IsConstantStore);
+          LoadStream->StaticStreamInfo.set_has_constant_update(IsConstantStore);
+        }
+      }
+    }
+  }
 }
 
 void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {

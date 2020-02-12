@@ -35,6 +35,14 @@ public:
     }
   }
 
+  static const llvm::Value *getMemAddrValue(const llvm::LoadInst *Inst) {
+    return Inst->getOperand(0);
+  }
+
+  static const llvm::Value *getMemAddrValue(const llvm::StoreInst *Inst) {
+    return Inst->getOperand(1);
+  }
+
   static uint64_t getMemAddr(const DynamicInstruction *DynamicInst) {
     auto StaticInst = DynamicInst->getStaticInstruction();
     assert(Utils::isMemAccessInst(StaticInst) &&

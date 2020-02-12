@@ -9,7 +9,7 @@
 
 #include <sstream>
 
-#define DEBUG_TYPE "GEM_FORGE_UTILS"
+#define DEBUG_TYPE "GemForgeUtils"
 #if !defined(LLVM_DEBUG) && defined(DEBUG)
 #define LLVM_DEBUG DEBUG
 #endif
