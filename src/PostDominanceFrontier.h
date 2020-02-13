@@ -8,7 +8,7 @@
 #include <unordered_set>
 
 class PostDominanceFrontier {
- public:
+public:
   PostDominanceFrontier(const llvm::PostDominatorTree &Tree);
 
   using SetT = std::unordered_set<llvm::BasicBlock *>;
@@ -16,7 +16,7 @@ class PostDominanceFrontier {
 
   void print(llvm::raw_ostream &O) const;
 
- private:
+private:
   std::unordered_map<llvm::BasicBlock *, SetT> BBFrontierMap;
 
   using NodeT = llvm::DomTreeNodeBase<llvm::BasicBlock>;
@@ -27,7 +27,7 @@ class PostDominanceFrontier {
  * This class stored cached dominance frontier for each function.
  */
 class CachedPostDominanceFrontier {
- public:
+public:
   using GetTreeT = std::function<llvm::PostDominatorTree &(llvm::Function &)>;
 
   CachedPostDominanceFrontier() {}
@@ -38,10 +38,12 @@ class CachedPostDominanceFrontier {
    * time the function is queried, we will compute the frontier.
    */
   const PostDominanceFrontier *getPostDominanceFrontier(llvm::Function *Func);
+  const llvm::PostDominatorTree *getPostDominatorTree(llvm::Function *Func);
 
- private:
+private:
   std::unordered_map<llvm::Function *, PostDominanceFrontier *>
       FuncToFrontierMap;
+  std::unordered_map<llvm::Function *, llvm::PostDominatorTree *> FuncToTreeMap;
 
   // GetTreeT GetTree;
 };

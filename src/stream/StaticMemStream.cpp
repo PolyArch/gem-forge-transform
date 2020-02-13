@@ -321,35 +321,14 @@ void StaticMemStream::finalizePattern() {
       // a[]
       this->StaticStreamInfo.set_float_manual(true);
     }
-  }
-}
-
-void StaticMemStream::addInputParam(const llvm::SCEV *SCEV, bool Signed) {
-
-  auto ProtoIVPattern = this->StaticStreamInfo.mutable_iv_pattern();
-  auto ProtoParam = ProtoIVPattern->add_params();
-  if (auto ConstSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SCEV)) {
-    ProtoParam->set_valid(true);
-    if (Signed)
-      ProtoParam->set_param(ConstSCEV->getValue()->getSExtValue());
-    else
-      ProtoParam->set_param(ConstSCEV->getValue()->getZExtValue());
-  } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {
-    ProtoParam->set_valid(false);
-    this->InputValues.push_back(UnknownSCEV->getValue());
-  } else {
-    // Search through the child compute nodes.
-    const auto &PHIMNode = this->PHIMetaNodes.front();
-    for (const auto &ComputeMNode : PHIMNode.ComputeMetaNodes) {
-      if (ComputeMNode->SCEV == SCEV) {
-        // We found the SCEV, check if the ComputeMetaNode is empty.
-        if (ComputeMNode->isEmpty()) {
-          this->InputValues.push_back(ComputeMNode->RootValue);
-          return;
-        }
-      }
+  } else if (SourceFile == "bfs.cpp") {
+    // rodinia.bfs
+    if (Line == 38) {
+      // masks[]
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line == 63) {
+      // updates[]
+      this->StaticStreamInfo.set_float_manual(true);
     }
-    SCEV->print(llvm::errs());
-    assert(false && "Cannot handle this SCEV so far.");
   }
 }

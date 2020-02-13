@@ -10,7 +10,8 @@ public:
       std::unordered_map<const llvm::Instruction *, std::list<StaticStream *>>;
   StaticStreamRegionAnalyzer(llvm::Loop *_TopLoop,
                              llvm::DataLayout *_DataLayout,
-                             CachedLoopInfo *_CachedLI);
+                             CachedLoopInfo *_CachedLI,
+                             CachedPostDominanceFrontier *_CachedPDF);
   ~StaticStreamRegionAnalyzer();
 
   InstStaticStreamMapT &getInstStaticStreamMap() {
@@ -23,6 +24,7 @@ private:
   CachedLoopInfo *CachedLI;
   llvm::LoopInfo *LI;
   llvm::ScalarEvolution *SE;
+  const llvm::PostDominatorTree *PDT;
 
   /**
    * Key data structure, map from instruction to the list of streams.

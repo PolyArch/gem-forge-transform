@@ -216,6 +216,8 @@ void StaticStream::constructGraph(GetStreamFuncT GetStream) {
   this->constructMetaGraph(GetStream);
   LLVM_DEBUG(llvm::errs() << "Construct metagraph done.\n");
   this->constructStreamGraph();
+  // Some misc analysis.
+  this->analyzeIsConditionalAccess();
 }
 
 /**
@@ -327,4 +329,19 @@ std::string StaticStream::formatName() const {
      << " " << this->ConfigureLoop->getHeader()->getName().str() << " "
      << Utils::formatLLVMInstWithoutFunc(this->Inst) << ")";
   return SS.str();
+}
+
+void StaticStream::analyzeIsConditionalAccess() const {
+  auto MyBB = this->Inst->getParent();
+  for (auto Loop = this->InnerMostLoop; this->ConfigureLoop->contains(Loop);
+       Loop = Loop->getParentLoop()) {
+    auto HeadBB = Loop->getHeader();
+    if (!this->PDT->dominates(MyBB, HeadBB)) {
+      // This is conditional.
+      this->StaticStreamInfo.set_is_cond_access(true);
+      return;
+    }
+  }
+  this->StaticStreamInfo.set_is_cond_access(false);
+  return;
 }

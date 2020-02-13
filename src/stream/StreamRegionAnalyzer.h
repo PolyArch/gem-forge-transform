@@ -65,6 +65,7 @@ private:
 class StreamRegionAnalyzer {
 public:
   StreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
+                       CachedPostDominanceFrontier *_CachedPDF,
                        llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
                        const std::string &_RootPath);
 
@@ -123,6 +124,7 @@ public:
 private:
   uint64_t RegionIdx;
   CachedLoopInfo *CachedLI;
+  CachedPostDominanceFrontier *CachedPDF;
   llvm::Loop *TopLoop;
   llvm::LoopInfo *LI;
   llvm::DataLayout *DataLayout;

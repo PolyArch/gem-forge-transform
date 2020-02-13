@@ -6,10 +6,12 @@
 
 StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
     llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
-    CachedLoopInfo *_CachedLI)
+    CachedLoopInfo *_CachedLI, CachedPostDominanceFrontier *_CachedPDF)
     : TopLoop(_TopLoop), DataLayout(_DataLayout), CachedLI(_CachedLI),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
-      SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())) {
+      SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())),
+      PDT(_CachedPDF->getPostDominatorTree(
+          _TopLoop->getHeader()->getParent())) {
   LLVM_DEBUG(llvm::errs() << "Constructing StaticStreamRegionAnalyzer for loop "
                           << LoopUtils::getLoopId(this->TopLoop) << '\n');
   this->initializeStreams();
@@ -103,11 +105,11 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
                << " Config Loop " << LoopUtils::getLoopId(ConfigureLoop)
                << '\n');
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
-      NewStream =
-          new StaticIndVarStream(PHIInst, ConfigureLoop, InnerMostLoop, SE);
+      NewStream = new StaticIndVarStream(PHIInst, ConfigureLoop, InnerMostLoop,
+                                         SE, PDT);
     } else {
-      NewStream =
-          new StaticMemStream(StreamInst, ConfigureLoop, InnerMostLoop, SE);
+      NewStream = new StaticMemStream(StreamInst, ConfigureLoop, InnerMostLoop,
+                                      SE, PDT);
     }
     Streams.emplace_back(NewStream);
 
@@ -183,9 +185,8 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForStore(
           StoreStream->StaticStreamInfo.set_has_update(true);
           auto IsConstantStore =
               this->SE->isLoopInvariant(StoreValueSCEV, ConfigureLoop);
-          StoreStream->StaticStreamInfo.set_has_constant_update(
-              IsConstantStore);
-          LoadStream->StaticStreamInfo.set_has_constant_update(IsConstantStore);
+          StoreStream->StaticStreamInfo.set_has_const_update(IsConstantStore);
+          LoadStream->StaticStreamInfo.set_has_const_update(IsConstantStore);
         }
       }
     }

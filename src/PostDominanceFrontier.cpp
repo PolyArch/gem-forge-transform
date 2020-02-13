@@ -94,11 +94,22 @@ const PostDominanceFrontier *
 CachedPostDominanceFrontier::getPostDominanceFrontier(llvm::Function *Func) {
   auto Iter = this->FuncToFrontierMap.find(Func);
   if (Iter == this->FuncToFrontierMap.end()) {
-    llvm::PostDominatorTree PDT;
-    PDT.recalculate(*Func);
-    auto Frontier = new PostDominanceFrontier(PDT);
+    auto Frontier =
+        new PostDominanceFrontier(*this->getPostDominatorTree(Func));
     this->FuncToFrontierMap.emplace(Func, Frontier);
     return Frontier;
+  }
+  return Iter->second;
+}
+
+const llvm::PostDominatorTree *
+CachedPostDominanceFrontier::getPostDominatorTree(llvm::Function *Func) {
+  auto Iter = this->FuncToTreeMap.find(Func);
+  if (Iter == this->FuncToTreeMap.end()) {
+    llvm::PostDominatorTree *PDT = new llvm::PostDominatorTree();
+    PDT->recalculate(*Func);
+    this->FuncToTreeMap.emplace(Func, PDT);
+    return PDT;
   }
   return Iter->second;
 }

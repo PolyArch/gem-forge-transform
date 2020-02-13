@@ -4,6 +4,7 @@
 #include "StreamUtils.h"
 
 #include "LoopUtils.h"
+#include "PostDominanceFrontier.h"
 #include "Utils.h"
 
 #include "stream/StreamMessage.pb.h"
@@ -35,6 +36,7 @@ public:
   const llvm::Loop *const ConfigureLoop;
   const llvm::Loop *const InnerMostLoop;
   llvm::ScalarEvolution *const SE;
+  const llvm::PostDominatorTree *PDT;
 
   /**
    * The constructor just creates the object and does not perform any analysis.
@@ -44,10 +46,11 @@ public:
    */
   StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                const llvm::Loop *_ConfigureLoop,
-               const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
+               const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
+               const llvm::PostDominatorTree *_PDT)
       : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
         ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop), SE(_SE),
-        IsCandidate(false), IsQualified(false), IsStream(false) {}
+        PDT(_PDT), IsCandidate(false), IsQualified(false), IsStream(false) {}
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
 
@@ -289,5 +292,10 @@ protected:
    * qualified.
    */
   virtual LLVM::TDG::StreamStepPattern computeStepPattern() const = 0;
+
+  /**
+   * Analyze if this is conditional access stream.
+   */
+  void analyzeIsConditionalAccess() const;
 };
 #endif

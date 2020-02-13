@@ -19,14 +19,15 @@ enum StreamValuePattern {
   PREV_LOAD = 6;
 }
 
+message StreamParam {
+  int64 value = 1;
+  bool is_static = 2;
+}
+
 // Pattern describe the induction variable.
 message IVPattern {
   StreamValuePattern val_pattern = 1;
-  message PatternParam {
-    int64 param = 1;
-    bool valid = 2;
-  }
-  repeated PatternParam params = 2;
+  repeated StreamParam params = 2;
 }
 
 // Describe the static coalesce information.
@@ -47,7 +48,12 @@ message StaticStreamInfo {
   IVPattern iv_pattern = 9;
   bool float_manual = 10;
   bool has_update = 11; // The load stream has aliased store.
-  bool has_constant_update = 12; // This load stream is updated by a constant value.
+  bool has_const_update = 12; // This load stream is updated by a constant value.
+  bool has_upgraded_to_update = 13; // This load stream has been upgraded to update.
+  StreamParam const_update_param = 14;
+  bool is_cond_access = 15; // Whether this is conditional access.
+  bool known_trip_count = 16; // Whether the trip count is know at configure time.
+  
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
