@@ -8,6 +8,7 @@ protected:
 
   void
   testStepInstDetection(llvm::Loop *Loop, llvm::ScalarEvolution *SE,
+                        const llvm::PostDominatorTree *PDT,
                         const ExpectedStepInstNameMapT &ExpectedStepInsts) {
     llvm::DataLayout DataLayout(this->Module.get());
 
@@ -21,7 +22,7 @@ protected:
         // We do not expect this PHIInst to be an iv stream.
         continue;
       }
-      StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop, SE);
+      StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop, SE, PDT);
       IndVarStream IVStream(this->OutputExtraFolder, "", &StaticIVStream,
                             &DataLayout);
       const auto &ExpectedStepInstNames = ExpectedStepInstsIter->second;
@@ -52,8 +53,10 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
 
   // Simply get the Loop and stream we want to test.
   CachedLoopInfo CachedLI(this->Module.get());
+  CachedPostDominanceFrontier CachedPDF;
   auto LI = CachedLI.getLoopInfo(Func);
   auto SE = CachedLI.getScalarEvolution(Func);
+  auto PDT = CachedPDF.getPostDominatorTree(Func);
 
   auto BBIter = Func->begin();
   ++BBIter;
@@ -66,7 +69,7 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
       {"tmp5", {"tmp22", "tmp28"}},
   };
 
-  this->testStepInstDetection(Loop, SE, ExpectedStepInstNameMap);
+  this->testStepInstDetection(Loop, SE, PDT, ExpectedStepInstNameMap);
 }
 
 TEST_F(StreamTransformPassStepInstDetectionTestFixture,
@@ -78,8 +81,10 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
 
   // Simply get the Loop and stream we want to test.
   CachedLoopInfo CachedLI(this->Module.get());
+  CachedPostDominanceFrontier CachedPDF;
   auto LI = CachedLI.getLoopInfo(Func);
   auto SE = CachedLI.getScalarEvolution(Func);
+  auto PDT = CachedPDF.getPostDominatorTree(Func);
   auto Loop = *LI->begin();
   ASSERT_NE(nullptr, Loop) << "Failed to find the loop.";
   ASSERT_EQ("bb5", Loop->getHeader()->getName());
@@ -90,5 +95,5 @@ TEST_F(StreamTransformPassStepInstDetectionTestFixture,
       {"tmp8", {"tmp11"}},
   };
 
-  this->testStepInstDetection(Loop, SE, ExpectedStepInstNameMap);
+  this->testStepInstDetection(Loop, SE, PDT, ExpectedStepInstNameMap);
 }

@@ -22,7 +22,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
 }
 
 // 65536*4 is 512kB.
-const int N = 1024;
+const int N = 65536;
 Value a[N];
 Value b[N];
 Value c[N];
@@ -30,6 +30,7 @@ Value c_x[N];
 
 int main() {
 
+  m5_detail_sim_start();
 #ifdef WARM_CACHE
   // This should warm up the cache.
   for (long long i = 0; i < N; i++) {
@@ -38,8 +39,7 @@ int main() {
     c[i] = 0;
   }
 #endif
-
-  m5_detail_sim_start();
+  m5_reset_stats(0, 0);
   volatile Value ret = foo(a, b, c, N);
   m5_detail_sim_end();
 
@@ -63,7 +63,7 @@ int main() {
   }
   printf("Ret = %f, Expected = %f Real = %d.\n", computed, expected, N * (N - 1) * 3 / 2);
   // for (int i = 0; i < N; i += STRIDE) {
-  //   printf("i = %d a = %lld b = %lld c = %lld c_x = %lld.\n",
+  //   printf("i = %d a = %f b = %f c = %f c_x = %f.\n",
   //     i, a[i], b[i], c[i], c_x[i]);
   // }
 #endif
