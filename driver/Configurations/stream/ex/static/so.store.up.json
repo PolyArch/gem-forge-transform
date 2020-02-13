@@ -1,0 +1,11 @@
+{
+    "id": "stream.ex.static.so.store.up",
+    "is_execution_transform": true,
+    "options": [
+        "-stream-execution-static-pass",
+        "-stream-pass-choose-strategy=static-outer",
+        "-stream-pass-allow-aliased-stream",
+        "-stream-pass-upgrade-load-to-update",
+        "-stream-enable-store"
+    ]
+}

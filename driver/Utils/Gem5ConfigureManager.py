@@ -176,6 +176,10 @@ class Gem5ReplayConfigureManager(object):
     """
     Common snippts.
     """
+    LLC_256kB = [
+        '--l2_size=256kB',
+        '--l2_assoc=4',
+    ]
     LLC_1MB = [
         '--l2_size=1MB',
         '--l2_assoc=4',
@@ -184,16 +188,33 @@ class Gem5ReplayConfigureManager(object):
         '--l2_size=4MB',
         '--l2_assoc=4',
     ]
+    L0_32kB = [
+        '--l1i_size=32kB',
+        '--l1i_assoc=8',
+        '--l1d_size=32kB',
+        '--l1d_lat=8',
+        '--l1d_mshrs=8',
+        '--l1d_assoc=8',
+    ]
+    L0_32MB = [
+        '--l1i_size=32MB',
+        '--l1i_assoc=8',
+        '--l1d_size=32MB',
+        '--l1d_lat=8',
+        '--l1d_mshrs=8',
+        '--l1d_assoc=8',
+    ]
+    MLC_256kB = [
+        '--l1_5d_size=256kB',
+        '--l1_5d_assoc=16',
+        '--l1_5d_mshrs=16',
+    ]
+    MLC_32MB = [
+        '--l1_5d_size=32MB',
+        '--l1_5d_assoc=16',
+        '--l1_5d_mshrs=16',
+    ]
     RUBY_L3 = [
-        "--l1i_size=32kB",
-        "--l1i_assoc=8",
-        "--l1d_size=32kB",
-        "--l1d_lat=2",
-        "--l1d_mshrs=8",
-        "--l1d_assoc=8",
-        "--l1_5d_size=256kB",
-        "--l1_5d_assoc=16",
-        "--l1_5d_mshrs=16",
         "--ruby",
         "--access-backing-store",
         "--topology=Mesh_XY",
@@ -210,28 +231,52 @@ class Gem5ReplayConfigureManager(object):
             "--num-dirs=4",
             "--num-l2caches=4",
             "--mesh-rows=2",
-        ] + RUBY_L3 + LLC_1MB,
+        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_1MB,
         '3x3.l3.ruby': [
             "--num-cpus=9",
             "--num-dirs=9",
             "--num-l2caches=9",
             "--mesh-rows=3",
-        ] + RUBY_L3 + LLC_1MB,
+        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_1MB,
         '4x4.l3.ruby': [
             "--num-cpus=16",
             "--num-dirs=16",
             "--num-l2caches=16",
             "--mesh-rows=4",
-        ] + RUBY_L3 + LLC_1MB,
+        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_1MB,
         '4x4.l3.4MB.ruby': [
             "--num-cpus=16",
             "--num-dirs=16",
             "--num-l2caches=16",
             "--mesh-rows=4",
-        ] + RUBY_L3 + LLC_4MB,
+        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_4MB,
+        '4x4.l3.256kB.ruby': [
+            "--num-cpus=16",
+            "--num-dirs=16",
+            "--num-l2caches=16",
+            "--mesh-rows=4",
+        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_256kB,
+        # Ideal means large private cache.
+        '4x4.l3.idea.ruby': [
+            "--num-cpus=16",
+            "--num-dirs=16",
+            "--num-l2caches=16",
+            "--mesh-rows=4",
+        ] + RUBY_L3 + L0_32MB + MLC_32MB + LLC_4MB,
+        '4x4.l3.ideaL2.ruby': [
+            "--num-cpus=16",
+            "--num-dirs=16",
+            "--num-l2caches=16",
+            "--mesh-rows=4",
+        ] + RUBY_L3 + L0_32kB + MLC_32MB + LLC_4MB,
         'o8': [
             "--cpu-type=DerivO3CPU",
             "--llvm-issue-width=8",
+        ],
+        'o4': [
+            "--cpu-type=DerivO3CPU",
+            "--llvm-issue-width=4",
+            "--prog-interval=10000", # Hz
         ],
         'i2': [
             "--cpu-type=MinorCPU",
