@@ -15,6 +15,11 @@ llvm::cl::opt<bool> StreamPassUpgradeLoadToUpdate(
     "stream-pass-upgrade-load-to-update", llvm::cl::init(false),
     llvm::cl::desc("Upgrade load stream to update stream."));
 
+llvm::cl::opt<bool>
+    StreamPassRemovePrediatedStore("stream-pass-remove-predicated-store",
+                                   llvm::cl::init(false),
+                                   llvm::cl::desc("Remove predicated store."));
+
 #define DEBUG_TYPE "StreamExecutionTransformer"
 
 /**

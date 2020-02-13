@@ -70,8 +70,9 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
       if (LoopUtils::isLoopContinuous(Loop)) {
         // Check if loop is continuous.
         auto Analyzer = new StreamRegionAnalyzer(
-            Analyzers.size(), this->CachedLI, this->CachedPDF, Loop,
-            this->DataLayout, this->OutputExtraFolderPath);
+            Analyzers.size(), this->CachedLI, this->CachedPDF,
+            this->CachedBBPredDG, Loop, this->DataLayout,
+            this->OutputExtraFolderPath);
 
         // Directly call endRegion.
         // This will select streams, and build transform plan.

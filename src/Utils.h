@@ -111,6 +111,12 @@ public:
    */
   static std::string formatLLVMFunc(const llvm::Function *Func);
 
+  static std::string formatLLVMBB(const llvm::BasicBlock *BB) {
+    return (llvm::Twine(Utils::formatLLVMFunc(BB->getParent())) +
+            "::" + BB->getName())
+        .str();
+  }
+
   /**
    * Get a global unique name for the inst.
    * Func::BB::Name/PosInBB(Op).
