@@ -6,7 +6,11 @@
 
 BBPredicateDataGraph::BBPredicateDataGraph(const llvm::Loop *_Loop,
                                            const llvm::BasicBlock *_BB)
-    : Loop(_Loop), BB(_BB) {
+    : ExecutionDataGraph(nullptr), Loop(_Loop), BB(_BB),
+      FuncName(llvm::Twine(_BB->getParent()->getName() + "_" +
+                           _Loop->getHeader()->getName() + "_" +
+                           _BB->getName() + "_pred")
+                   .str()) {
   this->constructDataGraph();
 }
 
@@ -112,6 +116,7 @@ void BBPredicateDataGraph::constructDataGraph() {
   if (IsValidTemp) {
     // Setup.
     this->IsValid = true;
+    this->ResultValue = BranchInst->getCondition();
     LLVM_DEBUG(llvm::dbgs()
                << "BBPredDG Valid: " << Utils::formatLLVMBB(this->BB) << '\n');
     /**
@@ -133,6 +138,7 @@ void BBPredicateDataGraph::constructDataGraph() {
                  << " to " << Utils::formatLLVMBB(this->BB) << '\n');
       this->FalseBB = FalseBB;
     }
+    this->HasCircle = this->detectCircle();
   } else {
     // Clean up.
     this->IsValid = false;
@@ -157,6 +163,16 @@ BBPredicateDataGraph *CachedBBPredicateDataGraph::getBBPredicateDataGraph(
     auto BBPredDG = new BBPredicateDataGraph(Loop, BB);
     this->KeyToDGMap.emplace(K, BBPredDG);
     return BBPredDG;
+  }
+  return Iter->second;
+}
+
+BBPredicateDataGraph *CachedBBPredicateDataGraph::tryBBPredicateDataGraph(
+    const llvm::Loop *Loop, const llvm::BasicBlock *BB) {
+  auto K = std::make_pair(Loop, BB);
+  auto Iter = this->KeyToDGMap.find(K);
+  if (Iter == this->KeyToDGMap.end()) {
+    return nullptr;
   }
   return Iter->second;
 }

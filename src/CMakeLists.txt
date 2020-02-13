@@ -35,6 +35,7 @@ add_library(LLVMTDGPass SHARED
     LoopUnroller.cpp
     BasicBlockPredicate.cpp
     PostDominanceFrontier.cpp
+    ExecutionDataGraph.cpp
     DynamicLoopTree.cpp
     MemoryFootprint.cpp
     LocateAccelerableFunctions.cpp
