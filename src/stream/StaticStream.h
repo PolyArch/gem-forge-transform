@@ -3,6 +3,7 @@
 
 #include "StreamUtils.h"
 
+#include "BasicBlockPredicate.h"
 #include "LoopUtils.h"
 #include "PostDominanceFrontier.h"
 #include "Utils.h"
@@ -150,6 +151,11 @@ public:
   // Update aliased stream.
   // It should be rare to have more than one update stream?
   StaticStream *UpdateStream = nullptr;
+
+  // Predicate stream.
+  BBPredicateDataGraph *BBPredDG = nullptr;
+  StreamSet PredicatedTrueStreams;
+  StreamSet PredicatedFalseStreams;
 
   /**
    * Stores all the input value for the analyzed pattern.

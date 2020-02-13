@@ -34,6 +34,7 @@ bool GemForgeBasePass::initialize(llvm::Module &Module) {
 
   this->CachedLI = new CachedLoopInfo(this->Module);
   this->CachedPDF = new CachedPostDominanceFrontier();
+  this->CachedBBPredDG = new CachedBBPredicateDataGraph();
   this->CachedLU = new CachedLoopUnroller();
 
   if (::GemForgeOutputExtraFolderPath.getNumOccurrences() == 1) {
@@ -52,6 +53,8 @@ bool GemForgeBasePass::finalize(llvm::Module &Module) {
   // Release the cached static loops.
   delete this->CachedLU;
   this->CachedLU = nullptr;
+  delete this->CachedBBPredDG;
+  this->CachedBBPredDG = nullptr;
   delete this->CachedPDF;
   this->CachedPDF = nullptr;
   delete this->CachedLI;

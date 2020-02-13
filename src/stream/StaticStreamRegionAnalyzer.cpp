@@ -6,8 +6,10 @@
 
 StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
     llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
-    CachedLoopInfo *_CachedLI, CachedPostDominanceFrontier *_CachedPDF)
+    CachedLoopInfo *_CachedLI, CachedPostDominanceFrontier *_CachedPDF,
+    CachedBBPredicateDataGraph *_CachedBBPredDG)
     : TopLoop(_TopLoop), DataLayout(_DataLayout), CachedLI(_CachedLI),
+      CachedBBPredDG(_CachedBBPredDG),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())),
       PDT(_CachedPDF->getPostDominatorTree(
@@ -18,6 +20,8 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   LLVM_DEBUG(llvm::errs() << "Initializing streams done.\n");
   this->markUpdateRelationship();
   LLVM_DEBUG(llvm::errs() << "Mark update relationship done.\n");
+  this->markPredicateRelationship();
+  LLVM_DEBUG(llvm::errs() << "Mark predicate relationship done.\n");
   this->buildStreamDependenceGraph();
   LLVM_DEBUG(llvm::errs() << "Building stream dependence graph done.\n");
   this->markQualifiedStreams();
@@ -190,6 +194,67 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForStore(
         }
       }
     }
+  }
+}
+
+void StaticStreamRegionAnalyzer::markPredicateRelationship() {
+  for (auto BBIter = this->TopLoop->block_begin(),
+            BBEnd = this->TopLoop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    // Search for each loop.
+    for (auto Loop = this->LI->getLoopFor(BB); this->TopLoop->contains(Loop);
+         Loop = Loop->getParentLoop()) {
+      this->markPredicateRelationshipForLoopBB(Loop, BB);
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
+    const llvm::Loop *Loop, const llvm::BasicBlock *BB) {
+  auto BBPredDG = this->CachedBBPredDG->getBBPredicateDataGraph(Loop, BB);
+  if (!BBPredDG->isValid()) {
+    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid " << BB->getName() << '\n');
+    return;
+  }
+  auto PredInputLoads = BBPredDG->getInputLoads();
+  if (PredInputLoads.size() != 1) {
+    // Complicate predicate is not supported.
+    LLVM_DEBUG(llvm::dbgs()
+               << "BBPredDG Multiple Load Inputs " << BB->getName() << '\n');
+    return;
+  }
+  auto PredLoadInst = *(PredInputLoads.begin());
+  auto PredLoadStream =
+      this->getStreamByInstAndConfigureLoop(PredLoadInst, Loop);
+  assert(PredLoadStream->BBPredDG == nullptr && "Multiple BBPredDG.");
+  PredLoadStream->BBPredDG = BBPredDG;
+
+  auto MarkStreamInBB = [this, PredLoadStream](const llvm::BasicBlock *TargetBB,
+                                               bool PredicatedTrue) -> void {
+    auto ConfigureLoop = PredLoadStream->ConfigureLoop;
+    for (const auto &TargetInst : *TargetBB) {
+      auto TargetStream =
+          this->getStreamByInstAndConfigureLoop(&TargetInst, ConfigureLoop);
+      if (!TargetStream) {
+        continue;
+      }
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Add predicated relation " << PredLoadStream->formatName()
+                 << " -- " << PredicatedTrue << " --> "
+                 << TargetStream->formatName() << '\n');
+      if (PredicatedTrue) {
+        PredLoadStream->PredicatedTrueStreams.insert(TargetStream);
+      } else {
+        PredLoadStream->PredicatedFalseStreams.insert(TargetStream);
+      }
+    }
+  };
+  if (auto TrueBB = BBPredDG->getTrueBB()) {
+    MarkStreamInBB(TrueBB, true);
+  }
+  if (auto FalseBB = BBPredDG->getFalseBB()) {
+    MarkStreamInBB(FalseBB, false);
   }
 }
 

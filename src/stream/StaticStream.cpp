@@ -14,6 +14,18 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   SSI.CopyFrom(this->StaticStreamInfo);
   SSI.set_is_candidate(this->IsCandidate);
   SSI.set_is_qualified(this->IsQualified);
+  // Set
+#define ADD_STREAM(SET, FIELD)                                                 \
+  {                                                                            \
+    for (const auto &S : SET) {                                                \
+      auto Entry = SSI.add_##FIELD();                                          \
+      Entry->set_name(S->formatName());                                        \
+      Entry->set_id(S->StreamId);                                              \
+    }                                                                          \
+  }
+  ADD_STREAM(this->PredicatedTrueStreams, predicated_true_streams);
+  ADD_STREAM(this->PredicatedFalseStreams, predicated_false_streams);
+#undef ADD_STREAM
 }
 
 void StaticStream::handleFirstTimeComputeNode(

@@ -42,10 +42,11 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
 
 StreamRegionAnalyzer::StreamRegionAnalyzer(
     uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
-    CachedPostDominanceFrontier *_CachedPDF, llvm::Loop *_TopLoop,
+    CachedPostDominanceFrontier *_CachedPDF,
+    CachedBBPredicateDataGraph *_CachedBBPredDG, llvm::Loop *_TopLoop,
     llvm::DataLayout *_DataLayout, const std::string &_RootPath)
     : RegionIdx(_RegionIdx), CachedLI(_CachedLI), CachedPDF(_CachedPDF),
-      TopLoop(_TopLoop),
+      CachedBBPredDG(_CachedBBPredDG), TopLoop(_TopLoop),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       DataLayout(_DataLayout), RootPath(_RootPath) {
   // Initialize the folder for this region.
@@ -68,7 +69,8 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(
 
   // Initialize the static analyzer.
   this->StaticAnalyzer = std::make_unique<StaticStreamRegionAnalyzer>(
-      this->TopLoop, this->DataLayout, this->CachedLI, this->CachedPDF);
+      this->TopLoop, this->DataLayout, this->CachedLI, this->CachedPDF,
+      this->CachedBBPredDG);
 
   this->initializeStreams();
   this->buildStreamDependenceGraph();

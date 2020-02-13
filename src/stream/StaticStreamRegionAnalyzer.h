@@ -11,7 +11,8 @@ public:
   StaticStreamRegionAnalyzer(llvm::Loop *_TopLoop,
                              llvm::DataLayout *_DataLayout,
                              CachedLoopInfo *_CachedLI,
-                             CachedPostDominanceFrontier *_CachedPDF);
+                             CachedPostDominanceFrontier *_CachedPDF,
+                             CachedBBPredicateDataGraph *_CachedBBPredDG);
   ~StaticStreamRegionAnalyzer();
 
   InstStaticStreamMapT &getInstStaticStreamMap() {
@@ -22,6 +23,7 @@ private:
   llvm::Loop *TopLoop;
   llvm::DataLayout *DataLayout;
   CachedLoopInfo *CachedLI;
+  CachedBBPredicateDataGraph *CachedBBPredDG;
   llvm::LoopInfo *LI;
   llvm::ScalarEvolution *SE;
   const llvm::PostDominatorTree *PDT;
@@ -41,6 +43,9 @@ private:
   void markUpdateRelationship();
   void markUpdateRelationshipForStore(const llvm::StoreInst *StoreInst);
   void buildStreamDependenceGraph();
+  void markPredicateRelationship();
+  void markPredicateRelationshipForLoopBB(const llvm::Loop *Loop,
+                                          const llvm::BasicBlock *BB);
   void markQualifiedStreams();
   void enforceBackEdgeDependence();
 };

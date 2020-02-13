@@ -1,6 +1,7 @@
 #ifndef GEM_FORGE_BASE_PASS_H
 #define GEM_FORGE_BASE_PASS_H
 
+#include "BasicBlockPredicate.h"
 #include "LoopUnroller.h"
 
 #include "llvm/Pass.h"
@@ -33,6 +34,7 @@ protected:
   llvm::Module *Module = nullptr;
   CachedLoopInfo *CachedLI = nullptr;
   CachedPostDominanceFrontier *CachedPDF = nullptr;
+  CachedBBPredicateDataGraph *CachedBBPredDG = nullptr;
   CachedLoopUnroller *CachedLU = nullptr;
 
   std::unordered_set<llvm::Function *> ROIFunctions;

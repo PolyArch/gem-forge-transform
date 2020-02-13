@@ -33,6 +33,7 @@ add_library(LLVMTDGPass SHARED
     UserSpecifiedInstructionSet.cpp
     LoopUtils.cpp
     LoopUnroller.cpp
+    BasicBlockPredicate.cpp
     PostDominanceFrontier.cpp
     DynamicLoopTree.cpp
     MemoryFootprint.cpp
