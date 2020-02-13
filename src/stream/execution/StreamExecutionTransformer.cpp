@@ -566,6 +566,10 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
     // Should only upgrade unconditional stream.
     return;
   }
+  if (!LoadSSInfo.is_trip_count_fixed()) {
+    // Should only upgrade load stream with known trip count.
+    return;
+  }
   LLVM_DEBUG(llvm::errs() << "Upgrade LoadStream " << LoadSS->formatName()
                           << " to UpdateStream.\n");
   LoadSSInfo.set_has_upgraded_to_update(true);

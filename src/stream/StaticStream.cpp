@@ -218,6 +218,7 @@ void StaticStream::constructGraph(GetStreamFuncT GetStream) {
   this->constructStreamGraph();
   // Some misc analysis.
   this->analyzeIsConditionalAccess();
+  this->analyzeIsTripCountFixed();
 }
 
 /**
@@ -343,5 +344,21 @@ void StaticStream::analyzeIsConditionalAccess() const {
     }
   }
   this->StaticStreamInfo.set_is_cond_access(false);
+  return;
+}
+
+void StaticStream::analyzeIsTripCountFixed() const {
+  for (auto Loop = this->InnerMostLoop; this->ConfigureLoop->contains(Loop);
+       Loop = Loop->getParentLoop()) {
+    auto BackEdgeTakenSCEV = this->SE->getBackedgeTakenCount(Loop);
+    if (!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
+        this->SE->isLoopInvariant(BackEdgeTakenSCEV, this->ConfigureLoop)) {
+      continue;
+    } else {
+      this->StaticStreamInfo.set_is_trip_count_fixed(false);
+      return;
+    }
+  }
+  this->StaticStreamInfo.set_is_trip_count_fixed(true);
   return;
 }

@@ -52,7 +52,7 @@ message StaticStreamInfo {
   bool has_upgraded_to_update = 13; // This load stream has been upgraded to update.
   StreamParam const_update_param = 14;
   bool is_cond_access = 15; // Whether this is conditional access.
-  bool known_trip_count = 16; // Whether the trip count is know at configure time.
+  bool is_trip_count_fixed = 16; // Whether the trip count is know at configure time.
   
   enum StaticNotStreamReason {
     UNKNOWN = 0;
