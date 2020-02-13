@@ -606,6 +606,7 @@ void StreamRegionAnalyzer::insertAddrFuncInModule(
     auto MStream = reinterpret_cast<MemStream *>(InstStream.second);
     MStream->generateComputeFunction(Module);
   }
+  this->StaticAnalyzer->insertPredicateFuncInModule(Module);
 }
 
 void StreamRegionAnalyzer::buildAddressModule() {

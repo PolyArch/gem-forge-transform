@@ -19,6 +19,8 @@ public:
     return this->InstStaticStreamMap;
   }
 
+  void insertPredicateFuncInModule(std::unique_ptr<llvm::Module> &Module);
+
 private:
   llvm::Loop *TopLoop;
   llvm::DataLayout *DataLayout;

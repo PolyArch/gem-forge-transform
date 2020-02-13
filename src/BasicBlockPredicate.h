@@ -1,14 +1,7 @@
 #ifndef LLVM_TDG_BASIC_BLOCK_PREDICATE_H
 #define LLVM_TDG_BASIC_BLOCK_PREDICATE_H
 
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Instruction.h"
-
-#include <list>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
+#include "ExecutionDataGraph.h"
 
 /**
  * Most limited analysis of predication relationship between basic blocks.
@@ -19,7 +12,7 @@
  *    executed depending on the result of PredDG.
  */
 
-class BBPredicateDataGraph {
+class BBPredicateDataGraph : public ExecutionDataGraph {
 public:
   BBPredicateDataGraph(const llvm::Loop *_Loop, const llvm::BasicBlock *_BB);
   BBPredicateDataGraph(const BBPredicateDataGraph &Other) = delete;
@@ -27,34 +20,25 @@ public:
   BBPredicateDataGraph &operator=(const BBPredicateDataGraph &Other) = delete;
   BBPredicateDataGraph &operator=(BBPredicateDataGraph &&Other) = delete;
 
+  ~BBPredicateDataGraph() {}
+
+  const std::string &getFuncName() const { return this->FuncName; }
   bool isValid() const { return this->IsValid; }
   const llvm::BasicBlock *getTrueBB() const { return this->TrueBB; }
   const llvm::BasicBlock *getFalseBB() const { return this->FalseBB; }
-  const std::list<const llvm::Value *> &getInputs() const {
-    return this->Inputs;
-  }
   const std::unordered_set<const llvm::LoadInst *> &getInputLoads() const {
     return this->InputLoads;
-  }
-  const std::unordered_set<const llvm::ConstantData *> &
-  getConstantData() const {
-    return this->ConstantDatas;
-  }
-  const std::unordered_set<const llvm::Instruction *> &getComputeInsts() const {
-    return this->ComputeInsts;
   }
 
 private:
   const llvm::Loop *Loop;
   const llvm::BasicBlock *BB;
+  const std::string FuncName;
   bool IsValid = false;
   const llvm::BasicBlock *TrueBB = nullptr;
   const llvm::BasicBlock *FalseBB = nullptr;
-  std::list<const llvm::Value *> Inputs;
   std::unordered_set<const llvm::LoadInst *> InputLoads;
   std::unordered_set<const llvm::PHINode *> InputPHIs;
-  std::unordered_set<const llvm::ConstantData *> ConstantDatas;
-  std::unordered_set<const llvm::Instruction *> ComputeInsts;
 
   void constructDataGraph();
 };
@@ -71,6 +55,8 @@ public:
   ~CachedBBPredicateDataGraph();
 
   BBPredicateDataGraph *getBBPredicateDataGraph(const llvm::Loop *Loop,
+                                                const llvm::BasicBlock *BB);
+  BBPredicateDataGraph *tryBBPredicateDataGraph(const llvm::Loop *Loop,
                                                 const llvm::BasicBlock *BB);
 
 private:

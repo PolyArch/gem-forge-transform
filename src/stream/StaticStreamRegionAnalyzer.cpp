@@ -258,6 +258,28 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
   }
 }
 
+void StaticStreamRegionAnalyzer::insertPredicateFuncInModule(
+    std::unique_ptr<llvm::Module> &Module) {
+  for (auto BBIter = this->TopLoop->block_begin(),
+            BBEnd = this->TopLoop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    // Search for each loop.
+    for (auto Loop = this->LI->getLoopFor(BB); this->TopLoop->contains(Loop);
+         Loop = Loop->getParentLoop()) {
+
+      auto BBPredDG = this->CachedBBPredDG->tryBBPredicateDataGraph(Loop, BB);
+      if (!BBPredDG) {
+        continue;
+      }
+      if (!BBPredDG->isValid()) {
+        continue;
+      }
+      BBPredDG->generateComputeFunction(BBPredDG->getFuncName(), Module);
+    }
+  }
+}
+
 void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
   auto GetStream = [this](const llvm::Instruction *Inst,
                           const llvm::Loop *ConfigureLoop) -> StaticStream * {
