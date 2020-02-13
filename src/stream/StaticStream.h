@@ -297,5 +297,10 @@ protected:
    * Analyze if this is conditional access stream.
    */
   void analyzeIsConditionalAccess() const;
+
+  /**
+   * Analyze if this has known trip count.
+   */
+  void analyzeIsTripCountFixed() const;
 };
 #endif
