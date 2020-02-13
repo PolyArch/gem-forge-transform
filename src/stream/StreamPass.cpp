@@ -83,8 +83,8 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
     // Get or create the region analyzer.
     if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
       auto StreamAnalyzer = std::make_unique<StreamRegionAnalyzer>(
-          this->RegionIdx, this->CachedLI, Loop, this->Trace->DataLayout,
-          this->OutputExtraFolderPath);
+          this->RegionIdx, this->CachedLI, this->CachedPDF, Loop,
+          this->Trace->DataLayout, this->OutputExtraFolderPath);
       this->RegionIdx++;
       this->LoopStreamAnalyzerMap.insert(
           std::make_pair(Loop, std::move(StreamAnalyzer)));

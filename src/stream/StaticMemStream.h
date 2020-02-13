@@ -7,8 +7,10 @@ class StaticMemStream : public StaticStream {
 public:
   StaticMemStream(const llvm::Instruction *_Inst,
                   const llvm::Loop *_ConfigureLoop,
-                  const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE)
-      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE) {}
+                  const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
+                  const llvm::PostDominatorTree *_PDT)
+      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE,
+                     _PDT) {}
 
   bool checkIsQualifiedWithoutBackEdgeDep() const override;
   bool checkIsQualifiedWithBackEdgeDep() const override;
@@ -42,8 +44,6 @@ private:
       const std::unordered_set<const llvm::SCEV *> &InputSCEVs);
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override;
-
-  void addInputParam(const llvm::SCEV *SCEV, bool Signed);
 };
 
 #endif

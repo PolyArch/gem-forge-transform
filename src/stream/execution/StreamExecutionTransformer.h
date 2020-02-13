@@ -66,6 +66,8 @@ private:
                           llvm::StoreInst *StoreInst);
   void transformStepInst(StreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
+  void upgradeLoadToUpdateStream(StreamRegionAnalyzer *Analyzer,
+                                 Stream *LoadStream);
   llvm::Instruction *findStepPosition(Stream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
@@ -97,6 +99,7 @@ private:
    */
   using InputValueVec = std::vector<llvm::Value *>;
   using ProtoStreamConfiguration = LLVM::TDG::IVPattern;
+  using ProtoStreamParam = ::LLVM::TDG::StreamParam;
   void generateIVStreamConfiguration(Stream *S, llvm::Instruction *InsertBefore,
                                      InputValueVec &ClonedInputValues);
   void generateMemStreamConfiguration(Stream *S,
@@ -109,11 +112,14 @@ private:
       llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
       llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
       ProtoStreamConfiguration *ProtoConfiguration);
-  void addStreamInputValue(const llvm::SCEV *ClonedSCEV, bool Signed,
-                           llvm::Instruction *InsertBefore,
-                           llvm::SCEVExpander *ClonedSEExpander,
+  void addStreamInputSCEV(const llvm::SCEV *ClonedSCEV, bool Signed,
+                          llvm::Instruction *InsertBefore,
+                          llvm::SCEVExpander *ClonedSEExpander,
+                          InputValueVec &ClonedInputValues,
+                          ProtoStreamConfiguration *ProtoConfiguration);
+  void addStreamInputValue(const llvm::Value *ClonedValue, bool Signed,
                            InputValueVec &ClonedInputValues,
-                           ProtoStreamConfiguration *ProtoConfiguration);
+                           ProtoStreamParam *ProtoParam);
 
   void writeModule();
   void writeAllConfiguredRegions();

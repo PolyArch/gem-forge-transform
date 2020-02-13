@@ -7,8 +7,10 @@ class StaticIndVarStream : public StaticStream {
 public:
   StaticIndVarStream(llvm::PHINode *_PHINode, const llvm::Loop *_ConfigureLoop,
                      const llvm::Loop *_InnerMostLoop,
-                     llvm::ScalarEvolution *_SE)
-      : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop, _SE),
+                     llvm::ScalarEvolution *_SE,
+                     const llvm::PostDominatorTree *_PDT)
+      : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop, _SE,
+                     _PDT),
         PHINode(_PHINode), NonEmptyComputePath(nullptr) {}
 
   bool checkIsQualifiedWithoutBackEdgeDep() const override;

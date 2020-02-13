@@ -11,6 +11,10 @@
 
 #include <queue>
 
+llvm::cl::opt<bool> StreamPassUpgradeLoadToUpdate(
+    "stream-pass-upgrade-load-to-update", llvm::cl::init(false),
+    llvm::cl::desc("Upgrade load stream to update stream."));
+
 #define DEBUG_TYPE "StreamExecutionTransformer"
 
 /**
@@ -131,22 +135,6 @@ void StreamExecutionTransformer::transformStreamRegion(
   // Insert the function into the transformed set.
   this->TransformedFunctions.insert(TopLoop->getHeader()->getParent());
 
-  // BFS to iterate all loops and configure them.
-  std::queue<llvm::Loop *> LoopQueue;
-  LoopQueue.push(TopLoop);
-  while (!LoopQueue.empty()) {
-    auto CurrentLoop = LoopQueue.front();
-    LoopQueue.pop();
-    for (auto &SubLoop : CurrentLoop->getSubLoops()) {
-      LoopQueue.push(SubLoop);
-    }
-    this->configureStreamsAtLoop(Analyzer, CurrentLoop);
-    this->coalesceStreamsAtLoop(Analyzer, CurrentLoop);
-  }
-
-  // Insert address computation function in the cloned module.
-  Analyzer->insertAddrFuncInModule(this->ClonedModule);
-
   // Transform each individual instruction.
   for (auto *BB : TopLoop->blocks()) {
     for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
@@ -193,6 +181,25 @@ void StreamExecutionTransformer::transformStreamRegion(
       }
     }
   }
+
+  /**
+   * BFS to iterate all loops and configure them.
+   * ! This must be done at the end as UpgradeUpdate may add more inputs.
+   */
+  std::queue<llvm::Loop *> LoopQueue;
+  LoopQueue.push(TopLoop);
+  while (!LoopQueue.empty()) {
+    auto CurrentLoop = LoopQueue.front();
+    LoopQueue.pop();
+    for (auto &SubLoop : CurrentLoop->getSubLoops()) {
+      LoopQueue.push(SubLoop);
+    }
+    this->configureStreamsAtLoop(Analyzer, CurrentLoop);
+    this->coalesceStreamsAtLoop(Analyzer, CurrentLoop);
+  }
+
+  // Insert address computation function in the cloned module.
+  Analyzer->insertAddrFuncInModule(this->ClonedModule);
 }
 
 void StreamExecutionTransformer::configureStreamsAtLoop(
@@ -311,37 +318,6 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
       S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
     }
   }
-
-  // // Resplit each group dependencing on the expansion.
-  // for (auto GroupIter = CoalescedGroup.begin();
-  //      GroupIter != CoalescedGroup.end(); GroupIter++) {
-  //   if (GroupIter->size() == 1) {
-  //     // Ignore single streams.
-  //     continue;
-  //   }
-  //   auto BaseS = GroupIter->front().first;
-  //   int64_t BaseOffset = GroupIter->front().second;
-  //   int64_t EndOffset = GroupIter->front().second;
-  //   size_t NStream = 0;
-  //   for (auto StreamIter = GroupIter->begin(), StreamEnd = GroupIter->end();
-  //        StreamIter != StreamEnd; ++StreamIter, ++NStream) {
-  //     auto S = StreamIter->first;
-  //     auto Offset = StreamIter->second;
-  //     if (Offset > EndOffset) {
-  //       // The expansion is broken, split the group.
-  //       assert(NStream != 0 && "Empty LHS group.");
-  //       CoalescedGroup.emplace_back(StreamIter, StreamEnd);
-  //       GroupIter->resize(NStream);
-  //       break;
-  //     } else {
-  //       // The expansion keeps going.
-  //       S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
-  //       EndOffset = std::max(
-  //           EndOffset,
-  //           Offset + S->getElementSize(this->CachedLI->getDataLayout()));
-  //     }
-  //   }
-  // }
 }
 
 void StreamExecutionTransformer::insertStreamConfigAtLoop(
@@ -529,6 +505,8 @@ void StreamExecutionTransformer::transformLoadInst(
 
   // Insert the load into the pending removed set.
   this->PendingRemovedInsts.insert(ClonedLoadInst);
+
+  this->upgradeLoadToUpdateStream(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformStoreInst(
@@ -568,6 +546,41 @@ void StreamExecutionTransformer::transformStepInst(
                                         llvm::Intrinsic::ID::ssp_stream_step),
         StreamStepArgs);
   }
+}
+
+void StreamExecutionTransformer::upgradeLoadToUpdateStream(
+    StreamRegionAnalyzer *Analyzer, Stream *LoadStream) {
+  /**
+   * The idea is to update a load to update stream and thus must be offloaded.
+   */
+  if (!StreamPassUpgradeLoadToUpdate) {
+    return;
+  }
+  auto LoadSS = LoadStream->SStream;
+  auto &LoadSSInfo = LoadSS->StaticStreamInfo;
+  if (!(LoadSSInfo.has_update() && LoadSSInfo.has_const_update())) {
+    // We only handle constant update so far.
+    return;
+  }
+  if (LoadSSInfo.is_cond_access()) {
+    // Should only upgrade unconditional stream.
+    return;
+  }
+  LLVM_DEBUG(llvm::errs() << "Upgrade LoadStream " << LoadSS->formatName()
+                          << " to UpdateStream.\n");
+  LoadSSInfo.set_has_upgraded_to_update(true);
+  auto StoreSS = LoadSS->UpdateStream;
+  /**
+   * Two things we have to do:
+   * 1. Since we only target constant update, we have to add one more input to
+   *    the stream to have the update value. Done in
+   * generateMemStreamConfiguration.
+   * 2. Add the cloned StoreInst to PendingRemovedInsts. Done here.
+   */
+  auto StoreInst = StoreSS->Inst;
+  auto ClonedStoreInst = this->getClonedValue(StoreInst);
+
+  this->PendingRemovedInsts.insert(ClonedStoreInst);
 }
 
 llvm::Instruction *
@@ -745,6 +758,21 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
 
   assert(S->SStream->Type == StaticStream::TypeT::MEM && "Must be MEM stream.");
   auto SS = static_cast<const StaticMemStream *>(S->SStream);
+
+  /**
+   * If this is a update stream, add one more input at ClonedInputValues[0].
+   */
+  if (SS->StaticStreamInfo.has_upgraded_to_update()) {
+    auto StoreSS = SS->UpdateStream;
+    auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(StoreSS->Inst);
+    assert(StoreInst && "Invalid UpdateStream.");
+    auto StoreValue = StoreInst->getOperand(0);
+    auto ClonedStoreValue = this->getClonedValue(StoreValue);
+    this->addStreamInputValue(
+        ClonedStoreValue, false /* Signed */, ClonedInputValues,
+        SS->StaticStreamInfo.mutable_const_update_param());
+  }
+
   auto ProtoConfiguration = SS->StaticStreamInfo.mutable_iv_pattern();
 
   auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
@@ -833,9 +861,9 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
         assert(ClonedSE->isLoopInvariant(StrideSCEV, ClonedConfigureLoop) &&
                "LoopVariant stride.");
         // Add the stride input.
-        this->addStreamInputValue(StrideSCEV, true /* Signed */, InsertBefore,
-                                  ClonedSEExpander, ClonedInputValues,
-                                  ProtoConfiguration);
+        this->addStreamInputSCEV(StrideSCEV, true /* Signed */, InsertBefore,
+                                 ClonedSEExpander, ClonedInputValues,
+                                 ProtoConfiguration);
         auto StartSCEV = AddRecSCEV->getStart();
         CurrentSCEV = StartSCEV;
       } else {
@@ -848,9 +876,9 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
        */
       auto ZeroStrideSCEV = ClonedSE->getZero(
           llvm::IntegerType::get(this->ClonedModule->getContext(), 64));
-      this->addStreamInputValue(ZeroStrideSCEV, true /* Signed */, InsertBefore,
-                                ClonedSEExpander, ClonedInputValues,
-                                ProtoConfiguration);
+      this->addStreamInputSCEV(ZeroStrideSCEV, true /* Signed */, InsertBefore,
+                               ClonedSEExpander, ClonedInputValues,
+                               ProtoConfiguration);
     }
     // We need the back-edge taken times if this is not ConfigureLoop.
     // Otherwise it's optional.
@@ -861,9 +889,9 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
     });
     if (!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
         ClonedSE->isLoopInvariant(BackEdgeTakenSCEV, ClonedConfigureLoop)) {
-      this->addStreamInputValue(BackEdgeTakenSCEV, false /* Signed */,
-                                InsertBefore, ClonedSEExpander,
-                                ClonedInputValues, ProtoConfiguration);
+      this->addStreamInputSCEV(BackEdgeTakenSCEV, false /* Signed */,
+                               InsertBefore, ClonedSEExpander,
+                               ClonedInputValues, ProtoConfiguration);
     } else {
       assert(CurrentLoop == ClonedConfigureLoop &&
              "Need const BackEdgeTakenCount for nested loop.");
@@ -878,34 +906,39 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
   });
   assert(ClonedSE->isLoopInvariant(CurrentSCEV, ClonedConfigureLoop) &&
          "LoopVariant StartValue.");
-  this->addStreamInputValue(CurrentSCEV, false /*Signed */, InsertBefore,
-                            ClonedSEExpander, ClonedInputValues,
-                            ProtoConfiguration);
+  this->addStreamInputSCEV(CurrentSCEV, false /*Signed */, InsertBefore,
+                           ClonedSEExpander, ClonedInputValues,
+                           ProtoConfiguration);
 }
 
-void StreamExecutionTransformer::addStreamInputValue(
+void StreamExecutionTransformer::addStreamInputSCEV(
     const llvm::SCEV *ClonedSCEV, bool Signed, llvm::Instruction *InsertBefore,
     llvm::SCEVExpander *ClonedSCEVExpander, InputValueVec &ClonedInputValues,
     LLVM::TDG::IVPattern *ProtoConfiguration) {
   auto ProtoInput = ProtoConfiguration->add_params();
   auto ClonedInputValue =
       ClonedSCEVExpander->expandCodeFor(ClonedSCEV, nullptr, InsertBefore);
+  this->addStreamInputValue(ClonedInputValue, Signed, ClonedInputValues,
+                            ProtoInput);
+  return;
+}
 
-  if (auto ConstInputValue =
-          llvm::dyn_cast<llvm::ConstantInt>(ClonedInputValue)) {
+void StreamExecutionTransformer::addStreamInputValue(
+    const llvm::Value *ClonedValue, bool Signed,
+    InputValueVec &ClonedInputValues, ProtoStreamParam *ProtoParam) {
+  if (auto ConstValue = llvm::dyn_cast<llvm::ConstantInt>(ClonedValue)) {
     // This is constant.
-    ProtoInput->set_valid(true);
+    ProtoParam->set_is_static(true);
     if (Signed) {
-      ProtoInput->set_param(ConstInputValue->getSExtValue());
+      ProtoParam->set_value(ConstValue->getSExtValue());
     } else {
-      ProtoInput->set_param(ConstInputValue->getZExtValue());
+      ProtoParam->set_value(ConstValue->getZExtValue());
     }
   } else {
     // Runtime input.
-    ProtoInput->set_valid(false);
-    ClonedInputValues.push_back(ClonedInputValue);
+    ProtoParam->set_is_static(false);
+    ClonedInputValues.push_back(const_cast<llvm::Value *>(ClonedValue));
   }
-
   return;
 }
 

@@ -40,12 +40,12 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, this->JsonPath);
 }
 
-StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
-                                           CachedLoopInfo *_CachedLI,
-                                           llvm::Loop *_TopLoop,
-                                           llvm::DataLayout *_DataLayout,
-                                           const std::string &_RootPath)
-    : RegionIdx(_RegionIdx), CachedLI(_CachedLI), TopLoop(_TopLoop),
+StreamRegionAnalyzer::StreamRegionAnalyzer(
+    uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
+    CachedPostDominanceFrontier *_CachedPDF, llvm::Loop *_TopLoop,
+    llvm::DataLayout *_DataLayout, const std::string &_RootPath)
+    : RegionIdx(_RegionIdx), CachedLI(_CachedLI), CachedPDF(_CachedPDF),
+      TopLoop(_TopLoop),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       DataLayout(_DataLayout), RootPath(_RootPath) {
   // Initialize the folder for this region.
@@ -68,7 +68,7 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(uint64_t _RegionIdx,
 
   // Initialize the static analyzer.
   this->StaticAnalyzer = std::make_unique<StaticStreamRegionAnalyzer>(
-      this->TopLoop, this->DataLayout, this->CachedLI);
+      this->TopLoop, this->DataLayout, this->CachedLI, this->CachedPDF);
 
   this->initializeStreams();
   this->buildStreamDependenceGraph();
