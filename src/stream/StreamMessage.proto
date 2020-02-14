@@ -41,6 +41,20 @@ message StreamId {
   uint64 id = 2;
 }
 
+message PredicatedStreamId {
+  StreamId id = 1;
+  bool pred_true = 2;
+}
+
+message ExecFuncInfo {
+  string name = 1;
+  message FuncArg {
+    bool is_stream = 1;
+    uint64 stream_id = 2;
+  }
+  repeated FuncArg args = 2;
+}
+
 message StaticStreamInfo {
   bool is_candidate = 1;
   bool is_qualified = 2;
@@ -58,9 +72,11 @@ message StaticStreamInfo {
   StreamParam const_update_param = 14;
   bool is_cond_access = 15; // Whether this is conditional access.
   bool is_trip_count_fixed = 16; // Whether the trip count is know at configure time.
-  repeated StreamId predicated_true_streams = 18; // Predicated true streams.
-  repeated StreamId predicated_false_streams = 19; // Predicated false streams.
-  
+  repeated PredicatedStreamId predicated_streams = 18; // Predicated streams.
+  repeated PredicatedStreamId merged_predicated_streams = 19; // Merged predicated streams.
+  bool is_merged_predicated_stream = 20; // This predicated stream has been merged.
+  ExecFuncInfo pred_func_info = 21;
+
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
@@ -89,16 +105,6 @@ message DynamicStreamInfo {
   uint64 total_configures = 7;
 }
 
-// Address function for MemStream.
-message AddrFuncInfo {
-  string name = 1;
-  message AddrFuncArg {
-    bool is_stream = 1;
-    uint64 stream_id = 2;
-  }
-  repeated AddrFuncArg args = 2;
-}
-
 message StreamInfo {
   string name = 1;
   uint64 id = 2;
@@ -112,7 +118,7 @@ message StreamInfo {
 
   DynamicStreamInfo dynamic_info = 10;
   int32 region_stream_id = 11;
-  AddrFuncInfo addr_func_info = 12;
+  ExecFuncInfo addr_func_info = 12;
 
   repeated StreamId base_streams = 16;
   repeated StreamId back_base_streams = 17;

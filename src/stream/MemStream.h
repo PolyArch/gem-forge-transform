@@ -81,13 +81,23 @@ public:
 
   void generateComputeFunction(std::unique_ptr<llvm::Module> &Module) const;
 
-  std::list<const llvm::Value *> getInputValues() const override;
+  InputValueList getAddrFuncInputValues() const override;
+  InputValueList getPredFuncInputValues() const override;
 
 protected:
   void formatAdditionalInfoText(std::ostream &OStream) const override;
   void fillProtobufAddrFuncInfo(
       ::llvm::DataLayout *DataLayout,
-      ::LLVM::TDG::AddrFuncInfo *AddrFuncInfo) const override;
+      ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const override;
+  void fillProtobufPredFuncInfo(
+      ::llvm::DataLayout *DataLayout,
+      ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const override;
+
+  void fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
+                                ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
+                                const std::string &FuncName,
+                                const ExecutionDataGraph &ExecDG) const;
+  InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
 
 private:
   MemoryFootprint Footprint;
