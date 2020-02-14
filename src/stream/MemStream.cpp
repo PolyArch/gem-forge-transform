@@ -247,11 +247,27 @@ void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
   this->AddrDG.format(OStream);
 }
 
-std::list<const llvm::Value *> MemStream::getInputValues() const {
+MemStream::InputValueList MemStream::getAddrFuncInputValues() const {
   assert(this->isChosen() && "Only consider chosen stream's input values.");
-  std::list<const llvm::Value *> InputValues;
-  auto FindBaseStream = [this](const llvm::Value *Value) -> Stream * {
+  return this->getExecFuncInputValues(this->AddrDG);
+}
+
+MemStream::InputValueList MemStream::getPredFuncInputValues() const {
+  assert(this->isChosen() && "Only consider chosen stream's input values.");
+  auto BBPredDG = this->SStream->BBPredDG;
+  assert(BBPredDG && "No BBPredDG.");
+  assert(BBPredDG->isValid() && "Invalid BBPredDG.");
+  return this->getExecFuncInputValues(*BBPredDG);
+}
+
+MemStream::InputValueList
+MemStream::getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const {
+  InputValueList InputValues;
+  auto GetStream = [this](const llvm::Value *Value) -> const Stream * {
     if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      if (Inst == this->SStream->Inst) {
+        return this;
+      }
       for (auto BaseStream : this->getChosenBaseStreams()) {
         if (BaseStream->SStream->Inst == Inst) {
           return BaseStream;
@@ -261,8 +277,8 @@ std::list<const llvm::Value *> MemStream::getInputValues() const {
     return nullptr;
   };
 
-  for (const auto &Input : this->AddrDG.getInputs()) {
-    if (auto BaseStream = FindBaseStream(Input)) {
+  for (const auto &Input : ExecDG.getInputs()) {
+    if (auto InputStream = GetStream(Input)) {
       // This comes from the base stream.
     } else {
       // This is an input value.
@@ -274,16 +290,44 @@ std::list<const llvm::Value *> MemStream::getInputValues() const {
 
 void MemStream::fillProtobufAddrFuncInfo(
     ::llvm::DataLayout *DataLayout,
-    ::LLVM::TDG::AddrFuncInfo *AddrFuncInfo) const {
+    ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {
 
   if (!this->isChosen()) {
     return;
   }
 
-  AddrFuncInfo->set_name(this->AddressFunctionName);
+  this->fillProtobufExecFuncInfo(DataLayout, AddrFuncInfo,
+                                 this->AddressFunctionName, this->AddrDG);
+}
 
-  auto FindBaseStream = [this](const llvm::Value *Value) -> Stream * {
+void MemStream::fillProtobufPredFuncInfo(
+    ::llvm::DataLayout *DataLayout,
+    ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {
+
+  if (!this->isChosen()) {
+    return;
+  }
+  if (!this->SStream->BBPredDG) {
+    return;
+  }
+
+  auto BBPredDG = this->SStream->BBPredDG;
+  this->fillProtobufExecFuncInfo(DataLayout, PredFuncInfo,
+                                 BBPredDG->getFuncName(), *BBPredDG);
+}
+
+void MemStream::fillProtobufExecFuncInfo(
+    ::llvm::DataLayout *DataLayout, ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
+    const std::string &FuncName, const ExecutionDataGraph &ExecDG) const {
+
+  ProtoFuncInfo->set_name(FuncName);
+
+  auto GetStream = [this](const llvm::Value *Value) -> const Stream * {
     if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      if (Inst == this->SStream->Inst) {
+        // The input is myself. Only for PredFunc.
+        return this;
+      }
       for (auto BaseStream : this->getChosenBaseStreams()) {
         if (BaseStream->SStream->Inst == Inst) {
           return BaseStream;
@@ -293,18 +337,18 @@ void MemStream::fillProtobufAddrFuncInfo(
     return nullptr;
   };
 
-  for (const auto &Input : this->AddrDG.getInputs()) {
-    auto ProtobufArg = AddrFuncInfo->add_args();
+  for (const auto &Input : ExecDG.getInputs()) {
+    auto ProtobufArg = ProtoFuncInfo->add_args();
     auto Type = Input->getType();
     if (!Type->isIntOrPtrTy()) {
       llvm::errs() << "Invalid type, Value: " << Utils::formatLLVMValue(Input)
                    << '\n';
       assert(false && "Invalid type for input.");
     }
-    if (auto BaseStream = FindBaseStream(Input)) {
+    if (auto InputStream = GetStream(Input)) {
       // This comes from the base stream.
       ProtobufArg->set_is_stream(true);
-      ProtobufArg->set_stream_id(BaseStream->getStreamId());
+      ProtobufArg->set_stream_id(InputStream->getStreamId());
     } else {
       // This is an input value.
       ProtobufArg->set_is_stream(false);

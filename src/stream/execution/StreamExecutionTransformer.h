@@ -68,6 +68,10 @@ private:
                          llvm::Instruction *StepInst);
   void upgradeLoadToUpdateStream(StreamRegionAnalyzer *Analyzer,
                                  Stream *LoadStream);
+  void mergePredicatedStreams(StreamRegionAnalyzer *Analyzer,
+                              Stream *LoadStream);
+  void mergePredicatedStore(StreamRegionAnalyzer *Analyzer, Stream *LoadStream,
+                            Stream *PredStoreStream, bool PredTrue);
   llvm::Instruction *findStepPosition(Stream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
@@ -112,6 +116,7 @@ private:
       llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
       llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
       ProtoStreamConfiguration *ProtoConfiguration);
+  void handleExtraInputValue(Stream *S, InputValueVec &ClonedInputValues);
   void addStreamInputSCEV(const llvm::SCEV *ClonedSCEV, bool Signed,
                           llvm::Instruction *InsertBefore,
                           llvm::SCEVExpander *ClonedSEExpander,

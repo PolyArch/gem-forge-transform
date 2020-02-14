@@ -171,6 +171,8 @@ void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
 
 void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
                                     LLVM::TDG::StreamInfo *ProtobufInfo) const {
+  auto ProtobufStaticInfo = ProtobufInfo->mutable_static_info();
+  this->SStream->setStaticStreamInfo(*ProtobufStaticInfo);
   ProtobufInfo->set_name(this->formatName());
   ProtobufInfo->set_id(this->getStreamId());
   ProtobufInfo->set_region_stream_id(this->getRegionStreamId());
@@ -184,6 +186,9 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   // Dump the address function.
   auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
   this->fillProtobufAddrFuncInfo(DataLayout, AddrFuncInfo);
+  // Dump the predication function.
+  auto PredFuncInfo = ProtobufStaticInfo->mutable_pred_func_info();
+  this->fillProtobufPredFuncInfo(DataLayout, PredFuncInfo);
 
   auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
   ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);
@@ -197,7 +202,6 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   DynamicStreamInfo->set_total_iters(this->TotalIters);
   DynamicStreamInfo->set_total_accesses(this->TotalAccesses);
   DynamicStreamInfo->set_total_configures(this->TotalStreams);
-  this->SStream->setStaticStreamInfo(*ProtobufInfo->mutable_static_info());
 
 #define ADD_STREAM(SET, FIELD)                                                 \
   {                                                                            \

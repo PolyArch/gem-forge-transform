@@ -15,10 +15,9 @@ llvm::cl::opt<bool> StreamPassUpgradeLoadToUpdate(
     "stream-pass-upgrade-load-to-update", llvm::cl::init(false),
     llvm::cl::desc("Upgrade load stream to update stream."));
 
-llvm::cl::opt<bool>
-    StreamPassRemovePrediatedStore("stream-pass-remove-predicated-store",
-                                   llvm::cl::init(false),
-                                   llvm::cl::desc("Remove predicated store."));
+llvm::cl::opt<bool> StreamPassMergePredicatedStore(
+    "stream-pass-merge-predicated-store", llvm::cl::init(false),
+    llvm::cl::desc("Merge predicated store stream into load stream."));
 
 #define DEBUG_TYPE "StreamExecutionTransformer"
 
@@ -512,6 +511,7 @@ void StreamExecutionTransformer::transformLoadInst(
   this->PendingRemovedInsts.insert(ClonedLoadInst);
 
   this->upgradeLoadToUpdateStream(Analyzer, S);
+  this->mergePredicatedStreams(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformStoreInst(
@@ -589,6 +589,70 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
   auto StoreInst = StoreSS->Inst;
   auto ClonedStoreInst = this->getClonedValue(StoreInst);
 
+  this->PendingRemovedInsts.insert(ClonedStoreInst);
+}
+
+void StreamExecutionTransformer::mergePredicatedStreams(
+    StreamRegionAnalyzer *Analyzer, Stream *LoadStream) {
+  /**
+   * The idea is to merge predicated streams into the LoadStream.
+   */
+  auto LoadSS = LoadStream->SStream;
+  auto ProcessPredSS = [this, Analyzer, LoadStream](StaticStream *PredSS,
+                                                    bool PredTrue) -> void {
+    auto PredInst = PredSS->Inst;
+    auto PredStream = Analyzer->getChosenStreamByInst(PredInst);
+    if (!PredStream || PredStream->SStream != PredSS) {
+      // Somehow this predicated stream is not chosen. Ignore it.
+      return;
+    }
+    if (llvm::isa<llvm::StoreInst>(PredInst)) {
+      this->mergePredicatedStore(Analyzer, LoadStream, PredStream, PredTrue);
+    }
+  };
+  for (auto PredSS : LoadSS->PredicatedTrueStreams) {
+    ProcessPredSS(PredSS, true);
+  }
+  for (auto PredSS : LoadSS->PredicatedFalseStreams) {
+    ProcessPredSS(PredSS, false);
+  }
+}
+
+void StreamExecutionTransformer::mergePredicatedStore(
+    StreamRegionAnalyzer *Analyzer, Stream *LoadStream, Stream *PredStoreStream,
+    bool PredTrue) {
+  if (!StreamPassMergePredicatedStore) {
+    // This feature is disabled.
+    return;
+  }
+  if (LoadStream->getSingleChosenStepRootStream() !=
+      PredStoreStream->getSingleChosenStepRootStream()) {
+    // They have different step root stream.
+    return;
+  }
+  auto LoadSS = LoadStream->SStream;
+  auto StoreSS = PredStoreStream->SStream;
+  assert(LoadSS->ConfigureLoop == StoreSS->ConfigureLoop &&
+         "Predicated streams should have same configure loop.");
+  auto ConfigureLoop = LoadSS->ConfigureLoop;
+  auto StoreInst = const_cast<llvm::Instruction *>(StoreSS->Inst);
+  auto StoreValue = StoreInst->getOperand(0);
+  auto SE = this->CachedLI->getScalarEvolution(StoreInst->getFunction());
+  auto StoreValueSCEV = SE->getSCEV(StoreValue);
+  if (!SE->isLoopInvariant(StoreValueSCEV, ConfigureLoop)) {
+    // So far we only handle constant store.
+    return;
+  }
+  // Decided to merge.
+  LLVM_DEBUG(llvm::dbgs() << "Merge Predicated Store " << StoreSS->formatName()
+                          << " -> " << LoadSS->formatName() << '\n');
+  StoreSS->StaticStreamInfo.set_is_merged_predicated_stream(true);
+  auto ProtoEntry = LoadSS->StaticStreamInfo.add_merged_predicated_streams();
+  ProtoEntry->mutable_id()->set_id(StoreSS->StreamId);
+  ProtoEntry->mutable_id()->set_name(StoreSS->formatName());
+  ProtoEntry->set_pred_true(PredTrue);
+  // Add the store to pending remove.
+  auto ClonedStoreInst = this->getClonedValue(StoreInst);
   this->PendingRemovedInsts.insert(ClonedStoreInst);
 }
 
@@ -768,19 +832,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   assert(S->SStream->Type == StaticStream::TypeT::MEM && "Must be MEM stream.");
   auto SS = static_cast<const StaticMemStream *>(S->SStream);
 
-  /**
-   * If this is a update stream, add one more input at ClonedInputValues[0].
-   */
-  if (SS->StaticStreamInfo.has_upgraded_to_update()) {
-    auto StoreSS = SS->UpdateStream;
-    auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(StoreSS->Inst);
-    assert(StoreInst && "Invalid UpdateStream.");
-    auto StoreValue = StoreInst->getOperand(0);
-    auto ClonedStoreValue = this->getClonedValue(StoreValue);
-    this->addStreamInputValue(
-        ClonedStoreValue, false /* Signed */, ClonedInputValues,
-        SS->StaticStreamInfo.mutable_const_update_param());
-  }
+  this->handleExtraInputValue(S, ClonedInputValues);
 
   auto ProtoConfiguration = SS->StaticStreamInfo.mutable_iv_pattern();
 
@@ -831,8 +883,8 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     // info.
     ProtoConfiguration->set_val_pattern(
         ::LLVM::TDG::StreamValuePattern::INDIRECT);
-    // Handle the input values.
-    for (auto Input : S->getInputValues()) {
+    // Handle the addr func input values.
+    for (auto Input : S->getAddrFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
     }
     return;
@@ -918,6 +970,48 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
   this->addStreamInputSCEV(CurrentSCEV, false /*Signed */, InsertBefore,
                            ClonedSEExpander, ClonedInputValues,
                            ProtoConfiguration);
+}
+
+void StreamExecutionTransformer::handleExtraInputValue(
+    Stream *S, InputValueVec &ClonedInputValues) {
+  auto SS = S->SStream;
+  /**
+   * If this is a update stream, add one more input at ClonedInputValues[0].
+   */
+  if (SS->StaticStreamInfo.has_upgraded_to_update()) {
+    auto StoreSS = SS->UpdateStream;
+    auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(StoreSS->Inst);
+    assert(StoreInst && "Invalid UpdateStream.");
+    auto StoreValue = StoreInst->getOperand(0);
+    auto ClonedStoreValue = this->getClonedValue(StoreValue);
+    this->addStreamInputValue(
+        ClonedStoreValue, false /* Signed */, ClonedInputValues,
+        SS->StaticStreamInfo.mutable_const_update_param());
+  }
+
+  /**
+   * If this has merged predicate stream, handle inputs from pred func.
+   */
+  if (SS->StaticStreamInfo.merged_predicated_streams_size()) {
+    for (auto Input : S->getPredFuncInputValues()) {
+      ClonedInputValues.push_back(this->getClonedValue(Input));
+    }
+  }
+
+  /**
+   * If this is a merged store stream, add one more input for the store value.
+   */
+  if (SS->StaticStreamInfo.is_merged_predicated_stream()) {
+    auto Inst = SS->Inst;
+    if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(Inst)) {
+      // Add one more input for the store value. It should be loop invariant.
+      auto StoreValue = StoreInst->getOperand(0);
+      auto ClonedStoreValue = this->getClonedValue(StoreValue);
+      this->addStreamInputValue(
+          ClonedStoreValue, false /* Signed */, ClonedInputValues,
+          SS->StaticStreamInfo.mutable_const_update_param());
+    }
+  }
 }
 
 void StreamExecutionTransformer::addStreamInputSCEV(

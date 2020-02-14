@@ -231,10 +231,14 @@ public:
   void buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream);
 
   /**
-   * Get the input value for this stream when configure it.
+   * Get the input value for addr/pred func when configure it.
    */
-  virtual std::list<const llvm::Value *> getInputValues() const {
-    return std::list<const llvm::Value *>();
+  using InputValueList = std::list<const llvm::Value *>;
+  virtual InputValueList getAddrFuncInputValues() const {
+    return InputValueList();
+  }
+  virtual InputValueList getPredFuncInputValues() const {
+    return InputValueList();
   }
 
   int getElementSize(llvm::DataLayout *DataLayout) const;
@@ -313,7 +317,10 @@ protected:
   virtual void formatAdditionalInfoText(std::ostream &OStream) const {}
   virtual void
   fillProtobufAddrFuncInfo(::llvm::DataLayout *DataLayout,
-                           ::LLVM::TDG::AddrFuncInfo *AddrFuncInfo) const {}
+                           ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {}
+  virtual void
+  fillProtobufPredFuncInfo(::llvm::DataLayout *DataLayout,
+                           ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {}
 
   void addBaseStream(Stream *Other);
   void addBackEdgeBaseStream(Stream *Other);
