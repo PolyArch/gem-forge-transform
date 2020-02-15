@@ -363,6 +363,18 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
       LLVM_DEBUG(llvm::errs()
                  << "Insert StreamInput for Stream " << S->formatName()
                  << " Input " << ClonedInput->getName() << '\n');
+      // Extend the input value to 64 bit using zero extension.
+      auto ClonedInputValue = ClonedInput;
+      auto ClonedInputType = ClonedInput->getType();
+      if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(ClonedInputType)) {
+        if (IntType->getBitWidth() < 64) {
+          ClonedInputType =
+              llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
+          ClonedInputValue = Builder.CreateZExt(ClonedInput, ClonedInputType);
+        } else if (IntType->getBitWidth() > 64) {
+          assert(false && "Cannot handle input type larger than 64 bit.");
+        }
+      }
 
       auto StreamId = S->getRegionStreamId();
       assert(StreamId >= 0 && StreamId < 128 &&
@@ -370,8 +382,9 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
       auto StreamIdValue = llvm::ConstantInt::get(
           llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
           StreamId, false);
-      std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue, ClonedInput};
-      std::array<llvm::Type *, 1> StreamInputType{ClonedInput->getType()};
+      std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue,
+                                                   ClonedInputValue};
+      std::array<llvm::Type *, 1> StreamInputType{ClonedInputType};
       auto StreamInputInst = Builder.CreateCall(
           llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                           llvm::Intrinsic::ID::ssp_stream_input,
@@ -596,7 +609,13 @@ void StreamExecutionTransformer::mergePredicatedStreams(
     StreamRegionAnalyzer *Analyzer, Stream *LoadStream) {
   /**
    * The idea is to merge predicated streams into the LoadStream.
+   * TODO: So far we only merge to direct stream.
    */
+  if (LoadStream->getChosenBaseStepRootStreams() !=
+      LoadStream->getChosenBaseStreams()) {
+    // A hacky check that this is not a direct stream.
+    return;
+  }
   auto LoadSS = LoadStream->SStream;
   auto ProcessPredSS = [this, Analyzer, LoadStream](StaticStream *PredSS,
                                                     bool PredTrue) -> void {
