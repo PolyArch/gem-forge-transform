@@ -58,7 +58,10 @@ private:
   void insertStreamConfigAtLoop(StreamRegionAnalyzer *Analyzer,
                                 llvm::Loop *Loop,
                                 llvm::Constant *ConfigIdxValue);
-  void insertStreamEndAtLoop(llvm::Loop *Loop, llvm::Constant *ConfigIdxValue);
+  void insertStreamEndAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
+                             llvm::Constant *ConfigIdxValue);
+  void insertStreamReduceAtLoop(StreamRegionAnalyzer *Analyzer,
+                                llvm::Loop *Loop, Stream *ReduceStream);
   void coalesceStreamsAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop);
   void transformLoadInst(StreamRegionAnalyzer *Analyzer,
                          llvm::LoadInst *LoadInst);
@@ -125,6 +128,7 @@ private:
   void addStreamInputValue(const llvm::Value *ClonedValue, bool Signed,
                            InputValueVec &ClonedInputValues,
                            ProtoStreamParam *ProtoParam);
+  llvm::Value *addStreamLoad(Stream *S, llvm::Instruction *ClonedInsertBefore);
 
   void writeModule();
   void writeAllConfiguredRegions();

@@ -229,7 +229,7 @@ void StreamExecutionTransformer::configureStreamsAtLoop(
       llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
       ConfigIdx, false);
   this->insertStreamConfigAtLoop(Analyzer, Loop, ConfigIdxValue);
-  this->insertStreamEndAtLoop(Loop, ConfigIdxValue);
+  this->insertStreamEndAtLoop(Analyzer, Loop, ConfigIdxValue);
 }
 
 void StreamExecutionTransformer::coalesceStreamsAtLoop(
@@ -399,7 +399,8 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
 }
 
 void StreamExecutionTransformer::insertStreamEndAtLoop(
-    llvm::Loop *Loop, llvm::Constant *ConfigIdxValue) {
+    StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
+    llvm::Constant *ConfigIdxValue) {
   /**
    * 1. Format dedicated exit block.
    * 2. Insert StreamEnd at every exit block.
@@ -427,6 +428,81 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
                                           llvm::Intrinsic::ID::ssp_stream_end),
           StreamEndArgs);
     }
+  }
+
+  /**
+   * Handle reduction stream.
+   * * Only do this after we create dedicated exit blocks and insert StreamEnd.
+   */
+  const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
+  for (auto S : ConfigureInfo.getSortedStreams()) {
+    this->insertStreamReduceAtLoop(Analyzer, Loop, S);
+  }
+}
+
+void StreamExecutionTransformer::insertStreamReduceAtLoop(
+    StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop, Stream *ReduceStream) {
+
+  auto SS = ReduceStream->SStream;
+  const auto &SSInfo = SS->StaticStreamInfo;
+  if (SSInfo.val_pattern() != ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+    return;
+  }
+
+  auto PHINode = llvm::dyn_cast<llvm::PHINode>(SS->Inst);
+  assert(PHINode && "Reduction stream should be PHINode.");
+  auto ExitValue = SS->ReduceDG->getResultValue();
+  auto ExitInst = llvm::dyn_cast<llvm::Instruction>(ExitValue);
+  assert(ExitInst &&
+         "ExitValue should be an instruction for reduction stream.");
+  // Add a final StreamLoad.
+  auto ClonedLoop = this->getOrCreateLoopInClonedModule(Loop);
+  // std::unordered_map<llvm::BasicBlock *, llvm::Value *>
+  //     VisitedExitBlockValueMap;
+  // for (auto *BB : ClonedLoop->blocks()) {
+  //   for (auto *SuccBB : llvm::successors(BB)) {
+  //     if (ClonedLoop->contains(SuccBB)) {
+  //       continue;
+  //     }
+  //     if (!VisitedExitBlockValueMap.emplace(SuccBB, nullptr).second) {
+  //       // Already visited.
+  //       continue;
+  //     }
+  //     auto StreamLoad =
+  //         this->addStreamLoad(ReduceStream, SuccBB->getFirstNonPHI());
+  //     VisitedExitBlockValueMap.at(SuccBB) = StreamLoad;
+  //   }
+  // }
+
+  /**
+   * Let's only handle one exit block so far.
+   * Try to replace out-of-loop user.
+   */
+  auto ClonedExitBB = ClonedLoop->getExitBlock();
+  if (!ClonedExitBB) {
+    return;
+  }
+  auto ClonedReducedValue =
+      this->addStreamLoad(ReduceStream, ClonedExitBB->getFirstNonPHI());
+  bool HasInLoopUse = false;
+  auto ClonedExitInst = this->getClonedValue(ExitInst);
+  for (auto User : ClonedExitInst->users()) {
+    if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
+      if (UserInst == PHINode) {
+        // Ignore myself as the user.
+        continue;
+      }
+      if (Loop->contains(UserInst)) {
+        HasInLoopUse = true;
+        continue;
+      }
+      // This is an outside user, replace it.
+      UserInst->replaceUsesOfWith(ClonedExitInst, ClonedReducedValue);
+    }
+  }
+  if (!HasInLoopUse) {
+    // Since there are no other in loop user,
+    // We can remove it. But let's keep it so far.
   }
 }
 
@@ -478,7 +554,22 @@ void StreamExecutionTransformer::transformLoadInst(
    * 3. Leave the original load there (not deleted).
    */
   auto ClonedLoadInst = this->getClonedValue(LoadInst);
-  llvm::IRBuilder<> Builder(ClonedLoadInst);
+  auto StreamLoadInst = this->addStreamLoad(S, ClonedLoadInst);
+  ClonedLoadInst->replaceAllUsesWith(StreamLoadInst);
+
+  // Insert the load into the pending removed set.
+  this->PendingRemovedInsts.insert(ClonedLoadInst);
+
+  this->upgradeLoadToUpdateStream(Analyzer, S);
+  this->mergePredicatedStreams(Analyzer, S);
+}
+
+llvm::Value *StreamExecutionTransformer::addStreamLoad(
+    Stream *S, llvm::Instruction *ClonedInsertBefore) {
+  /**
+   * Insert a StreamLoad for S.
+   */
+  auto Inst = S->SStream->Inst;
 
   // Here we should RegionStreamId to fit in immediate field.
   auto StreamId = S->getRegionStreamId();
@@ -489,7 +580,7 @@ void StreamExecutionTransformer::transformLoadInst(
       false);
   std::array<llvm::Value *, 1> StreamLoadArgs{StreamIdValue};
 
-  auto LoadType = LoadInst->getType();
+  auto LoadType = Inst->getType();
   auto StreamLoadType = LoadType;
   bool NeedTruncate = false;
   /**
@@ -507,24 +598,18 @@ void StreamExecutionTransformer::transformLoadInst(
   }
 
   std::array<llvm::Type *, 1> StreamLoadTypes{StreamLoadType};
+  llvm::IRBuilder<> Builder(ClonedInsertBefore);
   auto StreamLoadInst = Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                       llvm::Intrinsic::ID::ssp_stream_load,
                                       StreamLoadTypes),
       StreamLoadArgs);
-
   if (NeedTruncate) {
     auto TruncateInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
-    ClonedLoadInst->replaceAllUsesWith(TruncateInst);
+    return TruncateInst;
   } else {
-    ClonedLoadInst->replaceAllUsesWith(StreamLoadInst);
+    return StreamLoadInst;
   }
-
-  // Insert the load into the pending removed set.
-  this->PendingRemovedInsts.insert(ClonedLoadInst);
-
-  this->upgradeLoadToUpdateStream(Analyzer, S);
-  this->mergePredicatedStreams(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformStoreInst(
