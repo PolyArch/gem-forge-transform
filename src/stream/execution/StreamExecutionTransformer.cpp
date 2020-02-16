@@ -805,7 +805,7 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
   auto ClonedInnerMostLoop =
       this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
 
-  auto PHINodeSCEV = SS->SE->getSCEV(SS->PHINode);
+  auto PHINodeSCEV = SS->SE->getSCEV(PHINode);
   auto ClonedPHINodeSCEV = ClonedSE->getSCEV(ClonedPHINode);
   LLVM_DEBUG({
     llvm::errs() << "====== Generate IVStreamConfiguration "
@@ -822,6 +822,26 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
         ClonedConfigureLoop, ClonedInnerMostLoop, ClonedPHINodeAddRecSCEV,
         InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
         ProtoConfiguration);
+  } else if (SS->StaticStreamInfo.val_pattern() ==
+             ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+    // Handle reduction stream.
+    // Set the IV pattern to reduction, and the stream will fill in AddrFunc
+    // info.
+    ProtoConfiguration->set_val_pattern(
+        ::LLVM::TDG::StreamValuePattern::REDUCTION);
+    // Add the input value.
+    int NumInitialValues = 0;
+    for (int Idx = 0, NumIncoming = PHINode->getNumIncomingValues();
+         Idx < NumIncoming; ++Idx) {
+      auto IncomingBB = PHINode->getIncomingBlock(Idx);
+      auto IncomingValue = PHINode->getIncomingValue(Idx);
+      if (!SS->ConfigureLoop->contains(IncomingBB)) {
+        NumInitialValues++;
+        ClonedInputValues.push_back(IncomingValue);
+      }
+    }
+    assert(NumInitialValues == 1 &&
+           "Multiple initial values for reduction stream.");
   } else {
     assert(false && "Can't handle this PHI node.");
   }

@@ -7,8 +7,7 @@
 class IndVarStream : public Stream {
 public:
   IndVarStream(const std::string &_Folder, const std::string &_RelativeFolder,
-               const StaticStream *_SStream,
-               llvm::DataLayout *DataLayout);
+               const StaticStream *_SStream, llvm::DataLayout *DataLayout);
   IndVarStream(const IndVarStream &Other) = delete;
   IndVarStream(IndVarStream &&Other) = delete;
   IndVarStream &operator=(const IndVarStream &Other) = delete;
@@ -60,6 +59,10 @@ public:
 
     return ss.str();
   }
+
+  void fillProtobufAddrFuncInfo(
+      ::llvm::DataLayout *DataLayout,
+      ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const override;
 
 private:
   const llvm::PHINode *PHIInst;

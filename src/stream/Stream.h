@@ -36,6 +36,7 @@
 
 class Stream {
 public:
+  using IsIndVarFunc = std::function<bool(const llvm::PHINode *)>;
   const StaticStream *const SStream;
   Stream(const std::string &_Folder, const std::string &_RelativeFolder,
          const StaticStream *_SStream, llvm::DataLayout *DataLayout);
@@ -252,7 +253,6 @@ protected:
   std::string PatternFileName;
   std::string InfoFileName;
   std::string HistoryFileName;
-  std::string AddressFunctionName;
   std::list<LLVM::TDG::StreamPattern> ProtobufPatterns;
 
   size_t ElementSize;
@@ -321,6 +321,11 @@ protected:
   virtual void
   fillProtobufPredFuncInfo(::llvm::DataLayout *DataLayout,
                            ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {}
+
+  void fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
+                                ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
+                                const std::string &FuncName,
+                                const ExecutionDataGraph &ExecDG) const;
 
   void addBaseStream(Stream *Other);
   void addBackEdgeBaseStream(Stream *Other);

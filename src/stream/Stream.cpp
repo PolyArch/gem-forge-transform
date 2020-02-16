@@ -30,12 +30,6 @@ Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
   this->HistoryFileName = "history/" + this->formatName() + ".history";
 
   auto PosInBB = LoopUtils::getLLVMInstPosInBB(this->getInst());
-  this->AddressFunctionName =
-      (this->getInst()->getFunction()->getName() + "_" +
-       this->getInst()->getParent()->getName() + "_" +
-       this->getInst()->getName() + "_" + this->getInst()->getOpcodeName() +
-       "_" + llvm::Twine(PosInBB))
-          .str();
 }
 
 void Stream::addBaseStream(Stream *Other) {
@@ -237,4 +231,51 @@ int Stream::getElementSize(llvm::DataLayout *DataLayout) const {
   }
 
   llvm_unreachable("Unsupport stream type to get element size.");
+}
+
+void Stream::fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
+                                      ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
+                                      const std::string &FuncName,
+                                      const ExecutionDataGraph &ExecDG) const {
+
+  ProtoFuncInfo->set_name(FuncName);
+
+  auto GetStream = [this](const llvm::Value *Value) -> const Stream * {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      if (Inst == this->SStream->Inst) {
+        // The input is myself. Only for PredFunc.
+        return this;
+      }
+      for (auto BaseStream : this->getChosenBaseStreams()) {
+        if (BaseStream->SStream->Inst == Inst) {
+          return BaseStream;
+        }
+      }
+      for (auto BackBaseStream : this->ChosenBackMemBaseStreams) {
+        if (BackBaseStream->SStream->Inst == Inst) {
+          // The input is back base stream. Only for ReduceFunc.
+          return BackBaseStream;
+        }
+      }
+    }
+    return nullptr;
+  };
+
+  for (const auto &Input : ExecDG.getInputs()) {
+    auto ProtobufArg = ProtoFuncInfo->add_args();
+    auto Type = Input->getType();
+    if (!Type->isIntOrPtrTy()) {
+      llvm::errs() << "Invalid type, Value: " << Utils::formatLLVMValue(Input)
+                   << '\n';
+      assert(false && "Invalid type for input.");
+    }
+    if (auto InputStream = GetStream(Input)) {
+      // This comes from the base stream.
+      ProtobufArg->set_is_stream(true);
+      ProtobufArg->set_stream_id(InputStream->getStreamId());
+    } else {
+      // This is an input value.
+      ProtobufArg->set_is_stream(false);
+    }
+  }
 }
