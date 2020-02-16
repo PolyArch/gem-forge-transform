@@ -266,3 +266,25 @@ bool IndVarStream::isQualifySeed() const {
   }
   return false;
 }
+
+void IndVarStream::fillProtobufAddrFuncInfo(
+    ::llvm::DataLayout *DataLayout,
+    ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {
+
+  if (!this->isChosen()) {
+    return;
+  }
+
+  if (!this->SStream->ReduceDG) {
+    return;
+  }
+
+  this->fillProtobufExecFuncInfo(DataLayout, AddrFuncInfo,
+                                 this->SStream->FuncNameBase + "_reduce",
+                                 *this->SStream->ReduceDG);
+
+  // Reduction function should only have StreamInput.
+  for (const auto &arg : AddrFuncInfo->args()) {
+    assert(arg.is_stream() && "Non stream arg for reduction function.");
+  }
+}

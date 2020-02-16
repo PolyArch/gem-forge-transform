@@ -11,7 +11,7 @@ class MemStream : public Stream {
 public:
   MemStream(const std::string &_Folder, const std::string &_RelativeFolder,
             const StaticStream *_SStream, llvm::DataLayout *DataLayout,
-            std::function<bool(const llvm::PHINode *)> IsInductionVar)
+            IsIndVarFunc IsInductionVar)
       : Stream(_Folder, _RelativeFolder, _SStream, DataLayout),
         AddrDG(_SStream->ConfigureLoop, Utils::getMemAddrValue(_SStream->Inst),
                IsInductionVar) {
@@ -71,7 +71,7 @@ public:
   }
 
   std::string getAddressFunctionName() const {
-    return this->AddressFunctionName;
+    return this->SStream->FuncNameBase + "_addr";
   }
 
   bool isCandidate() const override;
@@ -93,10 +93,6 @@ protected:
       ::llvm::DataLayout *DataLayout,
       ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const override;
 
-  void fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
-                                ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
-                                const std::string &FuncName,
-                                const ExecutionDataGraph &ExecDG) const;
   InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
 
 private:

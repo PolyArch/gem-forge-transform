@@ -3,6 +3,8 @@
 
 #include "stream/StaticStream.h"
 
+extern llvm::cl::opt<bool> StreamPassEnableReduce;
+
 class StaticIndVarStream : public StaticStream {
 public:
   StaticIndVarStream(llvm::PHINode *_PHINode, const llvm::Loop *_ConfigureLoop,
@@ -77,8 +79,14 @@ private:
    * Analyze the pattern from the SCEV.
    * If it's random, it also sets the not_stream_reason.
    */
-  LLVM::TDG::StreamValuePattern
-  analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const;
+  LLVM::TDG::StreamValuePattern analyzeValuePatternFromComputePath(
+      const ComputeMetaNode *FirstNonEmptyComputeMNode);
+
+  /**
+   * Analyze if this a simple reduction stream for a single load.
+   */
+  bool analyzeIsReductionFromSCEV(
+      const ComputeMetaNode *FirstNonEmptyComputeMNode) const;
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override {
     // No computation required.

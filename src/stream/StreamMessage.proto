@@ -17,6 +17,7 @@ enum StreamValuePattern {
   INDIRECT = 4;
   POINTER_CHASE = 5;
   PREV_LOAD = 6;
+  REDUCTION = 7;
 }
 
 message StreamParam {

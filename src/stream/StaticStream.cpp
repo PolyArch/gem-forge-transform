@@ -375,3 +375,10 @@ void StaticStream::analyzeIsTripCountFixed() const {
   this->StaticStreamInfo.set_is_trip_count_fixed(true);
   return;
 }
+
+void StaticStream::generateReduceFunction(
+    std::unique_ptr<llvm::Module> &Module) const {
+  if (this->ReduceDG) {
+    this->ReduceDG->generateComputeFunction(this->FuncNameBase + "_reduce", Module);
+  }
+}

@@ -297,7 +297,7 @@ void MemStream::fillProtobufAddrFuncInfo(
   }
 
   this->fillProtobufExecFuncInfo(DataLayout, AddrFuncInfo,
-                                 this->AddressFunctionName, this->AddrDG);
+                                 this->getAddressFunctionName(), this->AddrDG);
 }
 
 void MemStream::fillProtobufPredFuncInfo(
@@ -316,47 +316,7 @@ void MemStream::fillProtobufPredFuncInfo(
                                  BBPredDG->getFuncName(), *BBPredDG);
 }
 
-void MemStream::fillProtobufExecFuncInfo(
-    ::llvm::DataLayout *DataLayout, ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
-    const std::string &FuncName, const ExecutionDataGraph &ExecDG) const {
-
-  ProtoFuncInfo->set_name(FuncName);
-
-  auto GetStream = [this](const llvm::Value *Value) -> const Stream * {
-    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-      if (Inst == this->SStream->Inst) {
-        // The input is myself. Only for PredFunc.
-        return this;
-      }
-      for (auto BaseStream : this->getChosenBaseStreams()) {
-        if (BaseStream->SStream->Inst == Inst) {
-          return BaseStream;
-        }
-      }
-    }
-    return nullptr;
-  };
-
-  for (const auto &Input : ExecDG.getInputs()) {
-    auto ProtobufArg = ProtoFuncInfo->add_args();
-    auto Type = Input->getType();
-    if (!Type->isIntOrPtrTy()) {
-      llvm::errs() << "Invalid type, Value: " << Utils::formatLLVMValue(Input)
-                   << '\n';
-      assert(false && "Invalid type for input.");
-    }
-    if (auto InputStream = GetStream(Input)) {
-      // This comes from the base stream.
-      ProtobufArg->set_is_stream(true);
-      ProtobufArg->set_stream_id(InputStream->getStreamId());
-    } else {
-      // This is an input value.
-      ProtobufArg->set_is_stream(false);
-    }
-  }
-}
-
 void MemStream::generateComputeFunction(
     std::unique_ptr<llvm::Module> &Module) const {
-  this->AddrDG.generateComputeFunction(this->AddressFunctionName, Module);
+  this->AddrDG.generateComputeFunction(this->getAddressFunctionName(), Module);
 }

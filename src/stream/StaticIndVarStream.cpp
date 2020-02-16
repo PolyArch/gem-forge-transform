@@ -5,8 +5,15 @@
 
 #define DEBUG_TYPE "StaticIndVarStream"
 
+llvm::cl::opt<bool>
+    StreamPassEnableReduce("stream-pass-enable-reduce", llvm::cl::init(false),
+                           llvm::cl::desc("Enable reduce stream."));
+
 LLVM::TDG::StreamValuePattern
-StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
+StaticIndVarStream::analyzeValuePatternFromComputePath(
+    const ComputeMetaNode *FirstNonEmptyComputeMNode) {
+  assert(this->NonEmptyComputePath && "Missing NonEmptyComputePath.");
+  auto SCEV = FirstNonEmptyComputeMNode->SCEV;
   if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
     if (AddRecSCEV->isAffine()) {
 
@@ -39,6 +46,7 @@ StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
      */
     auto NumOperands = AddSCEV->getNumOperands();
     const llvm::SCEV *LoopVariantSCEV = nullptr;
+    bool hasOneLoopVariantSCEV = false;
     for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
       auto OpSCEV = AddSCEV->getOperand(OperandIdx);
       if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
@@ -47,25 +55,90 @@ StaticIndVarStream::analyzeValuePatternFromSCEV(const llvm::SCEV *SCEV) const {
       }
       if (LoopVariantSCEV == nullptr) {
         LoopVariantSCEV = OpSCEV;
+        hasOneLoopVariantSCEV = true;
       } else {
-        // More than one variant SCEV.
-        this->StaticStreamInfo.set_not_stream_reason(
-            LLVM::TDG::StaticStreamInfo::RANDOM_PATTERN);
-        return LLVM::TDG::StreamValuePattern::RANDOM;
+        // More than one variant SCEV. Clear it and break.
+        hasOneLoopVariantSCEV = false;
+        break;
       }
     }
     // Check if the other one is myself.
-    assert(this->SE->isSCEVable(this->PHINode->getType()) &&
-           "My PHINode should be SCEVable.");
-    auto PHINodeSCEV = this->SE->getSCEV(this->PHINode);
-    if (PHINodeSCEV == LoopVariantSCEV) {
-      return LLVM::TDG::StreamValuePattern::LINEAR;
+    if (hasOneLoopVariantSCEV) {
+      assert(this->SE->isSCEVable(this->PHINode->getType()) &&
+             "My PHINode should be SCEVable.");
+      auto PHINodeSCEV = this->SE->getSCEV(this->PHINode);
+      if (PHINodeSCEV == LoopVariantSCEV) {
+        return LLVM::TDG::StreamValuePattern::LINEAR;
+      }
     }
+  }
+  if (this->analyzeIsReductionFromSCEV(FirstNonEmptyComputeMNode)) {
+    // Let's try to construct the reduction datagraph.
+    // The only IndVarStream should be myself.
+    auto IsIndVarStream = [this](const llvm::PHINode *PHI) -> bool {
+      return PHI == this->Inst;
+    };
+    this->ReduceDG = std::make_unique<AddressDataGraph>(
+        this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue,
+        IsIndVarStream);
+    assert(!this->ReduceDG->hasCircle() && "Circle in ReduceDG.");
+
+    return LLVM::TDG::StreamValuePattern::REDUCTION;
   }
 
   this->StaticStreamInfo.set_not_stream_reason(
       LLVM::TDG::StaticStreamInfo::RANDOM_PATTERN);
   return LLVM::TDG::StreamValuePattern::RANDOM;
+}
+
+bool StaticIndVarStream::analyzeIsReductionFromSCEV(
+    const ComputeMetaNode *FirstNonEmptyComputeMNode) const {
+
+  /**
+   * We consider it a reduction stream iff.
+   * 1. All the NonEmptyComputeMetaNode has at most one same LoadStream
+   *    and myself as the input.
+   */
+  if (!StreamPassEnableReduce) {
+    return false;
+  }
+  if (!this->NonEmptyComputePath) {
+    return false;
+  }
+  if (this->AllComputePaths.size() != 1) {
+    // Multiple compute path.
+    return false;
+  }
+  if (this->LoadBaseStreams.size() != 1) {
+    // No load stream to reduce on.
+    return false;
+  }
+  if (this->IndVarBaseStreams.size() != 1) {
+    // No ind var stream to reduce on.
+    return false;
+  }
+  if (this->ConfigureLoop != this->InnerMostLoop) {
+    // Only consider inner most loop.
+    return false;
+  }
+  auto LoadBaseS = *(this->LoadBaseStreams.begin());
+  auto IVBaseS = *(this->IndVarBaseStreams.begin());
+  if (IVBaseS != this) {
+    // This is not reduction.
+    return false;
+  }
+  auto FinalInst =
+      llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
+  if (!FinalInst) {
+    // Final value should be an instruction.
+    return false;
+  }
+  if (LoadBaseS->Inst->getParent() != FinalInst->getParent()) {
+    // We only handle them in the same BB.
+    return false;
+  }
+
+  return true;
 }
 
 bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
@@ -125,7 +198,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
    * 3. At most one "unique" non-empty compute path.
    * 4. In this unique non-empty compute path:
    *   a. All non-empty ComputeMNode has the SCEV.
-   *   b. The first SCEV must be a recognizable ValuePattern.
+   *   b. The non-empty ComputePath must be a recognizable ValuePattern.
    */
 
   // 1.
@@ -158,6 +231,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
     } else {
       // We have to make sure that these two compute path are the same.
       if (!this->NonEmptyComputePath->isIdenticalTo(&Path)) {
+        this->NonEmptyComputePath = nullptr;
         this->IsCandidate = false;
         this->StaticStreamInfo.set_not_stream_reason(
             LLVM::TDG::StaticStreamInfo::MULTI_NON_EMPTY_COMPUTE_PATH);
@@ -193,7 +267,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
                             << " SCEV: ";
                FirstNonEmptyComputeMNode->SCEV->dump());
     this->StaticStreamInfo.set_val_pattern(
-        this->analyzeValuePatternFromSCEV(FirstNonEmptyComputeMNode->SCEV));
+        this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
     LLVM_DEBUG(llvm::errs() << this->formatName() << ": Value pattern "
                             << this->StaticStreamInfo.val_pattern() << '\n');
 
@@ -357,8 +431,13 @@ void StaticIndVarStream::finalizePattern() {
   // Check if I am its step root.
   if (BackMemBaseStream->BaseStepRootStreams.count(this) == 0) {
     // I am not its step root, which means this is not a pointer chase.
-    this->StaticStreamInfo.set_val_pattern(
-        LLVM::TDG::StreamValuePattern::PREV_LOAD);
+    if (this->StaticStreamInfo.val_pattern() ==
+        LLVM::TDG::StreamValuePattern::REDUCTION) {
+      // Do not reset the reduction pattern?
+    } else {
+      this->StaticStreamInfo.set_val_pattern(
+          LLVM::TDG::StreamValuePattern::PREV_LOAD);
+    }
   } else {
     this->StaticStreamInfo.set_val_pattern(
         LLVM::TDG::StreamValuePattern::POINTER_CHASE);

@@ -7,6 +7,7 @@
 #include "LoopUtils.h"
 #include "PostDominanceFrontier.h"
 #include "Utils.h"
+#include "stream/ae/AddressDataGraph.h"
 
 #include "stream/StreamMessage.pb.h"
 
@@ -36,6 +37,7 @@ public:
   const llvm::Instruction *const Inst;
   const llvm::Loop *const ConfigureLoop;
   const llvm::Loop *const InnerMostLoop;
+  const std::string FuncNameBase;
   llvm::ScalarEvolution *const SE;
   const llvm::PostDominatorTree *PDT;
 
@@ -50,8 +52,15 @@ public:
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
                const llvm::PostDominatorTree *_PDT)
       : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
-        ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop), SE(_SE),
-        PDT(_PDT), IsCandidate(false), IsQualified(false), IsStream(false) {}
+        ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop),
+        FuncNameBase(
+            llvm::Twine(_Inst->getFunction()->getName() + "_" +
+                        _Inst->getParent()->getName() + "_" + _Inst->getName() +
+                        "_" + _Inst->getOpcodeName() + "_" +
+                        llvm::Twine(LoopUtils::getLLVMInstPosInBB(_Inst)))
+                .str()),
+        SE(_SE), PDT(_PDT), IsCandidate(false), IsQualified(false),
+        IsStream(false) {}
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
 
@@ -156,6 +165,11 @@ public:
   BBPredicateDataGraph *BBPredDG = nullptr;
   StreamSet PredicatedTrueStreams;
   StreamSet PredicatedFalseStreams;
+
+  // Reduction stream.
+  std::unique_ptr<AddressDataGraph> ReduceDG = nullptr;
+
+  void generateReduceFunction(std::unique_ptr<llvm::Module> &Module) const;
 
   /**
    * Stores all the input value for the analyzed pattern.
