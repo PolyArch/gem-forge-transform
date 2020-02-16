@@ -23,6 +23,7 @@ public:
 
   virtual ~ExecutionDataGraph() {}
 
+  const llvm::Value *getResultValue() const { return this->ResultValue; }
   const std::list<const llvm::Value *> &getInputs() const {
     return this->Inputs;
   }
