@@ -11,14 +11,6 @@
 
 #include <queue>
 
-llvm::cl::opt<bool> StreamPassUpgradeLoadToUpdate(
-    "stream-pass-upgrade-load-to-update", llvm::cl::init(false),
-    llvm::cl::desc("Upgrade load stream to update stream."));
-
-llvm::cl::opt<bool> StreamPassMergePredicatedStore(
-    "stream-pass-merge-predicated-store", llvm::cl::init(false),
-    llvm::cl::desc("Merge predicated store stream into load stream."));
-
 #define DEBUG_TYPE "StreamExecutionTransformer"
 
 /**
@@ -692,15 +684,6 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
 
 void StreamExecutionTransformer::mergePredicatedStreams(
     StreamRegionAnalyzer *Analyzer, Stream *LoadStream) {
-  /**
-   * The idea is to merge predicated streams into the LoadStream.
-   * TODO: So far we only merge to direct stream.
-   */
-  if (LoadStream->getChosenBaseStepRootStreams() !=
-      LoadStream->getChosenBaseStreams()) {
-    // A hacky check that this is not a direct stream.
-    return;
-  }
   auto LoadSS = LoadStream->SStream;
   auto ProcessPredSS = [this, Analyzer, LoadStream](StaticStream *PredSS,
                                                     bool PredTrue) -> void {
@@ -728,6 +711,21 @@ void StreamExecutionTransformer::mergePredicatedStore(
   if (!StreamPassMergePredicatedStore) {
     // This feature is disabled.
     return;
+  }
+  if (LoadStream->getChosenBaseStepRootStreams() !=
+      LoadStream->getChosenBaseStreams()) {
+    // This is an indirect stream, we only merge iff.
+    // 0. The flag is set.
+    // 1. They exactly same base streams.
+    // 2. The predicted stream has only one base stream, which is the
+    // LoadStream.
+    if (!StreamPassMergeIndPredicatedStore) {
+      return;
+    }
+    if (LoadStream->getChosenBaseStreams() !=
+        PredStoreStream->getChosenBaseStreams()) {
+      return;
+    }
   }
   if (LoadStream->getSingleChosenStepRootStream() !=
       PredStoreStream->getSingleChosenStepRootStream()) {

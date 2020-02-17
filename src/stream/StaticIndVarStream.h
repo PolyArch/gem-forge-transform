@@ -3,8 +3,6 @@
 
 #include "stream/StaticStream.h"
 
-extern llvm::cl::opt<bool> StreamPassEnableReduce;
-
 class StaticIndVarStream : public StaticStream {
 public:
   StaticIndVarStream(llvm::PHINode *_PHINode, const llvm::Loop *_ConfigureLoop,

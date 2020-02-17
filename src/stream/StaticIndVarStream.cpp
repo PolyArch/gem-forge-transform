@@ -5,10 +5,6 @@
 
 #define DEBUG_TYPE "StaticIndVarStream"
 
-llvm::cl::opt<bool>
-    StreamPassEnableReduce("stream-pass-enable-reduce", llvm::cl::init(false),
-                           llvm::cl::desc("Enable reduce stream."));
-
 LLVM::TDG::StreamValuePattern
 StaticIndVarStream::analyzeValuePatternFromComputePath(
     const ComputeMetaNode *FirstNonEmptyComputeMNode) {

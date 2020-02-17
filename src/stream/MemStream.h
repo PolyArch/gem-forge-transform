@@ -5,8 +5,6 @@
 #include "stream/Stream.h"
 #include "stream/ae/AddressDataGraph.h"
 
-extern llvm::cl::opt<bool> StreamPassAllowAliasedStream;
-
 class MemStream : public Stream {
 public:
   MemStream(const std::string &_Folder, const std::string &_RelativeFolder,

@@ -6,7 +6,6 @@
 #include "Utils.h"
 #include "stream/StaticStream.h"
 #include "stream/StreamPattern.h"
-#include "stream/StreamStrategy.h"
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/BasicBlock.h"

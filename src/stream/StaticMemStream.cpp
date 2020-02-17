@@ -6,10 +6,6 @@
 
 #define DEBUG_TYPE "StaticMemStream"
 
-llvm::cl::opt<bool>
-    StreamPassEnableStore("stream-enable-store", llvm::cl::init(false),
-                          llvm::cl::desc("Enable store stream."));
-
 void StaticMemStream::initializeMetaGraphConstruction(
     std::list<DFSNode> &DFSStack,
     ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
@@ -323,12 +319,18 @@ void StaticMemStream::finalizePattern() {
     }
   } else if (SourceFile == "bfs.cpp") {
     // rodinia.bfs
-    if (Line == 38) {
+    if (Line == 37) {
       // masks[]
       this->StaticStreamInfo.set_float_manual(true);
-    } else if (Line == 63) {
+    } else if (Line == 64) {
       // updates[]
       this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line == 44) {
+      // edges[]
+      if (StreamPassMergeIndPredicatedStore) {
+        // Only offload this if we merge the predicated stores.
+        this->StaticStreamInfo.set_float_manual(true);
+      }
     }
   }
 }
