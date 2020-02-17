@@ -7,9 +7,6 @@
 #include "stream/MemStream.h"
 #include "stream/StreamRegionAnalyzer.h"
 
-extern llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy;
-extern llvm::cl::opt<std::string> StreamWhitelistFileName;
-
 class StreamStepInst : public DynamicInstruction {
 public:
   StreamStepInst(Stream *_S, DynamicId _Id = InvalidId)

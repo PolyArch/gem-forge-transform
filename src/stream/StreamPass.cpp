@@ -10,22 +10,6 @@
 #define LLVM_DEBUG DEBUG
 #endif
 
-llvm::cl::opt<StreamPassChooseStrategyE> StreamPassChooseStrategy(
-    "stream-pass-choose-strategy",
-    llvm::cl::desc("Choose how to choose the configure loop level:"),
-    llvm::cl::values(clEnumValN(StreamPassChooseStrategyE::DYNAMIC_OUTER_MOST,
-                                "dynamic-outer",
-                                "Always pick the outer most loop level."),
-                     clEnumValN(StreamPassChooseStrategyE::STATIC_OUTER_MOST,
-                                "static-outer",
-                                "Always pick the outer most loop level."),
-                     clEnumValN(StreamPassChooseStrategyE::INNER_MOST, "inner",
-                                "Always pick the inner most loop level.")));
-
-llvm::cl::opt<std::string> StreamWhitelistFileName(
-    "stream-whitelist-file",
-    llvm::cl::desc("Stream whitelist instruction file."));
-
 bool StreamPass::initialize(llvm::Module &Module) {
   bool Ret = ReplayTrace::initialize(Module);
   this->MemorizedStreamInst.clear();

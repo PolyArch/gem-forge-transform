@@ -1,6 +1,7 @@
 #ifndef LLVM_TDG_STREAM_STATIC_STREAM_H
 #define LLVM_TDG_STREAM_STATIC_STREAM_H
 
+#include "StreamPassOptions.h"
 #include "StreamUtils.h"
 
 #include "BasicBlockPredicate.h"

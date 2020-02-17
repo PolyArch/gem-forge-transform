@@ -66,6 +66,7 @@ add_library(LLVMTDGPass SHARED
     stream/StreamTransformPlan.cpp
     stream/StreamRegionAnalyzer.cpp
     stream/StaticStreamRegionAnalyzer.cpp
+    stream/StreamPassOptions.cpp
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp
     stream/ae/AddressDataGraph.cpp
