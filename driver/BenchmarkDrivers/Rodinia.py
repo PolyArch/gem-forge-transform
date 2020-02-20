@@ -19,6 +19,9 @@ class RodiniaBenchmark(Benchmark):
         #     'medium': ['16384', '$NTHREADS'],
         #     'large': ['65536', '$NTHREADS'],
         # },
+        'b+tree': {
+            'large': ['cores', '$NTHREADS', 'binary', 'file', '{DATA}/btree.data'],
+        },
         'bfs': {
             'test': ['$NTHREADS',    '{DATA}/graph4096.txt.data'],
             'medium': ['$NTHREADS', '{DATA}/graph65536.txt.data'],
@@ -35,8 +38,9 @@ class RodiniaBenchmark(Benchmark):
             'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
         'hotspot-avx512': {
-            'test':   ['64', '64', '2', '$NTHREADS', '{DATA}/temp_64.data', '{DATA}/power_64.data', 'output.txt'],
-            'medium': ['512', '512', '2', '$NTHREADS', '{DATA}/temp_512.data', '{DATA}/power_512.data', 'output.txt'],
+            'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
+        },
+        'hotspot-avx512-fix': {
             'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
         'hotspot3D': {
@@ -47,6 +51,9 @@ class RodiniaBenchmark(Benchmark):
         'hotspot3D-avx512': {
             'test':   ['64', '8', '2', '$NTHREADS', '{DATA}/temp_64x8.data', '{DATA}/power_64x8.data', 'output.txt'],
             'medium': ['512', '2', '10', '$NTHREADS', '{DATA}/temp_512x2.data', '{DATA}/power_512x2.data', 'output.txt'],
+            'large':  ['512', '8', '100', '$NTHREADS', '{DATA}/temp_512x8.data', '{DATA}/power_512x8.data', 'output.txt'],
+        },
+        'hotspot3D-avx512-fix': {
             'large':  ['512', '8', '100', '$NTHREADS', '{DATA}/temp_512x8.data', '{DATA}/power_512x8.data', 'output.txt'],
         },
         'kmeans': {
@@ -84,12 +91,24 @@ class RodiniaBenchmark(Benchmark):
             'medium': ['512', '512', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
             'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
         },
+        'srad_v2-avx512': {
+            # 'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+        },
+        'srad_v2-avx512-fix': {
+            # 'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+        },
     }
 
     ROI_FUNCS = {
+        'b+tree': [
+            '.omp_outlined.', # kernel_range
+            '.omp_outlined..38', # kernel_query
+        ],
         'bfs': [
             '.omp_outlined.',
-            '.omp_outlined..6',
+            '.omp_outlined..3',
         ],
         'cfd': [
             # '.omp_outlined.',   # initialize_variables()
@@ -104,10 +123,16 @@ class RodiniaBenchmark(Benchmark):
         'hotspot-avx512': [
             '.omp_outlined.',
         ],
+        'hotspot-avx512-fix': [
+            '.omp_outlined.',
+        ],
         'hotspot3D': [
             '.omp_outlined.',
         ],
         'hotspot3D-avx512': [
+            '.omp_outlined.',
+        ],
+        'hotspot3D-avx512-fix': [
             '.omp_outlined.',
         ],
         'kmeans': [
@@ -139,6 +164,14 @@ class RodiniaBenchmark(Benchmark):
             '.omp_outlined.',
             '.omp_outlined..14',
         ],
+        'srad_v2-avx512': [
+            '.omp_outlined.',
+            '.omp_outlined..14',
+        ],
+        'srad_v2-avx512-fix': [
+            '.omp_outlined..14',
+            '.omp_outlined..15',
+        ],
     }
 
     """
@@ -147,18 +180,23 @@ class RodiniaBenchmark(Benchmark):
     microops to be roughly 1e8.
     """
     WORK_ITEMS = {
+        'b+tree': 2, # Two commands.
         'bfs': 2 * int(1e8 / 15e5),  # One iter takes 15e5 ops.
         'cfd': 4 * int(1e8 / 2e7), 
         'hotspot': 2, # Two iters takes 10 min.
         'hotspot-avx512': 2, # Two iters takes 10 min.
+        'hotspot-avx512-fix': 2, # Two iters takes 10 min.
         'hotspot3D': 1 * int(1e8 / 2e7),
         'hotspot3D-avx512': 1 * int(1e8 / 2e7),
+        'hotspot3D-avx512-fix': 1 * int(1e8 / 2e7),
         'kmeans': 3 * 1, 
         'nw': 2,                # nw can finish.
-        'particlefilter': 5 * 2, # Two iters takes 2e8.
+        'particlefilter': 9 * 2, # Two iters takes 2e8.
         'pathfinder': 99,        # pathfinder takes 99 iterations.
         'pathfinder-avx512': 99,        # pathfinder takes 99 iterations.
-        'srad_v2': 2 * int(1e8 / 5e7),
+        'srad_v2': 2 * 1, # One iteration is enough.
+        'srad_v2-avx512': 2 * 1, # One iteration is enough.
+        'srad_v2-avx512-fix': 2 * 1, # One iteration is enough.
     }
 
     def __init__(self, benchmark_args, benchmark_path):
@@ -237,9 +275,9 @@ class RodiniaBenchmark(Benchmark):
         Some benchmarks takes too long to finish, so we use work item
         to ensure that we simualte for the same amount of work.
         """
-        if self.sim_input_size != 'large' and self.benchmark_name != 'pathfinder':
-            # Pathfinder has deadlock at exit stage.
-            return list()
+        # if self.sim_input_size != 'large' and self.benchmark_name != 'pathfinder':
+        #     # Pathfinder has deadlock at exit stage.
+        #     return list()
         work_items = RodiniaBenchmark.WORK_ITEMS[self.benchmark_name]
         if work_items == -1:
             # This benchmark can finish.

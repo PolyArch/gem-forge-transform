@@ -870,7 +870,6 @@ class Benchmark(object):
             '--llvm-mcpat={use_mcpat}'.format(use_mcpat=C.GEM5_USE_MCPAT),
             '--caches',
             '--l2cache',
-            '--cpu-type={cpu_type}'.format(cpu_type=C.CPU_TYPE),
         ]
         if self.options.gem5_debug is not None:
             gem5_args.insert(
