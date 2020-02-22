@@ -61,6 +61,9 @@ class RodiniaBenchmark(Benchmark):
             'medium': ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/204800.txt.data'],
             'large':  ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/kdd_cup.data'],
         },
+        'lavaMD': {
+            'large':  ['-cores', '$NTHREADS', '-boxes1d', '8'],
+        },
         'nw': {
             'test': ['128', '10', '$NTHREADS'],
             'medium': ['512', '10', '$NTHREADS'],
@@ -139,6 +142,9 @@ class RodiniaBenchmark(Benchmark):
             '.omp_outlined.',
             'kmeans_kernel',
         ],
+        'lavaMD': [
+            '.omp_outlined.',
+        ],
         'nw': [
             '.omp_outlined.',
             '.omp_outlined..5',
@@ -190,6 +196,7 @@ class RodiniaBenchmark(Benchmark):
         'hotspot3D-avx512': 1 * int(1e8 / 2e7),
         'hotspot3D-avx512-fix': 1 * int(1e8 / 2e7),
         'kmeans': 3 * 1, 
+        'lavaMD': 1,            # Invoke kernel for once.
         'nw': 2,                # nw can finish.
         'particlefilter': 9 * 2, # Two iters takes 2e8.
         'pathfinder': 99,        # pathfinder takes 99 iterations.
@@ -220,6 +227,16 @@ class RodiniaBenchmark(Benchmark):
 
     def get_links(self):
         return [
+            '-lm',
+            '-lomp',
+            '-lpthread',
+            '-Wl,--no-as-needed',
+            '-ldl',
+        ]
+
+    def get_gem5_links(self):
+        return [
+            '-lopenlibm',
             '-lomp',
             '-lpthread',
             '-Wl,--no-as-needed',
