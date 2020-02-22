@@ -158,6 +158,9 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForStore(
   auto BB = StoreInst->getParent();
   auto StoreAddrValue = Utils::getMemAddrValue(StoreInst);
   auto StoreValue = StoreInst->getOperand(0);
+  if (!this->SE->isSCEVable(StoreValue->getType())) {
+    return;
+  }
   auto StoreValueSCEV = this->SE->getSCEV(StoreValue);
   for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
        ++InstIter) {
