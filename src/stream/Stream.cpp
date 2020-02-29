@@ -76,19 +76,41 @@ void Stream::computeBaseStepRootStreams() {
 
 void Stream::buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) {
   auto TranslateBasicToChosen =
-      [&GetChosenStream](const StreamSet &BasicSet,
-                         StreamSet &ChosenSet) -> void {
+      [this, &GetChosenStream](const StreamSet &BasicSet,
+                               StreamSet &ChosenSet) -> void {
     for (const auto &BaseS : BasicSet) {
       const auto &BaseInst = BaseS->SStream->Inst;
       auto ChosenBaseS = GetChosenStream(BaseInst);
-      assert(ChosenBaseS != nullptr && "Missing chosen base stream.");
+      if (!ChosenBaseS) {
+        llvm::errs() << "Miss chosen stream " << BaseS->SStream->formatName()
+                     << " for " << this->SStream->formatName() << ".\n";
+      }
+      assert(ChosenBaseS && "Missing chosen base stream.");
+      ChosenSet.insert(ChosenBaseS);
+    }
+  };
+  auto TranslateBasicToChosenNullable =
+      [this, &GetChosenStream](const StreamSet &BasicSet,
+                               StreamSet &ChosenSet) -> void {
+    for (const auto &BaseS : BasicSet) {
+      const auto &BaseInst = BaseS->SStream->Inst;
+      auto ChosenBaseS = GetChosenStream(BaseInst);
+      if (!ChosenBaseS) {
+        continue;
+      }
       ChosenSet.insert(ChosenBaseS);
     }
   };
   // Also for the other types.
   TranslateBasicToChosen(this->BaseStreams, this->ChosenBaseStreams);
+  // DependentStream may not be chosen
+  TranslateBasicToChosenNullable(this->DependentStreams,
+                                 this->ChosenDependentStreams);
   TranslateBasicToChosen(this->BackMemBaseStreams,
                          this->ChosenBackMemBaseStreams);
+  // BackIVDependentStream may not be chosen
+  TranslateBasicToChosenNullable(this->BackIVDependentStreams,
+                                 this->ChosenBackIVDependentStreams);
   TranslateBasicToChosen(this->BaseStepStreams, this->ChosenBaseStepStreams);
   TranslateBasicToChosen(this->BaseStepRootStreams,
                          this->ChosenBaseStepRootStreams);

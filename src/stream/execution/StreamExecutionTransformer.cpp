@@ -596,6 +596,7 @@ llvm::Value *StreamExecutionTransformer::addStreamLoad(
                                       llvm::Intrinsic::ID::ssp_stream_load,
                                       StreamLoadTypes),
       StreamLoadArgs);
+  this->StreamToStreamLoadInstMap.emplace(S, StreamLoadInst);
   if (NeedTruncate) {
     auto TruncateInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
     return TruncateInst;
@@ -673,7 +674,7 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
    * Two things we have to do:
    * 1. Since we only target constant update, we have to add one more input to
    *    the stream to have the update value. Done in
-   * generateMemStreamConfiguration.
+   *    generateMemStreamConfiguration.
    * 2. Add the cloned StoreInst to PendingRemovedInsts. Done here.
    */
   auto StoreInst = StoreSS->Inst;
@@ -865,9 +866,71 @@ void StreamExecutionTransformer::cleanClonedModule() {
     if (ClonedFunc.isDeclaration()) {
       continue;
     }
-    TransformUtils::eliminateDeadCode(
-        ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
+    bool Changed = false;
+    auto TTI = this->ClonedCachedLI->getTargetTransformInfo(&ClonedFunc);
+    do {
+      Changed = TransformUtils::eliminateDeadCode(
+          ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
+      Changed |= TransformUtils::simplifyCFG(
+          ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo(), TTI);
+    } while (Changed);
   }
+  /**
+   * The last thing is to remove any StreamLoad that has no user instruction.
+   * Since we mark StreamLoad with side effect, so it would not be removed by
+   * previous dead code elimination.
+   * A stream is marked without core user if:
+   * 1. The StreamLoad is removed.
+   * 2. All the dependent and back-dependent streams do not have core user.
+   * This is to make sure that a[b[i]] are correctly marked as we need b[] to
+   * compute a[] in the SE, even if the core has no usage.
+   * TODO: Handle pointer chasing pattern.
+   */
+  std::queue<Stream *> NoCoreUserStreams;
+  for (auto &StreamInstPair : this->StreamToStreamLoadInstMap) {
+    auto S = StreamInstPair.first;
+    auto StreamLoadInst = StreamInstPair.second;
+    if (StreamLoadInst->use_empty()) {
+      StreamLoadInst->eraseFromParent();
+      StreamInstPair.second = nullptr;
+      if (S->getChosenDependentStreams().empty() &&
+          S->getChosenBackIVDependentStreams().empty()) {
+        // This is a seed for no core user stream.
+        NoCoreUserStreams.emplace(S);
+      }
+    }
+  }
+  while (!NoCoreUserStreams.empty()) {
+    auto S = NoCoreUserStreams.front();
+    NoCoreUserStreams.pop();
+    auto SS = S->SStream;
+    SS->StaticStreamInfo.set_no_core_user(true);
+    // Propagate the signal back to base stream.
+    for (auto *BaseS : S->getChosenBaseStreams()) {
+      // So far only look at LoadStream.
+      if (BaseS->SStream->Inst->getOpcode() != llvm::Instruction::Load) {
+        continue;
+      }
+      if (!BaseS->getChosenBackIVDependentStreams().empty()) {
+        continue;
+      }
+      auto StreamLoadInst = this->StreamToStreamLoadInstMap.at(BaseS);
+      if (StreamLoadInst) {
+        // The StreamLoad has not been removed.
+        continue;
+      }
+      // Check for any dependent stream.
+      for (auto *BaseDepS : BaseS->getChosenDependentStreams()) {
+        if (!BaseDepS->SStream->StaticStreamInfo.no_core_user()) {
+          // Still some core user from dependent streams.
+          continue;
+        }
+      }
+      // Passed all checks, add to the queue.
+      NoCoreUserStreams.emplace(BaseS);
+    }
+  }
+  this->StreamToStreamLoadInstMap.clear();
 }
 
 void StreamExecutionTransformer::generateIVStreamConfiguration(

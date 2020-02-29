@@ -38,6 +38,51 @@ static bool DCEInstruction(Instruction *I,
   return false;
 }
 
+/// Call SimplifyCFG on all the blocks in the function,
+/// iterating until no more changes are made.
+static bool iterativelySimplifyCFG(Function &F,
+                                   const TargetTransformInfo &TTI) {
+  bool Changed = false;
+  bool LocalChange = true;
+
+  while (LocalChange) {
+    LocalChange = false;
+
+    // Loop over all of the basic blocks and remove them if they are unneeded.
+    for (Function::iterator BBIt = F.begin(); BBIt != F.end();) {
+      if (simplifyCFG(&*BBIt++, TTI)) {
+        LocalChange = true;
+      }
+    }
+    Changed |= LocalChange;
+  }
+  return Changed;
+}
+
+static bool simplifyFunctionCFG(Function &F, const TargetTransformInfo &TTI) {
+  bool EverChanged = removeUnreachableBlocks(F);
+  EverChanged |= iterativelySimplifyCFG(F, TTI);
+
+  // If neither pass changed anything, we're done.
+  if (!EverChanged)
+    return false;
+
+  // iterativelySimplifyCFG can (rarely) make some loops dead.  If this happens,
+  // removeUnreachableBlocks is needed to nuke them, which means we should
+  // iterate between the two optimizations.  We structure the code like this to
+  // avoid rerunning iterativelySimplifyCFG if the second pass of
+  // removeUnreachableBlocks doesn't do anything.
+  if (!removeUnreachableBlocks(F))
+    return true;
+
+  do {
+    EverChanged = iterativelySimplifyCFG(F, TTI);
+    EverChanged |= removeUnreachableBlocks(F);
+  } while (EverChanged);
+
+  return true;
+}
+
 bool TransformUtils::eliminateDeadCode(Function &F, TargetLibraryInfo *TLI) {
   bool MadeChange = false;
   SmallSetVector<Instruction *, 16> WorkList;
@@ -59,4 +104,10 @@ bool TransformUtils::eliminateDeadCode(Function &F, TargetLibraryInfo *TLI) {
     MadeChange |= DCEInstruction(I, WorkList, TLI);
   }
   return MadeChange;
+}
+
+bool TransformUtils::simplifyCFG(llvm::Function &F,
+                                 llvm::TargetLibraryInfo *TLI,
+                                 llvm::TargetTransformInfo &TTI) {
+  return simplifyFunctionCFG(F, TTI);
 }

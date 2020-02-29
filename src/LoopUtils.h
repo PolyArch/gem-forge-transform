@@ -210,6 +210,8 @@ public:
   llvm::SCEVExpander *getSCEVExpander(llvm::Function *Func);
   llvm::Instruction *getUnrollableTerminator(llvm::Loop *Loop);
 
+  llvm::TargetTransformInfo getTargetTransformInfo(llvm::Function *Func);
+
 private:
   llvm::TargetLibraryInfo *TLI;
   llvm::DataLayout *DL;
