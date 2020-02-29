@@ -200,6 +200,12 @@ public:
   const StreamSet &getChosenBaseStreams() const {
     return this->ChosenBaseStreams;
   }
+  const StreamSet &getChosenDependentStreams() const {
+    return this->ChosenDependentStreams;
+  }
+  const StreamSet &getChosenBackIVDependentStreams() const {
+    return this->ChosenBackIVDependentStreams;
+  }
   const StreamSet &getChosenBaseStepStreams() const {
     return this->ChosenBaseStepStreams;
   }
@@ -265,7 +271,9 @@ protected:
   StreamSet BaseStepRootStreams;
 
   StreamSet ChosenBaseStreams;
+  StreamSet ChosenDependentStreams;
   StreamSet ChosenBackMemBaseStreams;
+  StreamSet ChosenBackIVDependentStreams;
 
   StreamSet ChosenBaseStepStreams;
   StreamSet ChosenBaseStepRootStreams;

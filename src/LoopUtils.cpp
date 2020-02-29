@@ -1,6 +1,7 @@
 #include "LoopUtils.h"
 #include "Utils.h"
 
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -20,8 +21,8 @@
 // }
 
 const std::unordered_set<std::string> LoopUtils::SupportedMathFunctions{
-    "exp",  "sin", "sqrt", "sqrtf", "acos",
-    "fabs", "abs", "rand", "log",   "lgamma", "printf"};
+    "exp", "sin",  "sqrt", "sqrtf",  "acos",  "fabs",
+    "abs", "rand", "log",  "lgamma", "printf"};
 
 std::unordered_map<const llvm::Loop *, bool>
     LoopUtils::MemorizedIsLoopContinuous;
@@ -409,6 +410,13 @@ llvm::SCEVExpander *CachedLoopInfo::getSCEVExpander(llvm::Function *Func) {
     Iter = this->SEExpanderCache.emplace(Func, SEExpander).first;
   }
   return Iter->second;
+}
+
+llvm::TargetTransformInfo
+CachedLoopInfo::getTargetTransformInfo(llvm::Function *Func) {
+  llvm::TargetIRAnalysis TIRA;
+  llvm::FunctionAnalysisManager DummyFAM;
+  return TIRA.run(*Func, DummyFAM);
 }
 
 llvm::Instruction *CachedLoopInfo::getUnrollableTerminator(llvm::Loop *Loop) {

@@ -77,6 +77,7 @@ message StaticStreamInfo {
   repeated PredicatedStreamId merged_predicated_streams = 19; // Merged predicated streams.
   bool is_merged_predicated_stream = 20; // This predicated stream has been merged.
   ExecFuncInfo pred_func_info = 21;
+  bool no_core_user = 22; // This stream has not core user.
 
   enum StaticNotStreamReason {
     UNKNOWN = 0;

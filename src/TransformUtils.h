@@ -7,6 +7,8 @@
 
 #include "Utils.h"
 
+#include "llvm/Analysis/TargetTransformInfo.h"
+
 class TransformUtils {
 public:
   /**
@@ -14,6 +16,8 @@ public:
    */
   static bool eliminateDeadCode(llvm::Function &F,
                                 llvm::TargetLibraryInfo *TLI);
+  static bool simplifyCFG(llvm::Function &F, llvm::TargetLibraryInfo *TLI,
+                          llvm::TargetTransformInfo &TTI);
 
   static llvm::Constant *insertStringLiteral(llvm::Module *Module,
                                              const std::string &Str);

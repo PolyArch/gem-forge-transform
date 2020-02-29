@@ -40,6 +40,9 @@ private:
   std::unique_ptr<CachedLoopInfo> ClonedCachedLI;
   std::unique_ptr<llvm::DataLayout> ClonedDataLayout;
 
+  // Map from Stream to StreamLoad instructions.
+  std::unordered_map<Stream *, llvm::Instruction *> StreamToStreamLoadInstMap;
+
   // Instructions waiting to be removed at the end.
   std::unordered_set<llvm::Instruction *> PendingRemovedInsts;
 
