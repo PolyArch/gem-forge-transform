@@ -14,6 +14,8 @@
 // Represent an executionn data graph.
 class ExecutionDataGraph {
 public:
+  using InstSet = std::unordered_set<const llvm::Instruction *>;
+
   ExecutionDataGraph(const llvm::Value *_ResultValue)
       : ResultValue(_ResultValue) {}
   ExecutionDataGraph(const ExecutionDataGraph &Other) = delete;
@@ -27,6 +29,7 @@ public:
   const std::list<const llvm::Value *> &getInputs() const {
     return this->Inputs;
   }
+  const InstSet &getComputeInsts() const { return this->ComputeInsts; }
   bool hasCircle() const { return this->HasCircle; }
 
   /**
@@ -41,7 +44,7 @@ protected:
   const llvm::Value *ResultValue;
   std::list<const llvm::Value *> Inputs;
   std::unordered_set<const llvm::ConstantData *> ConstantDatas;
-  std::unordered_set<const llvm::Instruction *> ComputeInsts;
+  InstSet ComputeInsts;
   bool HasCircle = false;
 
   using DFSTaskT = std::function<void(const llvm::Instruction *)>;
