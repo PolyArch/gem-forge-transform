@@ -240,6 +240,9 @@ void StaticMemStream::finalizePattern() {
    * Manually set float decision for some workloads.
    */
   const auto &DebugLoc = this->Inst->getDebugLoc();
+  if (!DebugLoc) {
+    llvm::errs() << "No DebugLoc for MemStream " << this->formatName() << '\n';
+  }
   assert(DebugLoc && "Missing DebugLoc for MemStream.");
   auto Line = DebugLoc.getLine();
   auto Scope = llvm::dyn_cast<llvm::DIScope>(DebugLoc.getScope());
@@ -276,7 +279,7 @@ void StaticMemStream::finalizePattern() {
       //   this->StaticStreamInfo.set_float_manual(true);
     }
   } else if (SourceFile == "needle.cpp") {
-    if (Line == 107 || Line == 149) {
+    if (Line == 106 || Line == 145) {
       // rodinia.nw, reference[], no reuse.
       this->StaticStreamInfo.set_float_manual(true);
     }
@@ -331,6 +334,18 @@ void StaticMemStream::finalizePattern() {
         // Only offload this if we merge the predicated stores.
         this->StaticStreamInfo.set_float_manual(true);
       }
+    }
+  } else if (SourceFile == "kernel_query.c") {
+    // rodinia.b+tree
+    if (Line == 67) {
+      // Leaf key[].
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "kernel_range.c") {
+    // rodinia.b+tree
+    if (Line == 86 || Line == 89) {
+      // Leaf key[].
+      this->StaticStreamInfo.set_float_manual(true);
     }
   }
 }

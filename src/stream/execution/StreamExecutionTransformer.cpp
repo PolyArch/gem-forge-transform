@@ -476,25 +476,57 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
   }
   auto ClonedReducedValue =
       this->addStreamLoad(ReduceStream, ClonedExitBB->getFirstNonPHI());
-  bool HasInLoopUse = false;
   auto ClonedExitInst = this->getClonedValue(ExitInst);
   for (auto User : ClonedExitInst->users()) {
     if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
-      if (UserInst == PHINode) {
-        // Ignore myself as the user.
-        continue;
-      }
       if (Loop->contains(UserInst)) {
-        HasInLoopUse = true;
+        // Ignore in loop user.
         continue;
       }
       // This is an outside user, replace it.
       UserInst->replaceUsesOfWith(ClonedExitInst, ClonedReducedValue);
     }
   }
-  if (!HasInLoopUse) {
-    // Since there are no other in loop user,
-    // We can remove it. But let's keep it so far.
+  /**
+   * After we replace the out-of-loop user, we check if the reduction
+   * is complete, i.e. define a set of instruction as:
+   * S = ComputeInsts U { ReductionPHINode }.
+   * Check that:
+   *   for I : S
+   *     for user : I
+   *       user in S
+   * Since there is no other core user, we can remove the computation
+   * from the core and purely let the StreamEngine handle it.
+   */
+  std::unordered_set<llvm::Instruction *> ClonedS = {
+      this->getClonedValue(PHINode)};
+  for (auto ComputeInst : SS->ReduceDG->getComputeInsts()) {
+    ClonedS.insert(this->getClonedValue(ComputeInst));
+  }
+  bool IsComplete = true;
+  for (auto ClonedInst : ClonedS) {
+    for (auto User : ClonedInst->users()) {
+      if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
+        if (!ClonedS.count(UserInst)) {
+          IsComplete = false;
+          break;
+        }
+      }
+    }
+    if (!IsComplete) {
+      break;
+    }
+  }
+  if (IsComplete) {
+    // If this is complete, we replace uses by UndefValue and
+    // mark all instructions as PendingRemove.
+    for (auto ClonedInst : ClonedS) {
+      ClonedInst->replaceAllUsesWith(
+          llvm::UndefValue::get(ClonedInst->getType()));
+    }
+    this->PendingRemovedInsts.insert(ClonedS.begin(), ClonedS.end());
+    // Mark the reduction stream has no core user.
+    ReduceStream->SStream->StaticStreamInfo.set_no_core_user(true);
   }
 }
 
@@ -893,8 +925,7 @@ void StreamExecutionTransformer::cleanClonedModule() {
     if (StreamLoadInst->use_empty()) {
       StreamLoadInst->eraseFromParent();
       StreamInstPair.second = nullptr;
-      if (S->getChosenDependentStreams().empty() &&
-          S->getChosenBackIVDependentStreams().empty()) {
+      if (S->getChosenDependentStreams().empty()) {
         // This is a seed for no core user stream.
         NoCoreUserStreams.emplace(S);
       }
@@ -903,15 +934,26 @@ void StreamExecutionTransformer::cleanClonedModule() {
   while (!NoCoreUserStreams.empty()) {
     auto S = NoCoreUserStreams.front();
     NoCoreUserStreams.pop();
+    // We enforce that all BackIVDependentStreams has no core user.
+    bool HasCoreUserForBackIVDepS = false;
+    for (auto BackIVDepS : S->getChosenBackIVDependentStreams()) {
+      if (!BackIVDepS->SStream->StaticStreamInfo.no_core_user()) {
+        // The only case when this is true is the BackIVDepS is reduction and
+        // can be completely removed.
+        HasCoreUserForBackIVDepS = true;
+        continue;
+      }
+    }
+    if (HasCoreUserForBackIVDepS) {
+      // We cannot remove this.
+      continue;
+    }
     auto SS = S->SStream;
     SS->StaticStreamInfo.set_no_core_user(true);
     // Propagate the signal back to base stream.
     for (auto *BaseS : S->getChosenBaseStreams()) {
       // So far only look at LoadStream.
       if (BaseS->SStream->Inst->getOpcode() != llvm::Instruction::Load) {
-        continue;
-      }
-      if (!BaseS->getChosenBackIVDependentStreams().empty()) {
         continue;
       }
       auto StreamLoadInst = this->StreamToStreamLoadInstMap.at(BaseS);
