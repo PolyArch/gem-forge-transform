@@ -347,5 +347,14 @@ void StaticMemStream::finalizePattern() {
       // Leaf key[].
       this->StaticStreamInfo.set_float_manual(true);
     }
+  } else if (SourceFile == "nn.c") {
+    // rodinia.nn
+    if (Line == 186 || Line == 187) {
+      // sandbox[], no reuse at all.
+      this->StaticStreamInfo.set_float_manual(true);
+    } else if (Line == 218) {
+      // z[], no reuse at all.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
   }
 }

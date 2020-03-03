@@ -163,10 +163,9 @@ public:
   static bool isStepInst(const llvm::Instruction *Inst) {
     auto Opcode = Inst->getOpcode();
     switch (Opcode) {
-    case llvm::Instruction::Add: {
-      return true;
-    }
-    case llvm::Instruction::GetElementPtr: {
+    case llvm::Instruction::Add:
+    case llvm::Instruction::GetElementPtr:
+    case llvm::Instruction::Select: {
       return true;
     }
     default: { return false; }
@@ -237,15 +236,21 @@ public:
   void buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream);
 
   /**
-   * Get the input value for addr/pred func when configure it.
+   * Get the input value for addr/reduce/pred func when configure it.
    */
   using InputValueList = std::list<const llvm::Value *>;
   virtual InputValueList getAddrFuncInputValues() const {
     return InputValueList();
   }
+  virtual InputValueList getReduceFuncInputValues() const {
+    return InputValueList();
+  }
   virtual InputValueList getPredFuncInputValues() const {
     return InputValueList();
   }
+
+  InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
+  const Stream *getExecFuncInputStream(const llvm::Value *Value) const;
 
   int getElementSize(llvm::DataLayout *DataLayout) const;
 

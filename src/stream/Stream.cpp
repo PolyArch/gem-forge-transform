@@ -255,34 +255,56 @@ int Stream::getElementSize(llvm::DataLayout *DataLayout) const {
   llvm_unreachable("Unsupport stream type to get element size.");
 }
 
+const Stream *Stream::getExecFuncInputStream(const llvm::Value *Value) const {
+  if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+    if (Inst == this->SStream->Inst) {
+      // The input is myself. Only for PredFunc.
+      return this;
+    }
+    for (auto BaseStream : this->getChosenBaseStreams()) {
+      if (BaseStream->SStream->Inst == Inst) {
+        return BaseStream;
+      }
+    }
+    if (this->SStream->ReduceDG) {
+      for (auto BackBaseStream : this->ChosenBackMemBaseStreams) {
+        if (BackBaseStream->SStream->Inst == Inst) {
+          // The input is back base stream. Only for ReduceFunc.
+          return BackBaseStream;
+        }
+        // Search for the induction variable of the BackBaseStream.
+        for (auto BackBaseStepRootStream :
+             BackBaseStream->ChosenBaseStepRootStreams) {
+          if (BackBaseStepRootStream->SStream->Inst == Inst) {
+            return BackBaseStepRootStream;
+          }
+        }
+      }
+    }
+  }
+  return nullptr;
+}
+
+Stream::InputValueList
+Stream::getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const {
+  InputValueList InputValues;
+  for (const auto &Input : ExecDG.getInputs()) {
+    if (auto InputStream = this->getExecFuncInputStream(Input)) {
+      // This comes from the base stream.
+    } else {
+      // This is an input value.
+      InputValues.push_back(Input);
+    }
+  }
+  return InputValues;
+}
+
 void Stream::fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
                                       ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
                                       const std::string &FuncName,
                                       const ExecutionDataGraph &ExecDG) const {
 
   ProtoFuncInfo->set_name(FuncName);
-
-  auto GetStream = [this](const llvm::Value *Value) -> const Stream * {
-    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-      if (Inst == this->SStream->Inst) {
-        // The input is myself. Only for PredFunc.
-        return this;
-      }
-      for (auto BaseStream : this->getChosenBaseStreams()) {
-        if (BaseStream->SStream->Inst == Inst) {
-          return BaseStream;
-        }
-      }
-      for (auto BackBaseStream : this->ChosenBackMemBaseStreams) {
-        if (BackBaseStream->SStream->Inst == Inst) {
-          // The input is back base stream. Only for ReduceFunc.
-          return BackBaseStream;
-        }
-      }
-    }
-    return nullptr;
-  };
-
   for (const auto &Input : ExecDG.getInputs()) {
     auto ProtobufArg = ProtoFuncInfo->add_args();
     auto Type = Input->getType();
@@ -291,7 +313,7 @@ void Stream::fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
                    << '\n';
       assert(false && "Invalid type for input.");
     }
-    if (auto InputStream = GetStream(Input)) {
+    if (auto InputStream = this->getExecFuncInputStream(Input)) {
       // This comes from the base stream.
       ProtobufArg->set_is_stream(true);
       ProtobufArg->set_stream_id(InputStream->getStreamId());

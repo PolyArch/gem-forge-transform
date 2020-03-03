@@ -72,7 +72,16 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
     // Let's try to construct the reduction datagraph.
     // The only IndVarStream should be myself.
     auto IsIndVarStream = [this](const llvm::PHINode *PHI) -> bool {
-      return PHI == this->Inst;
+      if (PHI == this->Inst) {
+        return true;
+      }
+      // Otherwise, search in our IVBaseStream.
+      for (auto IVBaseS : this->IndVarBaseStreams) {
+        if (IVBaseS->Inst == PHI) {
+          return true;
+        }
+      }
+      return false;
     };
     this->ReduceDG = std::make_unique<AddressDataGraph>(
         this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue,
@@ -93,7 +102,7 @@ bool StaticIndVarStream::analyzeIsReductionFromSCEV(
   /**
    * We consider it a reduction stream iff.
    * 1. All the NonEmptyComputeMetaNode has at most one same LoadStream
-   *    and myself as the input.
+   *    and myself as the input, or the StepRootStream of the LoadStream.
    */
   if (!StreamPassEnableReduce) {
     return false;
@@ -109,8 +118,8 @@ bool StaticIndVarStream::analyzeIsReductionFromSCEV(
     // No load stream to reduce on.
     return false;
   }
-  if (this->IndVarBaseStreams.size() != 1) {
-    // No ind var stream to reduce on.
+  if (!this->IndVarBaseStreams.count(const_cast<StaticIndVarStream *>(this))) {
+    // This is not reduction.
     return false;
   }
   if (this->ConfigureLoop != this->InnerMostLoop) {
@@ -118,10 +127,17 @@ bool StaticIndVarStream::analyzeIsReductionFromSCEV(
     return false;
   }
   auto LoadBaseS = *(this->LoadBaseStreams.begin());
-  auto IVBaseS = *(this->IndVarBaseStreams.begin());
-  if (IVBaseS != this) {
-    // This is not reduction.
-    return false;
+  // Search for any other possible IVBaseS.
+  for (auto IVBaseS : this->IndVarBaseStreams) {
+    if (IVBaseS == this) {
+      // Ignore myself.
+      continue;
+    }
+    // We only allow additional step root of the LoadStream,
+    // as it's likely this is the IV of the loop.
+    if (LoadBaseS->BaseStepRootStreams.count(IVBaseS) == 0) {
+      return false;
+    }
   }
   auto FinalInst =
       llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
