@@ -256,34 +256,6 @@ MemStream::InputValueList MemStream::getPredFuncInputValues() const {
   return this->getExecFuncInputValues(*BBPredDG);
 }
 
-MemStream::InputValueList
-MemStream::getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const {
-  InputValueList InputValues;
-  auto GetStream = [this](const llvm::Value *Value) -> const Stream * {
-    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-      if (Inst == this->SStream->Inst) {
-        return this;
-      }
-      for (auto BaseStream : this->getChosenBaseStreams()) {
-        if (BaseStream->SStream->Inst == Inst) {
-          return BaseStream;
-        }
-      }
-    }
-    return nullptr;
-  };
-
-  for (const auto &Input : ExecDG.getInputs()) {
-    if (auto InputStream = GetStream(Input)) {
-      // This comes from the base stream.
-    } else {
-      // This is an input value.
-      InputValues.push_back(Input);
-    }
-  }
-  return InputValues;
-}
-
 void MemStream::fillProtobufAddrFuncInfo(
     ::llvm::DataLayout *DataLayout,
     ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {

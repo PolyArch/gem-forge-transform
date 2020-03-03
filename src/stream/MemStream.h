@@ -90,9 +90,6 @@ protected:
   void fillProtobufPredFuncInfo(
       ::llvm::DataLayout *DataLayout,
       ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const override;
-
-  InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
-
 private:
   MemoryFootprint Footprint;
   std::unordered_set<const llvm::LoadInst *> BaseLoads;

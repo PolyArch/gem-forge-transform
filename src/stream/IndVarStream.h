@@ -60,6 +60,8 @@ public:
     return ss.str();
   }
 
+  InputValueList getReduceFuncInputValues() const override;
+
   void fillProtobufAddrFuncInfo(
       ::llvm::DataLayout *DataLayout,
       ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const override;

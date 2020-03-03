@@ -6,6 +6,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
 
@@ -477,15 +478,29 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
   auto ClonedReducedValue =
       this->addStreamLoad(ReduceStream, ClonedExitBB->getFirstNonPHI());
   auto ClonedExitInst = this->getClonedValue(ExitInst);
-  for (auto User : ClonedExitInst->users()) {
-    if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
-      if (Loop->contains(UserInst)) {
+  /**
+   * Find out-of-loop ExitValue user instructions.
+   * We have to first find them and then replace the usages, cause we can
+   * not iterate through users() and modify it at the same time.
+   */
+  std::unordered_set<llvm::Instruction *> OutOfLoopClonedExitInstUsers;
+  for (auto ClonedUser : ClonedExitInst->users()) {
+    if (auto ClonedUserInst = llvm::dyn_cast<llvm::Instruction>(ClonedUser)) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "ReduceStream " << ReduceStream->formatName()
+                 << " ExitInst " << ClonedExitInst->getName() << " user "
+                 << ClonedUserInst->getName() << " Loop "
+                 << ClonedLoop->getHeader()->getName() << " contains "
+                 << ClonedLoop->contains(ClonedUserInst) << '\n');
+      if (!ClonedLoop->contains(ClonedUserInst)) {
         // Ignore in loop user.
-        continue;
+        OutOfLoopClonedExitInstUsers.insert(ClonedUserInst);
       }
-      // This is an outside user, replace it.
-      UserInst->replaceUsesOfWith(ClonedExitInst, ClonedReducedValue);
     }
+  }
+  for (auto ClonedUserInst : OutOfLoopClonedExitInstUsers) {
+    // This is an outside user, replace it.
+    ClonedUserInst->replaceUsesOfWith(ClonedExitInst, ClonedReducedValue);
   }
   /**
    * After we replace the out-of-loop user, we check if the reduction
@@ -508,6 +523,10 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
     for (auto User : ClonedInst->users()) {
       if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
         if (!ClonedS.count(UserInst)) {
+          LLVM_DEBUG(llvm::dbgs()
+                     << "ReduceStream " << ReduceStream->formatName()
+                     << " is incomplete due to user " << UserInst->getName()
+                     << " of ComputeInst " << ClonedInst->getName() << '\n');
           IsComplete = false;
           break;
         }
@@ -883,7 +902,15 @@ void StreamExecutionTransformer::cleanClonedModule() {
      * So we delete them here.
      */
     assert(Inst->use_empty() && "PendingRemoveInst has use.");
+    auto Func = Inst->getFunction();
+    LLVM_DEBUG(llvm::dbgs() << "Remove inst " << Func->getName() << " "
+                            << Inst->getName() << "\n");
     Inst->eraseFromParent();
+    if (llvm::verifyFunction(*Func, &llvm::dbgs())) {
+      llvm::errs() << "Function broken after removing PendingRemovedInsts.";
+      Func->print(llvm::dbgs());
+      assert(false && "Function broken.");
+    }
   }
   this->PendingRemovedInsts.clear();
 
@@ -948,16 +975,18 @@ void StreamExecutionTransformer::cleanClonedModule() {
       // We cannot remove this.
       continue;
     }
+
     auto SS = S->SStream;
     SS->StaticStreamInfo.set_no_core_user(true);
+
     // Propagate the signal back to base stream.
     for (auto *BaseS : S->getChosenBaseStreams()) {
       // So far only look at LoadStream.
       if (BaseS->SStream->Inst->getOpcode() != llvm::Instruction::Load) {
         continue;
       }
-      auto StreamLoadInst = this->StreamToStreamLoadInstMap.at(BaseS);
-      if (StreamLoadInst) {
+      auto BaseStreamLoadInst = this->StreamToStreamLoadInstMap.at(BaseS);
+      if (BaseStreamLoadInst) {
         // The StreamLoad has not been removed.
         continue;
       }
@@ -973,6 +1002,8 @@ void StreamExecutionTransformer::cleanClonedModule() {
     }
   }
   this->StreamToStreamLoadInstMap.clear();
+  assert(!llvm::verifyModule(*this->ClonedModule) &&
+         "Module broken after clean up.");
 }
 
 void StreamExecutionTransformer::generateIVStreamConfiguration(
@@ -1030,6 +1061,10 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
     }
     assert(NumInitialValues == 1 &&
            "Multiple initial values for reduction stream.");
+    // Any additional input values from the reduction function.
+    for (auto Input : S->getReduceFuncInputValues()) {
+      ClonedInputValues.push_back(this->getClonedValue(Input));
+    }
   } else {
     assert(false && "Can't handle this PHI node.");
   }
