@@ -66,14 +66,21 @@ class GemForgeMicroBenchmark(Benchmark):
         os.chdir(self.src_path)
         bc = os.path.join(self.work_path, self.get_raw_bc())
         # Disable the loop unswitch to test for fault_stream.
-        flags = [
-            # '-fno-unroll-loops',
-            # '-fno-vectorize',
-            # '-fno-slp-vectorize',
-            '-march=knl',
-            '-mllvm',
-            '-loop-unswitch-threshold=1',
-        ]
+        if self.benchmark_name in {'cond_array_sum', 'cond_index_sum'}:
+            # No AVX512 here.
+            flags = [
+                '-mllvm',
+                '-loop-unswitch-threshold=1',
+            ]
+        else:
+            flags = [
+                # '-fno-unroll-loops',
+                # '-fno-vectorize',
+                # '-fno-slp-vectorize',
+                '-march=knl',
+                '-mllvm',
+                '-loop-unswitch-threshold=1',
+            ]
         if self.is_omp:
             flags.append('-fopenmp')
         compile_cmd = [

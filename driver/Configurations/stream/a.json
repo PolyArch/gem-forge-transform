@@ -1,0 +1,7 @@
+{
+    "id": "stream.a",
+    "options": [
+        "-stream-pass",
+        "-stream-pass-allow-aliased-stream"
+    ]
+}

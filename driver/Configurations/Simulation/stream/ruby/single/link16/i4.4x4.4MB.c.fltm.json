@@ -9,10 +9,8 @@
         "--gem-forge-stream-engine-max-total-run-ahead-length=192",
         "--gem-forge-stream-engine-enable-lsq",
         "--gem-forge-stream-engine-enable-coalesce",
-        "--gem-forge-stream-engine-throttling=global",
         "--gem-forge-stream-engine-enable-float",
-        "--gem-forge-stream-engine-float-policy=manual",
-        "--gem-forge-stream-engine-enable-float-indirect"
+        "--gem-forge-stream-engine-float-policy=manual"
     ],
     "snippts": [
         "i4",
@@ -25,8 +23,9 @@
         "stream.ex.static.i",
         "stream.ex.static.so",
         "stream.ex.static.i.store",
+        "stream.ex.static.i.store.rdc",
         "stream.ex.static.so.store",
-        "stream.ex.static.so.store.ipred",
-        "stream.ex.static.so.store.rdc"
+        "stream.ex.static.so.store.up",
+        "stream.ex.static.so.store.pred"
     ]
 }

@@ -356,5 +356,17 @@ Fluidanimate: AdvanceFrameMT(int)
 ==========================================================
 x264:
 Kernel is assembly code.
+Double free, segment fault even in native machine.
+
+Ferret:
+Works in native machine.
+Failed in gem5 due to unimplemented syscall msync (try m5 thread).
+
+Swaptions:
+Works in native kilia.
+
+streamcluster:
+Works in native machine.
+
 
 """

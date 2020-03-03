@@ -24,6 +24,8 @@
         "stream.ex.static.i.store",
         "stream.ex.static.so",
         "stream.ex.static.so.store",
-        "stream.ex.static.so.store.up"
+        "stream.ex.static.so.store.up",
+        "stream.ex.static.so.store.pred",
+        "stream.ex.static.so.store.rdc"
     ]
 }

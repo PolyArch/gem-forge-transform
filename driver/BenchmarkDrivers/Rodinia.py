@@ -62,17 +62,22 @@ class RodiniaBenchmark(Benchmark):
             'large':  ['-b', 'dummy', '-n', '$NTHREADS', '-i', '{DATA}/kdd_cup.data'],
         },
         'lavaMD': {
-            'large':  ['-cores', '$NTHREADS', '-boxes1d', '8'],
+            'large':  ['-cores', '$NTHREADS', '-boxes1d', '16'],
         },
         'nw': {
             'test': ['128', '10', '$NTHREADS'],
             'medium': ['512', '10', '$NTHREADS'],
             'large': ['2048', '10', '$NTHREADS'],
         },
+        'nn': {
+            'test': ['list4k.data.txt', '5', '30', '90', '$NTHREADS'],
+            'medium': ['list16k.data.txt', '5', '30', '90', '$NTHREADS'],
+            'large': ['list256k.data.txt', '5', '30', '90', '$NTHREADS'],
+        },
         'particlefilter': {
             'test':   ['-x', '100', '-y', '100', '-z', '10', '-np', '100', '-nt', '$NTHREADS'],
             'medium': ['-x', '100', '-y', '100', '-z', '10', '-np', '1000', '-nt', '$NTHREADS'],
-            'large':  ['-x', '100', '-y', '100', '-z', '10', '-np', '10000', '-nt', '$NTHREADS'],
+            'large':  ['-x', '100', '-y', '100', '-z', '10', '-np', '32768', '-nt', '$NTHREADS'],
         },
         'pathfinder': {
             'test': ['100', '100', '$NTHREADS'],
@@ -149,6 +154,10 @@ class RodiniaBenchmark(Benchmark):
             '.omp_outlined.',
             '.omp_outlined..5',
         ],
+        'nn': [
+            '.omp_outlined.',
+            '.omp_outlined..7',
+        ],
         'particlefilter': [
             '.omp_outlined.',  # applyMotionModel()
             '.omp_outlined..2', # computeLikelihood()
@@ -198,7 +207,8 @@ class RodiniaBenchmark(Benchmark):
         'kmeans': 3 * 1, 
         'lavaMD': 1,            # Invoke kernel for once.
         'nw': 2,                # nw can finish.
-        'particlefilter': 9 * 2, # Two iters takes 2e8.
+        'nn': 4,                # One iteration is 4 work items.
+        'particlefilter': 9 * 1, # One itertion is enough.
         'pathfinder': 99,        # pathfinder takes 99 iterations.
         'pathfinder-avx512': 99,        # pathfinder takes 99 iterations.
         'srad_v2': 2 * 1, # One iteration is enough.
@@ -371,13 +381,22 @@ class RodiniaSuite:
 
 """
 
+b+tree:
+Inner-most stream is enough.
+Result is i.store.rdc
+
 nn:
 Compute the nearest neighbor, but only the for loop to compute the distance is parallelized.
 A lot of file IO in the ROI.
+[i.store]
+
+hotspot/hotspot3D:
+Can float all streams.
 
 nw:
 Needleman-Wunsch. The problem is that it is tiled for better temporal locality.
 And inplace computing makes it frequently aliased.
+[i.store]
 
 cfd:
 compute_step_factor.
