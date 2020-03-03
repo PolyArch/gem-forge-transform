@@ -1,6 +1,9 @@
 
+#include <math.h>
+
 #include "gem5/m5ops.h"
-typedef int Value;
+
+typedef double Value;
 
 /**
  * Used for random test purpose.
@@ -14,6 +17,7 @@ Value a[N + STEP_AHEAD * 16];
 __attribute__((noinline)) Value foo(Value **pa, int N) {
   Value sum = 0.0f;
   volatile Value *a = *pa;
+  *(double *)a = exp(*a);
   // Make sure there is no reuse.
   #pragma nounroll
   for (long long i = 0; i < N; i += 16) {
@@ -30,7 +34,7 @@ int main() {
   Value *pa = a;
   // This should warm up the cache.
   for (long long i = 0; i < N; i++) {
-    a[i] = i;
+    a[i] = 1.32361351;
   }
   m5_detail_sim_start();
   c = foo(&pa, N);
