@@ -209,22 +209,34 @@ class Gem5ReplayConfigureManager(object):
         '--l1_5d_assoc=16',
         '--l1_5d_mshrs=16',
     ]
+    MLC_64kB = [
+        '--l1_5d_size=64kB',
+        '--l1_5d_assoc=16',
+        '--l1_5d_mshrs=16',
+    ]
     MLC_32MB = [
         '--l1_5d_size=32MB',
         '--l1_5d_assoc=16',
         '--l1_5d_mshrs=16',
     ]
-    RUBY_L3 = [
+    RUBY_L3_BASE = [
         "--ruby",
         "--access-backing-store",
-        "--topology=Mesh_XY",
         "--network=garnet2.0",
         "--router-latency=2",
         "--link-latency=1",
         "--llc-select-low-bit=12",
         "--mem-channels=2",
-        "--mem-size=8GB",
+        "--mem-size=16GB",
     ]
+    RUBY_MESH = [
+        "--topology=Mesh_XY",
+    ]
+    RUBY_MESH_DIR_CORNER = [
+        "--topology=MeshDirCorners_XY",
+    ]
+    RUBY_L3 = RUBY_L3_BASE + RUBY_MESH
+    RUBY_L3_DIR_CORNER = RUBY_L3_BASE + RUBY_MESH_DIR_CORNER
     SNIPPTS = {
         '2x2.l3.ruby': [
             "--num-cpus=4",
@@ -269,6 +281,18 @@ class Gem5ReplayConfigureManager(object):
             "--num-l2caches=16",
             "--mesh-rows=4",
         ] + RUBY_L3 + L0_32kB + MLC_32MB + LLC_4MB,
+        '8x8.l3.1MB.ruby': [
+            "--num-cpus=64",
+            "--num-dirs=64",
+            "--num-l2caches=64",
+            "--mesh-rows=8",
+        ] + RUBY_L3 + L0_32kB + MLC_64kB + LLC_1MB,
+        '8x8.dir_corner.l3.1MB.ruby': [
+            "--num-cpus=64",
+            "--num-dirs=4",
+            "--num-l2caches=64",
+            "--mesh-rows=8",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_64kB + LLC_1MB,
         'o8': [
             "--cpu-type=DerivO3CPU",
             "--llvm-issue-width=8",
