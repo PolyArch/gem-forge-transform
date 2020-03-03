@@ -5,7 +5,7 @@
 #include "gem5/m5ops.h"
 #include <stdio.h>
 
-typedef float Value;
+typedef double Value;
 
 #define STRIDE 1
 #define CHECK
@@ -22,8 +22,8 @@ const Value chip_width = 0.016;
 #define FACTOR_CHIP 0.5
 #define OPEN
 
-__attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
-                                    int N) {
+__attribute__((noinline)) Value foo(Value *restrict a, Value *restrict b,
+                                    Value *restrict c, int M, int N) {
   /**
    * Do this to test the floating point inst.
    */
@@ -40,14 +40,16 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
   Value Rz_1 = 1.f / Rz;
   Value Cap_1 = step / Cap;
 
+  N = 1024;
+
   // Make sure there is no reuse.
-#pragma clang loop vectorize(enable)
   // #pragma clang loop unroll(disable)
-  for (uint64_t i = 1; i + 1 < M; ++i) {
-    for (int64_t j = 1; j <= N; ++j) {
-      uint64_t idx = i * (N + 2) + j;
-      uint64_t idxN = idx - (N + 2);
-      uint64_t idxS = idx + (N + 2);
+  for (uint64_t i = 1; i < M - 1; ++i) {
+#pragma clang loop vectorize(enable)
+    for (int64_t j = 0; j < N; ++j) {
+      uint64_t idx = i * (N) + j;
+      uint64_t idxN = idx - (N);
+      uint64_t idxS = idx + (N);
       uint64_t idxE = idx + 1;
       uint64_t idxW = idx - 1;
       Value aC = a[idx];
@@ -71,25 +73,14 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
 // const int N = 1024;
 // const int M = 256;
 #define N 1024
-#define M 4
-Value a[M][N + 2];
-Value b[M][N + 2];
-Value c[M][N + 2];
-Value d[M][N + 2];
+#define M 1024
+Value a[M][N];
+Value b[M][N];
+Value c[M][N];
+Value d[M][N];
 
 int main() {
 
-#ifdef WARM_CACHE
-  // This should warm up the cache.
-  for (int i = 0; i < M; ++i) {
-    for (int j = 0; j < N + 2; ++j) {
-      a[i][j] = i * N + j;
-      b[i][j] = i * N + j;
-      c[i][j] = 0;
-      d[i][j] = 0;
-    }
-  }
-#endif
   /**
    * Do this to test the floating point inst.
    */
@@ -107,8 +98,19 @@ int main() {
   Value Cap_1 = step / Cap;
 
   m5_detail_sim_start();
-  volatile Value ret =
-      foo(&a[0][0], &b[0][0], &c[0][0], M, N);
+#ifdef WARM_CACHE
+  // This should warm up the cache.
+  for (int i = 0; i < M; ++i) {
+    for (int j = 0; j < N; ++j) {
+      a[i][j] = i * N + j;
+      b[i][j] = i * N + j;
+      c[i][j] = 0;
+      d[i][j] = 0;
+    }
+  }
+#endif
+  m5_reset_stats(0, 0);
+  volatile Value ret = foo(&a[0][0], &b[0][0], &c[0][0], M, N);
   m5_detail_sim_end();
 
 #ifdef CHECK
@@ -118,7 +120,7 @@ int main() {
 #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 1; i + 1 < M; ++i) {
 #pragma clang loop vectorize(disable) unroll(disable)
-    for (int j = 1; j <= N; ++j) {
+    for (int j = 0; j < N; ++j) {
       Value aC = a[i][j];
       Value bC = b[i][j];
       Value bN = b[i - 1][j];

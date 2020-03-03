@@ -15,7 +15,10 @@ __attribute__((noinline)) Value foo(Value *a, int N) {
   Value sum = 0;
 #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
-    sum = sum + a[i];
+    Value v = a[i];
+    if ((v & 0x1) == 0) {
+      sum += v;
+    }
   }
   return sum;
 }
@@ -41,7 +44,10 @@ int main() {
 #ifdef CHECK
   Value expected = 0;
   for (int i = 0; i < N; i += STRIDE) {
-    expected += a[i];
+    Value v = a[i];
+    if ((v & 0x1) == 0) {
+      expected += v;
+    }
   }
   printf("Ret = %d, Expected = %d.\n", c, expected);
 #endif

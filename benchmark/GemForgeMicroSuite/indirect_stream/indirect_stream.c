@@ -62,8 +62,6 @@ int main() {
     ia[j] = tmp;
   }
 
-  printf("ia range %p %p.\n", ia, ia + N);
-
   m5_detail_sim_start();
   volatile Value ret;
 #ifdef WARM_CACHE

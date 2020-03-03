@@ -11,11 +11,14 @@ typedef int Value;
 #define CHECK
 #define WARM_CACHE
 
-__attribute__((noinline)) Value foo(Value *a, int N) {
+__attribute__((noinline)) Value foo(Value *a, int N, int w) {
   Value sum = 0;
 #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
-    sum = sum + a[i];
+    Value v = a[i];
+    if ((v & 0x1) == w) {
+      sum += i;
+    }
   }
   return sum;
 }
@@ -35,13 +38,16 @@ int main() {
   m5_reset_stats(0, 0);
 #endif
 
-  volatile Value c = foo(a, N);
+  volatile Value c = foo(a, N, 0);
   m5_detail_sim_end();
 
 #ifdef CHECK
   Value expected = 0;
   for (int i = 0; i < N; i += STRIDE) {
-    expected += a[i];
+    Value v = a[i];
+    if ((v & 0x1) == 0) {
+      expected += i;
+    }
   }
   printf("Ret = %d, Expected = %d.\n", c, expected);
 #endif
