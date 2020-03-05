@@ -262,6 +262,12 @@ class Gem5ReplayConfigureManager(object):
             "--num-l2caches=16",
             "--mesh-rows=4",
         ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_4MB,
+        '4x4.dir_corner.l3.4MB.ruby': [
+            "--num-cpus=16",
+            "--num-dirs=4",
+            "--num-l2caches=16",
+            "--mesh-rows=4",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_4MB,
         '4x4.l3.256kB.ruby': [
             "--num-cpus=16",
             "--num-dirs=16",
