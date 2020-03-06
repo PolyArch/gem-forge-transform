@@ -670,6 +670,9 @@ void StreamExecutionTransformer::transformStoreInst(
    * i.e. the original store is kept there, and the data is consumed
    * through the cache.
    */
+
+  // Try to merge Load-Store DG.
+  this->mergeLoadStoreDG(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformStepInst(
@@ -807,6 +810,40 @@ void StreamExecutionTransformer::mergePredicatedStore(
   ProtoEntry->set_pred_true(PredTrue);
   // Add the store to pending remove.
   auto ClonedStoreInst = this->getClonedValue(StoreInst);
+  this->PendingRemovedInsts.insert(ClonedStoreInst);
+}
+
+void StreamExecutionTransformer::mergeLoadStoreDG(
+    StreamRegionAnalyzer *Analyzer, Stream *StoreStream) {
+  auto StoreSS = StoreStream->SStream;
+  if (!StoreSS->StoreDG) {
+    // No StoreDG to be merged.
+    return;
+  }
+  /**
+   * We merge this store into the Loads iff.
+   * 1. All the load input streams are chosen.
+   */
+  for (auto LoadSS : StoreSS->LoadStoreBaseStreams) {
+    auto ChosenLoadS = Analyzer->getChosenStreamByInst(LoadSS->Inst);
+    if (!ChosenLoadS || ChosenLoadS->SStream != LoadSS) {
+      // Not chosen or chosen at different configure loop level.
+      return;
+    }
+  }
+  // We can merge these two.
+  for (auto LoadSS : StoreSS->LoadStoreBaseStreams) {
+    auto LoadProto =
+        LoadSS->StaticStreamInfo.add_merged_load_store_dep_streams();
+    LoadProto->set_id(StoreSS->StreamId);
+    LoadProto->set_name(StoreSS->formatName());
+    auto StoreProto =
+        StoreSS->StaticStreamInfo.add_merged_load_store_base_streams();
+    StoreProto->set_id(LoadSS->StreamId);
+    StoreProto->set_name(LoadSS->formatName());
+  }
+  // Finally, remove the store.
+  auto ClonedStoreInst = this->getClonedValue(StoreSS->Inst);
   this->PendingRemovedInsts.insert(ClonedStoreInst);
 }
 

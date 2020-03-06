@@ -52,8 +52,10 @@ message ExecFuncInfo {
   message FuncArg {
     bool is_stream = 1;
     uint64 stream_id = 2;
+    bool is_float = 3;
   }
   repeated FuncArg args = 2;
+  bool is_float = 3;
 }
 
 message StaticStreamInfo {
@@ -78,6 +80,9 @@ message StaticStreamInfo {
   bool is_merged_predicated_stream = 20; // This predicated stream has been merged.
   ExecFuncInfo pred_func_info = 21;
   bool no_core_user = 22; // This stream has not core user.
+  ExecFuncInfo store_func_info = 23;
+  repeated StreamId merged_load_store_base_streams = 24;
+  repeated StreamId merged_load_store_dep_streams = 25;
 
   enum StaticNotStreamReason {
     UNKNOWN = 0;

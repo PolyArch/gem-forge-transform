@@ -379,6 +379,65 @@ void StaticStream::analyzeIsTripCountFixed() const {
 void StaticStream::generateReduceFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ReduceDG) {
-    this->ReduceDG->generateComputeFunction(this->FuncNameBase + "_reduce", Module);
+    this->ReduceDG->generateComputeFunction(this->FuncNameBase + "_reduce",
+                                            Module);
   }
+  if (this->StoreDG) {
+    this->StoreDG->generateComputeFunction(this->FuncNameBase + "_store",
+                                           Module);
+  }
+}
+
+void StaticStream::fillProtobufStoreFuncInfo(
+    ::llvm::DataLayout *DataLayout,
+    ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo) const {
+
+  if (!this->StoreDG) {
+    return;
+  }
+  ProtoFuncInfo->set_name(this->FuncNameBase + "_store");
+  for (const auto &Input : this->StoreDG->getInputs()) {
+    auto ProtobufArg = ProtoFuncInfo->add_args();
+    auto Type = Input->getType();
+    auto TypeSize = DataLayout->getTypeStoreSize(Type);
+    if (TypeSize > 8) {
+      llvm::errs() << "Invalid input type, Value: "
+                   << Utils::formatLLVMValue(Input) << " TypeSize " << TypeSize
+                   << '\n';
+      assert(false && "Invalid type for input.");
+    }
+    if (!(Type->isIntOrPtrTy() || Type->isFloatTy() || Type->isDoubleTy())) {
+      llvm::errs() << "Invalid input type, Value: "
+                   << Utils::formatLLVMValue(Input) << " TypeSize " << TypeSize
+                   << '\n';
+      assert(false && "Invalid type for input.");
+    }
+    StaticStream *InputStream = nullptr;
+    // Search in the LoadStoreBaseStreams.
+    for (auto IS : this->LoadStoreBaseStreams) {
+      if (IS->Inst == Input) {
+        InputStream = IS;
+        break;
+      }
+    }
+    if (InputStream) {
+      // This comes from the base stream.
+      ProtobufArg->set_is_stream(true);
+      ProtobufArg->set_stream_id(InputStream->StreamId);
+    } else {
+      // This is an input value.
+      ProtobufArg->set_is_stream(false);
+    }
+    ProtobufArg->set_is_float(Type->isFloatTy() || Type->isDoubleTy());
+  }
+  auto StoreValue = this->StoreDG->getResultValue();
+  auto StoreType = StoreValue->getType();
+  if (!(StoreType->isIntOrPtrTy() || StoreType->isFloatTy() ||
+        StoreType->isDoubleTy())) {
+    llvm::errs() << "Invalid result type, Value: "
+                 << Utils::formatLLVMValue(StoreValue) << '\n';
+    assert(false && "Invalid type for result.");
+  }
+  ProtoFuncInfo->set_is_float(StoreType->isFloatTy() ||
+                              StoreType->isDoubleTy());
 }

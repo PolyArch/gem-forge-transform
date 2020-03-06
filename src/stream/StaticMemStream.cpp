@@ -337,7 +337,7 @@ void StaticMemStream::finalizePattern() {
     }
   } else if (SourceFile == "kernel_query.c") {
     // rodinia.b+tree
-    if (Line == 67) {
+    if (Line == 64) {
       // Leaf key[].
       this->StaticStreamInfo.set_float_manual(true);
     }
@@ -349,10 +349,10 @@ void StaticMemStream::finalizePattern() {
     }
   } else if (SourceFile == "nn.c") {
     // rodinia.nn
-    if (Line == 186 || Line == 187) {
+    if (Line == 191 || Line == 192) {
       // sandbox[], no reuse at all.
       this->StaticStreamInfo.set_float_manual(true);
-    } else if (Line == 218) {
+    } else if (Line == 223) {
       // z[], no reuse at all.
       this->StaticStreamInfo.set_float_manual(true);
     }

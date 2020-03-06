@@ -39,3 +39,7 @@ llvm::cl::opt<bool> StreamPassMergePredicatedStore(
 llvm::cl::opt<bool> StreamPassMergeIndPredicatedStore(
     "stream-pass-merge-ind-predicated-store", llvm::cl::init(false),
     llvm::cl::desc("Merge predicated store stream into indirect load stream."));
+
+llvm::cl::opt<bool> StreamPassEnableLoadStoreDG(
+    "stream-pass-enable-load-store-dg", llvm::cl::init(false),
+    llvm::cl::desc("Analyze Load-Store DG for store streams."));
