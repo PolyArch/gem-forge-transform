@@ -359,11 +359,28 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
       // Extend the input value to 64 bit using zero extension.
       auto ClonedInputValue = ClonedInput;
       auto ClonedInputType = ClonedInput->getType();
+
+      if (ClonedInputType->isFloatTy()) {
+        // Float -> Int32
+        ClonedInputType =
+            llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext());
+        ClonedInputValue =
+            Builder.CreateBitCast(ClonedInputValue, ClonedInputType);
+      } else if (ClonedInputType->isDoubleTy()) {
+        // Double -> Int64
+        ClonedInputType =
+            llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
+        ClonedInputValue =
+            Builder.CreateBitCast(ClonedInputValue, ClonedInputType);
+      }
+
+      // Final extension: Int8/Int16/Int32 -> Int64.
       if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(ClonedInputType)) {
         if (IntType->getBitWidth() < 64) {
           ClonedInputType =
               llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
-          ClonedInputValue = Builder.CreateZExt(ClonedInput, ClonedInputType);
+          ClonedInputValue =
+              Builder.CreateZExt(ClonedInputValue, ClonedInputType);
         } else if (IntType->getBitWidth() > 64) {
           assert(false && "Cannot handle input type larger than 64 bit.");
         }
@@ -1309,6 +1326,16 @@ void StreamExecutionTransformer::handleExtraInputValue(
       this->addStreamInputValue(
           ClonedStoreValue, false /* Signed */, ClonedInputValues,
           SS->StaticStreamInfo.mutable_const_update_param());
+    }
+  }
+
+  /**
+   * If this is a merged load-store dep stream, add more StoreDG inputs.
+   */
+  if (SS->StaticStreamInfo.merged_load_store_base_streams_size() > 0) {
+    assert(SS->StoreDG && "No StoreDG for MergedLoadStoreDepStream.");
+    for (auto Input : SS->getStoreFuncInputValues()) {
+      ClonedInputValues.push_back(this->getClonedValue(Input));
     }
   }
 }

@@ -238,7 +238,7 @@ public:
   /**
    * Get the input value for addr/reduce/pred func when configure it.
    */
-  using InputValueList = std::list<const llvm::Value *>;
+  using InputValueList = StaticStream::InputValueList;
   virtual InputValueList getAddrFuncInputValues() const {
     return InputValueList();
   }

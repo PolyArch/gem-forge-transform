@@ -178,6 +178,8 @@ public:
   std::unique_ptr<AddressDataGraph> StoreDG = nullptr;
   void fillProtobufStoreFuncInfo(::llvm::DataLayout *DataLayout,
                                  ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
+  using InputValueList = std::list<const llvm::Value *>;
+  InputValueList getStoreFuncInputValues() const;
 
   /**
    * Stores all the input value for the analyzed pattern.

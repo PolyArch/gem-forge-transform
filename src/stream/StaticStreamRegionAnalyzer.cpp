@@ -364,7 +364,7 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
   /**
    * Enforce all the constraints.
    * 1. StoreDG should have no circle.
-   * 2. StoreDG should only have load inputs.
+   * 2. StoreDG should only have Load/LoopInvariant inputs.
    * 3. All the load inputs should be within the same BB of this store.
    * 4. All the load and the store should have the same step root stream.
    * 5. If multiple loads, they must be coalesced and continuous.
@@ -378,12 +378,14 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
   }
   std::unordered_set<const llvm::LoadInst *> LoadInputs;
   for (auto Input : StoreDG->getInputs()) {
-    if (auto LoadInput = llvm::dyn_cast<llvm::LoadInst>(Input)) {
-      // This is a LoadInput.
-      LoadInputs.insert(LoadInput);
-    } else {
-      // Found non-load inputs.
-      return;
+    if (auto InputInst = llvm::dyn_cast<llvm::Instruction>(Input)) {
+      if (auto LoadInput = llvm::dyn_cast<llvm::LoadInst>(InputInst)) {
+        // This is a LoadInput.
+        LoadInputs.insert(LoadInput);
+      } else if (StoreS->ConfigureLoop->contains(InputInst)) {
+        // Found LoopVariant input.
+        return;
+      }
     }
   }
   StaticStream::StreamSet LoadInputStreams;
