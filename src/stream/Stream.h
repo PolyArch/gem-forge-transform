@@ -333,6 +333,14 @@ protected:
   virtual void
   fillProtobufPredFuncInfo(::llvm::DataLayout *DataLayout,
                            ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {}
+  void
+  fillProtobufStoreFuncInfo(::llvm::DataLayout *DataLayout,
+                            ::LLVM::TDG::ExecFuncInfo *StoreFuncInfo) const {
+    if (!this->isChosen()) {
+      return;
+    }
+    this->SStream->fillProtobufStoreFuncInfo(DataLayout, StoreFuncInfo);
+  }
 
   void fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
                                 ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,

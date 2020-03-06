@@ -205,6 +205,9 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   // Dump the predication function.
   auto PredFuncInfo = ProtobufStaticInfo->mutable_pred_func_info();
   this->fillProtobufPredFuncInfo(DataLayout, PredFuncInfo);
+  // Dump the store function.
+  auto StoreFuncInfo = ProtobufStaticInfo->mutable_store_func_info();
+  this->fillProtobufStoreFuncInfo(DataLayout, StoreFuncInfo);
 
   auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
   ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);
@@ -321,5 +324,7 @@ void Stream::fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
       // This is an input value.
       ProtobufArg->set_is_stream(false);
     }
+    ProtobufArg->set_is_float(false);
   }
+  ProtoFuncInfo->set_is_float(false);
 }

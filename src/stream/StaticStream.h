@@ -87,6 +87,9 @@ public:
   StreamSet BackIVDependentStreams;
   StreamSet BaseStepStreams;
   StreamSet BaseStepRootStreams;
+  // Simple Load-Store dependence.
+  StreamSet LoadStoreDepStreams;
+  StreamSet LoadStoreBaseStreams;
 
   using GetStreamFuncT = std::function<StaticStream *(const llvm::Instruction *,
                                                       const llvm::Loop *)>;
@@ -169,8 +172,12 @@ public:
 
   // Reduction stream.
   std::unique_ptr<AddressDataGraph> ReduceDG = nullptr;
-
   void generateReduceFunction(std::unique_ptr<llvm::Module> &Module) const;
+
+  // Store stream.
+  std::unique_ptr<AddressDataGraph> StoreDG = nullptr;
+  void fillProtobufStoreFuncInfo(::llvm::DataLayout *DataLayout,
+                                 ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
 
   /**
    * Stores all the input value for the analyzed pattern.

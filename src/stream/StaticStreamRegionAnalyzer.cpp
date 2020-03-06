@@ -24,6 +24,9 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   LLVM_DEBUG(llvm::errs() << "Mark predicate relationship done.\n");
   this->buildStreamDependenceGraph();
   LLVM_DEBUG(llvm::errs() << "Building stream dependence graph done.\n");
+  this->buildLoadStoreStreamDependenceGraph();
+  LLVM_DEBUG(
+      llvm::errs() << "Building load-store stream dependence graph done.\n");
   this->markQualifiedStreams();
   LLVM_DEBUG(llvm::errs() << "Marking qualified streams done.\n");
   this->enforceBackEdgeDependence();
@@ -318,6 +321,98 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
     }
   }
   LLVM_DEBUG(llvm::errs() << "analyzeIsCandidate done.\n");
+}
+
+void StaticStreamRegionAnalyzer::buildLoadStoreStreamDependenceGraph() {
+  /**
+   * After construct basic stream dependence graph, we can analyze the
+   * StoreDG and LoadStore dependence.
+   */
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    auto Inst = InstStream.first;
+    if (Inst->getOpcode() == llvm::Instruction::Store) {
+      for (auto &S : InstStream.second) {
+        this->buildLoadStoreDependenceForStore(S);
+      }
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
+    StaticStream *StoreS) {
+
+  if (StoreS->Inst->getOpcode() != llvm::Instruction::Store) {
+    return;
+  }
+  if (!StreamPassEnableLoadStoreDG) {
+    return;
+  }
+  if (StoreS->BaseStepRootStreams.size() != 1) {
+    // Wierd stream has no step root stream. We do not try to analyze it.
+    return;
+  }
+  /**
+   * Let's try to construct the StoreDG.
+   * So far we will first simply take every PHINode as an induction variable
+   * and later enforce all the constraints.
+   */
+  auto IsIndVarStream = [](const llvm::PHINode *PHI) -> bool { return true; };
+  // Another abuse of AddressDataGraph.
+  auto StoreValue = StoreS->Inst->getOperand(0);
+  auto StoreDG = std::make_unique<AddressDataGraph>(StoreS->ConfigureLoop,
+                                                    StoreValue, IsIndVarStream);
+  /**
+   * Enforce all the constraints.
+   * 1. StoreDG should have no circle.
+   * 2. StoreDG should only have load inputs.
+   * 3. All the load inputs should be within the same BB of this store.
+   * 4. All the load and the store should have the same step root stream.
+   * 5. If multiple loads, they must be coalesced and continuous.
+   */
+  if (StoreDG->hasCircle()) {
+    return;
+  }
+  if (StoreDG->hasPHINodeInComputeInsts() ||
+      StoreDG->hasCallInstInComputeInsts()) {
+    return;
+  }
+  std::unordered_set<const llvm::LoadInst *> LoadInputs;
+  for (auto Input : StoreDG->getInputs()) {
+    if (auto LoadInput = llvm::dyn_cast<llvm::LoadInst>(Input)) {
+      // This is a LoadInput.
+      LoadInputs.insert(LoadInput);
+    } else {
+      // Found non-load inputs.
+      return;
+    }
+  }
+  StaticStream::StreamSet LoadInputStreams;
+  for (auto LoadInput : LoadInputs) {
+    if (LoadInput->getParent() != StoreS->Inst->getParent()) {
+      // Not same BB.
+      return;
+    }
+    auto LoadS =
+        this->getStreamByInstAndConfigureLoop(LoadInput, StoreS->ConfigureLoop);
+    if (LoadS->BaseStepRootStreams != StoreS->BaseStepRootStreams) {
+      // They are not stepped by the same stream.
+      return;
+    }
+    LoadInputStreams.insert(LoadS);
+  }
+  // So far let's only support one load stream input.
+  // TODO: Check the offset between loads and we can relax this.
+  if (LoadInputStreams.size() > 1) {
+    return;
+  }
+  /**
+   * We passed all checks, we remember this relationship.
+   */
+  for (auto LoadS : LoadInputStreams) {
+    LoadS->LoadStoreDepStreams.insert(StoreS);
+    StoreS->LoadStoreBaseStreams.insert(LoadS);
+  }
+  StoreS->StoreDG = std::move(StoreDG);
 }
 
 void StaticStreamRegionAnalyzer::markQualifiedStreams() {
