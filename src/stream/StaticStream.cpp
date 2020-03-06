@@ -441,3 +441,25 @@ void StaticStream::fillProtobufStoreFuncInfo(
   ProtoFuncInfo->set_is_float(StoreType->isFloatTy() ||
                               StoreType->isDoubleTy());
 }
+
+StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {
+  assert(this->StoreDG && "No StoreDG to get input values.");
+  InputValueList InputValues;
+  for (const auto &Input : this->StoreDG->getInputs()) {
+    StaticStream *InputStream = nullptr;
+    // Search in the LoadStoreBaseStreams.
+    for (auto IS : this->LoadStoreBaseStreams) {
+      if (IS->Inst == Input) {
+        InputStream = IS;
+        break;
+      }
+    }
+    if (InputStream) {
+      // This comes from the base stream at runtime.
+    } else {
+      // This is an input value.
+      InputValues.push_back(Input);
+    }
+  }
+  return InputValues;
+}
