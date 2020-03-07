@@ -252,7 +252,9 @@ public:
   InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
   const Stream *getExecFuncInputStream(const llvm::Value *Value) const;
 
-  int getElementSize(llvm::DataLayout *DataLayout) const;
+  int getElementSize(llvm::DataLayout *DataLayout) const {
+    return this->SStream->getElementSize(DataLayout);
+  }
 
 protected:
   /**
