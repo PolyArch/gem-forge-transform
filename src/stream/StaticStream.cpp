@@ -29,6 +29,16 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
 #undef ADD_STREAM
 }
 
+int StaticStream::getElementSize(llvm::DataLayout *DataLayout) const {
+  if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(this->Inst)) {
+    llvm::Type *StoredType =
+        StoreInst->getPointerOperandType()->getPointerElementType();
+    return DataLayout->getTypeStoreSize(StoredType);
+  }
+
+  return DataLayout->getTypeStoreSize(this->Inst->getType());
+}
+
 void StaticStream::handleFirstTimeComputeNode(
     std::list<DFSNode> &DFSStack, DFSNode &DNode,
     ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,

@@ -238,26 +238,6 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
 #undef ADD_STREAM
 }
 
-int Stream::getElementSize(llvm::DataLayout *DataLayout) const {
-  if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(this->getInst())) {
-    llvm::Type *StoredType =
-        StoreInst->getPointerOperandType()->getPointerElementType();
-    return DataLayout->getTypeStoreSize(StoredType);
-  }
-
-  if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(this->getInst())) {
-    llvm::Type *LoadedType =
-        LoadInst->getPointerOperandType()->getPointerElementType();
-    return DataLayout->getTypeStoreSize(LoadedType);
-  }
-
-  if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(this->getInst())) {
-    return DataLayout->getTypeStoreSize(PHINode->getType());
-  }
-
-  llvm_unreachable("Unsupport stream type to get element size.");
-}
-
 const Stream *Stream::getExecFuncInputStream(const llvm::Value *Value) const {
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
     if (Inst == this->SStream->Inst) {

@@ -64,6 +64,7 @@ public:
         IsStream(false) {}
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
+  int getElementSize(llvm::DataLayout *DataLayout) const;
 
   std::string formatType() const {
     switch (this->Type) {
@@ -81,6 +82,7 @@ public:
    * This represents the bidirectional dependence graph between streams.
    */
   using StreamSet = std::unordered_set<StaticStream *>;
+  using StreamVec = std::vector<StaticStream *>;
   StreamSet BaseStreams;
   StreamSet DependentStreams;
   StreamSet BackMemBaseStreams;
@@ -160,6 +162,15 @@ public:
   bool IsStream;
   // Some bookkeeping information.
   mutable LLVM::TDG::StaticStreamInfo StaticStreamInfo;
+
+  /**
+   * Coalesced MemStream.
+   * This remembers the CoalesceBaseStream and offset to it.
+   * CoalescedStreams is sorted by increasing offset.
+   */
+  StaticStream *CoalesceBaseStream = nullptr;
+  int64_t CoalesceOffset = 0;
+  StreamVec CoalescedStreams;
 
   // Update aliased stream.
   // It should be rare to have more than one update stream?
