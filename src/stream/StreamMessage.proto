@@ -185,3 +185,17 @@ message StreamHistory {
   uint64 num_cache_lines = 3;
   uint64 num_accesses = 4;
 }
+
+message StreamFloatEvent {
+  uint64 cycle = 1;
+  uint32 llc_bank = 2;
+  StreamFloatEventType type = 3;
+  
+  enum StreamFloatEventType {
+    CONFIG = 0;
+    END = 1;
+    MIGRATE_IN = 2;
+    MIGRATE_OUT = 3;
+    ISSUE = 4;
+  }
+}
