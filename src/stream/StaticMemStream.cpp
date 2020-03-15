@@ -241,7 +241,11 @@ void StaticMemStream::finalizePattern() {
    */
   const auto &DebugLoc = this->Inst->getDebugLoc();
   if (!DebugLoc) {
-    llvm::errs() << "No DebugLoc for MemStream " << this->formatName() << '\n';
+    /**
+     * It's possible that the load has no location, e.g.
+     * the compiler converts a[i - 1] into a PHINode.
+     */
+    return;
   }
   assert(DebugLoc && "Missing DebugLoc for MemStream.");
   auto Line = DebugLoc.getLine();
@@ -279,7 +283,7 @@ void StaticMemStream::finalizePattern() {
       //   this->StaticStreamInfo.set_float_manual(true);
     }
   } else if (SourceFile == "needle.cpp") {
-    if (Line == 106 || Line == 145) {
+    if (Line == 106 || Line == 142) {
       // rodinia.nw, reference[], no reuse.
       this->StaticStreamInfo.set_float_manual(true);
     }
@@ -354,6 +358,12 @@ void StaticMemStream::finalizePattern() {
       this->StaticStreamInfo.set_float_manual(true);
     } else if (Line == 223) {
       // z[], no reuse at all.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "particlefilter.c") {
+    // rodinia.particlefilter
+    if (Line == 298) {
+      // CDF[], no reuse at all.
       this->StaticStreamInfo.set_float_manual(true);
     }
   }

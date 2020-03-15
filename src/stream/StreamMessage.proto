@@ -84,6 +84,11 @@ message StaticStreamInfo {
   repeated StreamId merged_load_store_base_streams = 24;
   repeated StreamId merged_load_store_dep_streams = 25;
 
+  // AliasedStreamInfo
+  StreamId alias_base_stream = 26;
+  uint32 alias_offset = 27;
+  repeated StreamId aliased_streams = 28;
+
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.

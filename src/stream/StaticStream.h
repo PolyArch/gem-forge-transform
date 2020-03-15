@@ -77,6 +77,10 @@ public:
   }
 
   std::string formatName() const;
+  void formatProtoStreamId(::LLVM::TDG::StreamId *ProtoId) const {
+    ProtoId->set_id(this->StreamId);
+    ProtoId->set_name(this->formatName());
+  }
 
   /**
    * This represents the bidirectional dependence graph between streams.
@@ -164,13 +168,18 @@ public:
   mutable LLVM::TDG::StaticStreamInfo StaticStreamInfo;
 
   /**
-   * Coalesced MemStream.
-   * This remembers the CoalesceBaseStream and offset to it.
-   * CoalescedStreams is sorted by increasing offset.
+   * Aliased MemStream.
+   * This remembers the AliasBaseStream and offset to it.
+   * AliasedStreams is sorted by increasing offset.
+   * Note that aliased relationship is more general than coalesced
+   * relationship. Coalesced also requires:
+   * 1. Same BB.
+   * 2. Should be load streams.
+   * 3. No aliased store streams in between.
    */
-  StaticStream *CoalesceBaseStream = nullptr;
-  int64_t CoalesceOffset = 0;
-  StreamVec CoalescedStreams;
+  StaticStream *AliasBaseStream = nullptr;
+  int64_t AliasOffset = 0;
+  StreamVec AliasedStreams;
 
   // Update aliased stream.
   // It should be rare to have more than one update stream?

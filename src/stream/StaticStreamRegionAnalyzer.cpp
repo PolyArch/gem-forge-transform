@@ -24,8 +24,8 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   LLVM_DEBUG(llvm::dbgs() << "Mark predicate relationship done.\n");
   this->buildStreamDependenceGraph();
   LLVM_DEBUG(llvm::dbgs() << "Building stream dependence graph done.\n");
-  this->markCoalesceRelationship();
-  LLVM_DEBUG(llvm::dbgs() << "Mark coalesce relationship done.\n");
+  this->markAliasRelationship();
+  LLVM_DEBUG(llvm::dbgs() << "Mark alias relationship done.\n");
   this->buildLoadStoreStreamDependenceGraph();
   LLVM_DEBUG(
       llvm::dbgs() << "Building load-store stream dependence graph done.\n");
@@ -325,11 +325,12 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
   LLVM_DEBUG(llvm::dbgs() << "analyzeIsCandidate done.\n");
 }
 
-void StaticStreamRegionAnalyzer::markCoalesceRelationship() {
+void StaticStreamRegionAnalyzer::markAliasRelationship() {
   /**
    * After construct basic stream dependence graph, we can analyze the coalesce
    * relationship. This is used when building LoadStreamDependenceGraph.
    */
+  std::unordered_set<const llvm::Loop *> VisitedLoops;
   for (auto BBIter = this->TopLoop->block_begin(),
             BBEnd = this->TopLoop->block_end();
        BBIter != BBEnd; ++BBIter) {
@@ -337,83 +338,88 @@ void StaticStreamRegionAnalyzer::markCoalesceRelationship() {
     // Search for each loop.
     for (auto Loop = this->LI->getLoopFor(BB); this->TopLoop->contains(Loop);
          Loop = Loop->getParentLoop()) {
-      this->markCoalesceRelationshipForLoopBB(Loop, BB);
+      if (!VisitedLoops.count(Loop)) {
+        this->markAliasRelationshipForLoopBB(Loop);
+        VisitedLoops.insert(Loop);
+      }
     }
   }
 }
 
-void StaticStreamRegionAnalyzer::markCoalesceRelationshipForLoopBB(
-    const llvm::Loop *Loop, const llvm::BasicBlock *BB) {
+void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
+    const llvm::Loop *Loop) {
   /**
-   * We coalesce memory streams if:
-   * 0. They are from same BB (alreay enforced).
+   * We mark aliased memory streams if:
    * 1. They share the same step root.
    * 2. They have scev.
    * 3. Their SCEV has a constant offset.
    */
   using StreamOffsetPair = std::pair<StaticStream *, int64_t>;
   std::list<std::vector<StreamOffsetPair>> CoalescedGroup;
-  for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
-       ++InstIter) {
-    auto Inst = &*InstIter;
-    auto S = this->getStreamByInstAndConfigureLoop(Inst, Loop);
-    if (!S) {
-      continue;
-    }
-    if (S->Type == StaticStream::TypeT::IV) {
-      continue;
-    }
-    if (S->BaseStepRootStreams.size() != 1) {
-      continue;
-    }
-    LLVM_DEBUG(llvm::dbgs()
-               << "====== Try to coalesce stream: " << S->formatName() << '\n');
-    auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(S->Inst));
-    auto AddrSCEV = this->SE->getSCEV(Addr);
-
-    bool Coalesced = false;
-    if (AddrSCEV) {
-      LLVM_DEBUG(llvm::dbgs() << "AddrSCEV: "; AddrSCEV->dump());
-      for (auto &Group : CoalescedGroup) {
-        auto TargetS = Group.front().first;
-        if (TargetS->BaseStepRootStreams != S->BaseStepRootStreams) {
-          // Do not share the same step root.
-          continue;
-        }
-        // Check the load/store.
-        if (TargetS->Inst->getOpcode() != S->Inst->getOpcode()) {
-          continue;
-        }
-        auto TargetAddr =
-            const_cast<llvm::Value *>(Utils::getMemAddrValue(TargetS->Inst));
-        auto TargetAddrSCEV = this->SE->getSCEV(TargetAddr);
-        if (!TargetAddrSCEV) {
-          continue;
-        }
-        // Check the scev.
-        LLVM_DEBUG(llvm::dbgs() << "TargetAddrSCEV: "; TargetAddrSCEV->dump());
-        auto MinusSCEV = this->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
-        LLVM_DEBUG(llvm::dbgs() << "MinusSCEV: "; MinusSCEV->dump());
-        auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(MinusSCEV);
-        if (!OffsetSCEV) {
-          // Not constant offset.
-          continue;
-        }
-        LLVM_DEBUG(llvm::dbgs() << "OffsetSCEV: "; OffsetSCEV->dump());
-        int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
-        LLVM_DEBUG(llvm::dbgs()
-                   << "Coalesced, offset: " << Offset
-                   << " with stream: " << TargetS->formatName() << '\n');
-        Coalesced = true;
-        Group.emplace_back(S, Offset);
-        break;
+  for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      auto S = this->getStreamByInstAndConfigureLoop(Inst, Loop);
+      if (!S) {
+        continue;
       }
-    }
+      if (S->Type == StaticStream::TypeT::IV) {
+        continue;
+      }
+      if (S->BaseStepRootStreams.size() != 1) {
+        continue;
+      }
+      LLVM_DEBUG(llvm::dbgs() << "====== Try to coalesce stream: "
+                              << S->formatName() << '\n');
+      auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(S->Inst));
+      auto AddrSCEV = this->SE->getSCEV(Addr);
 
-    if (!Coalesced) {
-      LLVM_DEBUG(llvm::dbgs() << "New coalesce group\n");
-      CoalescedGroup.emplace_back();
-      CoalescedGroup.back().emplace_back(S, 0);
+      bool Coalesced = false;
+      if (AddrSCEV) {
+        LLVM_DEBUG(llvm::dbgs() << "AddrSCEV: "; AddrSCEV->dump());
+        for (auto &Group : CoalescedGroup) {
+          auto TargetS = Group.front().first;
+          if (TargetS->BaseStepRootStreams != S->BaseStepRootStreams) {
+            // Do not share the same step root.
+            continue;
+          }
+          auto TargetAddr =
+              const_cast<llvm::Value *>(Utils::getMemAddrValue(TargetS->Inst));
+          auto TargetAddrSCEV = this->SE->getSCEV(TargetAddr);
+          if (!TargetAddrSCEV) {
+            continue;
+          }
+          // Check the scev.
+          LLVM_DEBUG(llvm::dbgs()
+                     << "TargetStream: " << TargetS->formatName() << '\n');
+          LLVM_DEBUG(llvm::dbgs() << "TargetAddrSCEV: ";
+                     TargetAddrSCEV->dump());
+          auto MinusSCEV = this->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
+          LLVM_DEBUG(llvm::dbgs() << "MinusSCEV: "; MinusSCEV->dump());
+          auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(MinusSCEV);
+          if (!OffsetSCEV) {
+            // Not constant offset.
+            continue;
+          }
+          LLVM_DEBUG(llvm::dbgs() << "OffsetSCEV: "; OffsetSCEV->dump());
+          int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
+          LLVM_DEBUG(llvm::dbgs()
+                     << "Coalesced, offset: " << Offset
+                     << " with stream: " << TargetS->formatName() << '\n');
+          Coalesced = true;
+          Group.emplace_back(S, Offset);
+          break;
+        }
+      }
+
+      if (!Coalesced) {
+        LLVM_DEBUG(llvm::dbgs() << "New coalesce group\n");
+        CoalescedGroup.emplace_back();
+        CoalescedGroup.back().emplace_back(S, 0);
+      }
     }
   }
 
@@ -430,9 +436,9 @@ void StaticStreamRegionAnalyzer::markCoalesceRelationshipForLoopBB(
       auto S = StreamOffset.first;
       auto Offset = StreamOffset.second;
       // Remember the offset.
-      S->CoalesceBaseStream = BaseS;
-      S->CoalesceOffset = Offset - BaseOffset;
-      BaseS->CoalescedStreams.push_back(S);
+      S->AliasBaseStream = BaseS;
+      S->AliasOffset = Offset - BaseOffset;
+      BaseS->AliasedStreams.push_back(S);
     }
   }
 }
@@ -521,26 +527,25 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
   }
   // Check that all load inputs are continuously coalesced.
   if (!LoadInputStreams.empty()) {
-    auto LoadInputCoalesceBaseStream =
-        LoadInputStreams.front()->CoalesceBaseStream;
-    assert(LoadInputCoalesceBaseStream && "Missing CoalesceBaseStream.");
+    auto LoadInputAliasBaseStream = LoadInputStreams.front()->AliasBaseStream;
+    assert(LoadInputAliasBaseStream && "Missing AliasBaseStream.");
     for (auto LoadS : LoadInputStreams) {
-      if (LoadS->CoalesceBaseStream != LoadInputCoalesceBaseStream) {
-        // Mismatch in the CoalesceBaseStream.
+      if (LoadS->AliasBaseStream != LoadInputAliasBaseStream) {
+        // Mismatch in the AliasBaseStream.
         return;
       }
     }
-    // Sort the LoadInputStreams with CoalesceOffset.
+    // Sort the LoadInputStreams with AliasOffset.
     std::sort(LoadInputStreams.begin(), LoadInputStreams.end(),
               [](const StaticStream *SA, const StaticStream *SB) -> bool {
-                return SA->CoalesceOffset < SB->CoalesceOffset;
+                return SA->AliasOffset < SB->AliasOffset;
               });
     // Check that these input streams are continuous.
     for (int Idx = 1, End = LoadInputStreams.size(); Idx < End; ++Idx) {
       auto PrevS = LoadInputStreams.at(Idx - 1);
-      auto PrevOffset = PrevS->CoalesceOffset;
+      auto PrevOffset = PrevS->AliasOffset;
       auto PrevElementSize = PrevS->getElementSize(this->DataLayout);
-      auto CurOffset = LoadInputStreams.at(Idx)->CoalesceOffset;
+      auto CurOffset = LoadInputStreams.at(Idx)->AliasOffset;
       if (PrevOffset + PrevElementSize < CurOffset) {
         // These are not continuous.
         return;

@@ -45,9 +45,8 @@ private:
   void markUpdateRelationship();
   void markUpdateRelationshipForStore(const llvm::StoreInst *StoreInst);
   void buildStreamDependenceGraph();
-  void markCoalesceRelationship();
-  void markCoalesceRelationshipForLoopBB(const llvm::Loop *Loop,
-                                         const llvm::BasicBlock *BB);
+  void markAliasRelationship();
+  void markAliasRelationshipForLoopBB(const llvm::Loop *Loop);
   void buildLoadStoreStreamDependenceGraph();
   void buildLoadStoreDependenceForStore(StaticStream *StoreS);
   void markPredicateRelationship();
