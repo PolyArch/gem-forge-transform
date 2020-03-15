@@ -19,14 +19,23 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   {                                                                            \
     for (const auto &S : SET) {                                                \
       auto Entry = SSI.add_##FIELD();                                          \
-      Entry->mutable_id()->set_name(S->formatName());                          \
-      Entry->mutable_id()->set_id(S->StreamId);                                \
+      S->formatProtoStreamId(Entry->mutable_id()); \
       Entry->set_pred_true(PRED_TRUE);                                         \
     }                                                                          \
   }
   ADD_STREAM(this->PredicatedTrueStreams, predicated_streams, true);
   ADD_STREAM(this->PredicatedFalseStreams, predicated_streams, false);
 #undef ADD_STREAM
+
+  // Set the alias stream information.
+  if (this->AliasBaseStream) {
+    this->AliasBaseStream->formatProtoStreamId(SSI.mutable_alias_base_stream());
+    SSI.set_alias_offset(this->AliasOffset);
+  }
+  for (auto &S : this->AliasedStreams) {
+    auto ProtoAliasedStreamId = SSI.add_aliased_streams();
+    S->formatProtoStreamId(ProtoAliasedStreamId);
+  }
 }
 
 int StaticStream::getElementSize(llvm::DataLayout *DataLayout) const {
