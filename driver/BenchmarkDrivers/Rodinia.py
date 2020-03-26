@@ -69,15 +69,22 @@ class RodiniaBenchmark(Benchmark):
             'medium': ['512', '10', '$NTHREADS'],
             'large': ['2048', '10', '$NTHREADS'],
         },
+        'nw-blk32': {
+            'large': ['2048', '10', '$NTHREADS'],
+        },
         'nn': {
             'test': ['list4k.data.txt', '5', '30', '90', '$NTHREADS'],
             'medium': ['list16k.data.txt', '5', '30', '90', '$NTHREADS'],
-            'large': ['list256k.data.txt', '5', '30', '90', '$NTHREADS'],
+            # 'large': ['list256k.data.txt', '5', '30', '90', '$NTHREADS'],
+            'large': ['list768k.data.txt', '5', '30', '90', '$NTHREADS'],
         },
         'particlefilter': {
             'test':   ['-x', '100', '-y', '100', '-z', '10', '-np', '100', '-nt', '$NTHREADS'],
             'medium': ['-x', '100', '-y', '100', '-z', '10', '-np', '1000', '-nt', '$NTHREADS'],
-            'large':  ['-x', '100', '-y', '100', '-z', '10', '-np', '32768', '-nt', '$NTHREADS'],
+            # 'large':  ['-x', '100', '-y', '100', '-z', '10', '-np', '8196', '-nt', '$NTHREADS'],
+            # 'large':  ['-x', '100', '-y', '100', '-z', '10', '-np', '12288', '-nt', '$NTHREADS'],
+            'large':  ['-x', '1000', '-y', '1000', '-z', '10', '-np', '49152', '-nt', '$NTHREADS'],
+            # 'large':  ['-x', '100', '-y', '100', '-z', '10', '-np', '32768', '-nt', '$NTHREADS'],
         },
         'pathfinder': {
             'test': ['100', '100', '$NTHREADS'],
@@ -87,7 +94,8 @@ class RodiniaBenchmark(Benchmark):
         'pathfinder-avx512': {
             'test': ['100', '100', '$NTHREADS'],
             'medium': ['1000', '100', '$NTHREADS'],
-            'large': ['100000', '100', '$NTHREADS'],
+            # 'large': ['96256', '150', '$NTHREADS'],
+            'large': ['1572864', '8', '$NTHREADS'],
         },
         # 'srad_v1': {
         #     'test':   ['100', '0.5', '502', '458', '$NTHREADS'],
@@ -111,8 +119,8 @@ class RodiniaBenchmark(Benchmark):
 
     ROI_FUNCS = {
         'b+tree': [
-            '.omp_outlined.', # kernel_range
-            '.omp_outlined..38', # kernel_query
+            '.omp_outlined..33', # kernel_range
+            '.omp_outlined..37', # kernel_query
         ],
         'bfs': [
             '.omp_outlined.',
@@ -152,11 +160,15 @@ class RodiniaBenchmark(Benchmark):
         ],
         'nw': [
             '.omp_outlined.',
-            '.omp_outlined..5',
+            '.omp_outlined..7',
         ],
-        'nn': [
+        'nw-blk32': [
             '.omp_outlined.',
             '.omp_outlined..7',
+        ],
+        'nn': [
+            '.omp_outlined..7',
+            '.omp_outlined..8',
         ],
         'particlefilter': [
             '.omp_outlined.',  # applyMotionModel()
@@ -207,10 +219,11 @@ class RodiniaBenchmark(Benchmark):
         'kmeans': 3 * 1, 
         'lavaMD': 1,            # Invoke kernel for once.
         'nw': 2,                # nw can finish.
+        'nw-blk32': 2,                # nw can finish.
         'nn': 4,                # One iteration is 4 work items.
         'particlefilter': 9 * 1, # One itertion is enough.
         'pathfinder': 99,        # pathfinder takes 99 iterations.
-        'pathfinder-avx512': 99,        # pathfinder takes 99 iterations.
+        'pathfinder-avx512': 149,        # pathfinder takes 99 iterations.
         'srad_v2': 2 * 1, # One iteration is enough.
         'srad_v2-avx512': 2 * 1, # One iteration is enough.
         'srad_v2-avx512-fix': 2 * 1, # One iteration is enough.
@@ -383,20 +396,32 @@ class RodiniaSuite:
 
 b+tree:
 Inner-most stream is enough.
-Result is i.store.rdc
+[i.store]
+[i.store] + [fltm]
+[i.store.rdc] + [fltm]
+
+bfs:
+[so.store]
+[so.store] + [fltmi]
+[so.store.ipred] + [fltmi]
+[so.store.rdc] + [fltmi]
+
+hotspot/hotspot3D:
+[so.store]
+[so.store] + [flt]
 
 nn:
 Compute the nearest neighbor, but only the for loop to compute the distance is parallelized.
 A lot of file IO in the ROI.
 [i.store]
-
-hotspot/hotspot3D:
-Can float all streams.
+[i.store] + [fltm]
+[i.store.ldst] + [fltm]
 
 nw:
 Needleman-Wunsch. The problem is that it is tiled for better temporal locality.
 And inplace computing makes it frequently aliased.
 [i.store]
+[i.store] + [fltm]
 
 cfd:
 compute_step_factor.
@@ -415,16 +440,15 @@ It reads from an AVI file frame by frame in the ROI.
 mummer-gpu:
 Complicated. Seems to be optimized for gpu.
 
-pathfinder, srad v2:
-Encounter FIFO ordering violation in gem5.
+particlefilter
+[so.store]
+[so.store] + [fltm]
 
-srad_v1/2:
-Basically the same.
-A wierd indirect access to padd the boundary, 
-i.e. iN[i] = i-1 if i != 0 else 0, and then x[iN[i] * cols + j]. 
-workset v1:
+pathfinder:
+[so.store]
+[so.store] + [fltm]
 
-workset:
-2048x2048 -> 112MB
+srad_v2:
+[so.store] + [fltm]
 
 """
