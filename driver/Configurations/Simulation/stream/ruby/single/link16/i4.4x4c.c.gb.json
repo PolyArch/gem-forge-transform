@@ -9,13 +9,11 @@
         "--gem-forge-stream-engine-max-total-run-ahead-length=192",
         "--gem-forge-stream-engine-enable-lsq",
         "--gem-forge-stream-engine-enable-coalesce",
-        "--gem-forge-stream-engine-throttling=global",
-        "--gem-forge-stream-engine-enable-float",
-        "--gem-forge-stream-engine-float-policy=manual"
+        "--gem-forge-stream-engine-throttling=global"
     ],
     "snippts": [
         "i4",
-        "8x8.dir_corner.l3.1MB.ruby"
+        "4x4.dir_corner.l2_256kB.l3_1MB.ruby"
     ],
     "support-transform-ids": [
         "stream.i",
@@ -24,10 +22,7 @@
         "stream.ex.static.i",
         "stream.ex.static.so",
         "stream.ex.static.i.store",
-        "stream.ex.static.i.store.rdc",
-        "stream.ex.static.i.store.ldst",
         "stream.ex.static.so.store",
-        "stream.ex.static.so.store.up",
-        "stream.ex.static.so.store.pred"
+        "stream.ex.static.so.store.rdc"
     ]
 }

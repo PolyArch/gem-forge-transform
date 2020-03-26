@@ -15,7 +15,7 @@
     ],
     "snippts": [
         "i4",
-        "8x8.dir_corner.l3.1MB.ruby"
+        "8x8.dir_corner.l2_256kB.l3_1MB.ruby"
     ],
     "support-transform-ids": [
         "stream.i",

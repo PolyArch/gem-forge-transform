@@ -11,11 +11,12 @@
         "--gem-forge-stream-engine-enable-coalesce",
         "--gem-forge-stream-engine-throttling=global",
         "--gem-forge-stream-engine-enable-float",
-        "--gem-forge-stream-engine-float-policy=manual"
+        "--gem-forge-stream-engine-enable-float-indirect",
+        "--gem-forge-stream-engine-float-policy=smart"
     ],
     "snippts": [
         "i4",
-        "8x8.dir_corner.l3.1MB.ruby"
+        "4x4.dir_corner.l3.4MB.ruby"
     ],
     "support-transform-ids": [
         "stream.i",
