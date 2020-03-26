@@ -6,8 +6,8 @@ import abc
 import Constants as C
 import Util
 from Utils import SimPoint
-from Utils import Gem5McPAT
 from Utils import TraceFlagEnum
+import Utils.Gem5McPAT.Gem5McPAT as Gem5McPAT
 
 
 class BenchmarkArgs(object):
@@ -862,6 +862,8 @@ class Benchmark(object):
             # C.GEM5_X86 if not hoffman2 else C.HOFFMAN2_GEM5_X86,
             C.get_gem5(),
             '--outdir={outdir}'.format(outdir=outdir),
+            # Always dump all stats.
+            '--stats-file=text://stats.txt?dumpAll=True',
             '--listener-mode=off',
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=binary),
