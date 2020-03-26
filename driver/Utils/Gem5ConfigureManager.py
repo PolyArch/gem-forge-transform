@@ -176,17 +176,26 @@ class Gem5ReplayConfigureManager(object):
     """
     Common snippts.
     """
+    L2_TLB = [
+        '--l1tlb-size=64',
+        '--l1tlb-assoc=8',
+        '--l2tlb-size=2048',
+        '--l2tlb-assoc=16',
+        '--l2tlb-hit-lat=8',
+        '--walker-se-lat=16',
+        '--walker-se-port=2',
+    ]
     LLC_256kB = [
         '--l2_size=256kB',
-        '--l2_assoc=4',
+        '--l2_assoc=16',
     ]
     LLC_1MB = [
         '--l2_size=1MB',
-        '--l2_assoc=4',
+        '--l2_assoc=16',
     ]
     LLC_4MB = [
         '--l2_size=4MB',
-        '--l2_assoc=4',
+        '--l2_assoc=16',
     ]
     L0_32kB = [
         '--l1i_size=32kB',
@@ -234,46 +243,23 @@ class Gem5ReplayConfigureManager(object):
     ]
     RUBY_MESH_DIR_CORNER = [
         "--topology=MeshDirCorners_XY",
+        "--routing-YX", # Routing in YX direction.
     ]
     RUBY_L3 = RUBY_L3_BASE + RUBY_MESH
     RUBY_L3_DIR_CORNER = RUBY_L3_BASE + RUBY_MESH_DIR_CORNER
     SNIPPTS = {
-        '2x2.l3.ruby': [
-            "--num-cpus=4",
-            "--num-dirs=4",
-            "--num-l2caches=4",
-            "--mesh-rows=2",
-        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_1MB,
-        '3x3.l3.ruby': [
-            "--num-cpus=9",
-            "--num-dirs=9",
-            "--num-l2caches=9",
-            "--mesh-rows=3",
-        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_1MB,
-        '4x4.l3.ruby': [
-            "--num-cpus=16",
-            "--num-dirs=16",
-            "--num-l2caches=16",
-            "--mesh-rows=4",
-        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_1MB,
-        '4x4.l3.4MB.ruby': [
-            "--num-cpus=16",
-            "--num-dirs=16",
-            "--num-l2caches=16",
-            "--mesh-rows=4",
-        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_4MB,
         '4x4.dir_corner.l3.4MB.ruby': [
             "--num-cpus=16",
             "--num-dirs=4",
             "--num-l2caches=16",
             "--mesh-rows=4",
         ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_4MB,
-        '4x4.l3.256kB.ruby': [
+        '4x4.dir_corner.l2_256kB.l3_1MB.ruby': [
             "--num-cpus=16",
-            "--num-dirs=16",
+            "--num-dirs=4",
             "--num-l2caches=16",
             "--mesh-rows=4",
-        ] + RUBY_L3 + L0_32kB + MLC_256kB + LLC_256kB,
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
         # Ideal means large private cache.
         '4x4.l3.idea.ruby': [
             "--num-cpus=16",
@@ -281,24 +267,18 @@ class Gem5ReplayConfigureManager(object):
             "--num-l2caches=16",
             "--mesh-rows=4",
         ] + RUBY_L3 + L0_32MB + MLC_32MB + LLC_4MB,
-        '4x4.l3.ideaL2.ruby': [
-            "--num-cpus=16",
-            "--num-dirs=16",
-            "--num-l2caches=16",
-            "--mesh-rows=4",
-        ] + RUBY_L3 + L0_32kB + MLC_32MB + LLC_4MB,
-        '8x8.l3.1MB.ruby': [
-            "--num-cpus=64",
-            "--num-dirs=64",
-            "--num-l2caches=64",
-            "--mesh-rows=8",
-        ] + RUBY_L3 + L0_32kB + MLC_64kB + LLC_1MB,
         '8x8.dir_corner.l3.1MB.ruby': [
             "--num-cpus=64",
             "--num-dirs=4",
             "--num-l2caches=64",
             "--mesh-rows=8",
         ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_64kB + LLC_1MB,
+        '8x8.dir_corner.l2_256kB.l3_1MB.ruby': [
+            "--num-cpus=64",
+            "--num-dirs=4",
+            "--num-l2caches=64",
+            "--mesh-rows=8",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
         'o8': [
             "--cpu-type=DerivO3CPU",
             "--llvm-issue-width=8",
@@ -307,7 +287,13 @@ class Gem5ReplayConfigureManager(object):
             "--cpu-type=DerivO3CPU",
             "--llvm-issue-width=4",
             "--prog-interval=10000", # Hz
-        ],
+        ] + L2_TLB,
+        'o4.tlb': [
+            "--cpu-type=DerivO3CPU",
+            "--llvm-issue-width=4",
+            "--prog-interval=10000", # Hz
+            "--tlb-timing-se",
+        ] + L2_TLB,
         'i2': [
             "--cpu-type=MinorCPU",
             "--llvm-issue-width=2",
@@ -317,5 +303,11 @@ class Gem5ReplayConfigureManager(object):
             "--cpu-type=MinorCPU",
             "--llvm-issue-width=4",
             "--prog-interval=10000", # Hz
-        ],
+        ] + L2_TLB,
+        'i4.tlb': [
+            "--cpu-type=MinorCPU",
+            "--llvm-issue-width=4",
+            "--prog-interval=10000", # Hz
+            "--tlb-timing-se",
+        ] + L2_TLB,
     }
