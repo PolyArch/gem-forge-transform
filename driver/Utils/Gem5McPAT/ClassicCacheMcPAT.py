@@ -31,6 +31,24 @@ def configureL1ICache(self, cpuId, instL1):
     mcpatInstL1.buffer_sizes[2] = instL1['mshrs']  # prefetch_buffer_size
     mcpatInstL1.buffer_sizes[3] = 0                # wb_buffer_size
 
+def setStatsL1ICache(self, cpuId, instL1, isGemForgeCPU):
+    def vector(stat):
+        return self.getVecStatsTotal(instL1['path'] + '.' + stat)
+
+    reads = vector("ReadReq_accesses")
+    readMisses = vector("ReadReq_misses")
+    mcpatCPU = self.xml.sys.core[cpuId]
+    mcpatInstL1 = mcpatCPU.icache
+    mcpatInstL1.read_accesses = reads
+    mcpatInstL1.read_misses = readMisses
+    # * For LLVMTraceCPU, there is no instruction cache simulated,
+    # * we added the number of instructions as an approximation.
+    if isGemForgeCPU:
+        fetchedInsts = self.getCPUScalarStat("fetch.Insts", cpuId)
+        mcpatInstL1.read_accesses = fetchedInsts / 9
+        mcpatInstL1.read_misses = fetchedInsts / 1000
+
+
 def configureL1DCache(self, cpuId, dataL1):
     mcpatCPU = self.xml.sys.core[cpuId]
     dataL1Tag = dataL1['tags']
@@ -53,11 +71,12 @@ def configureL1DCache(self, cpuId, dataL1):
     mcpatDataL1.buffer_sizes[3] = 0                # wb_buffer_size
 
 def setStatsL1DCache(self, cpuId, dataL1):
-    # L1DCache
-    writes = vector("dcache.WriteReq_accesses")
-    writeMisses = vector("dcache.WriteReq_misses")
-    reads = vector("dcache.ReadReq_accesses")
-    readMisses = vector("dcache.ReadReq_misses")
+    def vector(stat):
+        return self.getVecStatsTotal(dataL1['path'] + '.' + stat)
+    writes = vector("WriteReq_accesses")
+    writeMisses = vector("WriteReq_misses")
+    reads = vector("ReadReq_accesses")
+    readMisses = vector("ReadReq_misses")
     mcpatCPU = self.xml.sys.core[cpuId]
     mcpatDataL1 = mcpatCPU.dcache
     mcpatDataL1.read_accesses = reads
@@ -72,12 +91,10 @@ def configureL2Directories(self, cache):
     L2D = self.xml.sys.L2Directory[L2DIdx]
     L2D.clockrate = self.toMHz(self.getCPUClockDomain())
 
-def configureL2Cache(self, cache):
+def configureL2Cache(self, cpuId, cache):
     tags = cache['tags']
-    L2Idx = self.xml.sys.number_of_L2s
-    assert(L2Idx == 0)
-    self.xml.sys.number_of_L2s += 1
-    L2 = self.xml.sys.L2[L2Idx]
+    assert(cpuId < self.xml.sys.number_of_L2s)
+    L2 = self.xml.sys.L2[cpuId]
     L2.L2_config[0] = cache['size']
     L2.L2_config[1] = tags['block_size']
     L2.L2_config[2] = cache['assoc']
@@ -93,6 +110,26 @@ def configureL2Cache(self, cache):
     L2.buffer_sizes[2] = cache['mshrs']
     L2.buffer_sizes[3] = cache['write_buffers']
     L2.clockrate = self.toMHz(self.getCPUClockDomain())
+
+def setStatsL2Cache(self, cpuId, cache):
+    def vector(stat):
+        return self.getVecStatsTotal(cache['path'] + '.' + stat)
+    writes = vector("WritebackDirty_accesses") + \
+        vector("WritebackClean_accesses")
+    writeHits = vector("WritebackDirty_hits") + \
+        vector("WritebackClean_hits")
+    writeMisses = writes - writeHits
+    reads = vector("ReadReq_accesses") + \
+        vector("ReadExReq_accesses") + \
+        vector("ReadSharedReq_accesses")
+    readMisses = vector("ReadReq_misses") + \
+        vector("ReadExReq_misses") + \
+        vector("ReadSharedReq_misses")
+    L2 = self.xml.sys.L2[cpuId]
+    L2.read_accesses = reads
+    L2.write_accesses = writes
+    L2.read_misses = readMisses
+    L2.write_misses = writeMisses
 
 def configureL3Cache(self, cache):
     tags = cache['tags']
@@ -118,7 +155,7 @@ def configureL3Cache(self, cache):
 
     L3.clockrate = self.toMHz(self.getCPUClockDomain())
 
-def setStatsL2Cache(self):
+def setStatsL3Cache(self):
     total = self.getVecStatsTotal("system.l2.overall_accesses")
     totalMisses = self.getVecStatsTotal("system.l2.overall_misses")
     writes = self.getVecStatsTotal("system.l2.WritebackClean_accesses") + \
