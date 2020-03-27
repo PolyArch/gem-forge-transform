@@ -17,8 +17,12 @@ def configureGemForgeCPU(self, cpu):
         cpu.renameToIEWDelay + cpu.iewToCommitDelay
     maxBaseStages = max({1, 1, 1, 1})
 
-    core.pipeline_depth[0] = intExe + baseStages + maxBaseStages
-    core.pipeline_depth[1] = fpExe + baseStages + maxBaseStages
+    # ! PyBind will copy it.
+    pipeline_depth = core.pipeline_depth
+    pipeline_depth[0] = intExe + baseStages + maxBaseStages
+    pipeline_depth[1] = fpExe + baseStages + maxBaseStages
+    core.pipeline_depth = pipeline_depth
+
     core.instruction_buffer_size = cpu.maxFetchQueueSize
     core.instruction_window_size = cpu.maxInstructionQueueSize
     core.fp_instruction_window_size = cpu.maxInstructionQueueSize

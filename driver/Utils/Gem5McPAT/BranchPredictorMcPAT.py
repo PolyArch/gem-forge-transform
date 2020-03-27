@@ -6,12 +6,15 @@ def configureBranchPredictor(bp, mcpatCore):
 
     # Branch target buffer.
     mcpatBTB = mcpatCore.BTB
-    mcpatBTB.BTB_config[0] = 6
-    mcpatBTB.BTB_config[1] = bp.BTBEntries
-    mcpatBTB.BTB_config[2] = 6
-    mcpatBTB.BTB_config[3] = 2
-    mcpatBTB.BTB_config[4] = 1
-    mcpatBTB.BTB_config[5] = 1
+
+    BTB_config = mcpatBTB.BTB_config
+    BTB_config[0] = 6
+    BTB_config[1] = bp.BTBEntries
+    BTB_config[2] = 6
+    BTB_config[3] = 2
+    BTB_config[4] = 1
+    BTB_config[5] = 1
+    mcpatBTB.BTB_config = BTB_config
 
     mcpatPredictor = mcpatCore.predictor
     bpType = bp.type

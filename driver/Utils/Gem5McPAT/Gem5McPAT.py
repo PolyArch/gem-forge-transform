@@ -3,6 +3,7 @@ import Utils.Gem5Stats as Gem5Stats
 
 import Utils.Gem5McPAT.GemForgeCPUMcPAT as gfcpu
 import Utils.Gem5McPAT.DerivO3CPUMcPAT as o3cpu
+import Utils.Gem5McPAT.MinorCPUMcPAT as incpu
 
 import Utils.Gem5McPAT.BranchPredictorMcPAT as bpred
 import Utils.Gem5McPAT.TLBMcPAT as tlb
@@ -132,6 +133,10 @@ class Gem5McPAT(object):
             gfcpu.configureGemForgeCPU(self, cpu)
         elif cpuType == 'DerivO3CPU':
             o3cpu.configureDerivO3CPU(self, cpu)
+        elif cpuType == 'MinorCPU':
+            incpu.configureMinorCPU(self, cpu)
+        else:
+            print('Warn! Unsupported CPU {t}.'.format(t=cpuType))
         # Branch predictor:
         try:
             bp = Configuration(cpu.branchPred)
@@ -225,6 +230,10 @@ class Gem5McPAT(object):
             gfcpu.setStatsGemForgeCPU(self, cpu)
         elif cpuType == 'DerivO3CPU':
             o3cpu.setStatsDerivO3CPU(self, cpu)
+        elif cpuType == 'MinorCPU':
+            incpu.setStatsMinorCPU(self, cpu)
+        else:
+            print('Warn! Unsupported CPU {t}.'.format(t=cpuType))
         # TLB
         cpuId = cpu.cpu_id
         itb = cpu.itb

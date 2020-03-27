@@ -15,21 +15,28 @@ def configureL1ICache(self, cpuId, instL1):
     instL1Tag = instL1['tags']
     mcpatInstL1 = mcpatCPU.icache
     accessLatency = getCacheTagAccessLatency(instL1)
-    mcpatInstL1.icache_config[0] = instL1['size']          # capacity
+
+    # ! Pybind only support assign as whole.
+    icache_config = mcpatInstL1.icache_config
+    icache_config[0] = instL1['size']          # capacity
     # block_width
-    mcpatInstL1.icache_config[1] = instL1Tag['block_size']
-    mcpatInstL1.icache_config[2] = instL1['assoc']
-    mcpatInstL1.icache_config[3] = 1                           # bank
-    mcpatInstL1.icache_config[4] = accessLatency               # throughput
-    mcpatInstL1.icache_config[5] = accessLatency               # latency
+    icache_config[1] = instL1Tag['block_size']
+    icache_config[2] = instL1['assoc']
+    icache_config[3] = 1                           # bank
+    icache_config[4] = accessLatency               # throughput
+    icache_config[5] = accessLatency               # latency
     # output_width
-    mcpatInstL1.icache_config[6] = 32
+    icache_config[6] = 32
     # cache_policy
-    mcpatInstL1.icache_config[7] = 0
-    mcpatInstL1.buffer_sizes[0] = instL1['mshrs']  # MSHR
-    mcpatInstL1.buffer_sizes[1] = instL1['mshrs']  # fill_buffer_size
-    mcpatInstL1.buffer_sizes[2] = instL1['mshrs']  # prefetch_buffer_size
-    mcpatInstL1.buffer_sizes[3] = 0                # wb_buffer_size
+    icache_config[7] = 0
+    mcpatInstL1.icache_config = icache_config
+
+    buffer_sizes = mcpatInstL1.buffer_sizes
+    buffer_sizes[0] = instL1['mshrs']  # MSHR
+    buffer_sizes[1] = instL1['mshrs']  # fill_buffer_size
+    buffer_sizes[2] = instL1['mshrs']  # prefetch_buffer_size
+    buffer_sizes[3] = 0                # wb_buffer_size
+    mcpatInstL1.buffer_sizes = buffer_sizes
 
 def setStatsL1ICache(self, cpuId, instL1, isGemForgeCPU):
     def vector(stat):
@@ -54,21 +61,27 @@ def configureL1DCache(self, cpuId, dataL1):
     dataL1Tag = dataL1['tags']
     mcpatDataL1 = mcpatCPU.dcache
     accessLatency = getCacheTagAccessLatency(dataL1)
-    mcpatDataL1.dcache_config[0] = dataL1['size']          # capacity
+
+    dcache_config = mcpatDataL1.dcache_config
+    dcache_config[0] = dataL1['size']          # capacity
     # block_width
-    mcpatDataL1.dcache_config[1] = dataL1Tag['block_size']
-    mcpatDataL1.dcache_config[2] = dataL1['assoc']
-    mcpatDataL1.dcache_config[3] = 1                           # bank
-    mcpatDataL1.dcache_config[4] = accessLatency               # throughput
-    mcpatDataL1.dcache_config[5] = accessLatency               # latency
+    dcache_config[1] = dataL1Tag['block_size']
+    dcache_config[2] = dataL1['assoc']
+    dcache_config[3] = 1                           # bank
+    dcache_config[4] = accessLatency               # throughput
+    dcache_config[5] = accessLatency               # latency
     # output_width
-    mcpatDataL1.dcache_config[6] = 32
+    dcache_config[6] = 32
     # cache_policy
-    mcpatDataL1.dcache_config[7] = 0
-    mcpatDataL1.buffer_sizes[0] = dataL1['mshrs']  # MSHR
-    mcpatDataL1.buffer_sizes[1] = dataL1['mshrs']  # fill_buffer_size
-    mcpatDataL1.buffer_sizes[2] = dataL1['mshrs']  # prefetch_buffer_size
-    mcpatDataL1.buffer_sizes[3] = 0                # wb_buffer_size
+    dcache_config[7] = 0
+    mcpatDataL1.dcache_config = dcache_config
+
+    buffer_sizes = mcpatDataL1.buffer_sizes
+    buffer_sizes[0] = dataL1['mshrs']  # MSHR
+    buffer_sizes[1] = dataL1['mshrs']  # fill_buffer_size
+    buffer_sizes[2] = dataL1['mshrs']  # prefetch_buffer_size
+    buffer_sizes[3] = 0                # wb_buffer_size
+    mcpatDataL1.buffer_sizes = buffer_sizes
 
 def setStatsL1DCache(self, cpuId, dataL1):
     def vector(stat):
@@ -95,20 +108,26 @@ def configureL2Cache(self, cpuId, cache):
     tags = cache['tags']
     assert(cpuId < self.xml.sys.number_of_L2s)
     L2 = self.xml.sys.L2[cpuId]
-    L2.L2_config[0] = cache['size']
-    L2.L2_config[1] = tags['block_size']
-    L2.L2_config[2] = cache['assoc']
-    L2.L2_config[3] = 1
-    accessLatency = getCacheTagAccessLatency(cache)
-    L2.L2_config[4] = accessLatency
-    L2.L2_config[5] = accessLatency
-    L2.L2_config[6] = 32
-    L2.L2_config[7] = 1
 
-    L2.buffer_sizes[0] = cache['mshrs']
-    L2.buffer_sizes[1] = cache['mshrs']
-    L2.buffer_sizes[2] = cache['mshrs']
-    L2.buffer_sizes[3] = cache['write_buffers']
+    accessLatency = getCacheTagAccessLatency(cache)
+    L2_config = L2.L2_config
+    L2_config[0] = cache['size']
+    L2_config[1] = tags['block_size']
+    L2_config[2] = cache['assoc']
+    L2_config[3] = 1
+    L2_config[4] = accessLatency
+    L2_config[5] = accessLatency
+    L2_config[6] = 32
+    L2_config[7] = 1
+    L2.L2_config = L2_config
+
+    buffer_sizes = L2.buffer_sizes
+    buffer_sizes[0] = cache['mshrs']
+    buffer_sizes[1] = cache['mshrs']
+    buffer_sizes[2] = cache['mshrs']
+    buffer_sizes[3] = cache['write_buffers']
+    L2.buffer_sizes = buffer_sizes
+
     L2.clockrate = self.toMHz(self.getCPUClockDomain())
 
 def setStatsL2Cache(self, cpuId, cache):
@@ -137,21 +156,25 @@ def configureL3Cache(self, cache):
     assert(L3Idx == 0)
     self.xml.sys.number_of_L3s += 1
     L3 = self.xml.sys.L3[L3Idx]
-    L3.L3_config[0] = cache['size']
-    L3.L3_config[1] = tags['block_size']
-    L3.L3_config[2] = cache['assoc']
-    L3.L3_config[3] = 1
-
     accessLatency = getCacheTagAccessLatency(cache)
-    L3.L3_config[4] = accessLatency
-    L3.L3_config[5] = accessLatency
-    L3.L3_config[6] = 32
-    L3.L3_config[7] = 1
 
-    L3.buffer_sizes[0] = cache['mshrs']
-    L3.buffer_sizes[1] = cache['mshrs']
-    L3.buffer_sizes[2] = cache['mshrs']
-    L3.buffer_sizes[3] = cache['write_buffers']
+    L3_config = L3.L3_config
+    L3_config[0] = cache['size']
+    L3_config[1] = tags['block_size']
+    L3_config[2] = cache['assoc']
+    L3_config[3] = 1
+    L3_config[4] = accessLatency
+    L3_config[5] = accessLatency
+    L3_config[6] = 32
+    L3_config[7] = 1
+    L3.L3_config = L3_config
+
+    buffer_sizes = L3.buffer_sizes
+    buffer_sizes[0] = cache['mshrs']
+    buffer_sizes[1] = cache['mshrs']
+    buffer_sizes[2] = cache['mshrs']
+    buffer_sizes[3] = cache['write_buffers']
+    L3.buffer_sizes = buffer_sizes
 
     L3.clockrate = self.toMHz(self.getCPUClockDomain())
 

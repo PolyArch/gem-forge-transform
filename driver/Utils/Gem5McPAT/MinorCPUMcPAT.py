@@ -1,21 +1,22 @@
 
-def configureDerivO3CPU(self, cpu):
+def configureMinorCPU(self, cpu):
     idx = cpu.cpu_id
     core = self.xml.sys.core[idx]
     core.clock_rate = self.toMHz(self.getCPUClockDomain())
     isaType = cpu.isa[0]['type']
     core.x86 = isaType == 'X86ISA'
+    core.machine_type = 1; # 1 for inorder.
 
-    core.fetch_width = cpu.fetchWidth
-    core.decode_width = cpu.decodeWidth
+    core.fetch_width = cpu.fetch2InputBufferSize
+    core.decode_width = cpu.decodeInputWidth
     # Make the peak issueWidth the same as issueWidth.
-    core.issue_width = cpu.issueWidth
-    core.peak_issue_width = cpu.issueWidth
-    core.commit_width = cpu.commitWidth
+    core.issue_width = cpu.executeIssueLimit
+    core.peak_issue_width = cpu.executeIssueLimit
+    core.commit_width = cpu.executeCommitLimit
 
     # There is no float issue width in gem5.
     # Make it min(issueWidth, numFPU).
-    core.fp_issue_width = min(cpu.issueWidth, 6)
+    core.fp_issue_width = min(cpu.executeIssueLimit, 6)
 
     # Integer pipeline and float pipeline depth.
     intExe = 3
@@ -26,36 +27,43 @@ def configureDerivO3CPU(self, cpu):
     elif isaType == 'ArmISA':
       intExe = 3
       fpExe = 7
-    baseStages = cpu.fetchToDecodeDelay + cpu.decodeToRenameDelay + \
-                     cpu.renameToIEWDelay + cpu.iewToCommitDelay
-    maxBaseStages = \
-        max(cpu.commitToDecodeDelay, cpu.commitToFetchDelay,
-            cpu.commitToIEWDelay, cpu.commitToRenameDelay)
+    baseStages = cpu.fetch1ToFetch2ForwardDelay + \
+        cpu.fetch2ToDecodeForwardDelay + \
+        cpu.decodeToExecuteForwardDelay + \
+        3 # Simply issue execute commit stages
 
     # ! PyBind will copy it.
     pipeline_depth = core.pipeline_depth
-    pipeline_depth[0] = intExe + baseStages + maxBaseStages
-    pipeline_depth[1] = fpExe + baseStages + maxBaseStages
+    pipeline_depth[0] = intExe + baseStages
+    pipeline_depth[1] = fpExe + baseStages
     core.pipeline_depth = pipeline_depth
 
-    core.instruction_buffer_size = cpu.fetchBufferSize
+    # Buffer between the fetch and decode stage.
+    # ! Multiply by 4 here, otherwise cacti complains it's too small and fails.
+    core.instruction_buffer_size = cpu.fetch2InputBufferSize * 4
 
     # Again gem5 does not distinguish int/fp instruction window.
-    core.instruction_window_size = cpu.numIQEntries
-    core.fp_instruction_window_size = cpu.numIQEntries
+    core.instruction_window_size = cpu.executeInputBufferSize
+    core.fp_instruction_window_size = cpu.executeInputBufferSize
 
-    core.ROB_size = cpu.numROBEntries
-    core.phy_Regs_IRF_size = cpu.numPhysIntRegs
-    core.phy_Regs_FRF_size = cpu.numPhysFloatRegs
-    core.store_buffer_size = cpu.SQEntries
-    core.load_buffer_size = cpu.LQEntries
+    core.ROB_size = cpu.executeInputBufferSize
+    # Arch register.
+    archIntRegs = 32
+    archFpRegs = 128 # Vectorization?
+    core.archi_Regs_IRF_size = archIntRegs
+    core.archi_Regs_FRF_size = archFpRegs
+    core.phy_Regs_IRF_size = archIntRegs
+    core.phy_Regs_FRF_size = archFpRegs
+    core.store_buffer_size = cpu.executeLSQStoreBufferSize
+    # Not exactly right
+    core.load_buffer_size = cpu.executeLSQTransfersQueueSize
 
     # X86 ONLY
-    core.opt_local = 0
-    core.instruction_length = 32
-    core.opcode_width = 16
-    core.micro_opcode_width = 8
-    core.machine_type = 0; # 0 for O3.
+    if isaType == 'X86ISA':
+        core.opt_local = 0
+        core.instruction_length = 32
+        core.opcode_width = 16
+        core.micro_opcode_width = 8
 
     # Instruction TLB.
     try:
@@ -75,51 +83,94 @@ def configureDerivO3CPU(self, cpu):
     mcpatL1Directory = self.xml.sys.L1Directory[idx]
     mcpatL1Directory.clockrate = self.toMHz(self.getCPUClockDomain())
 
-def setStatsDerivO3CPU(self, cpu):
+def setStatsMinorCPU(self, cpu):
     core = self.xml.sys.core[cpu.cpu_id]
     def scalar(stat): return self.getScalarStats(cpu.path + '.' + stat)
     def vector(stat): return self.getVecStatsTotal(cpu.path + '.' + stat)
+    def op(stat): return self.getScalarStats(cpu.path + '.op_class_0::' + stat)
 
-    decodedInsts = scalar("decode.DecodedInsts")
-    branchInsts = scalar("fetch.Branches")
-    loadInsts = scalar("iew.iewExecLoadInsts")
-    storeInsts = scalar("iew.exec_stores")
-    commitInsts = scalar("commit.committedInsts")
-    commitIntInsts = scalar("commit.int_insts")
-    commitFpInsts = scalar("commit.fp_insts")
+    decodedInsts = scalar("decode.ops")
+    branchInsts = scalar("fetch2.branches")
+    loadInsts = scalar("lsq.loads")
+    storeInsts = scalar("lsq.stores")
+    commitInsts = scalar("committedOps")
+    commitIntInsts = scalar("commit.intOps")
+    commitFpInsts = scalar("commit.fpOps")
     totalCycles = scalar("numCycles")
     idleCycles = scalar("idleCycles")
-    robReads = scalar("rob.rob_reads")
-    robWrites = scalar("rob.rob_writes")
+    robReads = 0
+    robWrites = 0
 
     # Gem5 seems not distinguish rename int/fp operands.
     # Just make rename float writes 0.
-    renameWrites = scalar("rename.RenamedOperands")
-    renameReads = scalar("rename.RenameLookups")
-    renameFpReads = scalar("rename.fp_rename_lookups")
+    renameWrites = 0
+    renameReads = 0 
+    renameFpReads = 0
     renameFpWrites = 0
 
-    instWinReads = scalar("iq.int_inst_queue_reads")
-    instWinWrites = scalar("iq.int_inst_queue_writes")
-    instWinWakeUpAccesses = scalar("iq.int_inst_queue_wakeup_accesses")
-    instWinFpReads = scalar("iq.fp_inst_queue_reads")
-    instWinFpWrites = scalar("iq.fp_inst_queue_writes")
-    instWinFpWakeUpAccesses = scalar("iq.fp_inst_queue_wakeup_accesses")
+    instWinReads = scalar("execute.iqIntReads")
+    instWinWrites = scalar("execute.iqIntWrites")
+    instWinWakeUpAccesses = scalar("execute.iqIntWakeups")
+    instWinFpReads = scalar("execute.iqFpReads")
+    instWinFpWrites = scalar("execute.iqFpWrites")
+    instWinFpWakeUpAccesses = scalar("execute.iqFpWakeups")
 
-    intRegReads = scalar("int_regfile_reads")
-    intRegWrites = scalar("int_regfile_writes")
-    fpRegReads = scalar("fp_regfile_reads")
-    fpRegWrites = scalar("fp_regfile_writes")
+    intRegReads = scalar("execute.intRegReads")
+    intRegWrites = scalar("execute.intRegWrites")
+    fpRegReads = scalar("execute.fpRegReads")
+    fpRegWrites = scalar("execute.fpRegWrites")
 
-    commitCalls = scalar("commit.function_calls")
+    commitCalls = scalar("commit.callInsts")
 
-    intALU = scalar("iq.int_alu_accesses")
-    fpALU = scalar("iq.fp_alu_accesses")
-    # auto multi = this->getHistStats()
-    multi = 0.0
-    divs = 0.0
-    multiAndDiv = multi + divs
-    intALU -= multiAndDiv
+    intALUOps = [
+        'IntAlu',
+        'SimdAdd',
+        'SimdAddAcc',
+        'SimdAlu',
+        'SimdCmp',
+        'SimdCvt',
+        'SimdMisc',
+        'SimdShift',
+        'SimdShiftAcc',
+        'SimdReduceAdd',
+        'SimdReduceAlu',
+        'SimdReduceCmp',
+    ]
+    intMultAndDivOps = [
+        'IntMult',
+        'IntDiv',
+        'SimdMult',
+        'SimdMultAcc',
+        'SimdDiv',
+        'SimdSqrt',
+    ]
+    fpOps = [
+        'FloatAdd',
+        'FloatCmp',
+        'FloatCvt',
+        'FloatMult',
+        'FloatMultAcc',
+        'FloatDiv',
+        'FloatMisc',
+        'FloatSqrt',
+        'SimdFloatAdd',
+        'SimdFloatAlu',
+        'SimdFloatCmp',
+        'SimdFloatCvt',
+        'SimdFloatMult',
+        'SimdFloatMultAcc',
+        'SimdFloatDiv',
+        'SimdFloatMisc',
+        'SimdFloatSqrt',
+        'SimdFloatReduceAdd',
+        'SimdFloatReduceCmp',
+    ]
+    intALU = sum([op(o) for o in intALUOps])
+    fpALU = sum([op(o) for o in fpOps])
+    multiAndDiv = sum([op(o) for o in intMultAndDivOps])
+    print('IntALUOps {x} IntMultDivOps {y} FpOps {z}'.format(
+        x=intALU, y=multiAndDiv, z=fpALU
+    ))
 
     core.total_instructions = decodedInsts
     core.int_instructions = 0
