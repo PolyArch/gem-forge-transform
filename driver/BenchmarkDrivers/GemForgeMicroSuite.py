@@ -21,7 +21,7 @@ class GemForgeMicroBenchmark(Benchmark):
         self.stream_whitelist_fn = os.path.join(
             self.src_path, 'stream_whitelist.txt')
 
-        self.is_omp = 'omp' in self.benchmark_name
+        self.is_omp = self.benchmark_name.startswith('omp_')
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -48,7 +48,10 @@ class GemForgeMicroBenchmark(Benchmark):
         return None
 
     def get_trace_func(self):
-        return 'foo'
+        if self.is_omp:
+            return '.omp_outlined.'
+        else:
+            return 'foo'
 
     def get_lang(self):
         return 'C'
@@ -66,7 +69,9 @@ class GemForgeMicroBenchmark(Benchmark):
         os.chdir(self.src_path)
         bc = os.path.join(self.work_path, self.get_raw_bc())
         # Disable the loop unswitch to test for fault_stream.
-        if self.benchmark_name in {'cond_array_sum', 'cond_index_sum'}:
+        if self.benchmark_name in {
+            'cond_array_sum', 'cond_index_sum', 'indirect_stream',
+            'omp_broadcast', }:
             # No AVX512 here.
             flags = [
                 '-mllvm',

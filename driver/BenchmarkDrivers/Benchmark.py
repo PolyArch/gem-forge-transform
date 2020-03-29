@@ -863,7 +863,7 @@ class Benchmark(object):
             C.get_gem5(),
             '--outdir={outdir}'.format(outdir=outdir),
             # Always dump all stats.
-            '--stats-file=text://stats.txt?dumpAll=True',
+            '--stats-file=text://stats.txt?dumpAll=False',
             '--listener-mode=off',
             C.GEM5_LLVM_TRACE_SE_CONFIG if not hoffman2 else C.HOFFMAN2_GEM5_LLVM_TRACE_SE_CONFIG,
             '--cmd={cmd}'.format(cmd=binary),
