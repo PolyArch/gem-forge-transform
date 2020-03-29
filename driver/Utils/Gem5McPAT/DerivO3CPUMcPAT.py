@@ -3,7 +3,7 @@ def configureDerivO3CPU(self, cpu):
     idx = cpu.cpu_id
     core = self.xml.sys.core[idx]
     core.clock_rate = self.toMHz(self.getCPUClockDomain())
-    isaType = cpu.isa[0]['type']
+    isaType = cpu.isa[0].type
     core.x86 = isaType == 'X86ISA'
 
     core.fetch_width = cpu.fetchWidth
@@ -84,7 +84,7 @@ def setStatsDerivO3CPU(self, cpu):
     branchInsts = scalar("fetch.Branches")
     loadInsts = scalar("iew.iewExecLoadInsts")
     storeInsts = scalar("iew.exec_stores")
-    commitInsts = scalar("commit.committedInsts")
+    commitInsts = scalar("commit.committedOps")
     commitIntInsts = scalar("commit.int_insts")
     commitFpInsts = scalar("commit.fp_insts")
     totalCycles = scalar("numCycles")

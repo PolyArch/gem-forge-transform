@@ -3,7 +3,7 @@ def configureMinorCPU(self, cpu):
     idx = cpu.cpu_id
     core = self.xml.sys.core[idx]
     core.clock_rate = self.toMHz(self.getCPUClockDomain())
-    isaType = cpu.isa[0]['type']
+    isaType = cpu.isa[0].type
     core.x86 = isaType == 'X86ISA'
     core.machine_type = 1; # 1 for inorder.
 
@@ -96,8 +96,9 @@ def setStatsMinorCPU(self, cpu):
     commitInsts = scalar("committedOps")
     commitIntInsts = scalar("commit.intOps")
     commitFpInsts = scalar("commit.fpOps")
-    totalCycles = scalar("numCycles")
-    idleCycles = scalar("idleCycles")
+    totalCycles = scalar("numCycles") / 10
+    # idleCycles = scalar("idleCycles")
+    idleCycles = 0
     robReads = 0
     robWrites = 0
 

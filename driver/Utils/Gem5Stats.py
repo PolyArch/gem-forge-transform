@@ -11,6 +11,8 @@ class Gem5Stats:
         for line in stats:
             if len(line) == 0:
                 continue
+            if line.find('End Simulation Statistics') != -1:
+                break
             if line[0] == '-':
                 continue
             fields = line.split()

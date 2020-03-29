@@ -8,11 +8,20 @@ import Utils.Gem5McPAT.MinorCPUMcPAT as incpu
 import Utils.Gem5McPAT.BranchPredictorMcPAT as bpred
 import Utils.Gem5McPAT.TLBMcPAT as tlb
 import Utils.Gem5McPAT.ClassicCacheMcPAT as ccache
+import Utils.Gem5McPAT.RubyMcPAT as rcache
 import Utils.Gem5McPAT.MemoryControllerMcPAT as memctrl
 
 import mcpat
 import os
 import json
+
+def jsonToObj(config):
+    if isinstance(config, dict):
+        return Configuration(config)
+    elif isinstance(config, list):
+        return [jsonToObj(x) for x in config]
+    else:
+        return config
 
 class Configuration(object):
     """
@@ -20,7 +29,8 @@ class Configuration(object):
     """
     def __init__(self, config):
         for key in config:
-            setattr(self, key, config[key])
+            value = jsonToObj(config[key])
+            setattr(self, key, value)
 
 
 class Gem5McPAT(object):
@@ -41,7 +51,7 @@ class Gem5McPAT(object):
         self.xml.sys.device_type = 0
         self.xml.sys.number_of_L2s = 0
         self.xml.sys.number_of_L3s = 0
-        self.xml.sys.number_of_NoCs = 0
+        self.xml.sys.number_of_NoCs = 1
         self.xml.sys.number_of_L2Directories = 0
 
         self.configure()
@@ -62,9 +72,8 @@ class Gem5McPAT(object):
         mcpatSys.number_of_L2s = num_of_cores
         mcpatSys.number_of_L1Directories = 0
         mcpatSys.number_of_L2Directories = 0
-        mcpatSys.number_of_NoCs = 0
         mcpatSys.homogeneous_cores = 1
-        mcpatSys.core_tech_node = 65
+        mcpatSys.core_tech_node = 22
         mcpatSys.target_core_clockrate = 1000
         mcpatSys.temperature = 380
         mcpatSys.number_cache_levels = 2 if 'l2' in self.gem5Sys else 1
@@ -111,7 +120,7 @@ class Gem5McPAT(object):
         return int(1e6 / clock)
 
     def getTLBSize(self, tlb):
-        return tlb['size']
+        return tlb.size
 
     def configureMemoryControl(self):
         memctrl.configureMemoryControl(self)
@@ -124,6 +133,8 @@ class Gem5McPAT(object):
             cpus = self.gem5Sys['cpu']
         for cpu in cpus:
             self.configureCPU(cpu)
+        # Ruby private cache is configured later.
+        self.configureRubyCPUPrivateCache()
 
     def configureCPU(self, cpuConfig):
         cpu = Configuration(cpuConfig)
@@ -139,7 +150,7 @@ class Gem5McPAT(object):
             print('Warn! Unsupported CPU {t}.'.format(t=cpuType))
         # Branch predictor:
         try:
-            bp = Configuration(cpu.branchPred)
+            bp = cpu.branchPred
             mcpatCore = self.xml.sys.core[cpuId]
             bpred.configureBranchPredictor(bp, mcpatCore)
         except AttributeError:
@@ -149,22 +160,31 @@ class Gem5McPAT(object):
 
     def configureCPUPrivateCache(self, cpuId):
         if self.hasRuby():
-            pass
-        else:
-            # Private is always child of "cpu", not "future_cpu"
-            instL1 = self.gem5Sys['cpu'][cpuId]['icache']
-            ccache.configureL1ICache(self, cpuId, instL1)
-            dataL1 = self.gem5Sys['cpu'][cpuId]['dcache']
-            ccache.configureL1DCache(self, cpuId, dataL1)
-            if self.hasL1_5():
-                L2 = self.gem5Sys['cpu'][cpuId]['l1_5dcache']
-                ccache.configureL2Cache(self, cpuId, L2)
-                ccache.configureL2Directories(self, L2)
+            # Ruby's private cache is not configured here,
+            # as they are not child of cpu.
+            return
+        # Private is always child of "cpu", not "future_cpu"
+        instL1 = self.gem5Sys['cpu'][cpuId]['icache']
+        ccache.configureL1ICache(self, cpuId, instL1)
+        dataL1 = self.gem5Sys['cpu'][cpuId]['dcache']
+        ccache.configureL1DCache(self, cpuId, dataL1)
+        if self.hasL1_5():
+            L2 = self.gem5Sys['cpu'][cpuId]['l1_5dcache']
+            ccache.configureL2Cache(self, cpuId, L2)
+            ccache.configureL2Directories(self, L2)
+
+    def configureRubyCPUPrivateCache(self):
+        if not self.hasRuby():
+            return
+        ruby = Configuration(self.gem5Sys['ruby'])
+        rcache.configureL1Cache(self, ruby)
+        rcache.configureL2Cache(self, ruby)
 
 
     def configureL3Cache(self):
         if self.hasRuby():
-            pass
+            ruby = Configuration(self.gem5Sys['ruby'])
+            rcache.configureL3Cache(self, ruby)
         else:
             assert(self.hasL1_5())
             ccache.configureL3Cache(self, self.gem5Sys['l2'])
@@ -212,7 +232,8 @@ class Gem5McPAT(object):
         sys = self.xml.sys
         ticks = self.stats['sim_ticks']
         cycles = ticks / self.getCPUClockDomain()
-        sys.total_cycles = cycles
+        print('Cycles {c}'.format(c=cycles))
+        sys.total_cycles = cycles / 10
 
     def setStatsCPUs(self):
         # Prefer future_cpus as they are detailed cpu.
@@ -222,6 +243,7 @@ class Gem5McPAT(object):
             cpus = self.gem5Sys['cpu']
         for cpu in cpus:
             self.setStatsCPU(cpu)
+        self.setStatsRubyCPUPrivateCache()
 
     def setStatsCPU(self, cpuConfig):
         cpu = Configuration(cpuConfig)
@@ -244,7 +266,7 @@ class Gem5McPAT(object):
         # Branch predictor.
         mcpatCore = self.xml.sys.core[cpuId]
         try:
-            bp = Configuration(cpu.branchPred)
+            bp = cpu.branchPred
             bpred.setStatsBranchPredictor(self, bp, mcpatCore)
         except AttributeError:
             print('Warn! Failed to set stats for branch prediction')
@@ -255,20 +277,27 @@ class Gem5McPAT(object):
         cpuId = cpu.cpu_id
         isGemForgeCPU = cpu.type == 'LLVMTraceCPU'
         if self.hasRuby():
-            pass
-        else:
-            # Private is always child of "cpu", not "future_cpu"
-            instL1 = self.gem5Sys['cpu'][cpuId]['icache']
-            ccache.setStatsL1ICache(self, cpuId, instL1, isGemForgeCPU)
-            dataL1 = self.gem5Sys['cpu'][cpuId]['dcache']
-            ccache.setStatsL1DCache(self, cpuId, dataL1)
-            if self.hasL1_5():
-                L2 = self.gem5Sys['cpu'][cpuId]['l1_5dcache']
-                ccache.setStatsL2Cache(self, cpuId, L2)
+            return
+        # Private is always child of "cpu", not "future_cpu"
+        instL1 = self.gem5Sys['cpu'][cpuId]['icache']
+        ccache.setStatsL1ICache(self, cpuId, instL1, isGemForgeCPU)
+        dataL1 = self.gem5Sys['cpu'][cpuId]['dcache']
+        ccache.setStatsL1DCache(self, cpuId, dataL1)
+        if self.hasL1_5():
+            L2 = self.gem5Sys['cpu'][cpuId]['l1_5dcache']
+            ccache.setStatsL2Cache(self, cpuId, L2)
+
+    def setStatsRubyCPUPrivateCache(self):
+        if not self.hasRuby():
+            return
+        ruby = Configuration(self.gem5Sys['ruby'])
+        rcache.setStatsL1Cache(self, ruby)
+        rcache.setStatsL2Cache(self, ruby)
 
     def setStatsL3Cache(self):
         if self.hasRuby():
-            pass
+            ruby = Configuration(self.gem5Sys['ruby'])
+            rcache.setStatsL3Cache(self, ruby)
         else:
             ccache.setStatsL3Cache(self)
 

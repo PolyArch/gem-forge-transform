@@ -40,9 +40,9 @@ def configureBranchPredictor(bp, mcpatCore):
 
         # Partially tagged tabe is modeled as local predictor.
         tage = bp.tage
-        nHistoryTables = tage['nHistoryTables']
-        logTagTableSizes = tage['logTagTableSizes']
-        tagTableTagWidths = tage['tagTableTagWidths']
+        nHistoryTables = tage.nHistoryTables
+        logTagTableSizes = tage.logTagTableSizes
+        tagTableTagWidths = tage.tagTableTagWidths
         tagTableTotalBits = 0
         tagTableTotalEntries = 0
         for i in range(len(logTagTableSizes)):
@@ -53,7 +53,7 @@ def configureBranchPredictor(bp, mcpatCore):
             tagTableTotalBits += (tagBits + 1) * size
 
         # HistoryBuffer is modeld as global predictor.
-        historyBufferSize = tage['histBufferSize']
+        historyBufferSize = tage.histBufferSize
 
         mcpatPredictor.local_predictor_entries = tagTableTotalEntries
         mcpatPredictor.local_predictor_size[0] = math.floor(math.log(tagTableTotalEntries, 2))

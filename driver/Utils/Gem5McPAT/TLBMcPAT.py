@@ -1,6 +1,6 @@
 
 def setStatsDTLB(self, tlb, cpuId):
-    def scalar(stat): return self.getScalarStats(tlb['path'] + '.' + stat)
+    def scalar(stat): return self.getScalarStats(tlb.path + '.' + stat)
     reads = scalar("rdAccesses")
     readMisses = scalar("rdMisses")
     writes = scalar("wrAccesses")
@@ -14,7 +14,7 @@ def setStatsDTLB(self, tlb, cpuId):
     core.dtlb.total_misses = readMisses + writeMisses
 
 def setStatsITLB(self, tlb, cpuId):
-    def scalar(stat): return self.getScalarStats(tlb['path'] + '.' + stat)
+    def scalar(stat): return self.getScalarStats(tlb.path + '.' + stat)
     reads = scalar("rdAccesses")
     readMisses = scalar("rdMisses")
     writes = scalar("wrAccesses")
