@@ -18,7 +18,6 @@ from BenchmarkDrivers import GenerateTestInputs
 
 import Util
 import JobScheduler
-import StreamStatistics
 import Constants as C
 
 from Utils import BenchmarkResult

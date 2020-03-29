@@ -1,7 +1,6 @@
 
 from Benchmark import Benchmark
 import Util
-import StreamStatistics
 import Constants as C
 
 import os

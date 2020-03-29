@@ -7,7 +7,6 @@ from Utils import TraceFlagEnum
 
 import Constants as C
 import Util
-import StreamStatistics
 from Benchmark import Benchmark
 
 
