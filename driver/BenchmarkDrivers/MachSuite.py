@@ -1,7 +1,6 @@
 import os
 import subprocess
 import multiprocessing
-import prettytable
 
 from Utils import TraceFlagEnum
 
