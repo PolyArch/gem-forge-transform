@@ -1,0 +1,11 @@
+{
+    "id": "stream.ex.static.i.store.ldst",
+    "is_execution_transform": true,
+    "options": [
+        "-stream-execution-static-pass",
+        "-stream-pass-choose-strategy=inner",
+        "-stream-pass-allow-aliased-stream",
+        "-stream-pass-enable-store",
+        "-stream-pass-enable-load-store-dg"
+    ]
+}
