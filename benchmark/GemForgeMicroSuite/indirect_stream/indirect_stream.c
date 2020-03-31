@@ -20,17 +20,27 @@ __attribute__((noinline)) Value foo_warm(volatile Value *a, IndT *ia, int N) {
 
 __attribute__((noinline)) Value foo(volatile Value *a, IndT *ia, int N) {
   Value sum = 0.0;
+// #pragma nounroll
+//   for (IndT i = 0; i < N; i += STRIDE) {
+//     sum += a[ia[i]];
+//   }
 #pragma nounroll
   for (IndT i = 0; i < N; i += STRIDE * 4) {
-#pragma nounroll
-    for (IndT j = 0; j < 4; ++j) {
-      // Test short stream.
-      IndT idx = i + j * STRIDE;
-      IndT iaValue = ia[idx];
-      sum += a[iaValue + 0];
-      sum += a[iaValue + 1];
-      sum += a[iaValue - 1];
-    }
+    // Test coalesced multi-line indirect streams.
+    IndT idx = i;
+    IndT iaValue = ia[idx];
+    sum += a[iaValue - 1];
+    sum += a[iaValue + 0];
+    sum += a[iaValue + 1];
+    sum += a[iaValue + 2];
+    sum += a[iaValue + 3];
+// #pragma nounroll
+//     for (IndT j = 0; j < 4; ++j) {
+//       // Test short stream.
+//       IndT idx = i + j * STRIDE;
+//       IndT iaValue = ia[idx];
+//       sum += a[iaValue + 0];
+//     }
   }
   return sum;
 }
@@ -67,8 +77,8 @@ int main() {
 #ifdef WARM_CACHE
   // First warm up it.
   ret = foo_warm(a, ia, N);
-#endif
   m5_reset_stats(0, 0);
+#endif
   ret = foo(a, ia, N);
   m5_detail_sim_end();
 
