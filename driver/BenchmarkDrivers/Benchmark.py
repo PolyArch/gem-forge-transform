@@ -100,6 +100,9 @@ class Benchmark(object):
     def get_gem5_links(self):
         return self.get_links()
 
+    def get_gem5_mem_size(self):
+        return None
+
     """
     Used to separate multiple functions.
     """
@@ -891,6 +894,19 @@ class Benchmark(object):
 
         # Add any options from derived classes.
         gem5_args += self.get_additional_gem5_simulate_command()
+
+        # Allow each benchmark to have a customized memory capacity.
+        if self.get_gem5_mem_size():
+            mem_size = self.get_gem5_mem_size()
+            print('Reset MemSize = {s}'.format(s=mem_size))
+            reset = False
+            for idx in range(len(gem5_args)):
+                if gem5_args[idx].startswith('--mem-size='):
+                    gem5_args[idx] = '--mem-size={s}'.format(s=mem_size)
+                    reset = True
+                    break
+            if not reset:
+                gem5_args.append('--mem-size={s}'.format(s=mem_size))
 
         # Append the arguments.
         if self.get_sim_args() is not None:

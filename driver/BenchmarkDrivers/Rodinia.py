@@ -326,6 +326,15 @@ class RodiniaBenchmark(Benchmark):
             '--work-end-exit-count={v}'.format(v=work_items)
         ]
 
+    def get_gem5_mem_size(self):
+        if self.benchmark_name == 'nn':
+            # NN somehow requires this much memory to finish.
+            return '16GB'
+        if self.benchmark_name.startswith('srad_v2'):
+            # SRAD_V2 is the same situation.
+            return '16GB'
+        return None
+
     def build_raw_bc(self):
         os.chdir(self.benchmark_path)
         make_cmd = [
