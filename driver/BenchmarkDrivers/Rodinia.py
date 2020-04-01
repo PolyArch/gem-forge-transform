@@ -327,12 +327,13 @@ class RodiniaBenchmark(Benchmark):
         ]
 
     def get_gem5_mem_size(self):
-        if self.benchmark_name == 'nn':
-            # NN somehow requires this much memory to finish.
-            return '16GB'
-        if self.benchmark_name.startswith('srad_v2'):
-            # SRAD_V2 is the same situation.
-            return '16GB'
+        # Jesus so many benchmarks have to use large memory.
+        large_mem_benchmarks = [
+            'nn', 'srad_v2', 'bfs', 'nw'
+        ]
+        for p in large_mem_benchmarks:
+            if self.benchmark_name.startswith(p):
+                return '16GB'
         return None
 
     def build_raw_bc(self):
