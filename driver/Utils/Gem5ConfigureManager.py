@@ -197,6 +197,12 @@ class Gem5ReplayConfigureManager(object):
         '--l2_size=4MB',
         '--l2_assoc=16',
     ]
+    LLC_SELECT_4kB = [
+        '--llc-select-low-bit=12',
+    ]
+    LLC_SELECT_2kB = [
+        '--llc-select-low-bit=11',
+    ]
     L0_32kB = [
         '--l1i_size=32kB',
         '--l1i_assoc=8',
@@ -234,7 +240,6 @@ class Gem5ReplayConfigureManager(object):
         "--network=garnet2.0",
         "--router-latency=2",
         "--link-latency=1",
-        "--llc-select-low-bit=12",
         "--mem-channels=2",
         "--mem-size=1GB",
     ]
@@ -247,44 +252,51 @@ class Gem5ReplayConfigureManager(object):
     ]
     RUBY_L3 = RUBY_L3_BASE + RUBY_MESH
     RUBY_L3_DIR_CORNER = RUBY_L3_BASE + RUBY_MESH_DIR_CORNER
+    
     SNIPPTS = {
         '4x4.dir_corner.l3.4MB.ruby': [
             "--num-cpus=16",
             "--num-dirs=4",
             "--num-l2caches=16",
             "--mesh-rows=4",
-        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_4MB,
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_4MB + LLC_SELECT_4kB,
         '4x4.dir_corner.l2_256kB.l3_1MB.ruby': [
             "--num-cpus=16",
             "--num-dirs=4",
             "--num-l2caches=16",
             "--mesh-rows=4",
-        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_4kB,
         '4x8.dir_corner.l2_256kB.l3_1MB.ruby': [
             "--num-cpus=32",
             "--num-dirs=4",
             "--num-l2caches=32",
             "--mesh-rows=4",
-        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_4kB,
         # Ideal means large private cache.
         '4x4.l3.idea.ruby': [
             "--num-cpus=16",
             "--num-dirs=16",
             "--num-l2caches=16",
             "--mesh-rows=4",
-        ] + RUBY_L3 + L0_32MB + MLC_32MB + LLC_4MB,
+        ] + RUBY_L3 + L0_32MB + MLC_32MB + LLC_4MB + LLC_SELECT_4kB,
         '8x8.dir_corner.l3.1MB.ruby': [
             "--num-cpus=64",
             "--num-dirs=4",
             "--num-l2caches=64",
             "--mesh-rows=8",
-        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_64kB + LLC_1MB,
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_64kB + LLC_1MB + LLC_SELECT_4kB,
         '8x8.dir_corner.l2_256kB.l3_1MB.ruby': [
             "--num-cpus=64",
             "--num-dirs=4",
             "--num-l2caches=64",
             "--mesh-rows=8",
-        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_4kB,
+        '8x8.dir_corner.l2_256kB.l3_1MB_s2KB.ruby': [
+            "--num-cpus=64",
+            "--num-dirs=4",
+            "--num-l2caches=64",
+            "--mesh-rows=8",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_2kB,
         'o8': [
             "--cpu-type=DerivO3CPU",
             "--llvm-issue-width=8",
