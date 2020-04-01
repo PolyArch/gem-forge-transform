@@ -260,6 +260,12 @@ class Gem5ReplayConfigureManager(object):
             "--num-l2caches=16",
             "--mesh-rows=4",
         ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
+        '4x8.dir_corner.l2_256kB.l3_1MB.ruby': [
+            "--num-cpus=32",
+            "--num-dirs=4",
+            "--num-l2caches=32",
+            "--mesh-rows=4",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
         # Ideal means large private cache.
         '4x4.l3.idea.ruby': [
             "--num-cpus=16",
