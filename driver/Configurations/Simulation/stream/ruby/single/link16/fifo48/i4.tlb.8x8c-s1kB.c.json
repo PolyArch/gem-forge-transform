@@ -12,7 +12,7 @@
     ],
     "snippts": [
         "i4.tlb",
-        "8x8.dir_corner.l2_256kB.l3_1MB_s2kB.ruby"
+        "8x8.dir_corner.l2_256kB.l3_1MB_s1kB.ruby"
     ],
     "support-transform-ids": [
         "stream.i",

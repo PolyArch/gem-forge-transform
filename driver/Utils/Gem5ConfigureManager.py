@@ -203,6 +203,9 @@ class Gem5ReplayConfigureManager(object):
     LLC_SELECT_2kB = [
         '--llc-select-low-bit=11',
     ]
+    LLC_SELECT_1kB = [
+        '--llc-select-low-bit=10',
+    ]
     L0_32kB = [
         '--l1i_size=32kB',
         '--l1i_assoc=8',
@@ -291,12 +294,18 @@ class Gem5ReplayConfigureManager(object):
             "--num-l2caches=64",
             "--mesh-rows=8",
         ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_4kB,
-        '8x8.dir_corner.l2_256kB.l3_1MB_s2KB.ruby': [
+        '8x8.dir_corner.l2_256kB.l3_1MB_s2kB.ruby': [
             "--num-cpus=64",
             "--num-dirs=4",
             "--num-l2caches=64",
             "--mesh-rows=8",
         ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_2kB,
+        '8x8.dir_corner.l2_256kB.l3_1MB_s1kB.ruby': [
+            "--num-cpus=64",
+            "--num-dirs=4",
+            "--num-l2caches=64",
+            "--mesh-rows=8",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_1kB,
         'o8': [
             "--cpu-type=DerivO3CPU",
             "--llvm-issue-width=8",
