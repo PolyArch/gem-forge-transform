@@ -33,15 +33,15 @@ class RodiniaBenchmark(Benchmark):
             'large':  ['{DATA}/fvcorr.domn.193K.data', '$NTHREADS'],
         },
         'hotspot': {
-            'test':   ['64', '64', '2', '$NTHREADS', '{DATA}/temp_64.data', '{DATA}/power_64.data', 'output.txt'],
-            'medium': ['512', '512', '2', '$NTHREADS', '{DATA}/temp_512.data', '{DATA}/power_512.data', 'output.txt'],
-            'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
+            'test':   ['64', '64', '10', '$NTHREADS', '{DATA}/temp_64.data', '{DATA}/power_64.data', 'output.txt'],
+            'medium': ['512', '512', '10', '$NTHREADS', '{DATA}/temp_512.data', '{DATA}/power_512.data', 'output.txt'],
+            'large':  ['1024', '1024', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
         'hotspot-avx512': {
-            'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
+            'large':  ['1024', '1024', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
         'hotspot-avx512-fix': {
-            'large':  ['1024', '1024', '2', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
+            'large':  ['1024', '1024', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
         'hotspot3D': {
             'test':   ['64', '8', '2', '$NTHREADS', '{DATA}/temp_64x8.data', '{DATA}/power_64x8.data', 'output.txt'],
@@ -103,17 +103,17 @@ class RodiniaBenchmark(Benchmark):
         #     'large':  ['100', '0.5', '502', '458', '$NTHREADS'],
         # },
         'srad_v2': {
-            'test': ['128', '128', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
-            'medium': ['512', '512', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
-            'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'test': ['128', '128', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
+            'medium': ['512', '512', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
+            'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
         },
         'srad_v2-avx512': {
             # 'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
-            'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
         },
         'srad_v2-avx512-fix': {
             # 'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
-            'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
         },
     }
 
@@ -210,8 +210,8 @@ class RodiniaBenchmark(Benchmark):
         'b+tree': 2, # Two commands.
         'bfs': 2 * int(1e8 / 15e5),  # One iter takes 15e5 ops.
         'cfd': 4 * int(1e8 / 2e7), 
-        'hotspot': 2, # Two iters takes 10 min.
-        'hotspot-avx512': 2, # Two iters takes 10 min.
+        'hotspot': 4, # Two iters takes 10 min.
+        'hotspot-avx512': 4, # Two iters takes 10 min.
         'hotspot-avx512-fix': 2, # Two iters takes 10 min.
         'hotspot3D': 1 * int(1e8 / 2e7),
         'hotspot3D-avx512': 1 * int(1e8 / 2e7),

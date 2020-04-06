@@ -553,6 +553,8 @@ if __name__ == '__main__':
                       action='store', dest='gem5_debug', default=None)
     parser.add_option('--gem5-debug-start', type='int',
                       action='store', dest='gem5_debug_start', default=None)
+    parser.add_option('--gem5-max-ticks', type='int',
+                      action='store', dest='gem5_max_ticks', default=None)
     parser.add_option('--gem5-max-insts', type='int',
                       action='store', dest='gem5_max_insts', default=None)
 
