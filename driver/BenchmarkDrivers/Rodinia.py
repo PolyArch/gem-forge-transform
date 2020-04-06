@@ -43,6 +43,9 @@ class RodiniaBenchmark(Benchmark):
         'hotspot-avx512-fix': {
             'large':  ['1024', '1024', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
+        'hotspot-avx512-fix2k': {
+            'large':  ['1024', '2048', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
+        },
         'hotspot3D': {
             'test':   ['64', '8', '2', '$NTHREADS', '{DATA}/temp_64x8.data', '{DATA}/power_64x8.data', 'output.txt'],
             'medium': ['512', '2', '10', '$NTHREADS', '{DATA}/temp_512x2.data', '{DATA}/power_512x2.data', 'output.txt'],
@@ -142,6 +145,9 @@ class RodiniaBenchmark(Benchmark):
         'hotspot-avx512-fix': [
             '.omp_outlined.',
         ],
+        'hotspot-avx512-fix2k': [
+            '.omp_outlined.',
+        ],
         'hotspot3D': [
             '.omp_outlined.',
         ],
@@ -213,6 +219,7 @@ class RodiniaBenchmark(Benchmark):
         'hotspot': 4, # Two iters takes 10 min.
         'hotspot-avx512': 4, # Two iters takes 10 min.
         'hotspot-avx512-fix': 2, # Two iters takes 10 min.
+        'hotspot-avx512-fix2k': 2, # Two iters takes 10 min.
         'hotspot3D': 1 * int(1e8 / 2e7),
         'hotspot3D-avx512': 1 * int(1e8 / 2e7),
         'hotspot3D-avx512-fix': 1 * int(1e8 / 2e7),
