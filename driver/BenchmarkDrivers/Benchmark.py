@@ -882,6 +882,9 @@ class Benchmark(object):
         if self.options.gem5_debug_start is not None:
             gem5_args.insert(
                 1, '--debug-start={d}'.format(d=self.options.gem5_debug_start))
+        if self.options.gem5_max_ticks is not None:
+            gem5_args.append(
+                '--abs-max-tick={max_ticks}'.format(max_ticks=self.options.gem5_max_ticks))
         if self.options.gem5_max_insts is not None:
             gem5_args.append(
                 '--maxinsts={max_insts}'.format(max_insts=self.options.gem5_max_insts))

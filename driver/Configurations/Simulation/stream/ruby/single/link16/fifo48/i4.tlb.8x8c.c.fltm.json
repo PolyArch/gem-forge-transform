@@ -10,7 +10,7 @@
         "--gem-forge-stream-engine-enable-lsq",
         "--gem-forge-stream-engine-enable-coalesce",
         "--gem-forge-stream-engine-enable-float",
-        "--gem-forge-stream-engine-float-policy=smart",
+        "--gem-forge-stream-engine-float-policy=manual",
         "--gem-forge-stream-engine-enable-float-indirect",
         "--gem-forge-stream-engine-enable-float-subline"
     ],
