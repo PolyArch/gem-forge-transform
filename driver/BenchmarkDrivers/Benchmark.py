@@ -911,6 +911,13 @@ class Benchmark(object):
             if not reset:
                 gem5_args.append('--mem-size={s}'.format(s=mem_size))
 
+        # ! AdHoc here to scale up prefetch distance.
+        print self.get_name()
+        if self.get_name() == 'rodinia.b+tree' or self.get_name() == 'rodinia.particlefilter':
+            for i in range(len(gem5_args)):
+                if gem5_args[i] == '--gem-forge-stream-engine-max-run-ahead-length=4':
+                    gem5_args[i] = '--gem-forge-stream-engine-max-run-ahead-length=8'
+
         # Append the arguments.
         if self.get_sim_args() is not None:
             gem5_args.append(
