@@ -790,6 +790,7 @@ class Benchmark(object):
         compile_cmd = C.get_sim_compiler(compiler) + [
             '-c',
             '-O3',
+            '-ffp-contract=off',
             transformed_bc,
             '-o',
             transformed_obj,
@@ -913,10 +914,17 @@ class Benchmark(object):
 
         # ! AdHoc here to scale up prefetch distance.
         print self.get_name()
-        if self.get_name() == 'rodinia.b+tree' or self.get_name() == 'rodinia.particlefilter':
+        adhoc_scaleup_benchmarks = [
+            'rodinia.b+tree',
+            'rodinia.particlefilter',
+            'gfm.omp_dense_mv',
+        ]
+        if self.get_name() in adhoc_scaleup_benchmarks:
             for i in range(len(gem5_args)):
                 if gem5_args[i] == '--gem-forge-stream-engine-max-run-ahead-length=4':
                     gem5_args[i] = '--gem-forge-stream-engine-max-run-ahead-length=8'
+                if gem5_args[i] == '--gem-forge-stream-engine-max-total-run-ahead-length=48':
+                    gem5_args[i] = '--gem-forge-stream-engine-max-total-run-ahead-length=96'
 
         # Append the arguments.
         if self.get_sim_args() is not None:
