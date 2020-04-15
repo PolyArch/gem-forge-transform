@@ -20,21 +20,23 @@ typedef float Value;
 
 #define N 256
 #define M 65536
+#define Bx 16
+#define By 4
 
 __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C) {
 // #pragma clang loop vectorize(disable)
 #pragma omp parallel for schedule(static)
-  for (uint64_t i = 0; i < N; ++i) {
-    Value sum = 0.0f;
-#pragma clang loop unroll(disable) interleave(disable)
-    for (uint64_t j = 0; j < M; ++j) {
-      const uint64_t a_idx = i * M + j;
-      const uint64_t b_idx = j;
-      Value va = A[a_idx];
-      Value vb = B[b_idx];
-      sum += va * vb;
+  for (uint64_t i = 0; i < N; i += By) {
+    for (uint64_t j = 0; j < M; j += Bx) {
+      __m512 valB = _mm512_load_ps(B + j);
+      for (uint64_t by = 0; by < By; ++by) {
+        uint64_t idxA = (i + by) * M + j;
+        __m512 valA = _mm512_load_ps(A + idxA);
+        __m512 valM = _mm512_mul_ps(valA, valB);
+        Value sum = _mm512_reduce_add_ps(valM);
+        C[i + by] = sum;
+      }
     }
-    C[i] = sum;
   }
   return 0.0f;
 }
