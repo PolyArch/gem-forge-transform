@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
   // Start the threads.
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {
-    printf("Start thread %d.\n", tid);
+    volatile Value x = ((uint8_t *)I)[tid];
   }
 #endif
 

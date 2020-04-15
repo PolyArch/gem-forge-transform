@@ -27,15 +27,22 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C) {
 // #pragma clang loop vectorize(disable)
 #pragma omp parallel for schedule(static)
   for (uint64_t i = 0; i < N; i += By) {
+    Value localSum[By][Bx] = {0};
     for (uint64_t j = 0; j < M; j += Bx) {
       __m512 valB = _mm512_load_ps(B + j);
       for (uint64_t by = 0; by < By; ++by) {
         uint64_t idxA = (i + by) * M + j;
         __m512 valA = _mm512_load_ps(A + idxA);
+        __m512 valC = _mm512_load_ps(localSum[by]);
         __m512 valM = _mm512_mul_ps(valA, valB);
-        Value sum = _mm512_reduce_add_ps(valM);
-        C[i + by] = sum;
+        __m512 valS = _mm512_add_ps(valM, valC);
+        _mm512_store_ps(localSum[by], valS);
       }
+    }
+    for (uint64_t by = 0; by < By; ++by) {
+      __m512 valS = _mm512_load_ps(localSum[by]);
+      Value sum = _mm512_reduce_add_ps(valS);
+      C[i + by] = sum;
     }
   }
   return 0.0f;
@@ -77,7 +84,7 @@ int main(int argc, char *argv[]) {
   // Start the threads.
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {
-    printf("Start thread %d.\n", tid);
+    volatile Value x = A[tid];
   }
 #endif
 #ifdef GEM_FORGE
