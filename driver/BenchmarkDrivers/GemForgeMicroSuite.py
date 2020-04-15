@@ -22,6 +22,7 @@ class GemForgeMicroBenchmark(Benchmark):
             self.src_path, 'stream_whitelist.txt')
 
         self.is_omp = self.benchmark_name.startswith('omp_')
+        self.n_thread = benchmark_args.options.input_threads
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -45,6 +46,8 @@ class GemForgeMicroBenchmark(Benchmark):
         return []
 
     def get_args(self):
+        if self.is_omp:
+            return [str(self.n_thread)]
         return None
 
     def get_trace_func(self):
@@ -82,10 +85,16 @@ class GemForgeMicroBenchmark(Benchmark):
                 # '-fno-unroll-loops',
                 # '-fno-vectorize',
                 # '-fno-slp-vectorize',
-                '-march=knl',
+                # '-march=knl',
+                # '-mavx512f',
+                # '-ffast-math',
+                # '-ffp-contract=off',
                 '-mllvm',
                 '-loop-unswitch-threshold=1',
             ]
+        if self.benchmark_name == 'omp_conv3d2':
+            flags.append('-mavx512f')
+
         if self.is_omp:
             flags.append('-fopenmp')
         compile_cmd = [
@@ -93,9 +102,11 @@ class GemForgeMicroBenchmark(Benchmark):
             self.source,
             '-O3',
             '-c',
+            '-DGEM_FORGE',
+            '-Rpass-analysis=loop-vectorize',
         ] + flags + [
             '-emit-llvm',
-            '-std=c99',
+            '-std=c11',
             '-gline-tables-only',
             '-I{INCLUDE}'.format(INCLUDE=C.GEM5_INCLUDE_DIR),
             '-o',
@@ -107,6 +118,10 @@ class GemForgeMicroBenchmark(Benchmark):
         Util.call_helper([C.LLVM_DIS, bc])
 
         os.chdir(self.cwd)
+
+    def get_gem5_mem_size(self):
+        # Jesus so many benchmarks have to use large memory.
+        return '16GB'
 
     def get_additional_transform_options(self):
         """
