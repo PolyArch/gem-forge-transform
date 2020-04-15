@@ -943,7 +943,7 @@ class Benchmark(object):
         if self.get_name() in adhoc_scaleup_benchmarks:
             for i in range(len(gem5_args)):
                 if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=0':
-                    gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2':
+                    gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2'
 
         # Append the arguments.
         if self.get_sim_args() is not None:
