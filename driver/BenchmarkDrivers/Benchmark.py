@@ -925,6 +925,12 @@ class Benchmark(object):
                     gem5_args[i] = '--gem-forge-stream-engine-max-run-ahead-length=8'
                 if gem5_args[i] == '--gem-forge-stream-engine-max-total-run-ahead-length=48':
                     gem5_args[i] = '--gem-forge-stream-engine-max-total-run-ahead-length=96'
+        if self.get_name() == 'rodinia.srad_v2-avx512-fix':
+            for i in range(len(gem5_args)):
+                if gem5_args[i].startswith('--gem-forge-stream-engine'):
+                    gem5_args.insert(i, '--gem-forge-stream-engine-enable-float-cancel')
+                    break
+            
 
         # Append the arguments.
         if self.get_sim_args() is not None:
