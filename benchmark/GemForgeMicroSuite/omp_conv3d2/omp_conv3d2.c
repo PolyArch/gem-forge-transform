@@ -50,7 +50,7 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
   for (uint64_t n = 0; n < Nn; ++n) {
     for (uint64_t yy = 0; yy < Ny; yy += By) {
       for (uint64_t xx = 0; xx < Nx; xx += Bx) {
-        Value localSum[ByPad][BxPad] = {0};
+        Value localSum[ByPad][BxPad][Ni] = {0};
         for (uint64_t y = 0; y < By; ++y) {
           for (uint64_t x = 0; x < Bx; ++x) {
 
@@ -59,8 +59,6 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
             __m128 valI = _mm_load_ps(I + idxI);
 #elif Ni == 16
             __m512 valI = _mm512_load_ps(I + idxI);
-#else
-#error "Illegal Ni"
 #endif
             for (uint64_t ky = 0; ky < Ky; ++ky) {
               for (uint64_t kx = 0; kx < Kx; ++kx) {
@@ -68,18 +66,18 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
                 const uint64_t idxK = n * Kx * Ky * Ni + ky * Kx * Ni + kx * Ni;
 #if Ni == 4
                 __m128 valK = _mm_load_ps(K + idxK);
+                __m128 valS = _mm_load_ps(localSum[y + Py - ky][x + Px - kx]);
                 __m128 valM = _mm_mul_ps(valK, valI);
-                // Reduction over the partial sum.
-                Value sum = hsum_ps_sse1(valM);
+                __m128 valR = _mm_add_ps(valM, valS);
+                _mm_store_ps(localSum[y + Py - ky][x + Px - kx], valR);
 #elif Ni == 16
                 __m512 valK = _mm512_load_ps(K + idxK);
+                __m512 valS =
+                    _mm512_load_ps(localSum[y + Py - ky][x + Px - kx]);
                 __m512 valM = _mm512_mul_ps(valK, valI);
-                Value sum = _mm512_reduce_add_ps(valM);
+                __m512 valR = _mm512_add_ps(valM, valS);
+                _mm512_store_ps(localSum[y + Py - ky][x + Px - kx], valR);
 #endif
-
-                // Wierd padding.
-                Value valS = localSum[y + Py - ky][x + Px - kx];
-                localSum[y + Py - ky][x + Px - kx] = valS + sum;
               }
             }
           }
@@ -91,7 +89,14 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
           for (uint64_t x = 0; x < BxPad; ++x) {
             const uint64_t idxO =
                 n * NyPad * NxPad + (yy + y) * NxPad + (xx + x);
-            O[idxO] = localSum[y][x];
+#if Ni == 4
+            __m128 valS = _mm_load_ps(localSum[y][x]);
+            Value sum = hsum_ps_sse1(valS);
+#elif Ni == 16
+            __m512 valS = _mm512_load_ps(localSum[y][x]);
+            Value sum = _mm512_reduce_add_ps(valS);
+#endif
+            O[idxO] = sum;
           }
         }
       }
@@ -147,7 +152,7 @@ int main(int argc, char *argv[]) {
   // Start the threads.
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {
-    printf("Start thread %d.\n", tid);
+    volatile Value x = ((uint8_t *)I)[tid];
   }
 #endif
 
