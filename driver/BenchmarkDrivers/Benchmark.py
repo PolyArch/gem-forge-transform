@@ -940,7 +940,7 @@ class Benchmark(object):
             'gfm.omp_dense_mv_blk',
             'gfm.omp_conv3d2',
         ]
-        if self.get_name() in adhoc_scaleup_benchmarks:
+        if self.get_name() in adhoc_mc2_benchmarks:
             for i in range(len(gem5_args)):
                 if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=0':
                     gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2'
