@@ -13,19 +13,19 @@ typedef int Value;
 
 __attribute__((noinline)) Value foo(Value *a, int N, int M) {
   Value sum = 0;
-#pragma clang loop vectorize(disable) unroll(disable)
-  for (int k = 0; k < M; ++k) {
+// #pragma clang loop vectorize(disable) unroll(disable)
+//   for (int k = 0; k < M; ++k) {
 #pragma clang loop vectorize(disable) unroll(disable)
     for (int i = 0; i < N; i += STRIDE) {
       sum = sum + a[i];
     }
-  }
+  // }
   return sum;
 }
 
 // 65536*8 is 512kB.
-// const int N = 65536 * 2;
-const int N = 32768;
+const int N = 65536 * 2;
+// const int N = 128;
 Value a[N];
 
 int main() {
