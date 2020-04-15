@@ -94,6 +94,8 @@ class GemForgeMicroBenchmark(Benchmark):
             ]
         if self.benchmark_name == 'omp_conv3d2':
             flags.append('-mavx512f')
+        if self.benchmark_name == 'omp_dense_mv_blk':
+            flags.append('-mavx512f')
 
         if self.is_omp:
             flags.append('-fopenmp')
