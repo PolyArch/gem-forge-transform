@@ -13,8 +13,8 @@ typedef float Value;
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
   // Make sure there is no reuse.
-#pragma clang loop vectorize(enable)
-// #pragma clang loop unroll(disable)
+#pragma clang loop vectorize(disable)
+#pragma clang loop unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
     c[i] = a[i] + b[i];
   }
