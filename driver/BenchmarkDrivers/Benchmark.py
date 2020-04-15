@@ -935,6 +935,16 @@ class Benchmark(object):
                 if gem5_args[i] == '--gem-forge-stream-engine-max-total-run-ahead-length=48':
                     gem5_args[i] = '--gem-forge-stream-engine-max-total-run-ahead-length=96'
 
+        adhoc_mc2_benchmarks = [
+            'gfm.omp_dense_mv',
+            'gfm.omp_dense_mv_blk',
+            'gfm.omp_conv3d2',
+        ]
+        if self.get_name() in adhoc_scaleup_benchmarks:
+            for i in range(len(gem5_args)):
+                if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=0':
+                    gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2':
+
         # Append the arguments.
         if self.get_sim_args() is not None:
             gem5_args.append(
