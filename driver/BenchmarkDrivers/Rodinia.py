@@ -333,16 +333,16 @@ class RodiniaBenchmark(Benchmark):
             '--work-end-exit-count={v}'.format(v=work_items)
         ]
 
-    def get_gem5_mem_size(self):
-        # Jesus so many benchmarks have to use large memory.
-        return '16GB'
-        # large_mem_benchmarks = [
-        #     'nn', 'srad_v2', 'bfs', 'b+tree', 'nw', 'pathfinder', 'hotspot-'
-        # ]
-        # for p in large_mem_benchmarks:
-        #     if self.benchmark_name.startswith(p):
-        #         return '16GB'
-        # return None
+    # def get_gem5_mem_size(self):
+    #     # Jesus so many benchmarks have to use large memory.
+    #     return '16GB'
+    #     # large_mem_benchmarks = [
+    #     #     'nn', 'srad_v2', 'bfs', 'b+tree', 'nw', 'pathfinder', 'hotspot-'
+    #     # ]
+    #     # for p in large_mem_benchmarks:
+    #     #     if self.benchmark_name.startswith(p):
+    #     #         return '16GB'
+    #     # return None
 
     def build_raw_bc(self):
         os.chdir(self.benchmark_path)

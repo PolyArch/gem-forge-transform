@@ -221,9 +221,6 @@ def configureL3CacheBank(self, cntrl):
 
 def configureNoC(self, ruby, numL3s):
     print('Number of NoCs {x}'.format(x=self.xml.sys.number_of_NoCs))
-    # self.xml.sys.number_of_NoCs = 1
-    # self.xml.sys.homogeneous_NoCs = 1
-    print('Number of NoCs {x}'.format(x=self.xml.sys.number_of_NoCs))
     mcpatNoC = self.xml.sys.NoC[0]
     mcpatNoC.clockrate = self.toMHz(self.getCPUClockDomain())
     mcpatNoC.type = 1 # 0 bus, 1 NoC.
@@ -237,7 +234,9 @@ def configureNoC(self, ruby, numL3s):
     mcpatNoC.input_ports = 5
     mcpatNoC.output_ports = 5
     mcpatNoC.virtual_channel_per_port = \
-        network.routers[0].vcs_per_vnet * network.number_of_virtual_networks
+        network.routers[0].vcs_per_vnet
+    print(network.ni_flit_size)
+    print(network.buffers_per_data_vc)
     mcpatNoC.flit_bits = network.ni_flit_size * 8
     mcpatNoC.input_buffer_entries_per_vc = network.buffers_per_data_vc
     mcpatNoC.chip_coverage = 1

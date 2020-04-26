@@ -131,16 +131,29 @@ class Driver:
         # Get a uid for this run.
         # Use the suites and transforms
         return '{ss}.{ts}'.format(
-            ss='.'.join(self.options.suite),
+            ss='.'.join(self._get_suites()),
             ts='.'.join(self.transform_manager.get_all_transform_ids())
         )
+
+    def _get_suites(self):
+        suites = list()
+        for b in self.options.benchmark:
+            # Benchmark has name suite.benchmark.
+            idx = b.find('.')
+            if idx == -1:
+                print('Illegal suite for benchmark {b}'.format(b=b))
+            suite = b[:idx]
+            if suite not in suites:
+                suites.append(suite)
+        suites.sort()
+        return suites
 
     def _init_benchmarks(self):
         benchmark_args = Benchmark.BenchmarkArgs(
             self.transform_manager, self.simulation_manager, self.options
         )
         benchmarks = list()
-        for suite_name in self.options.suite:
+        for suite_name in self._get_suites():
             suite = None
             if suite_name == 'spec':
                 suite = SPEC2017.SPEC2017Benchmarks(benchmark_args)
@@ -173,7 +186,7 @@ class Driver:
             elif suite_name == 'test':
                 suite = GenerateTestInputs.TestInputSuite(benchmark_args)
             else:
-                print('Unknown suite ' + ','.join(self.options.suite))
+                print('Unknown suite {s}'.format(s=suite_name))
                 assert(False)
             benchmarks += suite.get_benchmarks()
         # Sort the benchmarks by name.
@@ -436,10 +449,6 @@ def main(options):
         driver.clean()
 
 
-def parse_suites(option, opt, value, parser):
-    setattr(parser.values, option.dest, value.split(','))
-
-
 def parse_benchmarks(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
 
@@ -471,10 +480,11 @@ def parse_simulate_configurations(option, opt, value, parser):
     for v in vs:
         s = os.path.join(C.LLVM_TDG_DRIVER_DIR,
                          'Configurations/Simulation', v + '.json')
+        print s
         ss = glob.glob(s)
         for full_path in ss:
             full_paths.append(full_path)
-    print(full_paths)
+    print('Simulation Configurtions {fp}'.format(fp=full_paths))
     for full_path in full_paths:
         if not os.path.isfile(full_path):
             print('Simulation configuration does not exist: {path}.'.format(
@@ -526,8 +536,6 @@ if __name__ == '__main__':
     parser.add_option('--fake-trace', action='store_true',
                       dest='fake_trace', default=False)
 
-    parser.add_option('--suite', type='string', action='callback',
-                      dest='suite', callback=parse_suites)
     parser.add_option('-b', '--benchmark', type='string', action='callback',
                       dest='benchmark', callback=parse_benchmarks)
     parser.add_option('--exclude-benchmark', type='string', action='callback',

@@ -17,9 +17,7 @@ class Graph500Benchmark(Benchmark):
         self.src_path = src_path
         self.suite_path = os.path.dirname(self.src_path)
         self.benchmark_name = os.path.basename(self.src_path)
-        self.work_path = (
-            '/home/zhengrong/Documents/graph500/'
-        )
+        self.n_thread = benchmark_args.options.input_threads
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -29,16 +27,31 @@ class Graph500Benchmark(Benchmark):
 
         self.scale = 16
         self.edge_factor = 16
-        self.edge_list_file = 'test.graph'
-        self.root_file = 'test.root'
+        self.edge_list_file = 's{s}-e{e}.graph'.format(s=self.scale, e=self.edge_factor)
+        self.root_file = 's{s}-e{e}.root'.format(s=self.scale, e=self.edge_factor)
+        self.edge_list_file = os.path.join(self.work_path, self.edge_list_file)
+        self.root_file = os.path.join(self.work_path, self.root_file)
+        self.csr_file = self.edge_list_file + '.csr'
 
         super(Graph500Benchmark, self).__init__(benchmark_args)
 
     def get_name(self):
         return 'graph.{b}'.format(b=self.benchmark_name)
 
+    def get_raw_bc(self):
+        # We have a special raw bc name.
+        return self.get_name() + '.bc'
+
     def get_links(self):
-        return ['-lm', '-lrt']
+        links = ['-lm', '-lrt']
+        if self.benchmark_name == 'omp-csr':
+            links += [
+                '-lomp',
+                '-lpthread',
+                '-Wl,--no-as-needed',
+                '-ldl',
+            ]
+        return links
 
     def get_args(self):
         return [
@@ -50,9 +63,15 @@ class Graph500Benchmark(Benchmark):
             self.edge_list_file,
             '-r',
             self.root_file,
+            '-t',
+            str(self.n_thread),
+            '-z',
+            '-V',
         ]
 
     def get_trace_func(self):
+        if self.benchmark_name == 'omp-csr':
+            return '.omp_outlined.'
         return 'make_bfs_tree'
 
     def get_lang(self):
@@ -64,10 +83,9 @@ class Graph500Benchmark(Benchmark):
     def get_run_path(self):
         return self.work_path
 
-    def build_raw_bc(self):
-        # First we make the edge list.
-        os.chdir(self.suite_path)
-        Util.call_helper(['make', 'clean'])
+    def generate_input(self):
+        if os.path.isfile(self.edge_list_file):
+            return
         Util.call_helper([
             'make',
             'make-edgelist',
@@ -80,10 +98,38 @@ class Graph500Benchmark(Benchmark):
             '-e',
             str(self.edge_factor),
             '-o',
-            os.path.join(self.work_path, self.edge_list_file),
+            self.edge_list_file,
             '-r',
-            os.path.join(self.work_path, self.root_file),
+            self.root_file,
         ])
+    def generate_csr(self):
+        # Generate the intermediate file for fast simulation (only for omp-csr).
+        if self.benchmark_name != 'omp-csr':
+            return
+        if os.path.isfile(self.csr_file):
+            return
+        Util.call_helper([
+            'make',
+            'omp-csr/omp-csr'
+        ])
+        Util.call_helper([
+            './omp-csr/omp-csr',
+            '-s',
+            str(self.scale),
+            '-e',
+            str(self.edge_factor),
+            '-o',
+            self.edge_list_file,
+            '-r',
+            self.root_file,
+        ])
+
+    def build_raw_bc(self):
+        # First we make the edge list.
+        os.chdir(self.suite_path)
+        # Generate the input.
+        self.generate_input()
+        self.generate_csr()
         # Make the bc using the special target.
         Util.call_helper([
             'make',
@@ -139,14 +185,27 @@ class Graph500Benchmark(Benchmark):
         self.run_trace()
         os.chdir(self.cwd)
 
+    def get_additional_gem5_simulate_command(self):
+        """
+        We just simulate one BFS.
+        """
+        n_bfs = 1
+        if n_bfs == -1:
+            # This benchmark can finish.
+            return list()
+        return [
+            '--work-end-exit-count={v}'.format(v=n_bfs)
+        ]
+
 
 class Graph500Benchmarks:
     def __init__(self, benchmark_args):
         suite_folder = os.getenv('GRAPH500_SUITE_PATH')
         self.benchmarks = list()
         for name in [
-            'seq-list',
-            'seq-csr',
+            # 'seq-list',
+            # 'seq-csr',
+            'omp-csr',
         ]:
             src_path = os.path.join(suite_folder, name)
             self.benchmarks.append(

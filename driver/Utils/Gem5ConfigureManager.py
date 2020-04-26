@@ -3,7 +3,15 @@ import os
 import json
 import re
 import copy
+import math
 
+def log2Byte(v):
+    if v[-2] == 'k':
+        return int(math.log(int(v[:-2]), 2)) + 10
+    elif v[-2] == 'M':
+        return int(math.log(int(v[:-2]), 2)) + 20
+    else:
+        return int(math.log(int(v[:-1]), 2))
 
 class Gem5ReplayConfig(object):
 
@@ -110,11 +118,15 @@ class Gem5ReplayConfigureManager(object):
             with open(fn, 'r') as f:
                 json_obj = json.load(f)
                 assert('options' in json_obj)
-                # Generate the id from folder.fn
+                # Generate the id from folder.fn if there is no id.
                 relative_folder = os.path.dirname(
                     os.path.relpath(fn, self.simulation_folder_root))
                 id_prefix = relative_folder.replace(os.sep, '.')
-                id_body = os.path.basename(fn)[:-5]
+                try:
+                    id_body = json_obj['id']
+                except KeyError:
+                    id_body = os.path.basename(fn)[:-5]
+                
                 json_obj['id'] = '{prefix}.{body}'.format(
                     prefix=id_prefix,
                     body=id_body,
@@ -142,13 +154,17 @@ class Gem5ReplayConfigureManager(object):
 
     def replace_field(self, match, design):
         expression = match.group(0)[1:-1]
-        evaluated = eval(expression, dict(), design)
+        env = {
+            'log2Byte': log2Byte,
+        }
+        evaluated = eval(expression, env, design)
         return str(evaluated)
 
-    def generate_config_for_design_space(self, json):
+    def generate_config_for_design_space_recursive(
+        self, json, vars, var_idx, design, configs):
         design_space = json['design_space']
-        configs = list()
-        for design in design_space:
+        if var_idx == len(vars):
+            # We are done, expand the json.
             expanded_json = copy.deepcopy(json)
             expanded_json['id'] = self.field_re.sub(
                 lambda match: self.replace_field(match, design),
@@ -159,6 +175,21 @@ class Gem5ReplayConfigureManager(object):
                     expanded_json['options'][option_i]
                 )
             configs.append(Gem5ReplayConfig(expanded_json))
+        else:
+            # Keep building up the design.
+            var = vars[var_idx]
+            for value in design_space[var]:
+                design[var] = value
+                self.generate_config_for_design_space_recursive(
+                    json, vars, var_idx + 1, design, configs
+                )
+
+    def generate_config_for_design_space(self, json):
+        design_space = json['design_space']
+        configs = list()
+        self.generate_config_for_design_space_recursive(
+            json, design_space.keys(), 0, dict(), configs
+        )
         return configs
 
     def get_configs(self, transform_id):

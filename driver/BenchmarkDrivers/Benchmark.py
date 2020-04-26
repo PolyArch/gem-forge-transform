@@ -24,8 +24,8 @@ class TraceObj(object):
         self.lhs = 0
         self.rhs = 0
         self.weight = weight
-        print('Find trace {weight}: {fn}'.format(
-            weight=self.weight, fn=self.fn))
+        # print('Find trace {weight}: {fn}'.format(
+        #     weight=self.weight, fn=self.fn))
 
     def get_weight(self):
         return self.weight
@@ -297,7 +297,6 @@ class Benchmark(object):
                 if line.startswith('#'):
                     continue
                 fields = line.split()
-                print(fields)
                 assert(len(fields) == 6)
                 weight = float(fields[0])
                 func = fields[4]
@@ -335,7 +334,7 @@ class Benchmark(object):
         # Filter out those region traces.
         trace_fns = [t for t in trace_fns if not os.path.basename(
             t).startswith('region.')]
-        print(trace_fns)
+        # print(trace_fns)
         # Sort them.
 
         def sort_by(a, b):
@@ -937,13 +936,23 @@ class Benchmark(object):
 
         adhoc_mc2_benchmarks = [
             'gfm.omp_dense_mv',
-            'gfm.omp_dense_mv_blk',
             'gfm.omp_conv3d2',
         ]
         if self.get_name() in adhoc_mc2_benchmarks:
             for i in range(len(gem5_args)):
                 if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=0':
                     gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2'
+        adhoc_mc1by2_benchmarks = [
+            'gfm.omp_dense_mv_blk',
+        ]
+        if self.get_name() in adhoc_mc1by2_benchmarks:
+            for i in range(len(gem5_args)):
+                if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=0':
+                    gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2'
+                    # gem5_args.insert(i, '--gem-forge-stream-engine-llc-multicast-group-size-y=1')
+                    break
+            # gem5_args.append('--gem-forge-stream-engine-enable-float-idea-flow')
+            # gem5_args.append('--gem-forge-stream-engine-llc-multicast-issue-policy=first_allocated')
 
         # Append the arguments.
         if self.get_sim_args() is not None:

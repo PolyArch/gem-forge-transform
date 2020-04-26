@@ -21,7 +21,17 @@ typedef float Value;
 #define N 256
 #define M 65536
 #define Bx 16
+// #define Bx 4
 #define By 4
+
+float hsum_ps_sse1(__m128 v) { // v = [ D C | B A ]
+  __m128 shuf = _mm_shuffle_ps(v, v, _MM_SHUFFLE(2, 3, 0, 1)); // [ C D | A B ]
+  __m128 sums = _mm_add_ps(v, shuf); // sums = [ D+C C+D | B+A A+B ]
+  shuf = _mm_movehl_ps(shuf, sums);  //  [   C   D | D+C C+D ]  // let the
+                                     //  compiler avoid a mov by reusing shuf
+  sums = _mm_add_ss(sums, shuf);
+  return _mm_cvtss_f32(sums);
+}
 
 __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C) {
 // #pragma clang loop vectorize(disable)
@@ -29,19 +39,36 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C) {
   for (uint64_t i = 0; i < N; i += By) {
     Value localSum[By][Bx] = {0};
     for (uint64_t j = 0; j < M; j += Bx) {
+#if Bx == 16
       __m512 valB = _mm512_load_ps(B + j);
+#elif Bx == 4
+      __m128 valB = _mm_load_ps(B + j);
+#endif
       for (uint64_t by = 0; by < By; ++by) {
         uint64_t idxA = (i + by) * M + j;
+#if Bx == 16
         __m512 valA = _mm512_load_ps(A + idxA);
         __m512 valC = _mm512_load_ps(localSum[by]);
         __m512 valM = _mm512_mul_ps(valA, valB);
         __m512 valS = _mm512_add_ps(valM, valC);
         _mm512_store_ps(localSum[by], valS);
+#elif Bx == 4
+        __m128 valA = _mm_load_ps(A + idxA);
+        __m128 valC = _mm_load_ps(localSum[by]);
+        __m128 valM = _mm_mul_ps(valA, valB);
+        __m128 valS = _mm_add_ps(valM, valC);
+        _mm_store_ps(localSum[by], valS);
+#endif
       }
     }
     for (uint64_t by = 0; by < By; ++by) {
+#if Bx == 16
       __m512 valS = _mm512_load_ps(localSum[by]);
       Value sum = _mm512_reduce_add_ps(valS);
+#elif Bx == 4
+      __m128 valS = _mm_load_ps(localSum[by]);
+      Value sum = hsum_ps_sse1(valS);
+#endif
       C[i + by] = sum;
     }
   }

@@ -8,6 +8,12 @@ class McPATPower:
         self.subthreshold_leakage_power = 0.0
         self.total_power = 0.0
 
+    def get_dyn_power(self):
+        return self.dynamic_power
+
+    def get_static_power(self):
+        return self.gate_leakage_power + self.subthreshold_leakage_power
+
     def get_name(self):
         return '{c}.{idx}'.format(c=self.c, idx=self.idx)
 
@@ -37,12 +43,15 @@ class McPAT:
         'alu': 'Integer ALUs',
         'mult': 'Complex ALUs',
         'fpu': 'Floatting Point Units',
+        'noc': 'NOC',
+        'l2': 'L2',
+        'l3': 'L3',
     }
 
     def __init__(self, fn):
-        self.components = dict()
+        self.failed = False
         for c in McPAT.COMPONENTS:
-            self.components[c] = list()
+            self.__dict__[c] = list()
         try:
             with open(fn) as f:
                 current_component = None
@@ -51,8 +60,8 @@ class McPAT:
                         name = McPAT.COMPONENTS[c]
                         if name not in line:
                             continue
-                        current_component = McPATPower(c, len(self.components[c]))
-                        self.components[c].append(current_component)
+                        current_component = McPATPower(c, len(self.__dict__[c]))
+                        self.__dict__[c].append(current_component)
                         break
                     if current_component is None:
                         continue
@@ -69,18 +78,18 @@ class McPAT:
                             fields[3])
         except IOError:
             print('Failed to open McPAT file {fn}.'.format(fn=fn))
-            self.components = None
+            self.failed = True
 
     def get_system_dynamic_power(self):
-        if self.components is None:
+        if self.failed:
             return float('nan')
-        return self.components['processor'][0].dynamic_power
+        return self.processor[0].get_dyn_power()
 
     def get_system_static_power(self):
-        if self.components is None:
+        if self.failed:
             return float('nan')
-        system = self.components['processor'][0]
-        return system.gate_leakage_power + system.subthreshold_leakage_power
+        system = self.processor[0]
+        return system.get_static_power()
 
     def get_system_power(self):
         return self.get_system_dynamic_power() + self.get_system_static_power()

@@ -121,10 +121,6 @@ class GemForgeMicroBenchmark(Benchmark):
 
         os.chdir(self.cwd)
 
-    def get_gem5_mem_size(self):
-        # Jesus so many benchmarks have to use large memory.
-        return '16GB'
-
     def get_additional_transform_options(self):
         """
         Adhoc stream whitelist file as additional option.

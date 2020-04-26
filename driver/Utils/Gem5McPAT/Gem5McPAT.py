@@ -233,7 +233,7 @@ class Gem5McPAT(object):
         ticks = self.stats['sim_ticks']
         cycles = ticks / self.getCPUClockDomain()
         print('Cycles {c}'.format(c=cycles))
-        sys.total_cycles = cycles / 10
+        sys.total_cycles = cycles 
 
     def setStatsCPUs(self):
         # Prefer future_cpus as they are detailed cpu.
