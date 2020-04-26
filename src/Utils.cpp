@@ -47,6 +47,31 @@ std::string Utils::formatLLVMFunc(const llvm::Function *Func) {
   return Utils::getInstUIDMap().getFuncUID(Func);
 }
 
+std::string Utils::formatLLVMValue(const llvm::Value *Value) {
+  if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+    return Utils::formatLLVMInst(Inst);
+  } else {
+    // This part is the same.
+    return Utils::formatLLVMValueWithoutFunc(Value);
+  }
+}
+
+std::string Utils::formatLLVMValueWithoutFunc(const llvm::Value *Value) {
+  if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+    return Utils::formatLLVMInstWithoutFunc(Inst);
+  } else if (auto Const = llvm::dyn_cast<llvm::ConstantData>(Value)) {
+    std::stringstream ss;
+    ss << "Const(";
+    if (auto ConstInt = llvm::dyn_cast<llvm::ConstantInt>(Const)) {
+      ss << ConstInt->getValue().toString(10 /* Radix */, false /* signed */);
+    }
+    ss << ')';
+    return ss.str();
+  } else {
+    return Value->getName();
+  }
+}
+
 const llvm::Instruction *
 Utils::getStaticNextNonPHIInst(const llvm::Instruction *Inst) {
 

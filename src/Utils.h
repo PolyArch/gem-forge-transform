@@ -178,21 +178,8 @@ public:
   static const llvm::Instruction *
   getStaticNextNonPHIInst(const llvm::Instruction *Inst);
 
-  static std::string formatLLVMValue(const llvm::Value *Value) {
-    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-      return Utils::formatLLVMInst(Inst);
-    } else {
-      return Value->getName();
-    }
-  }
-
-  static std::string formatLLVMValueWithoutFunc(const llvm::Value *Value) {
-    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-      return Utils::formatLLVMInstWithoutFunc(Inst);
-    } else {
-      return Value->getName();
-    }
-  }
+  static std::string formatLLVMValue(const llvm::Value *Value);
+  static std::string formatLLVMValueWithoutFunc(const llvm::Value *Value);
 
   /**
    * Split a string like a|b|c| into [a, b, c].

@@ -43,7 +43,7 @@ private:
         const auto &ThisComputeMNode =
             this->ComputeMetaNodes.at(ComputeMetaNodeIdx);
         const auto &OtherComputeMNode =
-            this->ComputeMetaNodes.at(ComputeMetaNodeIdx);
+            Other->ComputeMetaNodes.at(ComputeMetaNodeIdx);
         if (!ThisComputeMNode->isIdenticalTo(OtherComputeMNode)) {
           return false;
         }

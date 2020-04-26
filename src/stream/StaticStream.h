@@ -252,15 +252,11 @@ protected:
      * nullptr if this is not SCEVable.
      */
     const llvm::SCEV *SCEV;
-    bool isEmpty() const {
-      /**
-       * Check if this ComputeMNode does nothing.
-       * So far we just check that there is no compute insts.
-       * Further we can allow something like binary extension.
-       */
-      return this->ComputeInsts.empty();
-    }
+    bool isEmpty() const;
     bool isIdenticalTo(const ComputeMetaNode *Other) const;
+    std::string format() const {
+      return Utils::formatLLVMValueWithoutFunc(this->RootValue);
+    }
   };
   std::unordered_set<const llvm::Instruction *> CallInputs;
 

@@ -19,7 +19,7 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   {                                                                            \
     for (const auto &S : SET) {                                                \
       auto Entry = SSI.add_##FIELD();                                          \
-      S->formatProtoStreamId(Entry->mutable_id()); \
+      S->formatProtoStreamId(Entry->mutable_id());                             \
       Entry->set_pred_true(PRED_TRUE);                                         \
     }                                                                          \
   }
@@ -481,4 +481,58 @@ StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {
     }
   }
   return InputValues;
+}
+
+bool StaticStream::ComputeMetaNode::isEmpty() const {
+  /**
+   * Check if this ComputeMNode does nothing.
+   * So far we just check that there is no compute insts.
+   * Further we can allow something like binary extension.
+   */
+  if (!this->ComputeInsts.empty()) {
+    return false;
+  }
+  // If this is a constant value, this is not empty.
+  if (llvm::isa<llvm::ConstantData>(this->RootValue)) {
+    return false;
+  }
+  return true;
+}
+
+bool StaticStream::ComputeMetaNode::isIdenticalTo(
+    const ComputeMetaNode *Other) const {
+  /**
+   * Check if I am the same as the other compute node.
+   */
+  if (Other == this) {
+    return true;
+  }
+  if (Other->ComputeInsts.size() != this->ComputeInsts.size()) {
+    llvm::errs() << "Other " << Other->ComputeInsts.size() << " This "
+                 << this->ComputeInsts.size() << '\n';
+    return false;
+  }
+  for (size_t ComputeInstIdx = 0, NumComputeInsts = this->ComputeInsts.size();
+       ComputeInstIdx != NumComputeInsts; ++ComputeInstIdx) {
+    const auto &ThisComputeInst = this->ComputeInsts.at(ComputeInstIdx);
+    const auto &OtherComputeInst = Other->ComputeInsts.at(ComputeInstIdx);
+    if (ThisComputeInst->getOpcode() != OtherComputeInst->getOpcode()) {
+      return false;
+    }
+  }
+  // We need to be more careful to check the inputs.
+  if (this->LoadBaseStreams != Other->LoadBaseStreams) {
+    return false;
+  }
+  if (this->CallInputs != Other->CallInputs) {
+    return false;
+  }
+  if (this->LoopInvariantInputs != Other->LoopInvariantInputs) {
+    return false;
+  }
+  if (this->IndVarBaseStreams != Other->IndVarBaseStreams) {
+    return false;
+  }
+
+  return true;
 }
