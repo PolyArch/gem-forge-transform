@@ -1120,7 +1120,8 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
       ClonedInputValues.push_back(this->getClonedValue(Input));
     }
   } else {
-    assert(false && "Can't handle this PHI node.");
+    llvm::errs() << "Can't handle IVStream " << S->formatName() << '\n';
+    assert(false);
   }
 }
 

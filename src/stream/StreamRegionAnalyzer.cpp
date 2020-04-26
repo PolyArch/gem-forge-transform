@@ -386,6 +386,8 @@ void StreamRegionAnalyzer::markQualifiedStreams(
     StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
     StreamPassChooseStrategyE StreamPassChooseStrategy) {
 
+  LLVM_DEBUG(llvm::dbgs() << "==== SRA: MarkQualifiedStreams\n");
+
   auto IsQualifySeed = [StreamPassQualifySeedStrategy,
                         StreamPassChooseStrategy](Stream *S) -> bool {
     if (StreamPassChooseStrategy == StreamPassChooseStrategyE::INNER_MOST) {
@@ -427,6 +429,8 @@ void StreamRegionAnalyzer::markQualifiedStreams(
                       "qualifying queue.");
       continue;
     }
+
+    LLVM_DEBUG(llvm::dbgs() << "Mark Qualified " << S->formatName() << '\n');
     S->markQualified();
     // Check all the dependent streams.
     for (const auto &DependentStream : S->getDependentStreams()) {

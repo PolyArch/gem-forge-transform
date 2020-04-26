@@ -563,6 +563,7 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
 }
 
 void StaticStreamRegionAnalyzer::markQualifiedStreams() {
+  LLVM_DEBUG(llvm::dbgs() << "==== SSRA: MarkQualifiedStreams\n");
   std::list<StaticStream *> Queue;
   // First stage: ignore back-edge dependence.
   for (auto &InstStream : this->InstStaticStreamMap) {
@@ -588,6 +589,7 @@ void StaticStreamRegionAnalyzer::markQualifiedStreams() {
       assert(false && "Stream should be qualified to be inserted into the "
                       "qualifying queue.");
     }
+    LLVM_DEBUG(llvm::dbgs() << "Mark Qualified " << S->formatName() << '\n');
     S->setIsQualified(true);
     // Check all the dependent streams.
     for (const auto &DependentStream : S->DependentStreams) {

@@ -153,47 +153,12 @@ bool StaticIndVarStream::analyzeIsReductionFromSCEV(
   return true;
 }
 
-bool StaticIndVarStream::ComputeMetaNode::isIdenticalTo(
-    const ComputeMetaNode *Other) const {
-  /**
-   * Check if I am the same as the other compute node.
-   */
-  if (Other == this) {
-    return true;
-  }
-  if (Other->ComputeInsts.size() != this->ComputeInsts.size()) {
-    return false;
-  }
-  for (size_t ComputeInstIdx = 0, NumComputeInsts = this->ComputeInsts.size();
-       ComputeInstIdx != NumComputeInsts; ++ComputeInstIdx) {
-    const auto &ThisComputeInst = this->ComputeInsts.at(ComputeInstIdx);
-    const auto &OtherComputeInst = Other->ComputeInsts.at(ComputeInstIdx);
-    if (ThisComputeInst->getOpcode() != OtherComputeInst->getOpcode()) {
-      return false;
-    }
-  }
-  // We need to be more careful to check the inputs.
-  if (this->LoadBaseStreams != Other->LoadBaseStreams) {
-    return false;
-  }
-  if (this->CallInputs != Other->CallInputs) {
-    return false;
-  }
-  if (this->LoopInvariantInputs != Other->LoopInvariantInputs) {
-    return false;
-  }
-  if (this->IndVarBaseStreams != Other->IndVarBaseStreams) {
-    return false;
-  }
-
-  return true;
-}
-
 void StaticIndVarStream::analyzeIsCandidate() {
   /**
    * So far only consider inner most loop.
    */
-  llvm::errs() << this->formatName() << '\n';
+  LLVM_DEBUG(llvm::dbgs() << "====== AnalyzeIsCandidate() - "
+                          << this->formatName() << '\n');
 
   if (!this->checkBaseStreamInnerMostLoopContainsMine()) {
     this->IsCandidate = false;
@@ -233,21 +198,28 @@ void StaticIndVarStream::analyzeIsCandidate() {
   this->AllComputePaths = this->constructComputePath();
 
   auto EmptyPathFound = false;
+  LLVM_DEBUG(llvm::dbgs() << "Analyzing ComputePath of " << this->formatName()
+                          << '\n');
   for (const auto &Path : AllComputePaths) {
+    LLVM_DEBUG(Path.debug());
     if (Path.isEmpty()) {
       EmptyPathFound = true;
       continue;
     }
     if (this->NonEmptyComputePath == nullptr) {
       this->NonEmptyComputePath = &Path;
+      LLVM_DEBUG(llvm::dbgs() << "Set as NonEmptyComputePath.\n");
     } else {
       // We have to make sure that these two compute path are the same.
       if (!this->NonEmptyComputePath->isIdenticalTo(&Path)) {
+        LLVM_DEBUG(llvm::dbgs() << "Different NonEmptyComputePath.\n");
         this->NonEmptyComputePath = nullptr;
         this->IsCandidate = false;
         this->StaticStreamInfo.set_not_stream_reason(
             LLVM::TDG::StaticStreamInfo::MULTI_NON_EMPTY_COMPUTE_PATH);
         return;
+      } else {
+        LLVM_DEBUG(llvm::dbgs() << "Identical NonEmptyComputePath.\n");
       }
     }
   }
@@ -322,6 +294,8 @@ void StaticIndVarStream::initializeMetaGraphConstruction(
 
 std::list<StaticIndVarStream::ComputePath>
 StaticIndVarStream::constructComputePath() const {
+  LLVM_DEBUG(llvm::dbgs() << "==== SIVS: ConstructComputePath "
+                          << this->formatName() << '\n');
   // Start from the root.
   assert(!this->PHIMetaNodes.empty() && "Failed to find the root PHIMetaNode.");
   auto &RootPHIMetaNode = this->PHIMetaNodes.front();
@@ -349,6 +323,8 @@ void StaticIndVarStream::constructComputePathRecursive(
   assert(ComputeMNode->PHIMetaNodes.size() <= 1 &&
          "Can not handle compute path for more than one PHIMetaNode child.");
   // Add myself to the path.
+  LLVM_DEBUG(llvm::dbgs() << "Pushed ComputeMNode " << ComputeMNode->format()
+                          << '\n');
   CurrentPath.ComputeMetaNodes.push_back(ComputeMNode);
 
   if (ComputeMNode->PHIMetaNodes.empty()) {
@@ -378,23 +354,25 @@ void StaticIndVarStream::constructComputePathRecursive(
   }
 
   // Remove my self from the path.
+  LLVM_DEBUG(llvm::dbgs() << "Poped ComputeMNode "
+                          << CurrentPath.ComputeMetaNodes.back()->format()
+                          << '\n');
   CurrentPath.ComputeMetaNodes.pop_back();
 }
 
 void StaticIndVarStream::ComputePath::debug() const {
-  llvm::errs() << "ComputePath ";
+  llvm::dbgs() << "ComputePath ";
   for (const auto &ComputeMNode : this->ComputeMetaNodes) {
     char Empty = ComputeMNode->isEmpty() ? 'E' : 'F';
-    llvm::errs() << Utils::formatLLVMValueWithoutFunc(ComputeMNode->RootValue)
-                 << Empty;
+    llvm::dbgs() << ComputeMNode->format() << Empty;
     if (!ComputeMNode->isEmpty()) {
       for (const auto &ComputeInst : ComputeMNode->ComputeInsts) {
-        llvm::errs() << Utils::formatLLVMInstWithoutFunc(ComputeInst) << ',';
+        llvm::dbgs() << Utils::formatLLVMInstWithoutFunc(ComputeInst) << ',';
       }
     }
-    llvm::errs() << ' ';
+    llvm::dbgs() << ' ';
   }
-  llvm::errs() << '\n';
+  llvm::dbgs() << '\n';
 }
 
 bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
