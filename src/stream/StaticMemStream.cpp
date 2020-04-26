@@ -366,5 +366,17 @@ void StaticMemStream::finalizePattern() {
       // CDF[], no reuse at all.
       this->StaticStreamInfo.set_float_manual(true);
     }
+  } else if (SourceFile == "omp_conv3d.c") {
+    // gfm.conv3d
+    if (Line == 49) {
+      // input[], no reuse at all.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
+  } else if (SourceFile == "omp_conv3d2.c") {
+    // gfm.conv3d2
+    if (Line == 59 || Line == 61) {
+      // input[], no reuse at all.
+      this->StaticStreamInfo.set_float_manual(true);
+    }
   }
 }
