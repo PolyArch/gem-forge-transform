@@ -291,11 +291,11 @@ void Stream::fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
   for (const auto &Input : ExecDG.getInputs()) {
     auto ProtobufArg = ProtoFuncInfo->add_args();
     auto Type = Input->getType();
-    if (!Type->isIntOrPtrTy()) {
-      llvm::errs() << "Invalid type, Value: " << Utils::formatLLVMValue(Input)
-                   << '\n';
-      assert(false && "Invalid type for input.");
-    }
+    // if (!Type->isIntOrPtrTy()) {
+    //   llvm::errs() << "Invalid type, Value: " << Utils::formatLLVMValue(Input)
+    //                << '\n';
+    //   assert(false && "Invalid type for input.");
+    // }
     if (auto InputStream = this->getExecFuncInputStream(Input)) {
       // This comes from the base stream.
       ProtobufArg->set_is_stream(true);
