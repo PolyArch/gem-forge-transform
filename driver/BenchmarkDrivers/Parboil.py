@@ -13,6 +13,9 @@ import os
 class ParboilBenchmark(Benchmark):
 
     ROI_FUNCS = {
+        'histo': [
+            '.omp_outlined..14',
+        ],
         'spmv': [
             '.omp_outlined..7',
         ],
@@ -22,6 +25,9 @@ class ParboilBenchmark(Benchmark):
     }
 
     ARGS = {
+        'histo': {
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/img.bin', '-o', '{RUN}/ref.bmp', '--', '100'],
+        },
         'spmv': {
             'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/1138_bus.mtx,{DATA}/input/vector.bin', '-o', '{RUN}/1138_bus.mtx.out'],
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/Dubcova3.mtx.bin,{DATA}/input/vector.bin', '-o', '{RUN}/Dubcova3.mtx.out'],
@@ -187,6 +193,7 @@ class ParboilBenchmark(Benchmark):
         os.chdir(self.cwd)
 
     WORK_ITEMS = {
+        'histo': 1,
         'sgemm': 1, 
         'spmv': 2, # Two commands.
     }
@@ -204,6 +211,7 @@ class ParboilBenchmarks:
         suite_folder = os.getenv('PARBOIL_SUITE_PATH')
         self.benchmarks = list()
         for name in [
+            'histo',
             'spmv',
             'sgemm',
         ]:
