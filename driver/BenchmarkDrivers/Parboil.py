@@ -16,12 +16,19 @@ class ParboilBenchmark(Benchmark):
         'spmv': [
             '.omp_outlined..7',
         ],
+        'sgemm': [
+            '.omp_outlined..19',
+        ],
     }
 
     ARGS = {
         'spmv': {
             'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/1138_bus.mtx,{DATA}/input/vector.bin', '-o', '{RUN}/1138_bus.mtx.out'],
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/Dubcova3.mtx.bin,{DATA}/input/vector.bin', '-o', '{RUN}/Dubcova3.mtx.out'],
+        },
+        'sgemm': {
+            'medium': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
         },
     }
 
@@ -179,17 +186,17 @@ class ParboilBenchmark(Benchmark):
         self.run_trace()
         os.chdir(self.cwd)
 
+    WORK_ITEMS = {
+        'sgemm': 1, 
+        'spmv': 2, # Two commands.
+    }
     def get_additional_gem5_simulate_command(self):
-        """
-        We just simulate one BFS.
-        """
-        n_bfs = 2
-        if n_bfs == -1:
-            # This benchmark can finish.
-            return list()
-        return [
-            '--work-end-exit-count={v}'.format(v=n_bfs)
-        ]
+        if self.benchmark_name in ParboilBenchmark.WORK_ITEMS:
+            return [
+                '--work-end-exit-count={v}'.format(
+                    v=ParboilBenchmark.WORK_ITEMS[self.benchmark_name])
+            ]
+        return list()
 
 
 class ParboilBenchmarks:
@@ -197,9 +204,8 @@ class ParboilBenchmarks:
         suite_folder = os.getenv('PARBOIL_SUITE_PATH')
         self.benchmarks = list()
         for name in [
-            # 'seq-list',
-            # 'seq-csr',
             'spmv',
+            'sgemm',
         ]:
             src_path = os.path.join(suite_folder, 'benchmarks', name)
             self.benchmarks.append(
