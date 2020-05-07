@@ -5,9 +5,7 @@ import abc
 
 import Constants as C
 import Util
-from Utils import SimPoint
 from Utils import TraceFlagEnum
-import Utils.Gem5McPAT.Gem5McPAT as Gem5McPAT
 
 
 class BenchmarkArgs(object):
@@ -390,6 +388,7 @@ class Benchmark(object):
     def simpoint(self):
         os.chdir(self.get_exe_path())
         print('Doing simpoints')
+        from Utils import SimPoint
         SimPoint.SimPoint(self.get_profile(), self.get_simpoint_abs())
         os.chdir(self.cwd)
 
@@ -1029,6 +1028,7 @@ class Benchmark(object):
         if transform_config.get_transform_id() == 'valid':
             assert(False)
         gem5_out_dir = simulation_config.get_gem5_dir(tdg)
+        import Utils.Gem5McPAT.Gem5McPAT as Gem5McPAT
         gem5_mcpat = Gem5McPAT.Gem5McPAT(gem5_out_dir)
 
     """
