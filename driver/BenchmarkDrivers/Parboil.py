@@ -25,6 +25,9 @@ class ParboilBenchmark(Benchmark):
         'stencil': [
             '.omp_outlined..3',
         ],
+        'tpacf': [
+            '.omp_outlined..11',
+        ],
     }
 
     ARGS = {
@@ -42,6 +45,9 @@ class ParboilBenchmark(Benchmark):
         'stencil': {
             'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/128x128x32.bin', '-o', '{RUN}/128x128x32.out', '--', '128', '128', '32', '100'],
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/512x512x64x100.bin', '-o', '{RUN}/512x512x64x100.out', '--', '512', '512', '64', '100'],
+        },
+        'tpacf': {
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/Randompnts.{i}', '-o', '{RUN}/tpacf.out', '--', '-n', '100', '-p', '10391'],
         },
     }
 
@@ -100,7 +106,16 @@ class ParboilBenchmark(Benchmark):
             if arg == '$NTHREADS':
                 args.append(str(self.n_thread))
             else:
-                args.append(arg.format(DATA=self.datasets_folder, RUN=self.run_folder))
+                # Special case for tpacf input.
+                if self.benchmark_name == 'tpacf' and input_size == 'large' and arg.find('Randompnts') != -1:
+                    random_points = ','.join(
+                        [arg.format(DATA=self.datasets_folder, i=i) for i in range(1, 101)])
+                    data_point = os.path.join(
+                        self.datasets_folder, 'input/Datapnts.1')
+                    args.append(data_point + ',' + random_points)
+                    continue
+                args.append(arg.format(
+                    DATA=self.datasets_folder, RUN=self.run_folder))
         return args
 
     def get_args(self):
@@ -152,7 +167,8 @@ class ParboilBenchmark(Benchmark):
         # Simpy move the bc to the work path.
         Util.call_helper([
             'mv',
-            os.path.join(self.src_path, 'build/omp_base_gem_forge', self.get_raw_bc()),
+            os.path.join(self.src_path, 'build/omp_base_gem_forge',
+                         self.get_raw_bc()),
             os.path.join(self.work_path, self.get_raw_bc()),
         ])
         os.chdir(self.cwd)
@@ -201,10 +217,12 @@ class ParboilBenchmark(Benchmark):
 
     WORK_ITEMS = {
         'histo': 1,
-        'sgemm': 1, 
-        'spmv': 2, # Two commands.
+        'sgemm': 1,
+        'spmv': 2,  # Two commands.
         'stencil': 2,
+        'tpacf': 5,
     }
+
     def get_additional_gem5_simulate_command(self):
         if self.benchmark_name in ParboilBenchmark.WORK_ITEMS:
             return [
@@ -223,6 +241,7 @@ class ParboilBenchmarks:
             'spmv',
             'sgemm',
             'stencil',
+            'tpacf',
         ]:
             src_path = os.path.join(suite_folder, 'benchmarks', name)
             self.benchmarks.append(
