@@ -16,16 +16,19 @@ class ParboilBenchmark(Benchmark):
         'histo': [
             '.omp_outlined..14',
         ],
+        'mri-gridding': [
+            '.omp_outlined.',
+        ],
         'mri-q': [
             '.omp_outlined..1', # ComputeQCPU
             '.omp_outlined..6', # main
             '.omp_outlined..11', # ComputePhiMagCPU
         ],
-        'spmv': [
-            '.omp_outlined..7',
-        ],
         'sgemm': [
             '.omp_outlined..19',
+        ],
+        'spmv': [
+            '.omp_outlined..7',
         ],
         'stencil': [
             '.omp_outlined..3',
@@ -39,16 +42,19 @@ class ParboilBenchmark(Benchmark):
         'histo': {
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/img.bin', '-o', '{RUN}/ref.bmp', '--', '100'],
         },
+        'mri-gridding': {
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/small.uks', '--', '32', '0'],
+        },
         'mri-q': {
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/64_64_64_dataset.bin'],
-        },
-        'spmv': {
-            'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/1138_bus.mtx,{DATA}/input/vector.bin', '-o', '{RUN}/1138_bus.mtx.out'],
-            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/Dubcova3.mtx.bin,{DATA}/input/vector.bin', '-o', '{RUN}/Dubcova3.mtx.out'],
         },
         'sgemm': {
             'medium': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
+        },
+        'spmv': {
+            'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/1138_bus.mtx,{DATA}/input/vector.bin', '-o', '{RUN}/1138_bus.mtx.out'],
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/Dubcova3.mtx.bin,{DATA}/input/vector.bin', '-o', '{RUN}/Dubcova3.mtx.out'],
         },
         'stencil': {
             'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/128x128x32.bin', '-o', '{RUN}/128x128x32.out', '--', '128', '128', '32', '100'],
@@ -190,24 +196,6 @@ class ParboilBenchmark(Benchmark):
         super(ParboilBenchmark, self).run_profile()
         os.unsetenv('LLVM_TDG_TRACE_ROI')
 
-    def get_additional_transform_options(self):
-        """
-        Add the stream whitelist file as addition options to the transformation.
-        """
-        if self.benchmark_name == 'seq-list':
-            return [
-                '-stream-whitelist-file={whitelist}'.format(whitelist=os.path.join(
-                    self.src_path, 'stream_whitelist.txt'
-                ))
-            ]
-        if self.benchmark_name == 'seq-csr':
-            return [
-                '-stream-whitelist-file={whitelist}'.format(whitelist=os.path.join(
-                    self.src_path, 'stream_whitelist.txt'
-                ))
-            ]
-        return list()
-
     def trace(self):
         os.chdir(self.work_path)
         self.build_trace(
@@ -225,6 +213,7 @@ class ParboilBenchmark(Benchmark):
 
     WORK_ITEMS = {
         'histo': 1,
+        'mri-gridding': 1,
         'mri-q': 3,
         'sgemm': 1,
         'spmv': 2,  # Two commands.
@@ -247,6 +236,7 @@ class ParboilBenchmarks:
         self.benchmarks = list()
         for name in [
             'histo',
+            'mri-gridding',
             'mri-q',
             'spmv',
             'sgemm',
