@@ -16,6 +16,11 @@ class ParboilBenchmark(Benchmark):
         'histo': [
             '.omp_outlined..14',
         ],
+        'mri-q': [
+            '.omp_outlined..1', # ComputeQCPU
+            '.omp_outlined..6', # main
+            '.omp_outlined..11', # ComputePhiMagCPU
+        ],
         'spmv': [
             '.omp_outlined..7',
         ],
@@ -33,6 +38,9 @@ class ParboilBenchmark(Benchmark):
     ARGS = {
         'histo': {
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/img.bin', '-o', '{RUN}/ref.bmp', '--', '100'],
+        },
+        'mri-q': {
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/64_64_64_dataset.bin'],
         },
         'spmv': {
             'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/1138_bus.mtx,{DATA}/input/vector.bin', '-o', '{RUN}/1138_bus.mtx.out'],
@@ -217,6 +225,7 @@ class ParboilBenchmark(Benchmark):
 
     WORK_ITEMS = {
         'histo': 1,
+        'mri-q': 3,
         'sgemm': 1,
         'spmv': 2,  # Two commands.
         'stencil': 2,
@@ -238,6 +247,7 @@ class ParboilBenchmarks:
         self.benchmarks = list()
         for name in [
             'histo',
+            'mri-q',
             'spmv',
             'sgemm',
             'stencil',
