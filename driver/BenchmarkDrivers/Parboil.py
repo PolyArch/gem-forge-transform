@@ -13,6 +13,10 @@ import os
 class ParboilBenchmark(Benchmark):
 
     ROI_FUNCS = {
+        'cutcp': [
+            '.omp_outlined..23',
+            '.omp_outlined..27',
+        ],
         'histo': [
             '.omp_outlined..14',
         ],
@@ -39,6 +43,9 @@ class ParboilBenchmark(Benchmark):
     }
 
     ARGS = {
+        'cutcp': {
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/watbox.sl100.pqr'],
+        },
         'histo': {
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/img.bin', '-o', '{RUN}/ref.bmp', '--', '100'],
         },
@@ -212,6 +219,7 @@ class ParboilBenchmark(Benchmark):
         os.chdir(self.cwd)
 
     WORK_ITEMS = {
+        'cutcp': 2, # Two kernels.
         'histo': 1,
         'mri-gridding': 1,
         'mri-q': 3,
@@ -235,6 +243,7 @@ class ParboilBenchmarks:
         suite_folder = os.getenv('PARBOIL_SUITE_PATH')
         self.benchmarks = list()
         for name in [
+            'cutcp',
             'histo',
             'mri-gridding',
             'mri-q',
