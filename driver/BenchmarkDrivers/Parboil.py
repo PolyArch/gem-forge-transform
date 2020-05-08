@@ -22,6 +22,9 @@ class ParboilBenchmark(Benchmark):
         'sgemm': [
             '.omp_outlined..19',
         ],
+        'stencil': [
+            '.omp_outlined..3',
+        ],
     }
 
     ARGS = {
@@ -35,6 +38,10 @@ class ParboilBenchmark(Benchmark):
         'sgemm': {
             'medium': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
+        },
+        'stencil': {
+            'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/128x128x32.bin', '-o', '{RUN}/128x128x32.out', '--', '128', '128', '32', '100'],
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/512x512x64x100.bin', '-o', '{RUN}/512x512x64x100.out', '--', '512', '512', '64', '100'],
         },
     }
 
@@ -196,6 +203,7 @@ class ParboilBenchmark(Benchmark):
         'histo': 1,
         'sgemm': 1, 
         'spmv': 2, # Two commands.
+        'stencil': 2,
     }
     def get_additional_gem5_simulate_command(self):
         if self.benchmark_name in ParboilBenchmark.WORK_ITEMS:
@@ -214,6 +222,7 @@ class ParboilBenchmarks:
             'histo',
             'spmv',
             'sgemm',
+            'stencil',
         ]:
             src_path = os.path.join(suite_folder, 'benchmarks', name)
             self.benchmarks.append(
