@@ -29,10 +29,10 @@ class ParboilBenchmark(Benchmark):
             '.omp_outlined..11', # ComputePhiMagCPU
         ],
         'sgemm': [
-            '.omp_outlined..19',
+            '.omp_outlined..17',
         ],
         'spmv': [
-            '.omp_outlined..7',
+            '.omp_outlined..9',
         ],
         'stencil': [
             '.omp_outlined..3',
@@ -56,8 +56,8 @@ class ParboilBenchmark(Benchmark):
             'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/64_64_64_dataset.bin'],
         },
         'sgemm': {
-            'medium': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
-            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
+            'medium': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,unused,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
+            'large': ['-t', '$NTHREADS', '-i', '{DATA}/input/matrix1.txt,unused,{DATA}/input/matrix2t.txt', '-o', '{RUN}/matrix3.txt'],
         },
         'spmv': {
             'small': ['-t', '$NTHREADS', '-i', '{DATA}/input/1138_bus.mtx,{DATA}/input/vector.bin', '-o', '{RUN}/1138_bus.mtx.out'],
@@ -224,8 +224,8 @@ class ParboilBenchmark(Benchmark):
         'mri-gridding': 1,
         'mri-q': 3,
         'sgemm': 1,
-        'spmv': 2,  # Two commands.
-        'stencil': 2,
+        'spmv': 1,  # One iteration.
+        'stencil': 1, # One iteration.
         'tpacf': 5,
     }
 
