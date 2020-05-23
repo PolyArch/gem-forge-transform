@@ -1078,16 +1078,23 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
   auto ClonedInnerMostLoop =
       this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
 
-  auto PHINodeSCEV = SS->SE->getSCEV(PHINode);
-  auto ClonedPHINodeSCEV = ClonedSE->getSCEV(ClonedPHINode);
+  const llvm::SCEV *PHINodeSCEV = nullptr;
+  const llvm::SCEV *ClonedPHINodeSCEV = nullptr;
+  if (SS->SE->isSCEVable(PHINode->getType())) {
+    PHINodeSCEV = SS->SE->getSCEV(PHINode);
+    ClonedPHINodeSCEV = ClonedSE->getSCEV(ClonedPHINode);
+  }
   LLVM_DEBUG({
-    llvm::errs() << "====== Generate IVStreamConfiguration "
-                 << S->SStream->formatName() << " PHINode ";
-    PHINodeSCEV->dump();
+    llvm::dbgs() << "====== Generate IVStreamConfiguration "
+                 << S->SStream->formatName() << " PHINodeSCEV ";
+    if (PHINodeSCEV)
+      PHINodeSCEV->dump();
+    else
+      llvm::dbgs() << "None\n";
   });
 
-  if (auto PHINodeAddRecSCEV =
-          llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
+  if (PHINodeSCEV && llvm::isa<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
+    auto PHINodeAddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV);
     auto ClonedPHINodeAddRecSCEV =
         llvm::dyn_cast<llvm::SCEVAddRecExpr>(ClonedPHINodeSCEV);
     assert(ClonedPHINodeAddRecSCEV && "Cloned SCEV is not AddRec anymore.");
