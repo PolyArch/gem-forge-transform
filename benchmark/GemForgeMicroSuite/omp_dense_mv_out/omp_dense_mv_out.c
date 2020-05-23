@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
   // Start the threads.
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {
-    volatile Value x = A[tid];
+    printf("Start thread %d.\n", tid);
   }
 #endif
 #ifdef GEM_FORGE
