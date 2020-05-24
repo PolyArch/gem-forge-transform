@@ -10,65 +10,67 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
     const ComputeMetaNode *FirstNonEmptyComputeMNode) {
   assert(this->NonEmptyComputePath && "Missing NonEmptyComputePath.");
   auto SCEV = FirstNonEmptyComputeMNode->SCEV;
-  if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
-    if (AddRecSCEV->isAffine()) {
+  if (SCEV) {
+    if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
+      if (AddRecSCEV->isAffine()) {
 
-      /**
-       * We need to ensure the trip count of each nested loop is LoopInvariant
-       */
-      auto CurrentLoop = this->InnerMostLoop;
-      while (CurrentLoop != this->ConfigureLoop) {
-        bool hasConstantTripCount = false;
-        if (this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
-          auto BackEdgeSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
-          if (this->SE->isLoopInvariant(BackEdgeSCEV, this->ConfigureLoop)) {
-            hasConstantTripCount = true;
+        /**
+         * We need to ensure the trip count of each nested loop is LoopInvariant
+         */
+        auto CurrentLoop = this->InnerMostLoop;
+        while (CurrentLoop != this->ConfigureLoop) {
+          bool hasConstantTripCount = false;
+          if (this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
+            auto BackEdgeSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
+            if (this->SE->isLoopInvariant(BackEdgeSCEV, this->ConfigureLoop)) {
+              hasConstantTripCount = true;
+            }
           }
+          if (!hasConstantTripCount) {
+            this->StaticStreamInfo.set_not_stream_reason(
+                LLVM::TDG::StaticStreamInfo::VARIANT_BACKEDGE_TAKEN);
+            return LLVM::TDG::StreamValuePattern::RANDOM;
+          }
+          CurrentLoop = CurrentLoop->getParentLoop();
         }
-        if (!hasConstantTripCount) {
-          this->StaticStreamInfo.set_not_stream_reason(
-              LLVM::TDG::StaticStreamInfo::VARIANT_BACKEDGE_TAKEN);
-          return LLVM::TDG::StreamValuePattern::RANDOM;
-        }
-        CurrentLoop = CurrentLoop->getParentLoop();
-      }
 
-      return LLVM::TDG::StreamValuePattern::LINEAR;
-    }
-  } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV)) {
-    /**
-     * If one of the operand is loop invariant, and the other one is our
-     * PHINode, then this is LINEAR.
-     */
-    auto NumOperands = AddSCEV->getNumOperands();
-    const llvm::SCEV *LoopVariantSCEV = nullptr;
-    bool hasOneLoopVariantSCEV = false;
-    for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
-      auto OpSCEV = AddSCEV->getOperand(OperandIdx);
-      if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
-        // Loop invariant.
-        continue;
-      }
-      if (LoopVariantSCEV == nullptr) {
-        LoopVariantSCEV = OpSCEV;
-        hasOneLoopVariantSCEV = true;
-      } else {
-        // More than one variant SCEV. Clear it and break.
-        hasOneLoopVariantSCEV = false;
-        break;
-      }
-    }
-    // Check if the other one is myself.
-    if (hasOneLoopVariantSCEV) {
-      assert(this->SE->isSCEVable(this->PHINode->getType()) &&
-             "My PHINode should be SCEVable.");
-      auto PHINodeSCEV = this->SE->getSCEV(this->PHINode);
-      if (PHINodeSCEV == LoopVariantSCEV) {
         return LLVM::TDG::StreamValuePattern::LINEAR;
+      }
+    } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV)) {
+      /**
+       * If one of the operand is loop invariant, and the other one is our
+       * PHINode, then this is LINEAR.
+       */
+      auto NumOperands = AddSCEV->getNumOperands();
+      const llvm::SCEV *LoopVariantSCEV = nullptr;
+      bool hasOneLoopVariantSCEV = false;
+      for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
+        auto OpSCEV = AddSCEV->getOperand(OperandIdx);
+        if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
+          // Loop invariant.
+          continue;
+        }
+        if (LoopVariantSCEV == nullptr) {
+          LoopVariantSCEV = OpSCEV;
+          hasOneLoopVariantSCEV = true;
+        } else {
+          // More than one variant SCEV. Clear it and break.
+          hasOneLoopVariantSCEV = false;
+          break;
+        }
+      }
+      // Check if the other one is myself.
+      if (hasOneLoopVariantSCEV) {
+        assert(this->SE->isSCEVable(this->PHINode->getType()) &&
+               "My PHINode should be SCEVable.");
+        auto PHINodeSCEV = this->SE->getSCEV(this->PHINode);
+        if (PHINodeSCEV == LoopVariantSCEV) {
+          return LLVM::TDG::StreamValuePattern::LINEAR;
+        }
       }
     }
   }
-  if (this->analyzeIsReductionFromSCEV(FirstNonEmptyComputeMNode)) {
+  if (this->analyzeIsReductionFromComputePath(FirstNonEmptyComputeMNode)) {
     // Let's try to construct the reduction datagraph.
     // The only IndVarStream should be myself.
     auto IsIndVarStream = [this](const llvm::PHINode *PHI) -> bool {
@@ -96,7 +98,7 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
   return LLVM::TDG::StreamValuePattern::RANDOM;
 }
 
-bool StaticIndVarStream::analyzeIsReductionFromSCEV(
+bool StaticIndVarStream::analyzeIsReductionFromComputePath(
     const ComputeMetaNode *FirstNonEmptyComputeMNode) const {
 
   /**
@@ -174,8 +176,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
    * 2. No ComputeMetaNode has more than one PHIMetaNode child.
    * 3. At most one "unique" non-empty compute path.
    * 4. In this unique non-empty compute path:
-   *   a. All non-empty ComputeMNode has the SCEV.
-   *   b. The non-empty ComputePath must be a recognizable ValuePattern.
+   *   a. The non-empty ComputePath must be a recognizable ValuePattern.
    */
 
   // 1.
@@ -226,16 +227,16 @@ void StaticIndVarStream::analyzeIsCandidate() {
 
   // 4.
   if (this->NonEmptyComputePath != nullptr) {
-    for (const auto &ComputeMNode :
-         this->NonEmptyComputePath->ComputeMetaNodes) {
-      // 4a. No empty SCEV.
-      if (ComputeMNode->SCEV == nullptr) {
-        this->IsCandidate = false;
-        this->StaticStreamInfo.set_not_stream_reason(
-            LLVM::TDG::StaticStreamInfo::NOT_SCEVABLE_COMPUTEMNODE);
-        return;
-      }
-    }
+    // for (const auto &ComputeMNode :
+    //      this->NonEmptyComputePath->ComputeMetaNodes) {
+    //   // 4a. No empty SCEV.
+    //   if (ComputeMNode->SCEV == nullptr) {
+    //     this->IsCandidate = false;
+    //     this->StaticStreamInfo.set_not_stream_reason(
+    //         LLVM::TDG::StaticStreamInfo::NOT_SCEVABLE_COMPUTEMNODE);
+    //     return;
+    //   }
+    // }
     // 4b. Check the ValuePattern from the first non-empty SCEV.
     const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
     for (const auto &ComputeMNode :
@@ -246,14 +247,18 @@ void StaticIndVarStream::analyzeIsCandidate() {
       FirstNonEmptyComputeMNode = ComputeMNode;
       break;
     }
-    LLVM_DEBUG(llvm::errs() << "StaticIVStream: FirstNonEmpty Value: "
+    LLVM_DEBUG(llvm::dbgs() << "StaticIVStream: FirstNonEmpty Value: "
                             << FirstNonEmptyComputeMNode->RootValue->getName()
                             << " SCEV: ";
-               FirstNonEmptyComputeMNode->SCEV->dump());
+               if (FirstNonEmptyComputeMNode->SCEV)
+                   FirstNonEmptyComputeMNode->SCEV->dump();
+               else llvm::dbgs() << "None\n");
     this->StaticStreamInfo.set_val_pattern(
         this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
     LLVM_DEBUG(llvm::errs() << this->formatName() << ": Value pattern "
-                            << this->StaticStreamInfo.val_pattern() << '\n');
+                            << ::LLVM::TDG::StreamValuePattern_Name(
+                                   this->StaticStreamInfo.val_pattern())
+                            << '\n');
 
     if (this->StaticStreamInfo.val_pattern() ==
         LLVM::TDG::StreamValuePattern::RANDOM) {

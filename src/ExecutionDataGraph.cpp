@@ -41,7 +41,17 @@ llvm::Function *ExecutionDataGraph::generateComputeFunction(
       Module.get());
   assert(Function != nullptr && "Failed to insert the function.");
   // Make sure we are using C calling convention.
-  Function->setCallingConv(llvm::CallingConv::C);
+  Function->setCallingConv(llvm::CallingConv::X86_64_SysV);
+  // Copy the "target-features" attributes from the original function.
+  if (auto ResultInst = llvm::dyn_cast<llvm::Instruction>(this->ResultValue)) {
+    auto OriginalFunction = ResultInst->getFunction();
+    for (auto &AttrSet : OriginalFunction->getAttributes()) {
+      if (AttrSet.hasAttribute("target-features")) {
+        Function->addFnAttr(AttrSet.getAttribute("target-features"));
+        break;
+      }
+    }
+  }
 
   // Create the first and only basic block.
   auto &Context = Module->getContext();

@@ -83,7 +83,7 @@ private:
   /**
    * Analyze if this a simple reduction stream for a single load.
    */
-  bool analyzeIsReductionFromSCEV(
+  bool analyzeIsReductionFromComputePath(
       const ComputeMetaNode *FirstNonEmptyComputeMNode) const;
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override {
