@@ -167,6 +167,10 @@ void StreamExecutionTransformer::transformStreamRegion(
         this->transformStoreInst(Analyzer, StoreInst);
       }
 
+      else if (auto AtomicRMWInst = llvm::dyn_cast<llvm::AtomicRMWInst>(Inst)) {
+        this->transformAtomicRMWInst(Analyzer, AtomicRMWInst);
+      }
+
       /**
        * Handle StreamStep.
        * For pointer-chasing, step must happen after the step load.
@@ -688,8 +692,23 @@ void StreamExecutionTransformer::transformStoreInst(
    * through the cache.
    */
 
-  // Try to merge Load-Store DG.
-  this->mergeLoadStoreDG(Analyzer, S);
+  this->handleStoreDG(Analyzer, S);
+}
+
+void StreamExecutionTransformer::transformAtomicRMWInst(
+    StreamRegionAnalyzer *Analyzer, llvm::AtomicRMWInst *AtomicRMWInst) {
+  auto S = Analyzer->getChosenStreamByInst(AtomicRMWInst);
+  if (S == nullptr) {
+    // This is not a chosen stream.
+    return;
+  }
+
+  /**
+   * AtomicRMW stream is treated similar to store stream.
+   */
+
+  // Handle StoreDG.
+  this->handleStoreDG(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformStepInst(
@@ -830,10 +849,10 @@ void StreamExecutionTransformer::mergePredicatedStore(
   this->PendingRemovedInsts.insert(ClonedStoreInst);
 }
 
-void StreamExecutionTransformer::mergeLoadStoreDG(
-    StreamRegionAnalyzer *Analyzer, Stream *StoreStream) {
-  auto StoreSS = StoreStream->SStream;
-  if (!StoreSS->StoreDG) {
+void StreamExecutionTransformer::handleStoreDG(StreamRegionAnalyzer *Analyzer,
+                                               Stream *S) {
+  auto SS = S->SStream;
+  if (!SS->StoreDG) {
     // No StoreDG to be merged.
     return;
   }
@@ -841,7 +860,7 @@ void StreamExecutionTransformer::mergeLoadStoreDG(
    * We merge this store into the Loads iff.
    * 1. All the load input streams are chosen.
    */
-  for (auto LoadSS : StoreSS->LoadStoreBaseStreams) {
+  for (auto LoadSS : SS->LoadStoreBaseStreams) {
     auto ChosenLoadS = Analyzer->getChosenStreamByInst(LoadSS->Inst);
     if (!ChosenLoadS || ChosenLoadS->SStream != LoadSS) {
       // Not chosen or chosen at different configure loop level.
@@ -849,19 +868,19 @@ void StreamExecutionTransformer::mergeLoadStoreDG(
     }
   }
   // We can merge these two.
-  for (auto LoadSS : StoreSS->LoadStoreBaseStreams) {
+  for (auto LoadSS : SS->LoadStoreBaseStreams) {
     auto LoadProto =
         LoadSS->StaticStreamInfo.add_merged_load_store_dep_streams();
-    LoadProto->set_id(StoreSS->StreamId);
-    LoadProto->set_name(StoreSS->formatName());
-    auto StoreProto =
-        StoreSS->StaticStreamInfo.add_merged_load_store_base_streams();
-    StoreProto->set_id(LoadSS->StreamId);
-    StoreProto->set_name(LoadSS->formatName());
+    LoadProto->set_id(SS->StreamId);
+    LoadProto->set_name(SS->formatName());
+    auto SSProto = SS->StaticStreamInfo.add_merged_load_store_base_streams();
+    SSProto->set_id(LoadSS->StreamId);
+    SSProto->set_name(LoadSS->formatName());
   }
-  // Finally, remove the store.
-  auto ClonedStoreInst = this->getClonedValue(StoreSS->Inst);
-  this->PendingRemovedInsts.insert(ClonedStoreInst);
+  // Finally, remove the inst (store/atomicrmw).
+  SS->StaticStreamInfo.set_enabled_store_func(true);
+  auto ClonedSSInst = this->getClonedValue(SS->Inst);
+  this->PendingRemovedInsts.insert(ClonedSSInst);
 }
 
 llvm::Instruction *
@@ -1142,8 +1161,15 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   /**
    * Some sanity check here.
    */
-  assert(S->getChosenBaseStepRootStreams().size() == 1 &&
-         "Missing step root stream.");
+  if (S->getChosenBaseStepRootStreams().size() != 1) {
+    llvm::errs() << "Invalid " << S->getChosenBaseStepRootStreams().size()
+                 << " chosen StepRoot, " << S->getBaseStepRootStreams().size()
+                 << " StepRoot for " << S->formatName() << ":\n";
+    for (auto StepRootS : S->getChosenBaseStepRootStreams()) {
+      llvm::errs() << "  " << StepRootS->formatName() << '\n';
+    }
+    assert(false);
+  }
   for (auto StepRootS : S->getChosenBaseStepRootStreams()) {
     if (StepRootS->SStream->ConfigureLoop != S->SStream->ConfigureLoop) {
       llvm::errs() << "StepRootStream is not configured at the same loop: "

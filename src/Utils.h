@@ -21,10 +21,12 @@ public:
   }
 
   static bool isMemAccessInst(const llvm::Instruction *Inst) {
-    return llvm::isa<llvm::StoreInst>(Inst) || llvm::isa<llvm::LoadInst>(Inst);
+    return llvm::isa<llvm::StoreInst>(Inst) ||
+           llvm::isa<llvm::LoadInst>(Inst) ||
+           llvm::isa<llvm::AtomicRMWInst>(Inst);
   }
 
-  static const llvm::Value *getMemAddrValue(const llvm::Instruction *Inst) {
+  static llvm::Value *getMemAddrValue(const llvm::Instruction *Inst) {
     assert(
         Utils::isMemAccessInst(Inst) &&
         "This is not a memory access instruction to get memory address value.");
@@ -35,11 +37,15 @@ public:
     }
   }
 
-  static const llvm::Value *getMemAddrValue(const llvm::LoadInst *Inst) {
+  static llvm::Value *getMemAddrValue(const llvm::LoadInst *Inst) {
     return Inst->getOperand(0);
   }
 
-  static const llvm::Value *getMemAddrValue(const llvm::StoreInst *Inst) {
+  static llvm::Value *getMemAddrValue(const llvm::AtomicRMWInst *Inst) {
+    return Inst->getOperand(0);
+  }
+
+  static llvm::Value *getMemAddrValue(const llvm::StoreInst *Inst) {
     return Inst->getOperand(1);
   }
 

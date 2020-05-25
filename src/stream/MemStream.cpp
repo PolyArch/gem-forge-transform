@@ -4,12 +4,7 @@ void MemStream::searchAddressComputeInstructions(
     std::function<bool(const llvm::PHINode *)> IsInductionVar) {
   std::list<llvm::Instruction *> Queue;
 
-  llvm::Value *AddrValue = nullptr;
-  if (llvm::isa<llvm::LoadInst>(this->getInst())) {
-    AddrValue = this->getInst()->getOperand(0);
-  } else {
-    AddrValue = this->getInst()->getOperand(1);
-  }
+  llvm::Value *AddrValue = Utils::getMemAddrValue(this->getInst());
 
   if (auto AddrInst = llvm::dyn_cast<llvm::Instruction>(AddrValue)) {
     Queue.emplace_back(AddrInst);

@@ -81,13 +81,14 @@ message StaticStreamInfo {
   ExecFuncInfo pred_func_info = 21;
   bool no_core_user = 22; // This stream has not core user.
   ExecFuncInfo store_func_info = 23;
-  repeated StreamId merged_load_store_base_streams = 24;
-  repeated StreamId merged_load_store_dep_streams = 25;
+  bool enabled_store_func = 24;
+  repeated StreamId merged_load_store_base_streams = 25;
+  repeated StreamId merged_load_store_dep_streams = 26;
 
   // AliasedStreamInfo
-  StreamId alias_base_stream = 26;
-  uint32 alias_offset = 27;
-  repeated StreamId aliased_streams = 28;
+  StreamId alias_base_stream = 32;
+  uint32 alias_offset = 33;
+  repeated StreamId aliased_streams = 34;
 
   enum StaticNotStreamReason {
     UNKNOWN = 0;
@@ -120,7 +121,7 @@ message DynamicStreamInfo {
 message StreamInfo {
   string name = 1;
   uint64 id = 2;
-  string type = 3;
+  Type type = 3;
   uint32 loop_level = 4;
   uint32 config_loop_level = 5;
   int32 element_size = 6;
@@ -141,6 +142,12 @@ message StreamInfo {
   // information.
   StaticStreamInfo static_info = 24;
 
+  enum Type {
+    IV = 0;
+    LD = 1;
+    ST = 2;
+    AT = 3;
+  }
 }
 
 message StreamRegion {

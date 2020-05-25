@@ -1,5 +1,20 @@
 #include "ExecutionDataGraph.h"
 
+void ExecutionDataGraph::extendTailAtomicRMW(
+    const llvm::AtomicRMWInst *AtomicRMW) {
+  assert(!this->TailAtomicRMW && "Already has TailAtomicRMW.");
+  // The atomic RMW should has my result as the second value.
+  if (AtomicRMW->getOperand(1) != this->ResultValue) {
+    llvm::errs() << "TailAtomicRMW is not using my result.\n";
+    assert(false);
+  }
+  if (AtomicRMW->getType() != this->ResultValue->getType()) {
+    llvm::errs() << "TailAtomicRMW is of different type.\n";
+    assert(false);
+  }
+  this->TailAtomicRMW = AtomicRMW;
+}
+
 void ExecutionDataGraph::dfsOnComputeInsts(const llvm::Instruction *Inst,
                                            DFSTaskT Task) const {
   assert(!this->HasCircle && "Doing DFS on circular ExecutionDataGraph.");
@@ -25,6 +40,13 @@ ExecutionDataGraph::createFunctionType(llvm::Module *Module) const {
     Args.emplace_back(Input->getType());
   }
   auto ResultType = this->ResultValue->getType();
+  // Add final input of the TailAtomicRMW.
+  if (this->TailAtomicRMW) {
+    auto AtomicRMWInputPtrType = this->TailAtomicRMW->getOperand(0)->getType();
+    assert(AtomicRMWInputPtrType->isPointerTy() && "Should be pointer.");
+    Args.emplace_back(AtomicRMWInputPtrType->getPointerElementType());
+    ResultType = this->TailAtomicRMW->getType();
+  }
   return llvm::FunctionType::get(ResultType, Args, false);
 }
 
@@ -60,15 +82,13 @@ llvm::Function *ExecutionDataGraph::generateComputeFunction(
 
   // Create the map from the original value to the new value.
   ValueMapT ValueMap;
-  {
-    auto ArgIter = Function->arg_begin();
-    auto ArgEnd = Function->arg_end();
-    for (const auto &Input : this->Inputs) {
-      assert(ArgIter != ArgEnd &&
-             "Mismatch between address daragraph input and function argument.");
-      ValueMap.emplace(Input, ArgIter);
-      ++ArgIter;
-    }
+  auto ArgIter = Function->arg_begin();
+  auto ArgEnd = Function->arg_end();
+  for (const auto &Input : this->Inputs) {
+    assert(ArgIter != ArgEnd &&
+           "Mismatch between address daragraph input and function argument.");
+    ValueMap.emplace(Input, ArgIter);
+    ++ArgIter;
   }
   {
     // Remember to translate the constant value to themselves.
@@ -92,13 +112,29 @@ llvm::Function *ExecutionDataGraph::generateComputeFunction(
     this->dfsOnComputeInsts(ResultInst, Translate);
   }
 
-  // Create the return inst.
-  {
-    auto ValueIter = ValueMap.find(this->ResultValue);
-    assert(ValueIter != ValueMap.end() &&
-           "Failed to find the translated result value.");
-    Builder.CreateRet(ValueIter->second);
+  auto FinalValueIter = ValueMap.find(this->ResultValue);
+  assert(FinalValueIter != ValueMap.end() &&
+         "Failed to find the translated result value.");
+  llvm::Value *FinalValue = FinalValueIter->second;
+
+  // Create the tail AtomicRMW.
+  if (this->TailAtomicRMW) {
+    assert(ArgIter != ArgEnd && "Missing AtomicInput.");
+    llvm::Value *AtomicArg = ArgIter;
+    switch (this->TailAtomicRMW->getOperation()) {
+    default:
+      llvm_unreachable("Unsupported TailAtomicRMW Operation.");
+    case llvm::AtomicRMWInst::FAdd:
+      FinalValue = Builder.CreateFAdd(AtomicArg, FinalValue, "atomicrmw");
+      break;
+    case llvm::AtomicRMWInst::Add:
+      FinalValue = Builder.CreateAdd(AtomicArg, FinalValue, "atomicrmw");
+      break;
+    }
   }
+
+  // Create the return inst.
+  Builder.CreateRet(FinalValue);
 
   return Function;
 }
