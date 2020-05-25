@@ -40,11 +40,22 @@ public:
   generateComputeFunction(const std::string &FuncName,
                           std::unique_ptr<llvm::Module> &Module) const;
 
+  /**
+   * A hack to extend the result value with a tail AtomicRMW instruction.
+   * The AtomicRMW instruction is transformed to its normal version, with
+   * the input as the last function argument and result as returned value.
+   */
+  void extendTailAtomicRMW(const llvm::AtomicRMWInst *AtomicRMW);
+  const llvm::AtomicRMWInst *getTailAtomicRMW() const {
+    return this->TailAtomicRMW;
+  }
+
 protected:
   const llvm::Value *ResultValue;
   std::list<const llvm::Value *> Inputs;
   std::unordered_set<const llvm::ConstantData *> ConstantDatas;
   InstSet ComputeInsts;
+  const llvm::AtomicRMWInst *TailAtomicRMW = nullptr;
   bool HasCircle = false;
 
   using DFSTaskT = std::function<void(const llvm::Instruction *)>;

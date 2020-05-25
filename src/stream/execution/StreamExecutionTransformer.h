@@ -70,6 +70,8 @@ private:
                          llvm::LoadInst *LoadInst);
   void transformStoreInst(StreamRegionAnalyzer *Analyzer,
                           llvm::StoreInst *StoreInst);
+  void transformAtomicRMWInst(StreamRegionAnalyzer *Analyzer,
+                              llvm::AtomicRMWInst *AtomicRMW);
   void transformStepInst(StreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
   void upgradeLoadToUpdateStream(StreamRegionAnalyzer *Analyzer,
@@ -78,7 +80,7 @@ private:
                               Stream *LoadStream);
   void mergePredicatedStore(StreamRegionAnalyzer *Analyzer, Stream *LoadStream,
                             Stream *PredStoreStream, bool PredTrue);
-  void mergeLoadStoreDG(StreamRegionAnalyzer *Analyzer, Stream *StoreStream);
+  void handleStoreDG(StreamRegionAnalyzer *Analyzer, Stream *S);
   llvm::Instruction *findStepPosition(Stream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();

@@ -192,7 +192,17 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_name(this->formatName());
   ProtobufInfo->set_id(this->getStreamId());
   ProtobufInfo->set_region_stream_id(this->getRegionStreamId());
-  ProtobufInfo->set_type(this->getInst()->getOpcodeName());
+  if (llvm::isa<llvm::PHINode>(this->getInst())) {
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
+  } else if (llvm::isa<llvm::LoadInst>(this->getInst())) {
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
+  } else if (llvm::isa<llvm::StoreInst>(this->getInst())) {
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_ST);
+  } else if (llvm::isa<llvm::AtomicRMWInst>(this->getInst())) {
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
+  } else {
+    llvm::errs() << "Invalid stream type " << this->formatName() << '\n';
+  }
   ProtobufInfo->set_loop_level(this->getInnerMostLoop()->getLoopDepth());
   ProtobufInfo->set_config_loop_level(this->getLoop()->getLoopDepth());
   ProtobufInfo->set_element_size(this->ElementSize);
@@ -292,7 +302,8 @@ void Stream::fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
     auto ProtobufArg = ProtoFuncInfo->add_args();
     auto Type = Input->getType();
     // if (!Type->isIntOrPtrTy()) {
-    //   llvm::errs() << "Invalid type, Value: " << Utils::formatLLVMValue(Input)
+    //   llvm::errs() << "Invalid type, Value: " <<
+    //   Utils::formatLLVMValue(Input)
     //                << '\n';
     //   assert(false && "Invalid type for input.");
     // }

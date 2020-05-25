@@ -203,6 +203,8 @@ void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
 }
 
 void StaticStream::addBaseStream(StaticStream *Other) {
+  LLVM_DEBUG(llvm::dbgs() << "== SS: AddBaseStream: "
+                          << (Other ? Other->formatName() : "nullptr") << '\n');
   this->BaseStreams.insert(Other);
   if (Other != nullptr) {
     Other->DependentStreams.insert(this);
@@ -246,8 +248,9 @@ void StaticStream::constructStreamGraph() {
 void StaticStream::constructGraph(GetStreamFuncT GetStream) {
   // Construct the two graphs.
   this->constructMetaGraph(GetStream);
-  LLVM_DEBUG(llvm::errs() << "Construct metagraph done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "== SS: ConstructMetaGraph done.\n");
   this->constructStreamGraph();
+  LLVM_DEBUG(llvm::dbgs() << "== SS: ConstructStreamGraph done.\n");
   // Some misc analysis.
   this->analyzeIsConditionalAccess();
   this->analyzeIsTripCountFixed();
@@ -269,6 +272,8 @@ void StaticStream::computeBaseStepRootStreams() {
       BaseStepStream->computeBaseStepRootStreams();
     }
     for (auto &BaseStepRootStream : BaseStepStream->BaseStepRootStreams) {
+      LLVM_DEBUG(llvm::dbgs() << "== SS: AddBaseStepRoot "
+                              << BaseStepRootStream->formatName() << '\n');
       this->BaseStepRootStreams.insert(BaseStepRootStream);
     }
   }
@@ -415,8 +420,7 @@ void StaticStream::fillProtobufStoreFuncInfo(
     return;
   }
   ProtoFuncInfo->set_name(this->FuncNameBase + "_store");
-  for (const auto &Input : this->StoreDG->getInputs()) {
-    auto ProtobufArg = ProtoFuncInfo->add_args();
+  auto CheckArg = [DataLayout](const llvm::Value *Input) -> void {
     auto Type = Input->getType();
     auto TypeSize = DataLayout->getTypeStoreSize(Type);
     if (TypeSize > 8) {
@@ -431,14 +435,11 @@ void StaticStream::fillProtobufStoreFuncInfo(
                    << '\n';
       assert(false && "Invalid type for input.");
     }
-    StaticStream *InputStream = nullptr;
-    // Search in the LoadStoreBaseStreams.
-    for (auto IS : this->LoadStoreBaseStreams) {
-      if (IS->Inst == Input) {
-        InputStream = IS;
-        break;
-      }
-    }
+  };
+  auto AddArg = [ProtoFuncInfo,
+                 DataLayout](const llvm::Type *Type,
+                             const StaticStream *InputStream) -> void {
+    auto ProtobufArg = ProtoFuncInfo->add_args();
     if (InputStream) {
       // This comes from the base stream.
       ProtobufArg->set_is_stream(true);
@@ -448,8 +449,31 @@ void StaticStream::fillProtobufStoreFuncInfo(
       ProtobufArg->set_is_stream(false);
     }
     ProtobufArg->set_is_float(Type->isFloatTy() || Type->isDoubleTy());
+  };
+  for (const auto &Input : this->StoreDG->getInputs()) {
+    StaticStream *InputStream = nullptr;
+    // Search in the LoadStoreBaseStreams.
+    for (auto IS : this->LoadStoreBaseStreams) {
+      if (IS->Inst == Input) {
+        InputStream = IS;
+        break;
+      }
+    }
+    CheckArg(Input);
+    AddArg(Input->getType(), InputStream);
   }
-  auto StoreValue = this->StoreDG->getResultValue();
+
+  // Finally handle tail AtomicRMWInst, with myself as the last input.
+  auto TailAtomicRMW = this->StoreDG->getTailAtomicRMW();
+  if (TailAtomicRMW) {
+    assert(TailAtomicRMW == this->Inst && "Mismatch in TailAtomicRMW.\n");
+    auto AtomicRMWInputPtrType = TailAtomicRMW->getOperand(0)->getType();
+    assert(AtomicRMWInputPtrType->isPointerTy() && "Should be pointer.");
+    AddArg(AtomicRMWInputPtrType->getPointerElementType(), this);
+  }
+
+  auto StoreValue =
+      TailAtomicRMW ? TailAtomicRMW : this->StoreDG->getResultValue();
   auto StoreType = StoreValue->getType();
   if (!(StoreType->isIntOrPtrTy() || StoreType->isFloatTy() ||
         StoreType->isDoubleTy())) {

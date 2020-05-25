@@ -296,11 +296,11 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "Construct Graph for " << S->formatName() << '\n');
+                 << "== SSRA: Construct Graph for " << S->formatName() << '\n');
       S->constructGraph(GetStream);
     }
   }
-  LLVM_DEBUG(llvm::dbgs() << "constructGraph done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "==== SSRA: constructGraph done.\n");
   /**
    * After add all the base streams, we are going to compute the base step root
    * streams. The computeBaseStepRootStreams() is by itself recursive. This will
@@ -309,10 +309,12 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
    */
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
+      LLVM_DEBUG(llvm::dbgs() << "== SSRA: ComputeBaseStepRoot for "
+                              << S->formatName() << '\n');
       S->computeBaseStepRootStreams();
     }
   }
-  LLVM_DEBUG(llvm::dbgs() << "computeBaseStepRootStreams done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "==== SSRA: computeBaseStepRootStreams done.\n");
   /**
    * After construct step root streams, we can analyze if the stream is a
    * candidate.
@@ -447,10 +449,15 @@ void StaticStreamRegionAnalyzer::buildLoadStoreStreamDependenceGraph() {
   /**
    * After construct basic stream dependence graph, we can analyze the
    * StoreDG and LoadStore dependence.
+   * We handle AtomicRMW stream as a special store stream.
    */
+  if (!StreamPassEnableLoadStoreDG) {
+    return;
+  }
   for (auto &InstStream : this->InstStaticStreamMap) {
     auto Inst = InstStream.first;
-    if (Inst->getOpcode() == llvm::Instruction::Store) {
+    if (Inst->getOpcode() == llvm::Instruction::Store ||
+        Inst->getOpcode() == llvm::Instruction::AtomicRMW) {
       for (auto &S : InstStream.second) {
         this->buildLoadStoreDependenceForStore(S);
       }
@@ -461,12 +468,9 @@ void StaticStreamRegionAnalyzer::buildLoadStoreStreamDependenceGraph() {
 void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
     StaticStream *StoreS) {
 
-  if (StoreS->Inst->getOpcode() != llvm::Instruction::Store) {
-    return;
-  }
-  if (!StreamPassEnableLoadStoreDG) {
-    return;
-  }
+  // StoreS could be an AtomicRMW stream.
+  bool IsAtomicRMW = StoreS->Inst->getOpcode() == llvm::Instruction::AtomicRMW;
+
   if (StoreS->BaseStepRootStreams.size() != 1) {
     // Wierd stream has no step root stream. We do not try to analyze it.
     return;
@@ -478,7 +482,9 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
    */
   auto IsIndVarStream = [](const llvm::PHINode *PHI) -> bool { return true; };
   // Another abuse of AddressDataGraph.
-  auto StoreValue = StoreS->Inst->getOperand(0);
+  auto StoreValue = (StoreS->Inst->getOpcode() == llvm::Instruction::Store)
+                        ? StoreS->Inst->getOperand(0)
+                        : StoreS->Inst->getOperand(1);
   auto StoreDG = std::make_unique<AddressDataGraph>(StoreS->ConfigureLoop,
                                                     StoreValue, IsIndVarStream);
   /**
@@ -553,11 +559,27 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
     }
   }
   /**
+   * Additional check for AtomicRMW stream:
+   * 1. No user, as we don't have the return value.
+   */
+  if (IsAtomicRMW) {
+    if (!StoreS->Inst->user_empty()) {
+      return;
+    }
+  }
+  /**
    * We passed all checks, we remember this relationship.
    */
   for (auto LoadS : LoadInputStreams) {
     LoadS->LoadStoreDepStreams.insert(StoreS);
     StoreS->LoadStoreBaseStreams.insert(LoadS);
+  }
+  /**
+   * Extend the StoreDG with the final atomic operation.
+   */
+  if (IsAtomicRMW) {
+    StoreDG->extendTailAtomicRMW(
+        llvm::dyn_cast<llvm::AtomicRMWInst>(StoreS->Inst));
   }
   StoreS->StoreDG = std::move(StoreDG);
 }
