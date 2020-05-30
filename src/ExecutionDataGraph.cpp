@@ -1,5 +1,7 @@
 #include "ExecutionDataGraph.h"
 
+#include "Utils.h"
+
 void ExecutionDataGraph::extendTailAtomicRMW(
     const llvm::AtomicRMWInst *AtomicRMW) {
   assert(!this->TailAtomicRMW && "Already has TailAtomicRMW.");
@@ -123,6 +125,8 @@ llvm::Function *ExecutionDataGraph::generateComputeFunction(
     llvm::Value *AtomicArg = ArgIter;
     switch (this->TailAtomicRMW->getOperation()) {
     default:
+      llvm::errs() << "Unsupported TailAtomicRMW Operation "
+                   << Utils::formatLLVMInst(this->TailAtomicRMW) << '\n';
       llvm_unreachable("Unsupported TailAtomicRMW Operation.");
     case llvm::AtomicRMWInst::FAdd:
       FinalValue = Builder.CreateFAdd(AtomicArg, FinalValue, "atomicrmw");
@@ -130,6 +134,13 @@ llvm::Function *ExecutionDataGraph::generateComputeFunction(
     case llvm::AtomicRMWInst::Add:
       FinalValue = Builder.CreateAdd(AtomicArg, FinalValue, "atomicrmw");
       break;
+    case llvm::AtomicRMWInst::UMin: {
+      // LLVM has no instr/intrinsic for integer min/max...
+      auto CmpValue = Builder.CreateICmpULT(AtomicArg, FinalValue, "umincmp");
+      FinalValue =
+          Builder.CreateSelect(CmpValue, AtomicArg, FinalValue, "atomicrmw");
+      break;
+    }
     }
   }
 
