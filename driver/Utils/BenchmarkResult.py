@@ -18,10 +18,10 @@ class SimulationResult:
         self.simulation_config = simulation_config
 
         self.tdg = self.benchmark.get_tdg(self.transform_config, self.trace)
-        # Execution simulation may have the sim_input_size
+        # Execution simulation may have the sim_input_name
         if self.transform_config.is_execution_transform():
             self.result_folder = self.simulation_config.get_gem5_dir(
-                self.tdg, self.benchmark.get_sim_input_size())
+                self.tdg, self.benchmark.get_sim_input_name())
         else:
             self.result_folder = self.simulation_config.get_gem5_dir(self.tdg)
 

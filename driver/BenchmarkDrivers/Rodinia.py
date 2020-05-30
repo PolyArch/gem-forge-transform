@@ -242,9 +242,9 @@ class RodiniaBenchmark(Benchmark):
         self.benchmark_name = os.path.basename(self.benchmark_path)
 
         self.n_thread = benchmark_args.options.input_threads
-        self.sim_input_size = 'test'
-        if benchmark_args.options.sim_input_size:
-            self.sim_input_size = benchmark_args.options.sim_input_size
+        self.sim_input_name = 'test'
+        if benchmark_args.options.sim_input_name:
+            self.sim_input_name = benchmark_args.options.sim_input_name
 
         self.work_path = os.path.join(
             C.LLVM_TDG_RESULT_DIR, 'rodinia', self.benchmark_name
@@ -281,14 +281,14 @@ class RodiniaBenchmark(Benchmark):
             )
         return None
 
-    def _get_args(self, input_size):
+    def _get_args(self, input_name):
         data_folder = os.path.join(
             self.benchmark_path,
             '../../data',
             self.benchmark_name,
         )
         args = list()
-        for arg in RodiniaBenchmark.ARGS[self.benchmark_name][input_size]:
+        for arg in RodiniaBenchmark.ARGS[self.benchmark_name][input_name]:
             if arg == '$NTHREADS':
                 args.append(str(self.n_thread))
             else:
@@ -300,10 +300,10 @@ class RodiniaBenchmark(Benchmark):
         return None
 
     def get_sim_args(self):
-        return self._get_args(self.sim_input_size)
+        return self._get_args(self.sim_input_name)
 
-    def get_sim_input_size(self):
-        return self.sim_input_size
+    def get_sim_input_name(self):
+        return self.sim_input_name
 
     def get_lang(self):
         return 'CPP'
@@ -322,7 +322,7 @@ class RodiniaBenchmark(Benchmark):
         Some benchmarks takes too long to finish, so we use work item
         to ensure that we simualte for the same amount of work.
         """
-        # if self.sim_input_size != 'large' and self.benchmark_name != 'pathfinder':
+        # if self.sim_input_name != 'large' and self.benchmark_name != 'pathfinder':
         #     # Pathfinder has deadlock at exit stage.
         #     return list()
         work_items = RodiniaBenchmark.WORK_ITEMS[self.benchmark_name]

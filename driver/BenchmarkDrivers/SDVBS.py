@@ -157,14 +157,14 @@ class SDVBSBenchmark(Benchmark):
                  suite='sdvbs'):
         self.top_folder = folder
         self.benchmark_name = benchmark_name
-        self.input_size = 'fullhd'
-        if benchmark_args.options.input_size:
-            self.input_size = benchmark_args.options.input_size
-        assert(self.input_size in SDVBSBenchmark.LEGAL_INPUT_SIZE)
-        self.sim_input_size = 'fullhd'
-        if benchmark_args.options.sim_input_size:
-            self.sim_input_size = benchmark_args.options.sim_input_size
-        assert(self.sim_input_size in SDVBSBenchmark.LEGAL_INPUT_SIZE)
+        self.input_name = 'fullhd'
+        if benchmark_args.options.input_name:
+            self.input_name = benchmark_args.options.input_name
+        assert(self.input_name in SDVBSBenchmark.LEGAL_INPUT_SIZE)
+        self.sim_input_name = 'fullhd'
+        if benchmark_args.options.sim_input_name:
+            self.sim_input_name = benchmark_args.options.sim_input_name
+        assert(self.sim_input_name in SDVBSBenchmark.LEGAL_INPUT_SIZE)
 
         self.suite = suite
 
@@ -216,23 +216,23 @@ class SDVBSBenchmark(Benchmark):
             benchmark_name=self.benchmark_name
         )
 
-    def get_input_size(self):
-        return self.input_size
+    def get_input_name(self):
+        return self.input_name
 
-    def get_sim_input_size(self):
-        return self.sim_input_size
+    def get_sim_input_name(self):
+        return self.sim_input_name
 
     def get_links(self):
         return ['-lm']
 
     def get_args(self):
         input_dir = os.path.join(
-            self.benchmark_dir, 'data', self.input_size)
+            self.benchmark_dir, 'data', self.input_name)
         return [input_dir]
 
     def get_sim_args(self):
         input_dir = os.path.join(
-            self.benchmark_dir, 'data', self.sim_input_size)
+            self.benchmark_dir, 'data', self.sim_input_name)
         return [input_dir]
 
     def get_trace_func(self):
@@ -319,7 +319,7 @@ class SDVBSBenchmark(Benchmark):
             trace_reachable_only=False,
         )
 
-        if self.input_size != 'fullhd':
+        if self.input_name != 'fullhd':
             # For non fullhd input we trace only the traced function.
             os.putenv('LLVM_TDG_TRACE_ROI', str(
                 TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value

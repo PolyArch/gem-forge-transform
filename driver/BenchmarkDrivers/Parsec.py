@@ -60,22 +60,22 @@ class ParsecBenchmark(Benchmark):
             'libs/hooks/inst/amd64-linux.clang-pthreads/lib'
         )
 
-        self.input_size = 'test'
-        # Override the input_size if use-specified.
-        if benchmark_args.options.input_size:
-            self.input_size = benchmark_args.options.input_size
-        assert(self.input_size in ParsecBenchmark.LEGAL_INPUT_SIZE)
-        self.sim_input_size = 'test'
-        if benchmark_args.options.sim_input_size:
-            self.sim_input_size = benchmark_args.options.sim_input_size
-        assert(self.sim_input_size in ParsecBenchmark.LEGAL_INPUT_SIZE)
+        self.input_name = 'test'
+        # Override the input_name if use-specified.
+        if benchmark_args.options.input_name:
+            self.input_name = benchmark_args.options.input_name
+        assert(self.input_name in ParsecBenchmark.LEGAL_INPUT_SIZE)
+        self.sim_input_name = 'test'
+        if benchmark_args.options.sim_input_name:
+            self.sim_input_name = benchmark_args.options.sim_input_name
+        assert(self.sim_input_name in ParsecBenchmark.LEGAL_INPUT_SIZE)
 
         self.exe_path = os.path.join(
-            self.benchmark_path, 'run', self.input_size)
-        self.setup_input(self.exe_path, self.input_size)
+            self.benchmark_path, 'run', self.input_name)
+        self.setup_input(self.exe_path, self.input_name)
         self.sim_exe_path = os.path.join(
-            self.benchmark_path, 'run', self.sim_input_size)
-        self.setup_input(self.sim_exe_path, self.sim_input_size)
+            self.benchmark_path, 'run', self.sim_input_name)
+        self.setup_input(self.sim_exe_path, self.sim_input_name)
 
         self.benchmark_name = os.path.basename(self.benchmark_path)
         self.n_thread = benchmark_args.options.input_threads
@@ -92,18 +92,18 @@ class ParsecBenchmark(Benchmark):
 
         super(ParsecBenchmark, self).__init__(benchmark_args)
 
-    def setup_input(self, exe_path, input_size):
+    def setup_input(self, exe_path, input_name):
         if os.path.isfile(exe_path):
             # Exe path is not a folder.
             assert(False)
         Util.mkdir_p(exe_path)
         os.chdir(exe_path)
-        input_ready_file = 'input_ready_{size}'.format(size=input_size)
+        input_ready_file = 'input_ready_{size}'.format(size=input_name)
         if os.path.isfile(input_ready_file):
             # We assume the input is there.
             return
         input_tar = os.path.join(
-            self.benchmark_path, 'inputs', 'input_{size}.tar'.format(size=input_size))
+            self.benchmark_path, 'inputs', 'input_{size}.tar'.format(size=input_name))
         untar_cmd = [
             'tar',
             'xvf',
@@ -116,11 +116,11 @@ class ParsecBenchmark(Benchmark):
     def get_name(self):
         return 'parsec.{b}'.format(b=self.benchmark_name)
 
-    def get_input_size(self):
-        return self.input_size
+    def get_input_name(self):
+        return self.input_name
 
-    def get_sim_input_size(self):
-        return self.sim_input_size
+    def get_sim_input_name(self):
+        return self.sim_input_name
 
     def get_links(self):
         return [
@@ -134,9 +134,9 @@ class ParsecBenchmark(Benchmark):
             C.M5_THREADS_LIB,
         ]
 
-    def _get_args(self, input_size):
+    def _get_args(self, input_name):
         args = list()
-        for arg in ParsecBenchmark.ARGS[self.benchmark_name][input_size]:
+        for arg in ParsecBenchmark.ARGS[self.benchmark_name][input_name]:
             if arg == '$NTHREADS':
                 args.append(str(self.n_thread))
             else:
@@ -144,10 +144,10 @@ class ParsecBenchmark(Benchmark):
         return args
 
     def get_args(self):
-        return self._get_args(self.input_size)
+        return self._get_args(self.input_name)
 
     def get_sim_args(self):
-        return self._get_args(self.sim_input_size)
+        return self._get_args(self.sim_input_name)
 
     def get_trace_func(self):
         if self.benchmark_name == 'blackscholes':

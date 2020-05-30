@@ -188,14 +188,14 @@ class CortexBenchmark(Benchmark):
                  folder, benchmark_name, suite='cortex'):
         self.benchmark_name = benchmark_name
 
-        self.input_size = 'large'
-        if benchmark_args.options.input_size:
-            self.input_size = benchmark_args.options.input_size
-        assert(self.input_size in CortexBenchmark.LEGAL_INPUT_SIZE)
-        self.sim_input_size = 'large'
-        if benchmark_args.options.sim_input_size:
-            self.sim_input_size = benchmark_args.options.sim_input_size
-        assert(self.sim_input_size in CortexBenchmark.LEGAL_INPUT_SIZE)
+        self.input_name = 'large'
+        if benchmark_args.options.input_name:
+            self.input_name = benchmark_args.options.input_name
+        assert(self.input_name in CortexBenchmark.LEGAL_INPUT_SIZE)
+        self.sim_input_name = 'large'
+        if benchmark_args.options.sim_input_name:
+            self.sim_input_name = benchmark_args.options.sim_input_name
+        assert(self.sim_input_name in CortexBenchmark.LEGAL_INPUT_SIZE)
 
         self.suite = suite
         self.top_folder = folder
@@ -220,7 +220,7 @@ class CortexBenchmark(Benchmark):
             self.flags = CortexBenchmark.FLAGS_FRACTAL[self.benchmark_name]
         self.flags.append('gline-tables-only')
 
-        self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_size]
+        self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_name]
         assert(len(self.defines) == 0)
 
         self.includes = ['includes']
@@ -241,14 +241,14 @@ class CortexBenchmark(Benchmark):
             benchmark_name=self.benchmark_name,
         )
 
-    def get_input_size(self):
-        return self.input_size
+    def get_input_name(self):
+        return self.input_name
 
-    def get_sim_input_size(self):
-        return self.sim_input_size
+    def get_sim_input_name(self):
+        return self.sim_input_name
 
     def get_profile_roi(self):
-        if self.input_size == 'small':
+        if self.input_name == 'small':
             return TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value
         return TraceFlagEnum.GemForgeTraceROI.All.value
 
@@ -256,10 +256,10 @@ class CortexBenchmark(Benchmark):
         return ['-lm']
 
     def get_args(self):
-        return CortexBenchmark.ARGS[self.benchmark_name][self.input_size]
+        return CortexBenchmark.ARGS[self.benchmark_name][self.input_name]
 
     def get_sim_args(self):
-        return CortexBenchmark.ARGS[self.benchmark_name][self.sim_input_size]
+        return CortexBenchmark.ARGS[self.benchmark_name][self.sim_input_name]
 
     def get_trace_func(self):
         return self.trace_functions
@@ -334,7 +334,7 @@ class CortexBenchmark(Benchmark):
             trace_reachable_only=False,
         )
 
-        if self.input_size != 'large':
+        if self.input_name != 'large':
             # For non fullhd input we trace only the traced function.
             os.putenv('LLVM_TDG_TRACE_ROI', str(
                 TraceFlagEnum.GemForgeTraceROI.SpecifiedFunction.value

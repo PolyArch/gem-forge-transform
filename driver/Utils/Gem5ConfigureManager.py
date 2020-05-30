@@ -24,11 +24,11 @@ class Gem5ReplayConfig(object):
     def get_support_transform_ids(self):
         return self.json['support-transform-ids']
 
-    def get_gem5_dir(self, tdg, sim_input_size=None):
+    def get_gem5_dir(self, tdg, sim_input_name=None):
         dirname, basename = os.path.split(tdg)
         gem5_dir = os.path.join(dirname, self.get_simulation_id(), basename)
-        if sim_input_size:
-            gem5_dir = '{d}.{i}'.format(d=gem5_dir, i=sim_input_size)
+        if sim_input_name:
+            gem5_dir = '{d}.{i}'.format(d=gem5_dir, i=sim_input_name)
         return gem5_dir
 
     def get_result(self, tdg):

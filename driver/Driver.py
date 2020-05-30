@@ -547,11 +547,11 @@ if __name__ == '__main__':
                       dest='trace_id', callback=parse_trace_ids)
 
     parser.add_option('--input-size', type='string', action='store',
-                      dest='input_size', default=None)
+                      dest='input_name', default=None)
     parser.add_option('--input-threads', type='int', action='store',
                       dest='input_threads', default=1)
     parser.add_option('--sim-input-size', type='string', action='store',
-                      dest='sim_input_size', default=None)
+                      dest='sim_input_name', default=None)
 
     parser.add_option('--stream-plot', type='string', action='callback',
                       dest='stream_plot', callback=parse_stream_plot)

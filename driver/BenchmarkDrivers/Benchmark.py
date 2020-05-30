@@ -130,12 +130,12 @@ class Benchmark(object):
     def get_name(self):
         assert('get_name is not implemented by derived class')
 
-    def get_input_size(self):
-        # Please override if the suite has various input_size.
+    def get_input_name(self):
+        # Please override if the suite has various input_name.
         return None
 
-    def get_sim_input_size(self):
-        # Please override if the suite has various input_size.
+    def get_sim_input_name(self):
+        # Please override if the suite has various input_name.
         return None
 
     def get_perf_frequency(self):
@@ -162,8 +162,8 @@ class Benchmark(object):
 
     def get_profile_base(self):
         ret = 'profile'
-        if self.get_input_size():
-            ret += '.' + self.get_input_size()
+        if self.get_input_name():
+            ret += '.' + self.get_input_name()
         return ret
 
     def get_profile_folder_abs(self):
@@ -202,8 +202,8 @@ class Benchmark(object):
 
     def get_trace_base(self):
         ret = 'trace'
-        if self.get_input_size():
-            ret += '.' + self.get_input_size()
+        if self.get_input_name():
+            ret += '.' + self.get_input_name()
         return ret
 
     def get_trace_folder_abs(self):
@@ -364,11 +364,11 @@ class Benchmark(object):
         return [self.get_tdg(transform_config, trace) for trace in self.traces]
 
     def get_tdg(self, transform_config, trace):
-        if self.get_input_size():
-            return '{transform_path}/{input_size}.{trace_id}.tdg'.format(
+        if self.get_input_name():
+            return '{transform_path}/{input_name}.{trace_id}.tdg'.format(
                 transform_path=self.get_transform_path(
                     transform_config.get_transform_id()),
-                input_size=self.get_input_size(),
+                input_name=self.get_input_name(),
                 trace_id=trace.get_trace_id(),
             )
         else:
@@ -970,7 +970,7 @@ class Benchmark(object):
         assert(transform_config.is_execution_transform())
         tdg = self.get_tdg(transform_config, trace)
         gem5_out_dir = simulation_config.get_gem5_dir(
-            tdg, self.get_sim_input_size())
+            tdg, self.get_sim_input_name())
         gem5_args = self.get_gem5_simulate_command(
             simulation_config=simulation_config,
             binary=self.get_replay_exe(transform_config, trace, 'exe'),
@@ -1003,7 +1003,7 @@ class Benchmark(object):
 
         print('# Simulating the datagraph')
         tdg = self.get_tdg(transform_config, trace)
-        # There is no sim_input_size for trace based simulation.
+        # There is no sim_input_name for trace based simulation.
         gem5_out_dir = simulation_config.get_gem5_dir(tdg)
         Util.call_helper(['mkdir', '-p', gem5_out_dir])
         gem5_args = self.get_gem5_simulate_command(

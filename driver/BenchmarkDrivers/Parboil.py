@@ -79,9 +79,9 @@ class ParboilBenchmark(Benchmark):
         self.benchmark_name = os.path.basename(self.src_path)
         self.n_thread = benchmark_args.options.input_threads
 
-        self.sim_input_size = 'small'
-        if benchmark_args.options.sim_input_size:
-            self.sim_input_size = benchmark_args.options.sim_input_size
+        self.sim_input_name = 'small'
+        if benchmark_args.options.sim_input_name:
+            self.sim_input_name = benchmark_args.options.sim_input_name
 
         # Create the result dir out of the source tree.
         self.work_path = os.path.join(
@@ -93,12 +93,12 @@ class ParboilBenchmark(Benchmark):
             self.suite_path,
             'datasets',
             self.benchmark_name,
-            self.sim_input_size,
+            self.sim_input_name,
         )
         self.run_folder = os.path.join(
             self.src_path,
             'run',
-            self.sim_input_size,
+            self.sim_input_name,
         )
         Util.mkdir_chain(self.run_folder)
 
@@ -121,14 +121,14 @@ class ParboilBenchmark(Benchmark):
         ]
         return links
 
-    def _get_args(self, input_size):
+    def _get_args(self, input_name):
         args = list()
-        for arg in ParboilBenchmark.ARGS[self.benchmark_name][input_size]:
+        for arg in ParboilBenchmark.ARGS[self.benchmark_name][input_name]:
             if arg == '$NTHREADS':
                 args.append(str(self.n_thread))
             else:
                 # Special case for tpacf input.
-                if self.benchmark_name == 'tpacf' and input_size == 'large' and arg.find('Randompnts') != -1:
+                if self.benchmark_name == 'tpacf' and input_name == 'large' and arg.find('Randompnts') != -1:
                     random_points = ','.join(
                         [arg.format(DATA=self.datasets_folder, i=i) for i in range(1, 101)])
                     data_point = os.path.join(
@@ -144,10 +144,10 @@ class ParboilBenchmark(Benchmark):
         return None
 
     def get_sim_args(self):
-        return self._get_args(self.sim_input_size)
+        return self._get_args(self.sim_input_name)
 
-    def get_sim_input_size(self):
-        return self.sim_input_size
+    def get_sim_input_name(self):
+        return self.sim_input_name
 
     def get_trace_func(self):
         if self.benchmark_name in ParboilBenchmark.ROI_FUNCS:
