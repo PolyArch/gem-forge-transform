@@ -881,6 +881,8 @@ void StreamExecutionTransformer::handleStoreDG(StreamRegionAnalyzer *Analyzer,
   SS->StaticStreamInfo.set_enabled_store_func(true);
   auto ClonedSSInst = this->getClonedValue(SS->Inst);
   this->PendingRemovedInsts.insert(ClonedSSInst);
+  // Mark this stream without core user.
+  SS->StaticStreamInfo.set_no_core_user(true);
 }
 
 llvm::Instruction *
@@ -1025,7 +1027,15 @@ void StreamExecutionTransformer::cleanClonedModule() {
     if (StreamLoadInst->use_empty()) {
       StreamLoadInst->eraseFromParent();
       StreamInstPair.second = nullptr;
-      if (S->getChosenDependentStreams().empty()) {
+
+      bool allDepSNoCoreUser = true;
+      for (auto DepS : S->getChosenDependentStreams()) {
+        if (!DepS->SStream->StaticStreamInfo.no_core_user()) {
+          allDepSNoCoreUser = false;
+          break;
+        }
+      }
+      if (allDepSNoCoreUser) {
         // This is a seed for no core user stream.
         NoCoreUserStreams.emplace(S);
       }
@@ -1364,9 +1374,9 @@ void StreamExecutionTransformer::handleExtraInputValue(
   }
 
   /**
-   * If this is a merged load-store dep stream, add more StoreDG inputs.
+   * If this stream enabled StoreDG, add more StoreDG inputs.
    */
-  if (SS->StaticStreamInfo.merged_load_store_base_streams_size() > 0) {
+  if (SS->StaticStreamInfo.enabled_store_func()) {
     assert(SS->StoreDG && "No StoreDG for MergedLoadStoreDepStream.");
     for (auto Input : SS->getStoreFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
