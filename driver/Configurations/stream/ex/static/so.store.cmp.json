@@ -1,0 +1,15 @@
+{
+    "id": "stream.ex.static.so.store.cmp",
+    "is_execution_transform": true,
+    "options": [
+        "-stream-execution-static-pass",
+        "-stream-pass-choose-strategy=static-outer",
+        "-stream-pass-allow-aliased-stream",
+        "-stream-pass-upgrade-load-to-update",
+        "-stream-pass-merge-predicated-store",
+        "-stream-pass-merge-ind-predicated-store",
+        "-stream-pass-enable-store",
+        "-stream-pass-enable-reduce",
+        "-stream-pass-enable-load-store-dg"
+    ]
+}
