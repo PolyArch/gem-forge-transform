@@ -1155,6 +1155,13 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
     for (auto Input : S->getReduceFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
     }
+  } else if (SS->StaticStreamInfo.val_pattern() ==
+                 ::LLVM::TDG::StreamValuePattern::LINEAR &&
+             SS->StaticStreamInfo.stp_pattern() ==
+                 ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
+    llvm::errs() << "Can't handle Conditional Linear IVStream "
+                 << S->formatName() << '\n';
+    assert(false);
   } else {
     llvm::errs() << "Can't handle IVStream " << S->formatName() << '\n';
     assert(false);
@@ -1223,10 +1230,8 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
         ClonedConfigureLoop, ClonedInnerMostLoop, ClonedAddrAddRecSCEV,
         InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
         ProtoConfiguration);
-    return;
-  }
-  if (SS->StaticStreamInfo.val_pattern() ==
-      ::LLVM::TDG::StreamValuePattern::INDIRECT) {
+  } else if (SS->StaticStreamInfo.val_pattern() ==
+             ::LLVM::TDG::StreamValuePattern::INDIRECT) {
     // Check if this is indirect stream.
     LLVM_DEBUG(llvm::errs() << "This is Indirect MemStream.\n");
     for (auto BaseS : S->getChosenBaseStreams()) {
@@ -1247,9 +1252,16 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     for (auto Input : S->getAddrFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
     }
-    return;
+  } else if (SS->StaticStreamInfo.val_pattern() ==
+                 ::LLVM::TDG::StreamValuePattern::LINEAR &&
+             SS->StaticStreamInfo.stp_pattern() ==
+                 ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
+    llvm::errs() << "Can't handle conditional linear mem stream "
+                 << S->formatName() << '\n';
+    assert(false);
+  } else {
+    assert(false && "Can't handle this Addr.");
   }
-  assert(false && "Can't handle this Addr.");
 }
 
 void StreamExecutionTransformer::generateAddRecStreamConfiguration(

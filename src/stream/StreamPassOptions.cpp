@@ -8,6 +8,10 @@ llvm::cl::opt<bool>
     StreamPassEnableStore("stream-pass-enable-store", llvm::cl::init(false),
                           llvm::cl::desc("Enable store stream."));
 
+llvm::cl::opt<bool> StreamPassEnableConditionalStep(
+    "stream-pass-enable-conditional-step", llvm::cl::init(false),
+    llvm::cl::desc("Enable conditional step stream."));
+
 llvm::cl::opt<bool>
     StreamPassEnableReduce("stream-pass-enable-reduce", llvm::cl::init(false),
                            llvm::cl::desc("Enable reduce stream."));
