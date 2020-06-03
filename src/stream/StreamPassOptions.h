@@ -8,6 +8,7 @@
 extern llvm::cl::opt<bool> StreamPassAllowAliasedStream;
 
 extern llvm::cl::opt<bool> StreamPassEnableStore;
+extern llvm::cl::opt<bool> StreamPassEnableConditionalStep;
 
 extern llvm::cl::opt<bool> StreamPassEnableReduce;
 

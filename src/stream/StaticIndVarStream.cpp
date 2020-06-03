@@ -273,6 +273,10 @@ void StaticIndVarStream::analyzeIsCandidate() {
     if (EmptyPathFound) {
       this->StaticStreamInfo.set_stp_pattern(
           LLVM::TDG::StreamStepPattern::CONDITIONAL);
+      if (!StreamPassEnableConditionalStep) {
+        this->IsCandidate = false;
+        return;
+      }
     } else {
       this->StaticStreamInfo.set_stp_pattern(
           LLVM::TDG::StreamStepPattern::UNCONDITIONAL);
@@ -281,8 +285,6 @@ void StaticIndVarStream::analyzeIsCandidate() {
 
     return;
   }
-
-  llvm::errs() << "Done\n";
 
   this->IsCandidate = true;
 }
