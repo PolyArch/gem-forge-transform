@@ -25,6 +25,7 @@ class GemForgeMicroBenchmark(Benchmark):
         self.is_omp = self.benchmark_name.startswith('omp_')
         self.is_graph = self.benchmark_name in [
             'omp_bfs',
+            'omp_bfs_queue',
             'omp_page_rank',
         ]
         self.n_thread = benchmark_args.options.input_threads
@@ -68,6 +69,7 @@ class GemForgeMicroBenchmark(Benchmark):
 
     OMP_GRAPH_FUNC_SUFFIX = {
         'omp_bfs': ['', '.1'],
+        'omp_bfs_queue': [''],
         'omp_page_rank': ['', '.1'],
     }
 
