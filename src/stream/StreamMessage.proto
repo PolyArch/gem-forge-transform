@@ -82,13 +82,18 @@ message StaticStreamInfo {
   bool no_core_user = 22; // This stream has not core user.
   ExecFuncInfo store_func_info = 23;
   bool enabled_store_func = 24;
-  repeated StreamId merged_load_store_base_streams = 25;
-  repeated StreamId merged_load_store_dep_streams = 26;
+  // The load function, only used for atomic stream.
+  ExecFuncInfo load_func_info = 25;
+  repeated StreamId merged_load_store_base_streams = 26;
+  repeated StreamId merged_load_store_dep_streams = 27;
 
   // AliasedStreamInfo
   StreamId alias_base_stream = 32;
   uint32 alias_offset = 33;
   repeated StreamId aliased_streams = 34;
+
+  int32 core_element_size = 60;
+  int32 mem_element_size = 61;
 
   enum StaticNotStreamReason {
     UNKNOWN = 0;
@@ -124,7 +129,6 @@ message StreamInfo {
   Type type = 3;
   uint32 loop_level = 4;
   uint32 config_loop_level = 5;
-  int32 element_size = 6;
   string pattern_path = 7;
   string history_path = 8;
   StaticCoalesceInfo coalesce_info = 9;

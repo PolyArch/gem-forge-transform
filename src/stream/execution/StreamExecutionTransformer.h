@@ -72,6 +72,8 @@ private:
                           llvm::StoreInst *StoreInst);
   void transformAtomicRMWInst(StreamRegionAnalyzer *Analyzer,
                               llvm::AtomicRMWInst *AtomicRMW);
+  void transformAtomicCmpXchgInst(StreamRegionAnalyzer *Analyzer,
+                                  llvm::AtomicCmpXchgInst *AtomicCmpXchg);
   void transformStepInst(StreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
   void upgradeLoadToUpdateStream(StreamRegionAnalyzer *Analyzer,

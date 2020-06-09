@@ -33,41 +33,64 @@ public:
   bool hasCircle() const { return this->HasCircle; }
 
   /**
-   * Generate a function takes the input and returns the value.
-   * Returns the inserted function.
-   */
-  llvm::Function *
-  generateComputeFunction(const std::string &FuncName,
-                          std::unique_ptr<llvm::Module> &Module) const;
-
-  /**
-   * A hack to extend the result value with a tail AtomicRMW instruction.
-   * The AtomicRMW instruction is transformed to its normal version, with
+   * A hack to extend the result value with a tail Atomic instruction.
+   * Can be AtomicRMW or AtomicCmpXchg. Then the DataGraph will generate two
+   * functions, one for loaded value and one for stored value.
+   * e.g. for atomiccmpxchg stream, the __store() function returns the final
+   * value stored to the place, and __load() function returns the value for
+   * the core.
+   *
+   * The Atomic instruction is transformed to its normal version, with
    * the input as the last function argument and result as returned value.
    */
-  void extendTailAtomicRMW(const llvm::AtomicRMWInst *AtomicRMW);
-  const llvm::AtomicRMWInst *getTailAtomicRMW() const {
-    return this->TailAtomicRMW;
+  void extendTailAtomicInst(
+      const llvm::Instruction *AtomicInst,
+      const std::vector<const llvm::Instruction *> &FusedLoadOps);
+  const llvm::Instruction *getTailAtomicInst() const {
+    return this->TailAtomicInst;
   }
+  bool hasTailAtomicInst() const { return this->TailAtomicInst != nullptr; }
+
+  llvm::Type *getReturnType(bool IsLoad) const;
+
+  /**
+   * Generate a function takes the input and returns the value.
+   * @param IsLoad: Only useful when there is a tail atomic.
+   * Returns the inserted function.
+   */
+  llvm::Function *generateFunction(const std::string &FuncName,
+                                   std::unique_ptr<llvm::Module> &Module,
+                                   bool IsLoad = false) const;
 
 protected:
   const llvm::Value *ResultValue;
   std::list<const llvm::Value *> Inputs;
   std::unordered_set<const llvm::ConstantData *> ConstantDatas;
   InstSet ComputeInsts;
-  const llvm::AtomicRMWInst *TailAtomicRMW = nullptr;
+  const llvm::Instruction *TailAtomicInst = nullptr;
+  std::vector<const llvm::Instruction *> FusedLoadOps;
   bool HasCircle = false;
 
   using DFSTaskT = std::function<void(const llvm::Instruction *)>;
   void dfsOnComputeInsts(const llvm::Instruction *Inst, DFSTaskT Task) const;
 
-  llvm::FunctionType *createFunctionType(llvm::Module *Module) const;
+  llvm::FunctionType *createFunctionType(llvm::Module *Module,
+                                         bool IsLoad) const;
 
   using ValueMapT = std::unordered_map<const llvm::Value *, llvm::Value *>;
   void translate(llvm::IRBuilder<> &Builder, ValueMapT &ValueMap,
                  const llvm::Instruction *Inst) const;
 
   bool detectCircle() const;
+
+  llvm::Value *generateTailAtomicRMW(llvm::IRBuilder<> &Builder,
+                                     llvm::Value *AtomicArg,
+                                     llvm::Value *RhsArg, bool IsLoad) const;
+  llvm::Value *generateTailAtomicCmpXchg(llvm::IRBuilder<> &Builder,
+                                         llvm::Value *AtomicArg,
+                                         llvm::Value *CmpValue,
+                                         llvm::Value *XchgValue,
+                                         bool IsLoad) const;
 };
 
 #endif

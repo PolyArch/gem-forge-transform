@@ -36,16 +36,40 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
     auto ProtoAliasedStreamId = SSI.add_aliased_streams();
     S->formatProtoStreamId(ProtoAliasedStreamId);
   }
+
+  // Set the element size.
+  SSI.set_mem_element_size(this->getMemElementSize());
+  SSI.set_core_element_size(this->getCoreElementSize());
 }
 
-int StaticStream::getElementSize(llvm::DataLayout *DataLayout) const {
-  if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(this->Inst)) {
-    llvm::Type *StoredType =
-        StoreInst->getPointerOperandType()->getPointerElementType();
-    return DataLayout->getTypeStoreSize(StoredType);
+int StaticStream::getMemElementSize() const {
+  switch (this->Inst->getOpcode()) {
+  case llvm::Instruction::PHI:
+  case llvm::Instruction::Load:
+  case llvm::Instruction::AtomicRMW:
+    return this->DataLayout->getTypeStoreSize(this->Inst->getType());
+  case llvm::Instruction::AtomicCmpXchg:
+  case llvm::Instruction::Store: {
+    auto AddrType = Utils::getMemAddrValue(this->Inst)->getType();
+    auto ElementType = AddrType->getPointerElementType();
+    return this->DataLayout->getTypeStoreSize(ElementType);
   }
+  default:
+    llvm_unreachable("Unsupported StreamType.");
+  }
+}
 
-  return DataLayout->getTypeStoreSize(this->Inst->getType());
+int StaticStream::getCoreElementSize() const {
+  /**
+   * In most case, the core element size is the same as the memory,
+   * except for FusedLoadOps. This is only used for AtomicCmpXchg.
+   */
+  if (!this->FusedLoadOps.empty()) {
+    return this->DataLayout->getTypeStoreSize(
+        this->FusedLoadOps.back()->getType());
+  } else {
+    return this->getMemElementSize();
+  }
 }
 
 void StaticStream::handleFirstTimeComputeNode(
@@ -403,23 +427,43 @@ void StaticStream::analyzeIsTripCountFixed() const {
 void StaticStream::generateReduceFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ReduceDG) {
-    this->ReduceDG->generateComputeFunction(this->FuncNameBase + "_reduce",
-                                            Module);
+    this->ReduceDG->generateFunction(this->FuncNameBase + "_reduce", Module);
   }
   if (this->StoreDG) {
-    this->StoreDG->generateComputeFunction(this->FuncNameBase + "_store",
-                                           Module);
+    this->StoreDG->generateFunction(this->getStoreFuncName(false), Module,
+                                    false /* IsLoad */);
+    if (this->StoreDG->hasTailAtomicInst()) {
+      // AtomicStream has one additional load func.
+      this->StoreDG->generateFunction(this->getStoreFuncName(true), Module,
+                                      true /* IsLoad */);
+    }
   }
 }
 
 void StaticStream::fillProtobufStoreFuncInfo(
     ::llvm::DataLayout *DataLayout,
-    ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo) const {
+    ::LLVM::TDG::StaticStreamInfo *SSInfo) const {
 
   if (!this->StoreDG) {
     return;
   }
-  ProtoFuncInfo->set_name(this->FuncNameBase + "_store");
+  auto ProtoStoreInfo = SSInfo->mutable_store_func_info();
+  this->fillProtobufStoreFuncInfoImpl(DataLayout, ProtoStoreInfo,
+                                      false /* IsLoad */);
+
+  if (this->StoreDG->hasTailAtomicInst()) {
+    // AtomicStream has one additional load func.
+    auto ProtoLoadInfo = SSInfo->mutable_load_func_info();
+    this->fillProtobufStoreFuncInfoImpl(DataLayout, ProtoLoadInfo,
+                                        true /* IsLoad */);
+  }
+}
+
+void StaticStream::fillProtobufStoreFuncInfoImpl(
+    ::llvm::DataLayout *DataLayout, ::LLVM::TDG::ExecFuncInfo *ExInfo,
+    bool IsLoad) const {
+
+  ExInfo->set_name(this->getStoreFuncName(IsLoad));
   auto CheckArg = [DataLayout](const llvm::Value *Input) -> void {
     auto Type = Input->getType();
     auto TypeSize = DataLayout->getTypeStoreSize(Type);
@@ -436,10 +480,9 @@ void StaticStream::fillProtobufStoreFuncInfo(
       assert(false && "Invalid type for input.");
     }
   };
-  auto AddArg = [ProtoFuncInfo,
-                 DataLayout](const llvm::Type *Type,
-                             const StaticStream *InputStream) -> void {
-    auto ProtobufArg = ProtoFuncInfo->add_args();
+  auto AddArg = [ExInfo, DataLayout](const llvm::Type *Type,
+                                     const StaticStream *InputStream) -> void {
+    auto ProtobufArg = ExInfo->add_args();
     if (InputStream) {
       // This comes from the base stream.
       ProtobufArg->set_is_stream(true);
@@ -464,28 +507,29 @@ void StaticStream::fillProtobufStoreFuncInfo(
   }
 
   // Finally handle tail AtomicRMWInst, with myself as the last input.
-  auto TailAtomicRMW = this->StoreDG->getTailAtomicRMW();
-  if (TailAtomicRMW) {
-    assert(TailAtomicRMW == this->Inst && "Mismatch in TailAtomicRMW.\n");
-    auto AtomicRMWInputPtrType = TailAtomicRMW->getOperand(0)->getType();
-    assert(AtomicRMWInputPtrType->isPointerTy() && "Should be pointer.");
-    AddArg(AtomicRMWInputPtrType->getPointerElementType(), this);
+  auto TailAtomicInst = this->StoreDG->getTailAtomicInst();
+  if (TailAtomicInst) {
+    assert(TailAtomicInst == this->Inst && "Mismatch in TailAtomicInst.\n");
+    auto AtomicInputPtrType = TailAtomicInst->getOperand(0)->getType();
+    assert(AtomicInputPtrType->isPointerTy() && "Should be pointer.");
+    AddArg(AtomicInputPtrType->getPointerElementType(), this);
   }
 
-  auto StoreValue =
-      TailAtomicRMW ? TailAtomicRMW : this->StoreDG->getResultValue();
-  auto StoreType = StoreValue->getType();
-  if (!(StoreType->isIntOrPtrTy() || StoreType->isFloatTy() ||
-        StoreType->isDoubleTy())) {
-    llvm::errs() << "Invalid result type, Value: "
-                 << Utils::formatLLVMValue(StoreValue) << '\n';
+  auto StoreType = this->StoreDG->getReturnType(false /* IsLoad */);
+  auto StoreTypeBits = DataLayout->getTypeStoreSizeInBits(StoreType);
+  if (StoreTypeBits > 64) {
+    llvm::errs() << "Invalid result type, Stream: " << this->formatName()
+                 << " Bits " << StoreTypeBits << '\n';
     assert(false && "Invalid type for result.");
   }
-  ProtoFuncInfo->set_is_float(StoreType->isFloatTy() ||
-                              StoreType->isDoubleTy());
+  ExInfo->set_is_float(StoreType->isFloatTy() || StoreType->isDoubleTy());
 }
 
 StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {
+  /**
+   * No special handling for atomic stream here, as load/store shares the same
+   * input.
+   */
   assert(this->StoreDG && "No StoreDG to get input values.");
   InputValueList InputValues;
   for (const auto &Input : this->StoreDG->getInputs()) {
@@ -559,4 +603,28 @@ bool StaticStream::ComputeMetaNode::isIdenticalTo(
   }
 
   return true;
+}
+
+void StaticStream::fuseLoadOps() {
+  // So far only use this for the AtomicCmpXchg stream.
+  if (this->Inst->getOpcode() != llvm::Instruction::AtomicCmpXchg) {
+    return;
+  }
+  LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOps for " << this->formatName()
+                          << '\n');
+  auto CurInst = this->Inst;
+  while (CurInst->hasOneUse()) {
+    auto User = *CurInst->user_begin();
+    if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
+      if (UserInst->getParent() == this->Inst->getParent()) {
+        // We are in the same BB.
+        // Todo: Make sure this is a single user chain.
+        LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOp "
+                                << Utils::formatLLVMInst(UserInst) << '\n');
+        this->FusedLoadOps.push_back(UserInst);
+        CurInst = UserInst;
+        break;
+      }
+    }
+  }
 }

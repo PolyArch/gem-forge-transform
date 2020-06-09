@@ -168,7 +168,9 @@ public:
     case llvm::Instruction::Select: {
       return true;
     }
-    default: { return false; }
+    default: {
+      return false;
+    }
     }
   }
 
@@ -252,9 +254,8 @@ public:
   InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
   const Stream *getExecFuncInputStream(const llvm::Value *Value) const;
 
-  int getElementSize(llvm::DataLayout *DataLayout) const {
-    return this->SStream->getElementSize(DataLayout);
-  }
+  int getMemElementSize() const { return this->SStream->getMemElementSize(); }
+  int getCoreElementSize() const { return this->SStream->getCoreElementSize(); }
 
 protected:
   /**
@@ -266,8 +267,6 @@ protected:
   std::string InfoFileName;
   std::string HistoryFileName;
   std::list<LLVM::TDG::StreamPattern> ProtobufPatterns;
-
-  size_t ElementSize;
 
   StreamSet BaseStreams;
   StreamSet DependentStreams;
@@ -335,13 +334,12 @@ protected:
   virtual void
   fillProtobufPredFuncInfo(::llvm::DataLayout *DataLayout,
                            ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {}
-  void
-  fillProtobufStoreFuncInfo(::llvm::DataLayout *DataLayout,
-                            ::LLVM::TDG::ExecFuncInfo *StoreFuncInfo) const {
+  void fillProtobufStoreFuncInfo(::llvm::DataLayout *DataLayout,
+                                 ::LLVM::TDG::StaticStreamInfo *SSInfo) const {
     if (!this->isChosen()) {
       return;
     }
-    this->SStream->fillProtobufStoreFuncInfo(DataLayout, StoreFuncInfo);
+    this->SStream->fillProtobufStoreFuncInfo(DataLayout, SSInfo);
   }
 
   void fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,

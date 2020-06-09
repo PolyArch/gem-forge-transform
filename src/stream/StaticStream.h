@@ -41,6 +41,7 @@ public:
   const std::string FuncNameBase;
   llvm::ScalarEvolution *const SE;
   const llvm::PostDominatorTree *PDT;
+  llvm::DataLayout *DataLayout;
 
   /**
    * The constructor just creates the object and does not perform any analysis.
@@ -51,7 +52,8 @@ public:
   StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
-               const llvm::PostDominatorTree *_PDT)
+               const llvm::PostDominatorTree *_PDT,
+               llvm::DataLayout *_DataLayout)
       : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
         ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop),
         FuncNameBase(
@@ -60,11 +62,14 @@ public:
                         "_" + _Inst->getOpcodeName() + "_" +
                         llvm::Twine(LoopUtils::getLLVMInstPosInBB(_Inst)))
                 .str()),
-        SE(_SE), PDT(_PDT), IsCandidate(false), IsQualified(false),
-        IsStream(false) {}
+        SE(_SE), PDT(_PDT), DataLayout(_DataLayout), IsCandidate(false),
+        IsQualified(false), IsStream(false) {
+    this->fuseLoadOps();
+  }
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
-  int getElementSize(llvm::DataLayout *DataLayout) const;
+  int getCoreElementSize() const;
+  int getMemElementSize() const;
 
   std::string formatType() const {
     switch (this->Type) {
@@ -72,7 +77,9 @@ public:
       return "IV";
     case StaticStream::MEM:
       return "MEM";
-    default: { llvm_unreachable("Illegal stream type to be formatted."); }
+    default: {
+      llvm_unreachable("Illegal stream type to be formatted.");
+    }
     }
   }
 
@@ -197,9 +204,20 @@ public:
   // Store stream.
   std::unique_ptr<AddressDataGraph> StoreDG = nullptr;
   void fillProtobufStoreFuncInfo(::llvm::DataLayout *DataLayout,
-                                 ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
+                                 ::LLVM::TDG::StaticStreamInfo *SSInfo) const;
+  void fillProtobufStoreFuncInfoImpl(::llvm::DataLayout *DataLayout,
+                                     ::LLVM::TDG::ExecFuncInfo *ExInfo,
+                                     bool IsLoad) const;
+  std::string getStoreFuncName(bool IsLoad) const {
+    return this->FuncNameBase + (IsLoad ? "_load" : "_store");
+  }
   using InputValueList = std::list<const llvm::Value *>;
   InputValueList getStoreFuncInputValues() const;
+
+  // Load fused ops.
+  // So far only used for AtomicCmpXchg.
+  std::vector<const llvm::Instruction *> FusedLoadOps;
+  void fuseLoadOps();
 
   /**
    * Stores all the input value for the analyzed pattern.

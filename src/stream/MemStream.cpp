@@ -279,7 +279,7 @@ void MemStream::fillProtobufPredFuncInfo(
                                  BBPredDG->getFuncName(), *BBPredDG);
 }
 
-void MemStream::generateComputeFunction(
+void MemStream::generateFunction(
     std::unique_ptr<llvm::Module> &Module) const {
-  this->AddrDG.generateComputeFunction(this->getAddressFunctionName(), Module);
+  this->AddrDG.generateFunction(this->getAddressFunctionName(), Module);
 }
