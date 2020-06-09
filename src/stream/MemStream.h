@@ -77,7 +77,7 @@ public:
 
   const AddressDataGraph &getAddressDataGraph() const { return this->AddrDG; }
 
-  void generateComputeFunction(std::unique_ptr<llvm::Module> &Module) const;
+  void generateFunction(std::unique_ptr<llvm::Module> &Module) const;
 
   InputValueList getAddrFuncInputValues() const override;
   InputValueList getPredFuncInputValues() const override;
@@ -90,6 +90,7 @@ protected:
   void fillProtobufPredFuncInfo(
       ::llvm::DataLayout *DataLayout,
       ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const override;
+
 private:
   MemoryFootprint Footprint;
   std::unordered_set<const llvm::LoadInst *> BaseLoads;

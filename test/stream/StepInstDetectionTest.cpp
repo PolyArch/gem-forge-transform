@@ -22,7 +22,8 @@ protected:
         // We do not expect this PHIInst to be an iv stream.
         continue;
       }
-      StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop, SE, PDT);
+      StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop, SE, PDT,
+                                        &DataLayout);
       IndVarStream IVStream(this->OutputExtraFolder, "", &StaticIVStream,
                             &DataLayout);
       const auto &ExpectedStepInstNames = ExpectedStepInstsIter->second;

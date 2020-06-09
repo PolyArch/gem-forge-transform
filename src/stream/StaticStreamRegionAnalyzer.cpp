@@ -115,10 +115,10 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
                << '\n');
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
       NewStream = new StaticIndVarStream(PHIInst, ConfigureLoop, InnerMostLoop,
-                                         SE, PDT);
+                                         SE, PDT, DataLayout);
     } else {
       NewStream = new StaticMemStream(StreamInst, ConfigureLoop, InnerMostLoop,
-                                      SE, PDT);
+                                      SE, PDT, DataLayout);
     }
     Streams.emplace_back(NewStream);
 
@@ -283,7 +283,7 @@ void StaticStreamRegionAnalyzer::insertPredicateFuncInModule(
       if (!BBPredDG->isValid()) {
         continue;
       }
-      BBPredDG->generateComputeFunction(BBPredDG->getFuncName(), Module);
+      BBPredDG->generateFunction(BBPredDG->getFuncName(), Module);
     }
   }
 }
@@ -457,7 +457,8 @@ void StaticStreamRegionAnalyzer::buildLoadStoreStreamDependenceGraph() {
   for (auto &InstStream : this->InstStaticStreamMap) {
     auto Inst = InstStream.first;
     if (Inst->getOpcode() == llvm::Instruction::Store ||
-        Inst->getOpcode() == llvm::Instruction::AtomicRMW) {
+        Inst->getOpcode() == llvm::Instruction::AtomicRMW ||
+        Inst->getOpcode() == llvm::Instruction::AtomicCmpXchg) {
       for (auto &S : InstStream.second) {
         this->buildLoadStoreDependenceForStore(S);
       }
@@ -468,8 +469,10 @@ void StaticStreamRegionAnalyzer::buildLoadStoreStreamDependenceGraph() {
 void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
     StaticStream *StoreS) {
 
-  // StoreS could be an AtomicRMW stream.
-  bool IsAtomicRMW = StoreS->Inst->getOpcode() == llvm::Instruction::AtomicRMW;
+  // StoreS could be an Atomic stream.
+  const auto StreamOpcode = StoreS->Inst->getOpcode();
+  bool IsAtomic = (StreamOpcode == llvm::Instruction::AtomicRMW) ||
+                  (StreamOpcode == llvm::Instruction::AtomicCmpXchg);
 
   if (StoreS->BaseStepRootStreams.size() != 1) {
     // Wierd stream has no step root stream. We do not try to analyze it.
@@ -482,9 +485,20 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
    */
   auto IsIndVarStream = [](const llvm::PHINode *PHI) -> bool { return true; };
   // Another abuse of AddressDataGraph.
-  auto StoreValue = (StoreS->Inst->getOpcode() == llvm::Instruction::Store)
-                        ? StoreS->Inst->getOperand(0)
-                        : StoreS->Inst->getOperand(1);
+  llvm::Value *StoreValue = nullptr;
+  switch (StreamOpcode) {
+  default:
+    llvm_unreachable("Invalid StoreStream Opcode.");
+  case llvm::Instruction::Store:
+    StoreValue = StoreS->Inst->getOperand(0);
+    break;
+  case llvm::Instruction::AtomicRMW:
+    StoreValue = StoreS->Inst->getOperand(1);
+    break;
+  case llvm::Instruction::AtomicCmpXchg:
+    StoreValue = StoreS->Inst->getOperand(2);
+    break;
+  }
   auto StoreDG = std::make_unique<AddressDataGraph>(StoreS->ConfigureLoop,
                                                     StoreValue, IsIndVarStream);
   /**
@@ -550,21 +564,12 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
     for (int Idx = 1, End = LoadInputStreams.size(); Idx < End; ++Idx) {
       auto PrevS = LoadInputStreams.at(Idx - 1);
       auto PrevOffset = PrevS->AliasOffset;
-      auto PrevElementSize = PrevS->getElementSize(this->DataLayout);
+      auto PrevMemElementSize = PrevS->getMemElementSize();
       auto CurOffset = LoadInputStreams.at(Idx)->AliasOffset;
-      if (PrevOffset + PrevElementSize < CurOffset) {
+      if (PrevOffset + PrevMemElementSize < CurOffset) {
         // These are not continuous.
         return;
       }
-    }
-  }
-  /**
-   * Additional check for AtomicRMW stream:
-   * 1. No user, as we don't have the return value.
-   */
-  if (IsAtomicRMW) {
-    if (!StoreS->Inst->user_empty()) {
-      return;
     }
   }
   /**
@@ -577,9 +582,8 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
   /**
    * Extend the StoreDG with the final atomic operation.
    */
-  if (IsAtomicRMW) {
-    StoreDG->extendTailAtomicRMW(
-        llvm::dyn_cast<llvm::AtomicRMWInst>(StoreS->Inst));
+  if (IsAtomic) {
+    StoreDG->extendTailAtomicInst(StoreS->Inst, StoreS->FusedLoadOps);
   }
   StoreS->StoreDG = std::move(StoreDG);
 }

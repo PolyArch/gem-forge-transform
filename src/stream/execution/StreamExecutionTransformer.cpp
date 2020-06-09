@@ -171,6 +171,10 @@ void StreamExecutionTransformer::transformStreamRegion(
         this->transformAtomicRMWInst(Analyzer, AtomicRMWInst);
       }
 
+      else if (auto CmpXchg = llvm::dyn_cast<llvm::AtomicCmpXchgInst>(Inst)) {
+        this->transformAtomicCmpXchgInst(Analyzer, CmpXchg);
+      }
+
       /**
        * Handle StreamStep.
        * For pointer-chasing, step must happen after the step load.
@@ -628,8 +632,9 @@ void StreamExecutionTransformer::transformLoadInst(
   this->mergePredicatedStreams(Analyzer, S);
 }
 
-llvm::Value *StreamExecutionTransformer::addStreamLoad(
-    Stream *S, llvm::Instruction *ClonedInsertBefore) {
+llvm::Value *
+StreamExecutionTransformer::addStreamLoad(Stream *S,
+                                          llvm::Instruction *ReplacedInst) {
   /**
    * Insert a StreamLoad for S.
    */
@@ -644,7 +649,7 @@ llvm::Value *StreamExecutionTransformer::addStreamLoad(
       false);
   std::array<llvm::Value *, 1> StreamLoadArgs{StreamIdValue};
 
-  auto LoadType = Inst->getType();
+  auto LoadType = ReplacedInst->getType();
   auto StreamLoadType = LoadType;
   bool NeedTruncate = false;
   /**
@@ -662,7 +667,7 @@ llvm::Value *StreamExecutionTransformer::addStreamLoad(
   }
 
   std::array<llvm::Type *, 1> StreamLoadTypes{StreamLoadType};
-  llvm::IRBuilder<> Builder(ClonedInsertBefore);
+  llvm::IRBuilder<> Builder(ReplacedInst);
   auto StreamLoadInst = Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                       llvm::Intrinsic::ID::ssp_stream_load,
@@ -698,6 +703,22 @@ void StreamExecutionTransformer::transformStoreInst(
 void StreamExecutionTransformer::transformAtomicRMWInst(
     StreamRegionAnalyzer *Analyzer, llvm::AtomicRMWInst *AtomicRMWInst) {
   auto S = Analyzer->getChosenStreamByInst(AtomicRMWInst);
+  if (S == nullptr) {
+    // This is not a chosen stream.
+    return;
+  }
+
+  /**
+   * AtomicRMW stream is treated similar to store stream.
+   */
+
+  // Handle StoreDG.
+  this->handleStoreDG(Analyzer, S);
+}
+
+void StreamExecutionTransformer::transformAtomicCmpXchgInst(
+    StreamRegionAnalyzer *Analyzer, llvm::AtomicCmpXchgInst *CmpXchg) {
+  auto S = Analyzer->getChosenStreamByInst(CmpXchg);
   if (S == nullptr) {
     // This is not a chosen stream.
     return;
@@ -881,8 +902,22 @@ void StreamExecutionTransformer::handleStoreDG(StreamRegionAnalyzer *Analyzer,
   SS->StaticStreamInfo.set_enabled_store_func(true);
   auto ClonedSSInst = this->getClonedValue(SS->Inst);
   this->PendingRemovedInsts.insert(ClonedSSInst);
-  // Mark this stream without core user.
-  SS->StaticStreamInfo.set_no_core_user(true);
+  // Consider FusedLoadOps.
+  for (auto FusedOp : SS->FusedLoadOps) {
+    auto ClonedFusedOp = this->getClonedValue(FusedOp);
+    this->PendingRemovedInsts.insert(ClonedFusedOp);
+    ClonedSSInst = ClonedFusedOp;
+  }
+  /**
+   * If the stream has user, e.g. for atomic stream, we add a stream load here.
+   */
+  if (ClonedSSInst->use_empty()) {
+    // Mark this stream without core user.
+    SS->StaticStreamInfo.set_no_core_user(true);
+  } else {
+    auto StreamLoadInst = this->addStreamLoad(S, ClonedSSInst);
+    ClonedSSInst->replaceAllUsesWith(StreamLoadInst);
+  }
 }
 
 llvm::Instruction *

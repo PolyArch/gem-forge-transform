@@ -2,19 +2,39 @@
 
 #include "Utils.h"
 
-void ExecutionDataGraph::extendTailAtomicRMW(
-    const llvm::AtomicRMWInst *AtomicRMW) {
-  assert(!this->TailAtomicRMW && "Already has TailAtomicRMW.");
-  // The atomic RMW should has my result as the second value.
-  if (AtomicRMW->getOperand(1) != this->ResultValue) {
-    llvm::errs() << "TailAtomicRMW is not using my result.\n";
-    assert(false);
+void ExecutionDataGraph::extendTailAtomicInst(
+    const llvm::Instruction *AtomicInst,
+    const std::vector<const llvm::Instruction *> &FusedLoadOps) {
+  assert(!this->TailAtomicInst && "Already has TailAtomicInst.");
+  // Sanity check for the atomic instruction.
+  if (AtomicInst->getOpcode() == llvm::Instruction::AtomicRMW) {
+    // AtomicRMW: should has my result as the second value.
+    if (AtomicInst->getOperand(1) != this->ResultValue) {
+      llvm::errs() << "TailAtomicRMW is not using my result.\n";
+      assert(false);
+    }
+    if (AtomicInst->getType() != this->ResultValue->getType()) {
+      llvm::errs() << "TailAtomicRMW is of different type.\n";
+      assert(false);
+    }
+  } else if (AtomicInst->getOpcode() == llvm::Instruction::AtomicCmpXchg) {
+    // AtomicCmpXchg: should has my result as the third value, and the compared
+    //   value should be a constant.
+    if (AtomicInst->getOperand(2) != this->ResultValue) {
+      llvm::errs() << "TailAtomicCmpXchg is not using my result.\n";
+      assert(false);
+    }
+    const auto ComparedValue = AtomicInst->getOperand(1);
+    if (!llvm::isa<llvm::Constant>(ComparedValue)) {
+      llvm::errs()
+          << "The compared value of AtomicCmpXchg should be a constant.";
+      assert(false);
+    }
+  } else {
+    llvm_unreachable("Invalid tail atomic instruction.");
   }
-  if (AtomicRMW->getType() != this->ResultValue->getType()) {
-    llvm::errs() << "TailAtomicRMW is of different type.\n";
-    assert(false);
-  }
-  this->TailAtomicRMW = AtomicRMW;
+  this->TailAtomicInst = AtomicInst;
+  this->FusedLoadOps = FusedLoadOps;
 }
 
 void ExecutionDataGraph::dfsOnComputeInsts(const llvm::Instruction *Inst,
@@ -35,31 +55,51 @@ void ExecutionDataGraph::dfsOnComputeInsts(const llvm::Instruction *Inst,
   Task(Inst);
 }
 
-llvm::FunctionType *
-ExecutionDataGraph::createFunctionType(llvm::Module *Module) const {
+llvm::Type *ExecutionDataGraph::getReturnType(bool IsLoad) const {
+  auto ResultType = this->ResultValue->getType();
+  if (this->TailAtomicInst) {
+    /**
+     * For TailAtomicInst, the only exception is the load function for CmpXchg.
+     */
+    if (this->TailAtomicInst->getOpcode() == llvm::Instruction::AtomicCmpXchg) {
+      if (IsLoad) {
+        ResultType = this->TailAtomicInst->getType();
+      }
+    }
+  }
+  // However, if there is fused load ops, then it should be the final value.
+  if (IsLoad && !this->FusedLoadOps.empty()) {
+    ResultType = this->FusedLoadOps.back()->getType();
+  }
+  return ResultType;
+}
+
+llvm::FunctionType *ExecutionDataGraph::createFunctionType(llvm::Module *Module,
+                                                           bool IsLoad) const {
   std::vector<llvm::Type *> Args;
   for (const auto &Input : this->Inputs) {
     Args.emplace_back(Input->getType());
   }
-  auto ResultType = this->ResultValue->getType();
-  // Add final input of the TailAtomicRMW.
-  if (this->TailAtomicRMW) {
-    auto AtomicRMWInputPtrType = this->TailAtomicRMW->getOperand(0)->getType();
+  if (this->TailAtomicInst) {
+    // Add additional input of the TailAtomicInst.
+    auto AtomicRMWInputPtrType = this->TailAtomicInst->getOperand(0)->getType();
     assert(AtomicRMWInputPtrType->isPointerTy() && "Should be pointer.");
     Args.emplace_back(AtomicRMWInputPtrType->getPointerElementType());
-    ResultType = this->TailAtomicRMW->getType();
   }
+  auto ResultType = this->getReturnType(IsLoad);
   return llvm::FunctionType::get(ResultType, Args, false);
 }
 
-llvm::Function *ExecutionDataGraph::generateComputeFunction(
-    const std::string &FuncName, std::unique_ptr<llvm::Module> &Module) const {
+llvm::Function *
+ExecutionDataGraph::generateFunction(const std::string &FuncName,
+                                     std::unique_ptr<llvm::Module> &Module,
+                                     bool IsLoad) const {
   {
     auto TempFunc = Module->getFunction(FuncName);
     assert(TempFunc == nullptr && "Function is already inside the module.");
   }
 
-  auto FuncType = this->createFunctionType(Module.get());
+  auto FuncType = this->createFunctionType(Module.get(), IsLoad);
   auto Function = llvm::Function::Create(
       FuncType, llvm::GlobalValue::LinkageTypes::ExternalLinkage, FuncName,
       Module.get());
@@ -120,27 +160,28 @@ llvm::Function *ExecutionDataGraph::generateComputeFunction(
   llvm::Value *FinalValue = FinalValueIter->second;
 
   // Create the tail AtomicRMW.
-  if (this->TailAtomicRMW) {
+  if (this->TailAtomicInst) {
     assert(ArgIter != ArgEnd && "Missing AtomicInput.");
     llvm::Value *AtomicArg = ArgIter;
-    switch (this->TailAtomicRMW->getOperation()) {
-    default:
-      llvm::errs() << "Unsupported TailAtomicRMW Operation "
-                   << Utils::formatLLVMInst(this->TailAtomicRMW) << '\n';
-      llvm_unreachable("Unsupported TailAtomicRMW Operation.");
-    case llvm::AtomicRMWInst::FAdd:
-      FinalValue = Builder.CreateFAdd(AtomicArg, FinalValue, "atomicrmw");
-      break;
-    case llvm::AtomicRMWInst::Add:
-      FinalValue = Builder.CreateAdd(AtomicArg, FinalValue, "atomicrmw");
-      break;
-    case llvm::AtomicRMWInst::UMin: {
-      // LLVM has no instr/intrinsic for integer min/max...
-      auto CmpValue = Builder.CreateICmpULT(AtomicArg, FinalValue, "umincmp");
+    ++ArgIter;
+    if (this->TailAtomicInst->getOpcode() == llvm::Instruction::AtomicRMW) {
       FinalValue =
-          Builder.CreateSelect(CmpValue, AtomicArg, FinalValue, "atomicrmw");
-      break;
+          this->generateTailAtomicRMW(Builder, AtomicArg, FinalValue, IsLoad);
+    } else {
+      // The compared value is always a constant, for now, so we use it
+      // directly.
+      auto CmpValue = this->TailAtomicInst->getOperand(1);
+      FinalValue = this->generateTailAtomicCmpXchg(Builder, AtomicArg, CmpValue,
+                                                   FinalValue, IsLoad);
     }
+    ValueMap.emplace(this->TailAtomicInst, FinalValue);
+  }
+
+  // Handle LoadFusedOps for load function.
+  if (IsLoad) {
+    for (auto Op : this->FusedLoadOps) {
+      this->translate(Builder, ValueMap, Op);
+      FinalValue = ValueMap.at(Op);
     }
   }
 
@@ -161,6 +202,12 @@ void ExecutionDataGraph::translate(llvm::IRBuilder<> &Builder,
   // Fix the operand.
   for (unsigned OperandIdx = 0, NumOperands = NewInst->getNumOperands();
        OperandIdx != NumOperands; ++OperandIdx) {
+    auto Operand = Inst->getOperand(OperandIdx);
+    // Directly use the constant data.
+    if (llvm::isa<llvm::ConstantData>(Operand)) {
+      NewInst->setOperand(OperandIdx, Operand);
+      continue;
+    }
     auto ValueIter = ValueMap.find(Inst->getOperand(OperandIdx));
     assert(ValueIter != ValueMap.end() && "Failed to find translated operand.");
     NewInst->setOperand(OperandIdx, ValueIter->second);
@@ -208,4 +255,52 @@ bool ExecutionDataGraph::detectCircle() const {
     }
   }
   return false;
+}
+
+llvm::Value *ExecutionDataGraph::generateTailAtomicRMW(
+    llvm::IRBuilder<> &Builder, llvm::Value *AtomicArg, llvm::Value *RhsArg,
+    bool IsLoad) const {
+  auto RMWInst = llvm::dyn_cast<llvm::AtomicRMWInst>(this->TailAtomicInst);
+  assert(RMWInst && "Not an AtomicRMW instruction.");
+  if (IsLoad) {
+    // The load function will directly return the atomic value.
+    return AtomicArg;
+  }
+  switch (RMWInst->getOperation()) {
+  default:
+    llvm::errs() << "Unsupported TailAtomicRMW Operation "
+                 << Utils::formatLLVMInst(RMWInst) << '\n';
+    llvm_unreachable("Unsupported TailAtomicRMW Operation.");
+  case llvm::AtomicRMWInst::FAdd:
+    return Builder.CreateFAdd(AtomicArg, RhsArg, "atomicrmw");
+    break;
+  case llvm::AtomicRMWInst::Add:
+    return Builder.CreateAdd(AtomicArg, RhsArg, "atomicrmw");
+    break;
+  case llvm::AtomicRMWInst::UMin: {
+    // LLVM has no instr/intrinsic for integer min/max...
+    auto CmpValue = Builder.CreateICmpULT(AtomicArg, RhsArg, "umincmp");
+    return Builder.CreateSelect(CmpValue, AtomicArg, RhsArg, "atomicrmw");
+    break;
+  }
+  }
+}
+
+llvm::Value *ExecutionDataGraph::generateTailAtomicCmpXchg(
+    llvm::IRBuilder<> &Builder, llvm::Value *AtomicArg, llvm::Value *CmpValue,
+    llvm::Value *XchgValue, bool IsLoad) const {
+  auto CmpXchgInst =
+      llvm::dyn_cast<llvm::AtomicCmpXchgInst>(this->TailAtomicInst);
+  assert(CmpXchgInst && "Not an AtomicCmpXchg instruction.");
+  auto MatchValue = Builder.CreateICmpEQ(AtomicArg, CmpValue, "cmpeq");
+  if (IsLoad) {
+    // Create the loaded value.
+    auto InsertValue =
+        Builder.CreateInsertValue(llvm::UndefValue::get(CmpXchgInst->getType()),
+                                  AtomicArg, {0}, "insert");
+    return Builder.CreateInsertValue(InsertValue, MatchValue, {1}, "cmpxchg");
+  } else {
+    // Store version will just get the selected value.
+    return Builder.CreateSelect(MatchValue, XchgValue, AtomicArg, "cmpxchg");
+  }
 }

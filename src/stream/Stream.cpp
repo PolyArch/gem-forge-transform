@@ -11,8 +11,6 @@ Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
       RegionStreamId(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
       Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
       Pattern() {
-  this->ElementSize = this->getElementSize(DataLayout);
-
   auto PatternFolder = this->Folder + "/pattern";
   auto ErrCode = llvm::sys::fs::create_directory(PatternFolder);
   assert(!ErrCode && "Failed to create pattern folder.");
@@ -192,20 +190,26 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   ProtobufInfo->set_name(this->formatName());
   ProtobufInfo->set_id(this->getStreamId());
   ProtobufInfo->set_region_stream_id(this->getRegionStreamId());
-  if (llvm::isa<llvm::PHINode>(this->getInst())) {
+  switch (this->getInst()->getOpcode()) {
+  case llvm::Instruction::PHI:
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
-  } else if (llvm::isa<llvm::LoadInst>(this->getInst())) {
+    break;
+  case llvm::Instruction::Load:
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
-  } else if (llvm::isa<llvm::StoreInst>(this->getInst())) {
+    break;
+  case llvm::Instruction::Store:
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_ST);
-  } else if (llvm::isa<llvm::AtomicRMWInst>(this->getInst())) {
+    break;
+  case llvm::Instruction::AtomicRMW:
+  case llvm::Instruction::AtomicCmpXchg:
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
-  } else {
+    break;
+  default:
     llvm::errs() << "Invalid stream type " << this->formatName() << '\n';
+    break;
   }
   ProtobufInfo->set_loop_level(this->getInnerMostLoop()->getLoopDepth());
   ProtobufInfo->set_config_loop_level(this->getLoop()->getLoopDepth());
-  ProtobufInfo->set_element_size(this->ElementSize);
   ProtobufInfo->set_pattern_path(this->getPatternRelativePath());
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
 
@@ -216,8 +220,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   auto PredFuncInfo = ProtobufStaticInfo->mutable_pred_func_info();
   this->fillProtobufPredFuncInfo(DataLayout, PredFuncInfo);
   // Dump the store function.
-  auto StoreFuncInfo = ProtobufStaticInfo->mutable_store_func_info();
-  this->fillProtobufStoreFuncInfo(DataLayout, StoreFuncInfo);
+  this->fillProtobufStoreFuncInfo(DataLayout, ProtobufStaticInfo);
 
   auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
   ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);
