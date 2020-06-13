@@ -287,7 +287,7 @@ class Gem5ReplayConfigureManager(object):
         "--router-latency=2",
         "--link-latency=1",
         "--mem-channels=2",
-        "--mem-size=1GB",
+        "--mem-size=16GB",
     ]
     RUBY_MESH = [
         "--topology=Mesh_XY",
@@ -349,6 +349,18 @@ class Gem5ReplayConfigureManager(object):
             "--num-l2caches=64",
             "--mesh-rows=8",
         ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB + LLC_SELECT_1kB,
+        '4x4.dir_corner.l2_256kB.l3_1MB_s0.ruby': [
+            "--num-cpus=16",
+            "--num-dirs=4",
+            "--num-l2caches=16",
+            "--mesh-rows=4",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
+        '4x8.dir_corner.l2_256kB.l3_1MB_s0.ruby': [
+            "--num-cpus=32",
+            "--num-dirs=4",
+            "--num-l2caches=32",
+            "--mesh-rows=4",
+        ] + RUBY_L3_DIR_CORNER + L0_32kB + MLC_256kB + LLC_1MB,
         '8x8.dir_corner.l2_256kB.l3_1MB_s0.ruby': [
             "--num-cpus=64",
             "--num-dirs=4",

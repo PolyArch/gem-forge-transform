@@ -20,7 +20,7 @@
         "llc_interleave": [
             "64B"
         ],
-        "link": [256],
+        "link": [128, 512],
         "stream_fifo": [48]
     },
     "support-transform-ids": [

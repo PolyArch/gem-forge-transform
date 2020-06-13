@@ -26,13 +26,7 @@
     ],
     "design_space": {
         "llc_interleave": [
-            "64B",
-            "128B",
-            "256B",
-            "512B",
-            "1kB",
-            "2kB",
-            "4kB"
+            "64B"
         ],
         "link": [256],
         "stream_fifo": [48],

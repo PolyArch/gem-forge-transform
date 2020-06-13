@@ -24,11 +24,7 @@
     "design_space": {
         "llc_interleave": [
             "64B",
-            "128B",
             "256B",
-            "512B",
-            "1kB",
-            "2kB",
             "4kB"
         ],
         "link": [256],
