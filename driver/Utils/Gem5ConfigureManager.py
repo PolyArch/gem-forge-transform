@@ -284,6 +284,7 @@ class Gem5ReplayConfigureManager(object):
         "--ruby",
         "--access-backing-store",
         "--network=garnet2.0",
+        "--garnet-enable-multicast",
         "--router-latency=2",
         "--link-latency=1",
         "--mem-channels=2",
