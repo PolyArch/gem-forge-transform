@@ -247,6 +247,9 @@ class JobScheduler:
             prefix='job_scheduler.{n}.fail.'.format(n=self.name), delete=False)
         print(self.log_f.name)
         seconds = 0
+        
+        # Initial dump.
+        self.dump(self.log_f)
 
         self.state = JobScheduler.STATE_STARTED
         self.lock.acquire()
