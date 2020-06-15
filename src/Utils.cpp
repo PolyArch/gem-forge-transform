@@ -28,12 +28,14 @@ const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
 
     std::string MangledName = Func->getName();
     auto DemangledName = llvm::demangle(MangledName);
-    LLVM_DEBUG(llvm::errs() << "Demangled " << MangledName << " into "
+    LLVM_DEBUG(llvm::dbgs() << "Demangled " << MangledName << " into "
                             << DemangledName << '\n');
     std::string DemangledNameStr(DemangledName);
     auto Pos = DemangledNameStr.find('(');
     if (Pos != std::string::npos) {
       DemangledNameStr = DemangledNameStr.substr(0, Pos);
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Remove param, simplify into " << DemangledNameStr << '\n');
     }
     MemorizedIter =
         Utils::MemorizedDemangledFunctionNames.emplace(Func, DemangledNameStr)
@@ -160,7 +162,9 @@ bool Utils::isAsmBranchInst(const llvm::Instruction *Inst) {
     }
     return false;
   }
-  default: { return false; }
+  default: {
+    return false;
+  }
   }
 }
 
@@ -179,7 +183,9 @@ bool Utils::isAsmConditionalBranchInst(const llvm::Instruction *Inst) {
     auto BranchInst = llvm::dyn_cast<llvm::BranchInst>(Inst);
     return BranchInst->isConditional();
   }
-  default: { return false; }
+  default: {
+    return false;
+  }
   }
 }
 
@@ -201,7 +207,9 @@ bool Utils::isAsmIndirectBranchInst(const llvm::Instruction *Inst) {
     return !llvm::isa<llvm::Function>(CalleeValue);
   }
 
-  default: { return false; }
+  default: {
+    return false;
+  }
   }
 }
 
@@ -253,7 +261,6 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
   for (auto FuncIter = Module->begin(), FuncEnd = Module->end();
        FuncIter != FuncEnd; ++FuncIter) {
     if (FuncIter->isDeclaration()) {
-      // Ignore declaration.
       continue;
     }
     auto DemangledName = getDemangledFunctionName(&*FuncIter);
@@ -262,7 +269,7 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
       // We found a match.
       // We always use mangled name hereafter for simplicity.
       MatchedFunctions.insert(&*FuncIter);
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Add traced function " << DemangledName << '\n');
       UnmatchedNames.erase(UnmatchedNameIter);
     }

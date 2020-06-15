@@ -652,10 +652,13 @@ StreamExecutionTransformer::addStreamLoad(Stream *S,
   auto LoadType = ReplacedInst->getType();
   auto StreamLoadType = LoadType;
   bool NeedTruncate = false;
+  bool NeedIntToPtr = false;
+  bool NeedBitcast = false;
   /**
    * ! It takes an effort to promote the loaded value to 64-bit in RV64,
    * ! so as a temporary fix, I truncate it here.
    */
+  auto NumBits = S->SStream->DataLayout->getTypeStoreSizeInBits(LoadType);
   if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(LoadType)) {
     if (IntType->getBitWidth() < 64) {
       StreamLoadType =
@@ -663,6 +666,37 @@ StreamExecutionTransformer::addStreamLoad(Stream *S,
       NeedTruncate = true;
     } else if (IntType->getBitWidth() > 64) {
       assert(false && "Cannot handle load type larger than 64 bit.");
+    }
+  } else if (auto PtrType = llvm::dyn_cast<llvm::PointerType>(LoadType)) {
+    StreamLoadType =
+        llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
+    NeedIntToPtr = true;
+  } else if (auto VecType = llvm::dyn_cast<llvm::VectorType>(LoadType)) {
+    auto ElementType = VecType->getVectorElementType();
+    if (ElementType->isIntegerTy() || ElementType->isFloatingPointTy()) {
+      // Make sure these are correct type.
+      auto CastedNumInt64 = 0;
+      switch (NumBits) {
+      case 128:
+        CastedNumInt64 = 2;
+        break;
+      case 256:
+        CastedNumInt64 = 4;
+        break;
+      case 512:
+        CastedNumInt64 = 8;
+        break;
+      default:
+        llvm::errs() << "Invalid vector type bits " << NumBits << '\n';
+        llvm_unreachable("Invalid number of bits for vector.");
+      }
+      StreamLoadType = llvm::VectorType::get(
+          llvm::IntegerType::get(this->ClonedModule->getContext(), 64),
+          CastedNumInt64);
+      NeedBitcast = true;
+    } else {
+      llvm::errs() << "Invalid vector element type.";
+      assert(false);
     }
   }
 
@@ -677,6 +711,12 @@ StreamExecutionTransformer::addStreamLoad(Stream *S,
   if (NeedTruncate) {
     auto TruncateInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
     return TruncateInst;
+  } else if (NeedIntToPtr) {
+    auto IntToPtrInst = Builder.CreateIntToPtr(StreamLoadInst, LoadType);
+    return IntToPtrInst;
+  } else if (NeedBitcast) {
+    auto BitcastInst = Builder.CreateBitCast(StreamLoadInst, LoadType);
+    return BitcastInst;
   } else {
     return StreamLoadInst;
   }
@@ -1295,6 +1335,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
                  << S->formatName() << '\n';
     assert(false);
   } else {
+    llvm::errs() << "Can't handle this stream " << SS->formatName() << '\n';
     assert(false && "Can't handle this Addr.");
   }
 }
