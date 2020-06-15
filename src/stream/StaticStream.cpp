@@ -576,8 +576,6 @@ bool StaticStream::ComputeMetaNode::isIdenticalTo(
     return true;
   }
   if (Other->ComputeInsts.size() != this->ComputeInsts.size()) {
-    llvm::errs() << "Other " << Other->ComputeInsts.size() << " This "
-                 << this->ComputeInsts.size() << '\n';
     return false;
   }
   for (size_t ComputeInstIdx = 0, NumComputeInsts = this->ComputeInsts.size();
