@@ -164,12 +164,18 @@ int main(int argc, char *argv[]) {
 #endif
 #ifdef GEM_FORGE
   m5_reset_stats(0, 0);
+#else
+  clock_t start_time = clock();
 #endif
 
   volatile int ret = foo(&graph, values, global_queue, local_queues, 10000000);
 #ifdef GEM_FORGE
   m5_detail_sim_end();
   exit(0);
+#else
+  clock_t end_time = clock();
+  printf("Time: %fms.\n",
+         (1000.0 * (double)(end_time - start_time)) / CLOCKS_PER_SEC);
 #endif
 
 #ifdef CHECK

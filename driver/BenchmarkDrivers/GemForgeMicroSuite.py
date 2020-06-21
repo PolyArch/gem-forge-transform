@@ -68,7 +68,7 @@ class GemForgeMicroBenchmark(Benchmark):
         return None
 
     OMP_GRAPH_FUNC_SUFFIX = {
-        'omp_bfs': ['', '.1'],
+        'omp_bfs': [''],
         'omp_bfs_queue': [''],
         'omp_page_rank': ['', '.1'],
     }
