@@ -25,15 +25,13 @@ typedef struct {
   uint32_t dist;
 } Value;
 Value *values;
-Value *next_values;
 
 #define CHECK
 #define WARM_CACHE
 
 #define INF_DIST (UINT32_MAX - 1)
 
-__attribute__((noinline)) int foo(GraphCSR *graph, Value *vs, Value *next_vs,
-                                  int iters) {
+__attribute__((noinline)) int foo(GraphCSR *graph, Value *vs, int iters) {
 
   int iter = 0;
 
@@ -48,46 +46,31 @@ __attribute__((noinline)) int foo(GraphCSR *graph, Value *vs, Value *next_vs,
     printf("Iters %d.\n", iter);
 #endif
 
-#pragma omp parallel for schedule(static)                                      \
-    firstprivate(numNodes, nodes, edges, vs, next_vs, iter)
-    for (uint64_t i = 0; i < numNodes; ++i) {
-      uint64_t start = nodes[i];
-      uint64_t end = nodes[i + 1];
-      uint32_t dist = vs[i].dist + 1;
-      if (dist == iter + 1) {
-#pragma clang loop unroll(disable) interleave(disable)
-        for (uint64_t j = start; j < end; ++j) {
-          uint64_t n = edges[j];
-          __atomic_fetch_min(&next_vs[n].dist, dist, __ATOMIC_RELAXED);
-        }
-      }
-    }
-
-#ifdef GEM_FORGE
-    m5_work_end(0, 0);
-    m5_work_begin(1, 0);
-#endif
-
     int global_changed = 0;
-#pragma omp parallel
+#pragma omp parallel firstprivate(numNodes, nodes, edges, vs, iter)
     {
       int local_changed = 0;
-      // Disable kernel2 for now.
 
-#pragma omp for schedule(static)                                               \
-    firstprivate(numNodes, nodes, edges, vs, next_vs)
+#pragma omp for schedule(static)
       for (uint64_t i = 0; i < numNodes; ++i) {
-        uint32_t dist = vs[i].dist;
-        uint32_t next_dist = next_vs[i].dist;
-        vs[i].dist = next_dist;
-        local_changed = local_changed | (dist != next_dist);
+        uint64_t start = nodes[i];
+        uint64_t end = nodes[i + 1];
+        uint32_t dist = vs[i].dist + 1;
+        if (dist == iter + 1) {
+#pragma clang loop unroll(disable) interleave(disable)
+          for (uint64_t j = start; j < end; ++j) {
+            uint64_t n = edges[j];
+            uint32_t old_dist =
+                __atomic_fetch_min(&vs[n].dist, dist, __ATOMIC_RELAXED);
+            local_changed = local_changed | (old_dist > dist);
+          }
+        }
       }
-
       __atomic_fetch_or(&global_changed, local_changed, __ATOMIC_RELAXED);
     }
 
 #ifdef GEM_FORGE
-    m5_work_end(1, 0);
+    m5_work_end(0, 0);
 #endif
 
     if (!global_changed) {
@@ -103,16 +86,13 @@ __attribute__((noinline)) int foo(GraphCSR *graph, Value *vs, Value *next_vs,
 void initializeGraph(const char *fn) {
   graph = readInGraph(fn);
   values = aligned_alloc(sizeof(Value), sizeof(Value) * graph.numNodes);
-  next_values = aligned_alloc(sizeof(Value), sizeof(Value) * graph.numNodes);
   for (uint64_t i = 0; i < graph.numNodes; ++i) {
     values[i].dist = INF_DIST;
-    next_values[i].dist = INF_DIST;
   }
   // Pick up the root for bfs at the middle.
   GraphIndexT root = graph.root;
   values[root].dist = 0;
-  next_values[root].dist = 0;
-  printf("Value %luMB.\n", sizeof(Value) * graph.numNodes / 1024 / 1024 * 2);
+  printf("Value %luMB.\n", sizeof(Value) * graph.numNodes / 1024 / 1024);
 }
 
 int main(int argc, char *argv[]) {
@@ -137,21 +117,27 @@ int main(int argc, char *argv[]) {
   WARM_UP_ARRAY(graph.edgePtr, graph.numNodes);
   WARM_UP_ARRAY(graph.edges, graph.numEdges);
   WARM_UP_ARRAY(values, graph.numNodes);
-  WARM_UP_ARRAY(next_values, graph.numNodes);
   // Start the threads.
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {
     volatile Value x = values[tid];
   }
 #endif
+
 #ifdef GEM_FORGE
   m5_reset_stats(0, 0);
+#else
+  clock_t start_time = clock();
 #endif
 
-  volatile int ret = foo(&graph, values, next_values, 10000000);
+  volatile int ret = foo(&graph, values, 10000000);
 #ifdef GEM_FORGE
   m5_detail_sim_end();
   exit(0);
+#else
+  clock_t end_time = clock();
+  printf("Time: %fms.\n",
+         (1000.0 * (double)(end_time - start_time)) / CLOCKS_PER_SEC);
 #endif
 
 #ifdef CHECK
