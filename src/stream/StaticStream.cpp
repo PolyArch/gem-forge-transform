@@ -37,6 +37,13 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
     S->formatProtoStreamId(ProtoAliasedStreamId);
   }
 
+  // Set the update relationship.
+  auto ProtoStreamComputeInfo = SSI.mutable_compute_info();
+  if (this->UpdateStream) {
+    auto ProtoUpdateStreamId = ProtoStreamComputeInfo->mutable_update_stream();
+    this->UpdateStream->formatProtoStreamId(ProtoUpdateStreamId);
+  }
+
   // Set the element size.
   SSI.set_mem_element_size(this->getMemElementSize());
   SSI.set_core_element_size(this->getCoreElementSize());
@@ -429,44 +436,53 @@ void StaticStream::generateReduceFunction(
   if (this->ReduceDG) {
     this->ReduceDG->generateFunction(this->FuncNameBase + "_reduce", Module);
   }
-  if (this->StoreDG) {
-    this->StoreDG->generateFunction(this->getStoreFuncName(false), Module,
+}
+
+void StaticStream::generateValueFunction(
+    std::unique_ptr<llvm::Module> &Module) const {
+  if (this->ValueDG) {
+    this->ValueDG->generateFunction(this->getStoreFuncName(false), Module,
                                     false /* IsLoad */);
-    if (this->StoreDG->hasTailAtomicInst()) {
+    if (this->ValueDG->hasTailAtomicInst()) {
       // AtomicStream has one additional load func.
-      this->StoreDG->generateFunction(this->getStoreFuncName(true), Module,
+      this->ValueDG->generateFunction(this->getStoreFuncName(true), Module,
                                       true /* IsLoad */);
     }
+  }
+  // Special case for update stream. The store store stream will be chosen,
+  // so we have to call it directly.
+  if (this->Inst->getOpcode() == llvm::Instruction::Load &&
+      this->UpdateStream &&
+      this->StaticStreamInfo.compute_info().enabled_store_func()) {
+    assert(this->UpdateStream->ValueDG && "Missing ValueDG for UpdateStream.");
+    this->UpdateStream->generateValueFunction(Module);
   }
 }
 
 void StaticStream::fillProtobufStoreFuncInfo(
-    ::llvm::DataLayout *DataLayout,
     ::LLVM::TDG::StaticStreamInfo *SSInfo) const {
 
-  if (!this->StoreDG) {
+  if (!this->ValueDG) {
     return;
   }
-  auto ProtoStoreInfo = SSInfo->mutable_store_func_info();
-  this->fillProtobufStoreFuncInfoImpl(DataLayout, ProtoStoreInfo,
-                                      false /* IsLoad */);
+  auto ProtoComputeInfo = SSInfo->mutable_compute_info();
+  auto ProtoStoreInfo = ProtoComputeInfo->mutable_store_func_info();
+  this->fillProtobufStoreFuncInfoImpl(ProtoStoreInfo, false /* IsLoad */);
 
-  if (this->StoreDG->hasTailAtomicInst()) {
+  if (this->ValueDG->hasTailAtomicInst()) {
     // AtomicStream has one additional load func.
-    auto ProtoLoadInfo = SSInfo->mutable_load_func_info();
-    this->fillProtobufStoreFuncInfoImpl(DataLayout, ProtoLoadInfo,
-                                        true /* IsLoad */);
+    auto ProtoLoadInfo = ProtoComputeInfo->mutable_load_func_info();
+    this->fillProtobufStoreFuncInfoImpl(ProtoLoadInfo, true /* IsLoad */);
   }
 }
 
 void StaticStream::fillProtobufStoreFuncInfoImpl(
-    ::llvm::DataLayout *DataLayout, ::LLVM::TDG::ExecFuncInfo *ExInfo,
-    bool IsLoad) const {
+    ::LLVM::TDG::ExecFuncInfo *ExInfo, bool IsLoad) const {
 
   ExInfo->set_name(this->getStoreFuncName(IsLoad));
-  auto CheckArg = [DataLayout](const llvm::Value *Input) -> void {
+  auto CheckArg = [this](const llvm::Value *Input) -> void {
     auto Type = Input->getType();
-    auto TypeSize = DataLayout->getTypeStoreSize(Type);
+    auto TypeSize = this->DataLayout->getTypeStoreSize(Type);
     if (TypeSize > 8) {
       llvm::errs() << "Invalid input type, Value: "
                    << Utils::formatLLVMValue(Input) << " TypeSize " << TypeSize
@@ -480,8 +496,8 @@ void StaticStream::fillProtobufStoreFuncInfoImpl(
       assert(false && "Invalid type for input.");
     }
   };
-  auto AddArg = [ExInfo, DataLayout](const llvm::Type *Type,
-                                     const StaticStream *InputStream) -> void {
+  auto AddArg = [ExInfo](const llvm::Type *Type,
+                         const StaticStream *InputStream) -> void {
     auto ProtobufArg = ExInfo->add_args();
     if (InputStream) {
       // This comes from the base stream.
@@ -493,7 +509,7 @@ void StaticStream::fillProtobufStoreFuncInfoImpl(
     }
     ProtobufArg->set_is_float(Type->isFloatTy() || Type->isDoubleTy());
   };
-  for (const auto &Input : this->StoreDG->getInputs()) {
+  for (const auto &Input : this->ValueDG->getInputs()) {
     StaticStream *InputStream = nullptr;
     // Search in the LoadStoreBaseStreams.
     for (auto IS : this->LoadStoreBaseStreams) {
@@ -507,7 +523,7 @@ void StaticStream::fillProtobufStoreFuncInfoImpl(
   }
 
   // Finally handle tail AtomicRMWInst, with myself as the last input.
-  auto TailAtomicInst = this->StoreDG->getTailAtomicInst();
+  auto TailAtomicInst = this->ValueDG->getTailAtomicInst();
   if (TailAtomicInst) {
     assert(TailAtomicInst == this->Inst && "Mismatch in TailAtomicInst.\n");
     auto AtomicInputPtrType = TailAtomicInst->getOperand(0)->getType();
@@ -515,7 +531,7 @@ void StaticStream::fillProtobufStoreFuncInfoImpl(
     AddArg(AtomicInputPtrType->getPointerElementType(), this);
   }
 
-  auto StoreType = this->StoreDG->getReturnType(false /* IsLoad */);
+  auto StoreType = this->ValueDG->getReturnType(false /* IsLoad */);
   auto StoreTypeBits = DataLayout->getTypeStoreSizeInBits(StoreType);
   if (StoreTypeBits > 64) {
     llvm::errs() << "Invalid result type, Stream: " << this->formatName()
@@ -530,9 +546,9 @@ StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {
    * No special handling for atomic stream here, as load/store shares the same
    * input.
    */
-  assert(this->StoreDG && "No StoreDG to get input values.");
+  assert(this->ValueDG && "No ValueDG to get input values.");
   InputValueList InputValues;
-  for (const auto &Input : this->StoreDG->getInputs()) {
+  for (const auto &Input : this->ValueDG->getInputs()) {
     StaticStream *InputStream = nullptr;
     // Search in the LoadStoreBaseStreams.
     for (auto IS : this->LoadStoreBaseStreams) {

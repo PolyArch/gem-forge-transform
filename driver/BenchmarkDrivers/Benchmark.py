@@ -614,7 +614,9 @@ class Benchmark(object):
             Util.call_helper(run_cmd)
         # Clean the trace bc and bin.
         os.remove(self.get_trace_bc())
-        os.remove(self.get_trace_bin())
+        if not self.options.fake_trace:
+            # Fake trace does not generate bin.
+            os.remove(self.get_trace_bin())
 
     """
     Construct the traced binary.
@@ -674,8 +676,11 @@ class Benchmark(object):
             C.LIBUNWIND_LIB,
         ]
         link_cmd += trace_links
-        print('# Link to traced binary...')
-        Util.call_helper(link_cmd)
+        if self.options.fake_trace:
+            print('# Skip generating traced binary ...')
+        else:
+            print('# Link to traced binary...')
+            Util.call_helper(link_cmd)
 
     """
     Abstract function to build the validation binary.

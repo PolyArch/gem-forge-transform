@@ -244,18 +244,18 @@ void StreamExecutionTransformer::coalesceStreamsAtLoop(
    * We coalesce memory streams if:
    * 1. They share the same step root.
    * 2. They have scev.
-   * 3. Their SCEV has a constant offset within a cache line (64 bytes).
+   * 3. Their SCEV has a constant offset.
    */
   std::list<std::vector<std::pair<Stream *, int64_t>>> CoalescedGroup;
   for (auto S : ConfigureInfo.getSortedStreams()) {
-    if (S->SStream->Type == StaticStream::TypeT::IV) {
-      continue;
-    }
-    if (S->getBaseStepRootStreams().size() != 1) {
-      continue;
-    }
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "====== Try to coalesce stream: " << S->formatName() << '\n');
+    if (S->getBaseStepRootStreams().size() != 1 ||
+        S->SStream->Type == StaticStream::TypeT::IV) {
+      // These streams are not coalesced, set the coalesce group to itself.
+      S->setCoalesceGroup(S->getStreamId(), 0);
+      continue;
+    }
     auto SS = S->SStream;
     auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
     auto AddrSCEV = SS->SE->getSCEV(Addr);
@@ -500,9 +500,9 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
   if (!ClonedExitBB) {
     return;
   }
-  auto ClonedReducedValue =
-      this->addStreamLoad(ReduceStream, ClonedExitBB->getFirstNonPHI());
   auto ClonedExitInst = this->getClonedValue(ExitInst);
+  auto ClonedReducedValue = this->addStreamLoad(
+      ReduceStream, ClonedExitInst->getType(), ClonedExitBB->getFirstNonPHI());
   /**
    * Find out-of-loop ExitValue user instructions.
    * We have to first find them and then replace the usages, cause we can
@@ -622,7 +622,8 @@ void StreamExecutionTransformer::transformLoadInst(
    * 3. Leave the original load there (not deleted).
    */
   auto ClonedLoadInst = this->getClonedValue(LoadInst);
-  auto StreamLoadInst = this->addStreamLoad(S, ClonedLoadInst);
+  auto StreamLoadInst =
+      this->addStreamLoad(S, ClonedLoadInst->getType(), ClonedLoadInst);
   ClonedLoadInst->replaceAllUsesWith(StreamLoadInst);
 
   // Insert the load into the pending removed set.
@@ -632,9 +633,8 @@ void StreamExecutionTransformer::transformLoadInst(
   this->mergePredicatedStreams(Analyzer, S);
 }
 
-llvm::Value *
-StreamExecutionTransformer::addStreamLoad(Stream *S,
-                                          llvm::Instruction *ReplacedInst) {
+llvm::Value *StreamExecutionTransformer::addStreamLoad(
+    Stream *S, llvm::Type *LoadType, llvm::Instruction *ClonedInsertBefore) {
   /**
    * Insert a StreamLoad for S.
    */
@@ -649,7 +649,6 @@ StreamExecutionTransformer::addStreamLoad(Stream *S,
       false);
   std::array<llvm::Value *, 1> StreamLoadArgs{StreamIdValue};
 
-  auto LoadType = ReplacedInst->getType();
   auto StreamLoadType = LoadType;
   bool NeedTruncate = false;
   bool NeedIntToPtr = false;
@@ -701,7 +700,7 @@ StreamExecutionTransformer::addStreamLoad(Stream *S,
   }
 
   std::array<llvm::Type *, 1> StreamLoadTypes{StreamLoadType};
-  llvm::IRBuilder<> Builder(ReplacedInst);
+  llvm::IRBuilder<> Builder(ClonedInsertBefore);
   auto StreamLoadInst = Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                       llvm::Intrinsic::ID::ssp_stream_load,
@@ -737,7 +736,7 @@ void StreamExecutionTransformer::transformStoreInst(
    * through the cache.
    */
 
-  this->handleStoreDG(Analyzer, S);
+  this->handleValueDG(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformAtomicRMWInst(
@@ -752,8 +751,8 @@ void StreamExecutionTransformer::transformAtomicRMWInst(
    * AtomicRMW stream is treated similar to store stream.
    */
 
-  // Handle StoreDG.
-  this->handleStoreDG(Analyzer, S);
+  // Handle ValueDG.
+  this->handleValueDG(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformAtomicCmpXchgInst(
@@ -768,8 +767,8 @@ void StreamExecutionTransformer::transformAtomicCmpXchgInst(
    * AtomicRMW stream is treated similar to store stream.
    */
 
-  // Handle StoreDG.
-  this->handleStoreDG(Analyzer, S);
+  // Handle ValueDG.
+  this->handleValueDG(Analyzer, S);
 }
 
 void StreamExecutionTransformer::transformStepInst(
@@ -798,15 +797,16 @@ void StreamExecutionTransformer::transformStepInst(
 void StreamExecutionTransformer::upgradeLoadToUpdateStream(
     StreamRegionAnalyzer *Analyzer, Stream *LoadStream) {
   /**
-   * The idea is to update a load to update stream and thus must be offloaded.
+   * The idea is to update a load to update stream.
    */
   if (!StreamPassUpgradeLoadToUpdate) {
     return;
   }
   auto LoadSS = LoadStream->SStream;
   auto &LoadSSInfo = LoadSS->StaticStreamInfo;
-  if (!(LoadSSInfo.has_update() && LoadSSInfo.has_const_update())) {
-    // We only handle constant update so far.
+  auto StoreSS = LoadSS->UpdateStream;
+  if (!StoreSS) {
+    // There is no StoreSS.
     return;
   }
   if (LoadSSInfo.is_cond_access()) {
@@ -817,16 +817,32 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
     // Should only upgrade load stream with known trip count.
     return;
   }
-  LLVM_DEBUG(llvm::errs() << "Upgrade LoadStream " << LoadSS->formatName()
+  /**
+   * Additional check for the StoreSS ValueDG.
+   * 1. The only possible input is the LoadSS.
+   */
+  if (!StoreSS->ValueDG) {
+    return;
+  }
+  for (auto LoadBaseSS : StoreSS->LoadStoreBaseStreams) {
+    if (LoadBaseSS != LoadSS) {
+      return;
+    }
+  }
+
+  LLVM_DEBUG(llvm::dbgs() << "Upgrade LoadStream " << LoadSS->formatName()
                           << " to UpdateStream.\n");
-  LoadSSInfo.set_has_upgraded_to_update(true);
-  auto StoreSS = LoadSS->UpdateStream;
+  auto LoadSSComputeInfo = LoadSSInfo.mutable_compute_info();
+  LoadSSComputeInfo->set_enabled_store_func(true);
+  StoreSS->fillProtobufStoreFuncInfoImpl(
+      LoadSSComputeInfo->mutable_store_func_info(), false /* IsLoad */);
   /**
    * Two things we have to do:
    * 1. Since we only target constant update, we have to add one more input to
    *    the stream to have the update value. Done in
    *    generateMemStreamConfiguration.
    * 2. Add the cloned StoreInst to PendingRemovedInsts. Done here.
+   * 3. Update the ComputeInfo to remember this decision. Done here.
    */
   auto StoreInst = StoreSS->Inst;
   auto ClonedStoreInst = this->getClonedValue(StoreInst);
@@ -910,16 +926,18 @@ void StreamExecutionTransformer::mergePredicatedStore(
   this->PendingRemovedInsts.insert(ClonedStoreInst);
 }
 
-void StreamExecutionTransformer::handleStoreDG(StreamRegionAnalyzer *Analyzer,
+void StreamExecutionTransformer::handleValueDG(StreamRegionAnalyzer *Analyzer,
                                                Stream *S) {
   auto SS = S->SStream;
-  if (!SS->StoreDG) {
-    // No StoreDG to be merged.
+  if (!SS->ValueDG) {
+    // No ValueDG to be merged.
     return;
   }
   /**
-   * We merge this store into the Loads iff.
-   * 1. All the load input streams are chosen.
+   * We enable the ValueDG as:
+   * 1. Check that all the load input streams are chosen.
+   * 2. Remember the value dependence.
+   * 3. Enable the store func in the store stream.
    */
   for (auto LoadSS : SS->LoadStoreBaseStreams) {
     auto ChosenLoadS = Analyzer->getChosenStreamByInst(LoadSS->Inst);
@@ -929,17 +947,18 @@ void StreamExecutionTransformer::handleStoreDG(StreamRegionAnalyzer *Analyzer,
     }
   }
   // We can merge these two.
+  auto SSProtoComputeInfo = SS->StaticStreamInfo.mutable_compute_info();
   for (auto LoadSS : SS->LoadStoreBaseStreams) {
-    auto LoadProto =
-        LoadSS->StaticStreamInfo.add_merged_load_store_dep_streams();
+    auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
+                         ->add_value_dep_streams();
     LoadProto->set_id(SS->StreamId);
     LoadProto->set_name(SS->formatName());
-    auto SSProto = SS->StaticStreamInfo.add_merged_load_store_base_streams();
+    auto SSProto = SSProtoComputeInfo->add_value_base_streams();
     SSProto->set_id(LoadSS->StreamId);
     SSProto->set_name(LoadSS->formatName());
   }
   // Finally, remove the inst (store/atomicrmw).
-  SS->StaticStreamInfo.set_enabled_store_func(true);
+  SSProtoComputeInfo->set_enabled_store_func(true);
   auto ClonedSSInst = this->getClonedValue(SS->Inst);
   this->PendingRemovedInsts.insert(ClonedSSInst);
   // Consider FusedLoadOps.
@@ -955,7 +974,8 @@ void StreamExecutionTransformer::handleStoreDG(StreamRegionAnalyzer *Analyzer,
     // Mark this stream without core user.
     SS->StaticStreamInfo.set_no_core_user(true);
   } else {
-    auto StreamLoadInst = this->addStreamLoad(S, ClonedSSInst);
+    auto StreamLoadInst =
+        this->addStreamLoad(S, ClonedSSInst->getType(), ClonedSSInst);
     ClonedSSInst->replaceAllUsesWith(StreamLoadInst);
   }
 }
@@ -1424,20 +1444,6 @@ void StreamExecutionTransformer::handleExtraInputValue(
     Stream *S, InputValueVec &ClonedInputValues) {
   auto SS = S->SStream;
   /**
-   * If this is a update stream, add one more input at ClonedInputValues[0].
-   */
-  if (SS->StaticStreamInfo.has_upgraded_to_update()) {
-    auto StoreSS = SS->UpdateStream;
-    auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(StoreSS->Inst);
-    assert(StoreInst && "Invalid UpdateStream.");
-    auto StoreValue = StoreInst->getOperand(0);
-    auto ClonedStoreValue = this->getClonedValue(StoreValue);
-    this->addStreamInputValue(
-        ClonedStoreValue, false /* Signed */, ClonedInputValues,
-        SS->StaticStreamInfo.mutable_const_update_param());
-  }
-
-  /**
    * If this has merged predicate stream, handle inputs from pred func.
    */
   if (SS->StaticStreamInfo.merged_predicated_streams_size()) {
@@ -1462,12 +1468,21 @@ void StreamExecutionTransformer::handleExtraInputValue(
   }
 
   /**
-   * If this stream enabled StoreDG, add more StoreDG inputs.
+   * If this stream enabled ValueDG, add more ValueDG inputs.
    */
-  if (SS->StaticStreamInfo.enabled_store_func()) {
-    assert(SS->StoreDG && "No StoreDG for MergedLoadStoreDepStream.");
-    for (auto Input : SS->getStoreFuncInputValues()) {
-      ClonedInputValues.push_back(this->getClonedValue(Input));
+  if (SS->StaticStreamInfo.compute_info().enabled_store_func()) {
+    if (SS->Inst->getOpcode() == llvm::Instruction::Load) {
+      // This should be the update stream.
+      assert(SS->UpdateStream &&
+             "Missing UpdateStream for LoadStream with StoreFunc.");
+      for (auto Input : SS->UpdateStream->getStoreFuncInputValues()) {
+        ClonedInputValues.push_back(this->getClonedValue(Input));
+      }
+    } else {
+      assert(SS->ValueDG && "No ValueDG for MergedLoadStoreDepStream.");
+      for (auto Input : SS->getStoreFuncInputValues()) {
+        ClonedInputValues.push_back(this->getClonedValue(Input));
+      }
     }
   }
 }

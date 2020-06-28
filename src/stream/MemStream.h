@@ -3,7 +3,7 @@
 
 #include "MemoryFootprint.h"
 #include "stream/Stream.h"
-#include "stream/ae/AddressDataGraph.h"
+#include "stream/ae/StreamDataGraph.h"
 
 class MemStream : public Stream {
 public:
@@ -75,7 +75,7 @@ public:
   bool isCandidate() const override;
   bool isQualifySeed() const override;
 
-  const AddressDataGraph &getAddressDataGraph() const { return this->AddrDG; }
+  const StreamDataGraph &getAddrDG() const { return this->AddrDG; }
 
   void generateFunction(std::unique_ptr<llvm::Module> &Module) const;
 
@@ -98,7 +98,7 @@ private:
   std::unordered_set<const llvm::Instruction *> AddrInsts;
   std::unordered_set<llvm::Instruction *> AliasInsts;
 
-  AddressDataGraph AddrDG;
+  StreamDataGraph AddrDG;
 
   void searchAddressComputeInstructions(
       std::function<bool(const llvm::PHINode *)> IsInductionVar);

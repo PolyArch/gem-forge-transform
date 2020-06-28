@@ -43,15 +43,16 @@ private:
   void initializeStreams();
   void initializeStreamForAllLoops(llvm::Instruction *StreamInst);
   void markUpdateRelationship();
-  void markUpdateRelationshipForStore(const llvm::StoreInst *StoreInst);
-  void buildStreamDependenceGraph();
+  void markUpdateRelationshipForLoadStream(StaticStream *LoadSS);
+  void buildStreamAddrDepGraph();
   void markAliasRelationship();
   void markAliasRelationshipForLoopBB(const llvm::Loop *Loop);
-  void buildLoadStoreStreamDependenceGraph();
-  void buildLoadStoreDependenceForStore(StaticStream *StoreS);
+  void buildStreamValueDepGraph();
+  void buildValueDepForStoreOrAtomic(StaticStream *StoreS);
   void markPredicateRelationship();
   void markPredicateRelationshipForLoopBB(const llvm::Loop *Loop,
                                           const llvm::BasicBlock *BB);
+  void analyzeIsCandidate();
   void markQualifiedStreams();
   void enforceBackEdgeDependence();
 };

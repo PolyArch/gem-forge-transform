@@ -23,11 +23,7 @@ class GemForgeMicroBenchmark(Benchmark):
             self.src_path, 'stream_whitelist.txt')
 
         self.is_omp = self.benchmark_name.startswith('omp_')
-        self.is_graph = self.benchmark_name in [
-            'omp_bfs',
-            'omp_bfs_queue',
-            'omp_page_rank',
-        ]
+        self.is_graph = os.path.basename(os.path.dirname(self.src_path)) == 'graph'
         self.n_thread = benchmark_args.options.input_threads
         self.sim_input_name = benchmark_args.options.sim_input_name
 
@@ -57,7 +53,9 @@ class GemForgeMicroBenchmark(Benchmark):
             args = [str(self.n_thread)]
             if self.is_graph:
                 graphs = os.path.join(os.getenv('BENCHMARK_PATH'), 'graphs')
-                args.append(os.path.join(graphs, '{i}.bin'.format(i=self.sim_input_name)))
+                suffix = 'wbin' if self.benchmark_name.startswith('omp_sssp_') else 'bin'
+                args.append(os.path.join(graphs, '{i}.{s}'.format(
+                    i=self.sim_input_name, s=suffix)))
             return args
         return None
 
@@ -71,6 +69,7 @@ class GemForgeMicroBenchmark(Benchmark):
         'omp_bfs': [''],
         'omp_bfs_queue': [''],
         'omp_page_rank': ['', '.1'],
+        'omp_sssp_bellman': [''],
     }
 
     def get_trace_func(self):
@@ -128,7 +127,9 @@ class GemForgeMicroBenchmark(Benchmark):
 
         if self.is_omp:
             flags.append('-fopenmp')
-        sources = [self.source, self.graph_utils_source]
+        sources = [self.source]
+        if self.is_graph:
+            sources.append(self.graph_utils_source)
         bcs = [s[:-2] + '.bc' for s in sources]
         for source, bytecode in zip(sources, bcs):
             compile_cmd = [
@@ -212,23 +213,6 @@ class GemForgeMicroBenchmark(Benchmark):
             ]
             Util.call_helper(disasm_cmd, stdout=f)
 
-    def simulate_valid(self, tdg, transform_config, simulation_config):
-        print("# Simulating the validation binary.")
-        gem5_out_dir = simulation_config.get_gem5_dir(tdg)
-        tdg_dir = os.path.dirname(tdg)
-        binary = os.path.join(tdg_dir, self.get_valid_bin())
-        gem5_args = self.get_gem5_simulate_command(
-            simulation_config=simulation_config,
-            binary=binary,
-            outdir=gem5_out_dir,
-            standalone=False,
-        )
-        # Exit immediately when we are done.
-        gem5_args.append('--work-end-exit-count=1')
-        # Do not add the fake tdg file, so that the script in gem5 will
-        # actually simulate the valid bin.
-        Util.call_helper(gem5_args)
-
     def get_additional_gem5_simulate_command(self):
         """
         Some benchmarks takes too long to finish, so we use work item
@@ -250,21 +234,30 @@ class GemForgeMicroBenchmark(Benchmark):
 
 
 class GemForgeMicroSuite:
-    def __init__(self, benchmark_args):
-        suite_folder = os.path.join(
-            C.LLVM_TDG_BENCHMARK_DIR, 'GemForgeMicroSuite')
+
+    def searchBenchmarks(self, benchmark_args, folder):
         # Every folder in the suite is a benchmark.
-        items = os.listdir(suite_folder)
+        items = os.listdir(folder)
         items.sort()
-        self.benchmarks = list()
         for item in items:
             if item[0] == '.':
                 # Ignore special folders.
                 continue
-            abs_path = os.path.join(suite_folder, item)
+            abs_path = os.path.join(folder, item)
+            abs_source_path = os.path.join(abs_path, item + '.c')
             if os.path.isdir(abs_path):
-                self.benchmarks.append(
-                    GemForgeMicroBenchmark(benchmark_args, abs_path))
+                if os.path.isfile(abs_source_path):
+                    self.benchmarks.append(
+                        GemForgeMicroBenchmark(benchmark_args, abs_path))
+                else:
+                    # Recursive search for deeper benchmarks:
+                    self.searchBenchmarks(benchmark_args, abs_path)
+
+    def __init__(self, benchmark_args):
+        suite_folder = os.path.join(
+            C.LLVM_TDG_BENCHMARK_DIR, 'GemForgeMicroSuite')
+        self.benchmarks = list()
+        self.searchBenchmarks(benchmark_args, suite_folder)
 
     def get_benchmarks(self):
         return self.benchmarks

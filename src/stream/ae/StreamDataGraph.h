@@ -5,22 +5,22 @@
 
 #include "DataGraph.h"
 
-class AddressDataGraph : public ExecutionDataGraph {
+class StreamDataGraph : public ExecutionDataGraph {
 public:
-  AddressDataGraph(const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
+  StreamDataGraph(const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
                    std::function<bool(const llvm::PHINode *)> IsInductionVar);
 
-  AddressDataGraph(const AddressDataGraph &Other) = delete;
-  AddressDataGraph(AddressDataGraph &&Other) = delete;
-  AddressDataGraph &operator=(const AddressDataGraph &Other) = delete;
-  AddressDataGraph &operator=(AddressDataGraph &&Other) = delete;
+  StreamDataGraph(const StreamDataGraph &Other) = delete;
+  StreamDataGraph(StreamDataGraph &&Other) = delete;
+  StreamDataGraph &operator=(const StreamDataGraph &Other) = delete;
+  StreamDataGraph &operator=(StreamDataGraph &&Other) = delete;
 
-  ~AddressDataGraph() {}
+  ~StreamDataGraph() {}
 
   /**
    * Key function to coalesce two memory streams.
    */
-  bool isAbleToCoalesceWith(const AddressDataGraph &Other) const;
+  bool isAbleToCoalesceWith(const StreamDataGraph &Other) const;
 
   void format(std::ostream &OStream) const;
 

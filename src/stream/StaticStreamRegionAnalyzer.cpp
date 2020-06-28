@@ -18,17 +18,19 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
                           << LoopUtils::getLoopId(this->TopLoop) << '\n');
   this->initializeStreams();
   LLVM_DEBUG(llvm::dbgs() << "Initializing streams done.\n");
-  this->markUpdateRelationship();
-  LLVM_DEBUG(llvm::dbgs() << "Mark update relationship done.\n");
   this->markPredicateRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark predicate relationship done.\n");
-  this->buildStreamDependenceGraph();
-  LLVM_DEBUG(llvm::dbgs() << "Building stream dependence graph done.\n");
+  this->buildStreamAddrDepGraph();
+  LLVM_DEBUG(llvm::dbgs() << "Building StreamAddrDepGraph done.\n");
   this->markAliasRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark alias relationship done.\n");
-  this->buildLoadStoreStreamDependenceGraph();
-  LLVM_DEBUG(
-      llvm::dbgs() << "Building load-store stream dependence graph done.\n");
+  this->buildStreamValueDepGraph();
+  LLVM_DEBUG(llvm::dbgs() << "Building StreamValueDepGraph done.\n");
+  // Update relationship must be after alias relationship.
+  this->markUpdateRelationship();
+  LLVM_DEBUG(llvm::dbgs() << "Mark update relationship done.\n");
+  this->analyzeIsCandidate();
+  LLVM_DEBUG(llvm::dbgs() << "AnalyzeIsCandidate done.\n");
   this->markQualifiedStreams();
   LLVM_DEBUG(llvm::dbgs() << "Marking qualified streams done.\n");
   this->enforceBackEdgeDependence();
@@ -147,62 +149,59 @@ void StaticStreamRegionAnalyzer::markUpdateRelationship() {
    */
   for (auto &InstStreams : this->InstStaticStreamMap) {
     auto Inst = InstStreams.first;
-    if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(Inst)) {
-      this->markUpdateRelationshipForStore(StoreInst);
+    if (Inst->getOpcode() == llvm::Instruction::Load) {
+      for (auto LoadSS : this->InstStaticStreamMap.at(Inst)) {
+        this->markUpdateRelationshipForLoadStream(LoadSS);
+      }
     }
   }
 }
 
-void StaticStreamRegionAnalyzer::markUpdateRelationshipForStore(
-    const llvm::StoreInst *StoreInst) {
+void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
+    StaticStream *LoadSS) {
   /**
-   * So far we just search for load in the same basic block and before me.
+   * Update relationship is a special case for value dependence.
+   * 1. The StoreStream stores to the same address of the LoadStream, with same
+   * type.
+   * 2. There is only one such StoreStream.
+   * 3. They are in the same BB.
+   * TODO: We should check that there is no aliasing store between them.
    */
-  LLVM_DEBUG(llvm::dbgs() << "Search update stream for "
-                          << Utils::formatLLVMInst(StoreInst) << '\n');
-  auto BB = StoreInst->getParent();
-  auto StoreAddrValue = Utils::getMemAddrValue(StoreInst);
-  auto StoreValue = StoreInst->getOperand(0);
-  if (!this->SE->isSCEVable(StoreValue->getType())) {
+
+  auto LoadType = Utils::getMemElementType(LoadSS->Inst);
+  auto AliasBaseSS = LoadSS->AliasBaseStream;
+  StaticStream *CandidateSS = nullptr;
+  for (auto AliasSS : AliasBaseSS->AliasedStreams) {
+    if (AliasSS->AliasOffset != LoadSS->AliasOffset)
+      continue;
+    if (AliasSS->Inst->getOpcode() != llvm::Instruction::Store)
+      continue;
+    if (Utils::getMemElementType(AliasSS->Inst) != LoadType)
+      continue;
+    if (CandidateSS) {
+      // Multiple candidates.
+      return;
+    } else {
+      CandidateSS = AliasSS;
+    }
+  }
+
+  if (!CandidateSS) {
     return;
   }
-  auto StoreValueSCEV = this->SE->getSCEV(StoreValue);
-  for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
-       ++InstIter) {
-    auto Inst = &*InstIter;
-    if (Inst == StoreInst) {
-      // We have encounter ourself.
-      break;
-    }
-    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(Inst)) {
-      auto LoadAddrValue = Utils::getMemAddrValue(LoadInst);
-      // So far we just check for the same address.
-      if (StoreAddrValue == LoadAddrValue) {
-        // Found update relationship.
-        LLVM_DEBUG(llvm::dbgs() << "Found update load "
-                                << Utils::formatLLVMInst(LoadInst) << '\n');
-        for (auto StoreStream : this->InstStaticStreamMap.at(StoreInst)) {
-          auto ConfigureLoop = StoreStream->ConfigureLoop;
-          auto LoadStream =
-              this->getStreamByInstAndConfigureLoop(LoadInst, ConfigureLoop);
-          LLVM_DEBUG(llvm::dbgs() << "Update for LoadStream "
-                                  << LoadStream->formatName() << '\n');
-          assert(LoadStream->UpdateStream == nullptr &&
-                 "More than one update stream.");
-          assert(StoreStream->UpdateStream == nullptr &&
-                 "More than one update stream.");
-          LoadStream->UpdateStream = StoreStream;
-          LoadStream->StaticStreamInfo.set_has_update(true);
-          StoreStream->UpdateStream = LoadStream;
-          StoreStream->StaticStreamInfo.set_has_update(true);
-          auto IsConstantStore =
-              this->SE->isLoopInvariant(StoreValueSCEV, ConfigureLoop);
-          StoreStream->StaticStreamInfo.set_has_const_update(IsConstantStore);
-          LoadStream->StaticStreamInfo.set_has_const_update(IsConstantStore);
-        }
-      }
-    }
+
+  if (CandidateSS->Inst->getParent() != LoadSS->Inst->getParent()) {
+    // Not same BB.
+    return;
   }
+
+  // Make sure we don't have multiple update relationship for same StoreSS.
+  if (CandidateSS->UpdateStream) {
+    return;
+  }
+  assert(!LoadSS->UpdateStream && "This LoadSS already has UpdateStream.");
+  LoadSS->UpdateStream = CandidateSS;
+  CandidateSS->UpdateStream = LoadSS;
 }
 
 void StaticStreamRegionAnalyzer::markPredicateRelationship() {
@@ -288,7 +287,7 @@ void StaticStreamRegionAnalyzer::insertPredicateFuncInModule(
   }
 }
 
-void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
+void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
   auto GetStream = [this](const llvm::Instruction *Inst,
                           const llvm::Loop *ConfigureLoop) -> StaticStream * {
     return this->getStreamByInstAndConfigureLoop(Inst, ConfigureLoop);
@@ -315,16 +314,6 @@ void StaticStreamRegionAnalyzer::buildStreamDependenceGraph() {
     }
   }
   LLVM_DEBUG(llvm::dbgs() << "==== SSRA: computeBaseStepRootStreams done.\n");
-  /**
-   * After construct step root streams, we can analyze if the stream is a
-   * candidate.
-   */
-  for (auto &InstStream : this->InstStaticStreamMap) {
-    for (auto &S : InstStream.second) {
-      S->analyzeIsCandidate();
-    }
-  }
-  LLVM_DEBUG(llvm::dbgs() << "analyzeIsCandidate done.\n");
 }
 
 void StaticStreamRegionAnalyzer::markAliasRelationship() {
@@ -445,13 +434,13 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
   }
 }
 
-void StaticStreamRegionAnalyzer::buildLoadStoreStreamDependenceGraph() {
+void StaticStreamRegionAnalyzer::buildStreamValueDepGraph() {
   /**
-   * After construct basic stream dependence graph, we can analyze the
-   * StoreDG and LoadStore dependence.
+   * After construct addr dependence graph, we can analyze the
+   * ValueDG and Value dependence.
    * We handle AtomicRMW stream as a special store stream.
    */
-  if (!StreamPassEnableLoadStoreDG) {
+  if (!StreamPassEnableValueDG) {
     return;
   }
   for (auto &InstStream : this->InstStaticStreamMap) {
@@ -460,13 +449,13 @@ void StaticStreamRegionAnalyzer::buildLoadStoreStreamDependenceGraph() {
         Inst->getOpcode() == llvm::Instruction::AtomicRMW ||
         Inst->getOpcode() == llvm::Instruction::AtomicCmpXchg) {
       for (auto &S : InstStream.second) {
-        this->buildLoadStoreDependenceForStore(S);
+        this->buildValueDepForStoreOrAtomic(S);
       }
     }
   }
 }
 
-void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
+void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     StaticStream *StoreS) {
 
   // StoreS could be an Atomic stream.
@@ -479,12 +468,11 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
     return;
   }
   /**
-   * Let's try to construct the StoreDG.
+   * Let's try to construct the ValueDG.
    * So far we will first simply take every PHINode as an induction variable
    * and later enforce all the constraints.
    */
   auto IsIndVarStream = [](const llvm::PHINode *PHI) -> bool { return true; };
-  // Another abuse of AddressDataGraph.
   llvm::Value *StoreValue = nullptr;
   switch (StreamOpcode) {
   default:
@@ -499,28 +487,28 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
     StoreValue = StoreS->Inst->getOperand(2);
     break;
   }
-  auto StoreDG = std::make_unique<AddressDataGraph>(StoreS->ConfigureLoop,
-                                                    StoreValue, IsIndVarStream);
+  auto ValueDG = std::make_unique<StreamDataGraph>(StoreS->ConfigureLoop,
+                                                   StoreValue, IsIndVarStream);
   /**
    * Enforce all the constraints.
-   * 1. StoreDG should have no circle.
-   * 2. StoreDG should only have Load/LoopInvariant inputs, at most 4 inputs.
+   * 1. ValueDG should have no circle.
+   * 2. ValueDG should only have Load/LoopInvariant inputs, at most 4 inputs.
    * 3. All the load inputs should be within the same BB of this store.
    * 4. All the load and the store should have the same step root stream.
    * 5. If multiple loads, they must be coalesced and continuous.
    */
-  if (StoreDG->hasCircle()) {
+  if (ValueDG->hasCircle()) {
     return;
   }
-  if (StoreDG->hasPHINodeInComputeInsts() ||
-      StoreDG->hasCallInstInComputeInsts()) {
+  if (ValueDG->hasPHINodeInComputeInsts() ||
+      ValueDG->hasCallInstInComputeInsts()) {
     return;
   }
-  if (StoreDG->getInputs().size() > 4) {
+  if (ValueDG->getInputs().size() > 4) {
     return;
   }
   std::unordered_set<const llvm::LoadInst *> LoadInputs;
-  for (auto Input : StoreDG->getInputs()) {
+  for (auto Input : ValueDG->getInputs()) {
     if (auto InputInst = llvm::dyn_cast<llvm::Instruction>(Input)) {
       if (auto LoadInput = llvm::dyn_cast<llvm::LoadInst>(InputInst)) {
         // This is a LoadInput.
@@ -580,12 +568,21 @@ void StaticStreamRegionAnalyzer::buildLoadStoreDependenceForStore(
     StoreS->LoadStoreBaseStreams.insert(LoadS);
   }
   /**
-   * Extend the StoreDG with the final atomic operation.
+   * Extend the ValueDG with the final atomic operation.
    */
   if (IsAtomic) {
-    StoreDG->extendTailAtomicInst(StoreS->Inst, StoreS->FusedLoadOps);
+    ValueDG->extendTailAtomicInst(StoreS->Inst, StoreS->FusedLoadOps);
   }
-  StoreS->StoreDG = std::move(StoreDG);
+  StoreS->ValueDG = std::move(ValueDG);
+}
+
+void StaticStreamRegionAnalyzer::analyzeIsCandidate() {
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      S->analyzeIsCandidate();
+    }
+  }
+  LLVM_DEBUG(llvm::dbgs() << "analyzeIsCandidate done.\n");
 }
 
 void StaticStreamRegionAnalyzer::markQualifiedStreams() {

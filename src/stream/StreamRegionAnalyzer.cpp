@@ -12,7 +12,7 @@
 
 StreamConfigureLoopInfo::StreamConfigureLoopInfo(
     const std::string &_Folder, const std::string &_RelativeFolder,
-    const llvm::Loop *_Loop, std::list<Stream *> _SortedStreams)
+    const llvm::Loop *_Loop, std::vector<Stream *> _SortedStreams)
     : TotalConfiguredStreams(-1), TotalConfiguredCoalescedStreams(-1),
       TotalSubLoopStreams(-1), TotalSubLoopCoalescedStreams(-1),
       TotalAliveStreams(-1), TotalAliveCoalescedStreams(-1),
@@ -73,7 +73,7 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(
       this->CachedBBPredDG);
 
   this->initializeStreams();
-  this->buildStreamDependenceGraph();
+  this->buildStreamAddrDepGraph();
 }
 
 StreamRegionAnalyzer::~StreamRegionAnalyzer() {
@@ -134,7 +134,7 @@ void StreamRegionAnalyzer::initializeStreams() {
   }
 }
 
-void StreamRegionAnalyzer::buildStreamDependenceGraph() {
+void StreamRegionAnalyzer::buildStreamAddrDepGraph() {
   auto GetStream = [this](const llvm::Instruction *Inst,
                           const llvm::Loop *ConfigureLoop) -> Stream * {
     return this->getStreamByInstAndConfigureLoop(Inst, ConfigureLoop);
@@ -608,6 +608,7 @@ void StreamRegionAnalyzer::insertAddrFuncInModule(
     auto Inst = InstStream.first;
     auto S = InstStream.second;
     S->SStream->generateReduceFunction(Module);
+    S->SStream->generateValueFunction(Module);
     if (llvm::isa<llvm::PHINode>(Inst)) {
       // If this is an IVStream.
       continue;
@@ -914,7 +915,7 @@ StreamRegionAnalyzer::getConfigureLoopInfo(const llvm::Loop *ConfigureLoop) {
   return this->ConfigureLoopInfoMap.at(ConfigureLoop);
 }
 
-std::list<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
+std::vector<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
     const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
@@ -925,17 +926,21 @@ std::list<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
    * dependenceDepth 0;
    * 2. Otherwiese, a stream has dependenceDepth =
    * max(BaseStreamWithSameConfigureLoop.dependenceDepth) + 1.
+   *
+   * With the same DepDepth, we break the tie with stream id, as we allocate
+   * them in order, we should be able to ensure new value dependence.
    */
   std::stack<std::pair<Stream *, int>> ChosenStreams;
+  std::vector<Stream *> SortedStreams;
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
     auto &S = InstChosenStream.second;
     if (S->getLoop() == ConfigureLoop) {
       ChosenStreams.emplace(S, 0);
+      SortedStreams.push_back(S);
     }
   }
 
   std::unordered_map<Stream *, int> StreamDepDepthMap;
-  std::list<Stream *> SortedStreams;
   while (!ChosenStreams.empty()) {
     auto &Entry = ChosenStreams.top();
     auto &S = Entry.first;
@@ -966,28 +971,23 @@ std::list<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
             DependenceDepth = ChosenBaseStreamDependenceDepth + 1;
           }
         }
-        // Insert myself into the stack.
-        // Common case for append at the back.
-        // Iterate starting from the back should be a little more efficient.
-        bool Inserted = false;
-        for (auto SortedStreamIter = SortedStreams.rbegin(),
-                  SortedStreamEnd = SortedStreams.rend();
-             SortedStreamIter != SortedStreamEnd; ++SortedStreamIter) {
-          auto SortedDependenceDepth = StreamDepDepthMap.at(*SortedStreamIter);
-          if (SortedDependenceDepth <= DependenceDepth) {
-            SortedStreams.insert(SortedStreamIter.base(), S);
-            Inserted = true;
-            break;
-          }
-        }
-        if (!Inserted) {
-          SortedStreams.emplace_front(S);
-        }
         StreamDepDepthMap.emplace(S, DependenceDepth);
       }
       ChosenStreams.pop();
     }
   }
+
+  // Finally we sort the streams.
+  std::sort(SortedStreams.begin(), SortedStreams.end(),
+            [&StreamDepDepthMap](Stream *A, Stream *B) -> bool {
+              auto DepthA = StreamDepDepthMap.at(A);
+              auto DepthB = StreamDepDepthMap.at(B);
+              if (DepthA != DepthB) {
+                return DepthA < DepthB;
+              } else {
+                return A->getStreamId() < B->getStreamId();
+              }
+            });
 
   return SortedStreams;
 }

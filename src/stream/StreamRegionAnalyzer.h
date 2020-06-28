@@ -21,11 +21,11 @@ public:
   StreamConfigureLoopInfo(const std::string &_Folder,
                           const std::string &_RelativeFolder,
                           const llvm::Loop *_Loop,
-                          std::list<Stream *> _SortedStreams);
+                          std::vector<Stream *> _SortedStreams);
 
   const std::string &getRelativePath() const { return this->RelativePath; }
   const llvm::Loop *getLoop() const { return this->Loop; }
-  const std::list<Stream *> getSortedStreams() const {
+  const std::vector<Stream *> getSortedStreams() const {
     return this->SortedStreams;
   }
 
@@ -50,7 +50,7 @@ public:
   int TotalSubLoopCoalescedStreams;
   int TotalAliveStreams;
   int TotalAliveCoalescedStreams;
-  std::list<Stream *> SortedCoalescedStreams;
+  std::vector<Stream *> SortedCoalescedStreams;
 
   void dump(llvm::DataLayout *DataLayout) const;
 
@@ -59,7 +59,7 @@ private:
   const std::string RelativePath;
   const std::string JsonPath;
   const llvm::Loop *Loop;
-  std::list<Stream *> SortedStreams;
+  std::vector<Stream *> SortedStreams;
 };
 
 class StreamRegionAnalyzer {
@@ -185,7 +185,7 @@ private:
   Stream *
   getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
                                   const llvm::Loop *ConfigureLoop) const;
-  void buildStreamDependenceGraph();
+  void buildStreamAddrDepGraph();
 
   void markQualifiedStreams(
       StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
@@ -206,7 +206,7 @@ private:
   // Must be called after allocate the StreamConfigureLoopInfo.
   void allocateRegionStreamId(const llvm::Loop *ConfigureLoop);
 
-  std::list<Stream *>
+  std::vector<Stream *>
   sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
 
   /**

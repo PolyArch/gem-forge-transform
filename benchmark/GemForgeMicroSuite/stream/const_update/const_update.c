@@ -2,7 +2,7 @@
  * Simple dense vector add.
  */
 
-#include "gem5/m5ops.h"
+#include "../../gfm_utils.h"
 #include <stdio.h>
 
 typedef long long Value;
@@ -12,13 +12,12 @@ typedef long long Value;
 #define WARM_CACHE
 
 __attribute__((noinline)) Value foo(Value *a, int N) {
-  Value sum = 0;
 #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
-    sum += a[i];
+    volatile Value v = a[i];
     a[i] = 2;
   }
-  return sum;
+  return 0;
 }
 
 // 65536*8 = 512kB.
@@ -27,31 +26,29 @@ Value a[N];
 
 int main() {
 
-  m5_detail_sim_start();
+  gf_detail_sim_start();
 #ifdef WARM_CACHE
   // This should warm up the cache.
   for (long long i = 0; i < N; i++) {
-    a[i] = i;
+    a[i] = 1;
   }
 #endif
-  m5_reset_stats(0, 0);
+  gf_reset_stats();
   volatile Value ret = foo(a, N);
-  m5_detail_sim_end();
+  gf_detail_sim_end();
 
 #ifdef CHECK
-  Value expected = 0;
+  Value expected = N * 2;
   Value computed = 0;
-  printf("Start expected.\n");
-#pragma clang loop vectorize(disable) unroll(disable)
-  for (int i = 0; i < N; i += STRIDE) {
-    expected += 2;
-  }
   printf("Start computed.\n");
 #pragma clang loop vectorize(disable) unroll(disable)
   for (int i = 0; i < N; i += STRIDE) {
     computed += a[i];
   }
-  printf("Ret = %d, Computed = %d, Expected = %d.\n", ret, computed, expected);
+  printf("Computed = %llu, Expected = %llu.\n", computed, expected);
+  if (computed != expected) {
+    gf_panic();
+  }
 #endif
 
   return 0;

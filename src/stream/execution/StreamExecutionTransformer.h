@@ -82,7 +82,7 @@ private:
                               Stream *LoadStream);
   void mergePredicatedStore(StreamRegionAnalyzer *Analyzer, Stream *LoadStream,
                             Stream *PredStoreStream, bool PredTrue);
-  void handleStoreDG(StreamRegionAnalyzer *Analyzer, Stream *S);
+  void handleValueDG(StreamRegionAnalyzer *Analyzer, Stream *S);
   llvm::Instruction *findStepPosition(Stream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
@@ -136,7 +136,8 @@ private:
   void addStreamInputValue(const llvm::Value *ClonedValue, bool Signed,
                            InputValueVec &ClonedInputValues,
                            ProtoStreamParam *ProtoParam);
-  llvm::Value *addStreamLoad(Stream *S, llvm::Instruction *ClonedInsertBefore);
+  llvm::Value *addStreamLoad(Stream *S, llvm::Type *LoadType,
+                             llvm::Instruction *ClonedInsertBefore);
 
   void writeModule();
   void writeAllConfiguredRegions();

@@ -10,6 +10,6 @@
         "-stream-pass-merge-ind-predicated-store",
         "-stream-pass-enable-store",
         "-stream-pass-enable-reduce",
-        "-stream-pass-enable-load-store-dg"
+        "-stream-pass-enable-value-dg"
     ]
 }

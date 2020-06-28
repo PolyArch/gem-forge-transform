@@ -85,7 +85,7 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
       }
       return false;
     };
-    this->ReduceDG = std::make_unique<AddressDataGraph>(
+    this->ReduceDG = std::make_unique<StreamDataGraph>(
         this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue,
         IsIndVarStream);
     assert(!this->ReduceDG->hasCircle() && "Circle in ReduceDG.");

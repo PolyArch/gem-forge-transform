@@ -1,5 +1,5 @@
 /**
- * Simple synchronious page rank. 
+ * Simple active-mask bellman-ford for sssp.
  */
 #ifdef GEM_FORGE
 #include "gem5/m5ops.h"
@@ -16,90 +16,90 @@
 #include "immintrin.h"
 
 #include "../gfm_graph_utils.h"
-#include "../gfm_utils.h"
+#include "../../gfm_utils.h"
 
-GraphCSR graph;
+WeightGraphCSR graph;
 
 // Value for computation.
 typedef struct {
-  float rank;
-  float next;
+  uint32_t dist;
+  uint32_t active;
 } Value;
 Value *values;
 
 #define CHECK
 #define WARM_CACHE
 
-__attribute__((noinline)) int foo(GraphCSR *graph, Value *values, int iters) {
+#define INF_DIST (UINT32_MAX - 1)
 
-  float global_diff = 2.0f;
+__attribute__((noinline)) int foo(WeightGraphCSR *graph, Value *vs, int iters) {
+
   int iter = 0;
 
   const GraphIndexT numNodes = graph->numNodes;
   const GraphIndexT *nodes = graph->edgePtr;
-  const GraphIndexT *edges = graph->edges;
+  const WeightEdgeT *edges = graph->edges;
 
-  for (iter = 0; iter < iters && global_diff > 1.0f; ++iter) {
+  for (iter = 0; iter < iters; ++iter) {
 #ifdef GEM_FORGE
     m5_work_begin(0, 0);
+#else
+    printf("Iters %d.\n", iter);
 #endif
 
-#pragma omp parallel for schedule(static)                                      \
-    firstprivate(numNodes, nodes, edges, values)
-    for (uint64_t i = 0; i < numNodes; ++i) {
-      uint64_t start = nodes[i];
-      uint64_t end = nodes[i + 1];
-      float rank = values[i].rank;
-      float out_degree = (float)(end - start);
-      float delta = 0.85 * rank / out_degree;
+    int global_changed = 0;
+#pragma omp parallel firstprivate(numNodes, nodes, edges, vs, iter)
+    {
+      int local_changed = 0;
+
+#pragma omp for schedule(static)
+      for (uint64_t i = 0; i < numNodes; ++i) {
+        uint64_t start = nodes[i];
+        uint64_t end = nodes[i + 1];
+        uint32_t dist = vs[i].dist;
+        // A simple filter.
+        if (vs[i].active) {
+          vs[i].active = 0;
 #pragma clang loop unroll(disable) interleave(disable)
-      for (uint64_t j = start; j < end; ++j) {
-        uint64_t n = edges[j];
-        __atomic_fetch_fadd(&values[n].next, delta, __ATOMIC_RELAXED);
+          for (uint64_t j = start; j < end; ++j) {
+            uint64_t n = edges[j].destVertex;
+            WeightT new_dist = dist + edges[j].weight;
+            uint32_t old_dist =
+                __atomic_fetch_min(&vs[n].dist, new_dist, __ATOMIC_RELAXED);
+            uint32_t updated = old_dist > new_dist;
+            vs[n].active |= updated; 
+            local_changed |= updated;
+          }
+        }
       }
+      __atomic_fetch_or(&global_changed, local_changed, __ATOMIC_RELAXED);
     }
 
 #ifdef GEM_FORGE
     m5_work_end(0, 0);
-    m5_work_begin(1, 0);
 #endif
 
-    global_diff = 0.0f;
-#pragma omp parallel
-    {
-      float local_diff = 0.0f;
-      // Disable kernel2 for now.
-
-      // #pragma omp for schedule(static) firstprivate(numNodes, nodes, edges,
-      // values)
-      //       for (uint64_t i = 0; i < numNodes; ++i) {
-      //         float rank = values[i].rank;
-      //         float next = values[i].next;
-      //         float diff = fabs(next - rank);
-      //         values[i].rank = next;
-      //         values[i].next = 0.15f / numNodes;
-      //         local_diff += diff;
-      //       }
-
-      __atomic_fetch_fadd(&global_diff, local_diff, __ATOMIC_RELAXED);
+    if (!global_changed) {
+      break;
     }
-
-#ifdef GEM_FORGE
-    m5_work_end(1, 0);
-#endif
   }
 
+  printf("SSSP done, iterations %d.\n", iter + 1);
   return iter;
 }
 
 // Initialize graph.
 void initializeGraph(const char *fn) {
-  graph = readInGraph(fn);
+  graph = readInWeightGraph(fn);
   values = aligned_alloc(sizeof(Value), sizeof(Value) * graph.numNodes);
   for (uint64_t i = 0; i < graph.numNodes; ++i) {
-    values[i].rank = 1.0f / graph.numNodes;
-    values[i].next = 0.15f / graph.numNodes;
+    values[i].dist = INF_DIST;
+    values[i].active = 0;
   }
+  // Pick up the root for bfs at the middle.
+  GraphIndexT root = graph.root;
+  values[root].dist = 0;
+  values[root].active = 1;
   printf("Value %luMB.\n", sizeof(Value) * graph.numNodes / 1024 / 1024);
 }
 
@@ -131,14 +131,21 @@ int main(int argc, char *argv[]) {
     volatile Value x = values[tid];
   }
 #endif
+
 #ifdef GEM_FORGE
   m5_reset_stats(0, 0);
+#else
+  clock_t start_time = clock();
 #endif
 
-  volatile int ret = foo(&graph, values, 10);
+  volatile int ret = foo(&graph, values, 10000000);
 #ifdef GEM_FORGE
   m5_detail_sim_end();
   exit(0);
+#else
+  clock_t end_time = clock();
+  printf("Time: %fms.\n",
+         (1000.0 * (double)(end_time - start_time)) / CLOCKS_PER_SEC);
 #endif
 
 #ifdef CHECK

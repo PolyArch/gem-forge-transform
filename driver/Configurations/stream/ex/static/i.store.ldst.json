@@ -6,6 +6,6 @@
         "-stream-pass-choose-strategy=inner",
         "-stream-pass-allow-aliased-stream",
         "-stream-pass-enable-store",
-        "-stream-pass-enable-load-store-dg"
+        "-stream-pass-enable-value-dg"
     ]
 }

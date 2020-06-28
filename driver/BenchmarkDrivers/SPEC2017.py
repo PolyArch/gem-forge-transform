@@ -28,12 +28,6 @@ class SPEC2017Benchmark(Benchmark):
         self.target = params['target']
         self.trace_func = params['trace_func']
 
-        self.start_inst = params['start_inst']
-        self.max_inst = params['max_inst']
-        self.skip_inst = params['skip_inst']
-        self.end_inst = params['end_inst']
-        self.trace_ids = xrange(params['n_traces'])
-
         self.trace_stdlib = False
         self.cwd = os.getcwd()
 
@@ -93,7 +87,8 @@ class SPEC2017Benchmark(Benchmark):
     def get_config_file(self):
         return '{build_system}-llvm-linux-x86_64-{expr}.cfg'.format(
             build_system=self.build_system,
-            expr=C.EXPERIMENTS,
+            # For now we use a special experiment setting for gem5.
+            expr=C.EXPERIMENTS + '.gem5',
         )
 
     def get_benchmark_path(self):
@@ -309,11 +304,40 @@ class SPEC2017Benchmark(Benchmark):
         os.chdir(self.cwd)
 
     def get_additional_gem5_simulate_command(self):
+        args = []
         if self.get_name() == 'spec.657.xz_s':
             # This benchmark requires significantly large memory.
-            return ['--mem-size=2GB']
-        else:
-            return []
+            args += ['--mem-size=2GB']
+        """
+        Some benchmarks takes too long to finish, so we use work item
+        to ensure that we simualte for the same amount of work.
+        """
+        work_items = -1
+        if self.get_name() == 'spec.508.namd_r':
+            # Just run one iteration.
+            work_items = 2
+        elif self.get_name() == 'spec.605.mcf_s':
+            # Run 1 primal_bea_mpp
+            work_items = 1024
+        elif self.get_name() == 'spec.638.imagick_s':
+            # Run 1024 iteration of HorizontalFilter
+            work_items = 1024
+        if work_items != -1:
+            args += [
+                '--work-end-exit-count={v}'.format(v=work_items)
+            ]
+        return args
+
+    def get_gem5_mem_size(self):
+        # SPEC should not require too much memory?
+        return '2GB'
+        # large_mem_benchmarks = [
+        #     'nn', 'srad_v2', 'bfs', 'b+tree', 'nw', 'pathfinder', 'hotspot-'
+        # ]
+        # for p in large_mem_benchmarks:
+        #     if self.benchmark_name.startswith(p):
+        #         return '16GB'
+        # return None
 
 
 class SPEC2017Benchmarks:
@@ -323,35 +347,20 @@ class SPEC2017Benchmarks:
             'name': '619.lbm_s',
             'links': ['-lm'],
             # First 100m insts every 1b insts, skipping the first 3.3b
-            'start_inst': 33e8,
-            'max_inst': 2e7,
-            'skip_inst': 9e8,
-            'end_inst': 34e8,
-            'n_traces': 9,
             'trace_func': 'LBM_performStreamCollideTRT',
             'lang': 'C',
         },
         'imagick_s': {
             'name': '638.imagick_s',
             'links': ['-lm'],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 9e8,
-            'end_inst': 200e8,
-            'n_traces': 8,
             # 'trace_func': 'MagickCommandGenesis',
-            'trace_func': '',
+            'trace_func': 'HorizontalFilter',
             'lang': 'C',
         },
         'nab_s': {
             'name': '644.nab_s',
             'links': ['-lm'],
             # md start from 100b
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 121e8,
-            'n_traces': 10,
             'trace_func': 'md',
             'lang': 'C',
         },
@@ -361,11 +370,6 @@ class SPEC2017Benchmarks:
             # x264_encoder_encode starts around 0.1e8.
             # x264_adaptive_quant_frame starts around 4e8
             # x264_lookahead_get_frames starts around 21e8
-            'start_inst': 4e8,
-            'max_inst': 1e8,
-            'skip_inst': 20e8,
-            'end_inst': 28e8,
-            'n_traces': 9,
             'trace_func': 'x264_encoder_encode',
             'lang': 'C',
         },
@@ -373,12 +377,8 @@ class SPEC2017Benchmarks:
             'name': '605.mcf_s',
             'links': [],
             # global_opt starts around 0.3e8
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 9e8,
-            'end_inst': 110e8,
-            'n_traces': 9,
-            'trace_func': 'global_opt',
+            # 'trace_func': 'global_opt',
+            'trace_func': 'primal_bea_mpp',
             'lang': 'C',
         },
         'xz_s': {
@@ -387,22 +387,12 @@ class SPEC2017Benchmarks:
             # I failed to find the pattern.
             # To trace this, instrument the tracer twice, one with
             # compressStream traced, the other with uncompressStream traced
-            'start_inst': 0,
-            'max_inst': 1e8,
-            'skip_inst': 9e8,
-            'end_inst': 1021e8,
-            'n_traces': 10,
             'trace_func': 'uncompressStream',
             'lang': 'C',
         },
         'gcc_s': {
             'name': '602.gcc_s',
             'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 50e8,
-            'end_inst': 1000e8,
-            'n_traces': 5,
             # 'trace_func': 'compile_file',
             'trace_func': '',
             'lang': 'C',
@@ -410,11 +400,6 @@ class SPEC2017Benchmarks:
         'perlbench_s': {
             'name': '600.perlbench_s',
             'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 10,
             'trace_func': '',
             'lang': 'C',
         },
@@ -422,11 +407,6 @@ class SPEC2017Benchmarks:
         'deepsjeng_s': {
             'name': '631.deepsjeng_s',
             'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 110e8,
-            'n_traces': 7,
             # 'trace_func': 'think(gamestate_t*, state_t*)',
             'trace_func': '',
             'lang': 'CPP',
@@ -434,23 +414,13 @@ class SPEC2017Benchmarks:
         'leela_s': {
             'name': '641.leela_s',
             'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 5,
             'trace_func': '',
             'lang': 'CPP',
         },
         'namd_r': {
             'name': '508.namd_r',
             'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 7,
-            'trace_func': '',
+            'trace_func': 'ComputeNonbondedUtil::calc_self_energy',
             'lang': 'CPP',
         },
         # Will throw exception.
@@ -458,11 +428,6 @@ class SPEC2017Benchmarks:
         'povray_r': {
             'name': '511.povray_r',
             'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 9,
             'trace_func': '',
             'lang': 'CPP',
         },
@@ -472,11 +437,6 @@ class SPEC2017Benchmarks:
         'parest_r': {
             'name': '510.parest_r',
             'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 110e8,
-            'n_traces': 2,
             'trace_func': '',
             'lang': 'CPP',
         },
@@ -486,11 +446,6 @@ class SPEC2017Benchmarks:
         'xalancbmk_s': {
             'name': '623.xalancbmk_s',
             'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 9,
             'trace_func': '',
             'lang': 'CPP',
         },
@@ -501,11 +456,6 @@ class SPEC2017Benchmarks:
         'blender_r': {
             'name': '526.blender_r',
             'links': [],
-            'start_inst': 10e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 110e8,
-            'n_traces': 10,
             'trace_func': '',
             'lang': 'CPP',
         },
@@ -515,11 +465,6 @@ class SPEC2017Benchmarks:
         'omnetpp_s': {
             'name': '620.omnetpp_s',
             'links': [],
-            'start_inst': 1e8,
-            'max_inst': 1e7,
-            'skip_inst': 10e8,
-            'end_inst': 100e8,
-            'n_traces': 10,
             'trace_func': '',
             'lang': 'CPP',
         },
@@ -540,11 +485,6 @@ class SPEC2017Benchmarks:
         for target in SPEC2017Benchmarks.BENCHMARK_PARAMS:
             name = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['name']
 
-            start_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['start_inst']
-            max_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['max_inst']
-            skip_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['skip_inst']
-            end_inst = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['end_inst']
-            n_traces = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['n_traces']
             lang = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['lang']
 
             trace_func = SPEC2017Benchmarks.BENCHMARK_PARAMS[target]['trace_func']
@@ -574,11 +514,6 @@ class SPEC2017Benchmarks:
                     target=target,
                     links=links,
                     trace_func=trace_func,
-                    start_inst=start_inst,
-                    max_inst=max_inst,
-                    skip_inst=skip_inst,
-                    end_inst=end_inst,
-                    n_traces=n_traces,
                     lang=lang,
                 )
             )
