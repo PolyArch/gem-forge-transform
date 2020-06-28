@@ -1,4 +1,4 @@
-#include "stream/ae/AddressDataGraph.h"
+#include "stream/ae/StreamDataGraph.h"
 
 #include "LoopUtils.h"
 #include "Utils.h"
@@ -9,7 +9,7 @@
 #include <list>
 #include <vector>
 
-AddressDataGraph::AddressDataGraph(
+StreamDataGraph::StreamDataGraph(
     const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
     std::function<bool(const llvm::PHINode *)> IsInductionVar)
     : ExecutionDataGraph(_AddrValue), Loop(_Loop),
@@ -27,7 +27,7 @@ AddressDataGraph::AddressDataGraph(
   }
 }
 
-void AddressDataGraph::constructDataGraph(
+void StreamDataGraph::constructDataGraph(
     std::function<bool(const llvm::PHINode *)> IsInductionVar) {
   std::list<const llvm::Value *> Queue;
   Queue.emplace_back(this->ResultValue);
@@ -89,8 +89,8 @@ void AddressDataGraph::constructDataGraph(
                       UnsortedInputs.end());
 }
 
-void AddressDataGraph::format(std::ostream &OStream) const {
-  OStream << "AddressDataGraph of Loop " << LoopUtils::getLoopId(this->Loop)
+void StreamDataGraph::format(std::ostream &OStream) const {
+  OStream << "StreamDataGraph of Loop " << LoopUtils::getLoopId(this->Loop)
           << " Value " << LoopUtils::formatLLVMValue(this->ResultValue) << '\n';
   OStream << "-------------- Input Values ---------------\n";
   for (const auto &Input : this->Inputs) {
@@ -132,14 +132,14 @@ void AddressDataGraph::format(std::ostream &OStream) const {
            "If there is no address instruction, there should be no compute "
            "instructions.");
   }
-  OStream << "-------------- AddressDatagraph End -------\n";
+  OStream << "-------------- StreamDataGraph End -------\n";
 }
 
 /**
  * Two address datagraphs can be coalesce iff.
  * 1.
  */
-bool AddressDataGraph::isAbleToCoalesceWith(
-    const AddressDataGraph &Other) const {
+bool StreamDataGraph::isAbleToCoalesceWith(
+    const StreamDataGraph &Other) const {
   return false;
 }

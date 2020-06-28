@@ -184,7 +184,7 @@ std::pair<bool, uint64_t>
 FunctionalStream::computeAddress(DataGraph *DG) const {
   auto MS = static_cast<MemStream *>(this->S);
   const auto FuncName = MS->getAddressFunctionName();
-  const auto &AddrDG = MS->getAddressDataGraph();
+  const auto &AddrDG = MS->getAddrDG();
 
   auto &Interpreter = this->SE->getInterpreter();
 

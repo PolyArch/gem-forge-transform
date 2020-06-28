@@ -61,6 +61,11 @@ public:
     return Inst->getOperand(1);
   }
 
+  static llvm::Type *getMemElementType(const llvm::Instruction *Inst) {
+    auto MemAddrType = Utils::getMemAddrValue(Inst)->getType();
+    return MemAddrType->getPointerElementType();
+  }
+
   static uint64_t getMemAddr(const DynamicInstruction *DynamicInst) {
     auto StaticInst = DynamicInst->getStaticInstruction();
     assert(Utils::isMemAccessInst(StaticInst) &&

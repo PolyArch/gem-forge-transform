@@ -220,7 +220,7 @@ void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
   auto PredFuncInfo = ProtobufStaticInfo->mutable_pred_func_info();
   this->fillProtobufPredFuncInfo(DataLayout, PredFuncInfo);
   // Dump the store function.
-  this->fillProtobufStoreFuncInfo(DataLayout, ProtobufStaticInfo);
+  this->fillProtobufStoreFuncInfo(ProtobufStaticInfo);
 
   auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
   ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);

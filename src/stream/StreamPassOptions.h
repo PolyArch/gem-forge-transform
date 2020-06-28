@@ -19,6 +19,6 @@ extern llvm::cl::opt<std::string> StreamWhitelistFileName;
 extern llvm::cl::opt<bool> StreamPassUpgradeLoadToUpdate;
 extern llvm::cl::opt<bool> StreamPassMergePredicatedStore;
 extern llvm::cl::opt<bool> StreamPassMergeIndPredicatedStore;
-extern llvm::cl::opt<bool> StreamPassEnableLoadStoreDG;
+extern llvm::cl::opt<bool> StreamPassEnableValueDG;
 
 #endif

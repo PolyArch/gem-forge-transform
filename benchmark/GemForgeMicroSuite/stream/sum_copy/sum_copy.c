@@ -1,7 +1,7 @@
 /**
- * Simple array sum.
+ * Simple coalesced sum copy.
  */
-#include "gem5/m5ops.h"
+#include "../../gfm_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -26,19 +26,19 @@ Value b[N];
 
 int main() {
 
-  m5_detail_sim_start();
+ gf_detail_sim_start();
 #ifdef WARM_CACHE
   // This should warm up the cache.
   for (long long i = 0; i < N; i++) {
     a[i] = i;
     b[i] = 1;
   }
-  m5_reset_stats(0, 0);
+  gf_reset_stats();
 #endif
 
   const Value offset = 1.0f;
   volatile Value c = foo(a, b, N, offset);
-  m5_detail_sim_end();
+  gf_detail_sim_end();
 
 #ifdef CHECK
   Value expected = 0;
@@ -48,6 +48,9 @@ int main() {
     computed += b[i];
   }
   printf("Ret = %f, Expected = %f.\n", computed, expected);
+  if (computed != expected) {
+    gf_panic();
+  }
 #endif
 
   return 0;

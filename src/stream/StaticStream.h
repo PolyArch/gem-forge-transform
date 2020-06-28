@@ -8,7 +8,7 @@
 #include "LoopUtils.h"
 #include "PostDominanceFrontier.h"
 #include "Utils.h"
-#include "stream/ae/AddressDataGraph.h"
+#include "stream/ae/StreamDataGraph.h"
 
 #include "stream/StreamMessage.pb.h"
 
@@ -198,15 +198,14 @@ public:
   StreamSet PredicatedFalseStreams;
 
   // Reduction stream.
-  std::unique_ptr<AddressDataGraph> ReduceDG = nullptr;
+  std::unique_ptr<StreamDataGraph> ReduceDG = nullptr;
   void generateReduceFunction(std::unique_ptr<llvm::Module> &Module) const;
+  void generateValueFunction(std::unique_ptr<llvm::Module> &Module) const;
 
   // Store stream.
-  std::unique_ptr<AddressDataGraph> StoreDG = nullptr;
-  void fillProtobufStoreFuncInfo(::llvm::DataLayout *DataLayout,
-                                 ::LLVM::TDG::StaticStreamInfo *SSInfo) const;
-  void fillProtobufStoreFuncInfoImpl(::llvm::DataLayout *DataLayout,
-                                     ::LLVM::TDG::ExecFuncInfo *ExInfo,
+  std::unique_ptr<StreamDataGraph> ValueDG = nullptr;
+  void fillProtobufStoreFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
+  void fillProtobufStoreFuncInfoImpl(::LLVM::TDG::ExecFuncInfo *ExInfo,
                                      bool IsLoad) const;
   std::string getStoreFuncName(bool IsLoad) const {
     return this->FuncNameBase + (IsLoad ? "_load" : "_store");

@@ -69,7 +69,7 @@ add_library(LLVMTDGPass SHARED
     stream/StreamPassOptions.cpp
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp
-    stream/ae/AddressDataGraph.cpp
+    stream/ae/StreamDataGraph.cpp
     stream/ae/FunctionalStreamPattern.cpp
     stream/ae/FunctionalStream.cpp
     stream/ae/FunctionalStreamEngine.cpp
