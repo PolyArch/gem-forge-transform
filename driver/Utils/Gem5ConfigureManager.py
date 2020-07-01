@@ -403,4 +403,9 @@ class Gem5ReplayConfigureManager(object):
             "--prog-interval=10000", # Hz
             "--tlb-timing-se",
         ] + L2_TLB,
+        'tm.tlb': [
+            "--cpu-type=TimingSimpleCPU",
+            "--prog-interval=10000", # Hz
+            "--tlb-timing-se",
+        ] + L2_TLB,
     }
