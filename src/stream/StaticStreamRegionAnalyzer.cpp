@@ -167,11 +167,15 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
    * 3. They are in the same BB.
    * TODO: We should check that there is no aliasing store between them.
    */
+  LLVM_DEBUG(llvm::dbgs() << "== SSRA: Mark Update Relationship for "
+                          << LoadSS->formatName() << '\n');
 
   auto LoadType = Utils::getMemElementType(LoadSS->Inst);
   auto AliasBaseSS = LoadSS->AliasBaseStream;
   StaticStream *CandidateSS = nullptr;
   for (auto AliasSS : AliasBaseSS->AliasedStreams) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "==== Check AliasStream " << AliasSS->formatName() << '\n');
     if (AliasSS->AliasOffset != LoadSS->AliasOffset)
       continue;
     if (AliasSS->Inst->getOpcode() != llvm::Instruction::Store)
@@ -182,6 +186,8 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
       // Multiple candidates.
       return;
     } else {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "==== Select candidate " << AliasSS->formatName() << '\n');
       CandidateSS = AliasSS;
     }
   }
@@ -200,6 +206,8 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
     return;
   }
   assert(!LoadSS->UpdateStream && "This LoadSS already has UpdateStream.");
+  LLVM_DEBUG(llvm::dbgs() << "==== Set Update Stream "
+                          << CandidateSS->formatName() << '\n');
   LoadSS->UpdateStream = CandidateSS;
   CandidateSS->UpdateStream = LoadSS;
 }
