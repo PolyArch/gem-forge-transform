@@ -18,7 +18,7 @@ run_test () {
 
     local trans=$valid_trans,$stream_trans
     local all_sim=$sim_valid,$sim_valid.bingo,$sim_valid.idea,$sim_ssp,$sim_ssp.flts,$sim_ssp-idea
-    local parallel=6
+    local parallel=4
     python Driver.py -b $bench \
         -t $trans \
         --sim-configs $all_sim \
@@ -43,5 +43,4 @@ python Driver.py -b ${Benchmark} --transform-text -t ${StreamTransform} \
 
 RubyConfig=8x8c
 Threads=64
-Parallel=2
 run_test $Benchmark $RubyConfig $SimInputName $Threads $CPU
