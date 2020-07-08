@@ -172,6 +172,9 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
 
   auto LoadType = Utils::getMemElementType(LoadSS->Inst);
   auto AliasBaseSS = LoadSS->AliasBaseStream;
+  if (!AliasBaseSS) {
+    return;
+  }
   StaticStream *CandidateSS = nullptr;
   for (auto AliasSS : AliasBaseSS->AliasedStreams) {
     LLVM_DEBUG(llvm::dbgs()
