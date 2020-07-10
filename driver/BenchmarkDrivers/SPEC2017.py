@@ -446,7 +446,7 @@ class SPEC2017Benchmarks:
         'xalancbmk_s': {
             'name': '623.xalancbmk_s',
             'links': [],
-            'trace_func': '',
+            'trace_func': 'xercesc_2_7::ValueStore::contains',
             'lang': 'CPP',
         },
 
