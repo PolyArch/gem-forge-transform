@@ -38,7 +38,7 @@ int main() {
 #ifdef CHECK
   printf("Computed = %d, Expected = %d.\n", computed, N);
   if (computed != N) {
-    // gf_panic();
+    gf_panic();
   }
 #endif
 
