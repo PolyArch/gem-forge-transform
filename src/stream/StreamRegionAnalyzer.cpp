@@ -542,10 +542,25 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
   for (auto &InstStream : this->InstStreamMap) {
     auto Inst = InstStream.first;
     Stream *ChosenStream = nullptr;
+    int ChosenNumQualifiedDepStreams = -1;
     for (auto &S : InstStream.second) {
       if (S->isQualified() && S->SStream->isQualified()) {
-        // This will make sure we get the outer most qualified stream.
-        ChosenStream = S;
+        /**
+         * Instead of just choose the out-most loop, we use
+         * a heuristic to select the level with most number
+         * of dependent streams qualified.
+         * TODO: Fully check all dependent streams.
+         */
+        int NumQualifiedDepStreams = 0;
+        for (auto DepSS : S->SStream->DependentStreams) {
+          if (DepSS->isQualified()) {
+            NumQualifiedDepStreams++;
+          }
+        }
+        if (NumQualifiedDepStreams > ChosenNumQualifiedDepStreams) {
+          ChosenStream = S;
+          ChosenNumQualifiedDepStreams = NumQualifiedDepStreams;
+        }
       }
     }
     if (ChosenStream != nullptr) {
