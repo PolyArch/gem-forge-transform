@@ -1,0 +1,25 @@
+{
+    "id": "i4.tlb.8x8c-l{link}-s{llc_interleave}.bingo-l2pf",
+    "options": [
+        "--gem-forge-num-active-cpus=1",
+        "--gem-forge-cache-load-ports=2",
+        "--gem-forge-cache-store-ports=2",
+        "--gem-forge-prefetcher=bingo",
+        "--gem-forge-l2-prefetcher=stride",
+        "--link-width-bits={link}",
+        "--llc-select-low-bit={log2Byte(llc_interleave)}"
+    ],
+    "snippts": [
+        "i4.tlb",
+        "8x8.dir_corner.l2_256kB.l3_1MB_s0.ruby"
+    ],
+    "design_space": {
+        "llc_interleave": [
+            "1kB"
+        ],
+        "link": [256]
+    },
+    "support-transform-ids": [
+        "valid.ex"
+    ]
+}

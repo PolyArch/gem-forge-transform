@@ -232,6 +232,11 @@ class GemForgeMicroBenchmark(Benchmark):
             '--work-end-exit-count={v}'.format(v=work_items)
         ]
 
+    def get_gem5_mem_size(self):
+        if not self.is_omp:
+            return '128MB'
+        return None
+
 
 class GemForgeMicroSuite:
 
