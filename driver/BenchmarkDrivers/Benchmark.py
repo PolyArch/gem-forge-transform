@@ -883,6 +883,9 @@ class Benchmark(object):
         if self.options.gem5_debug is not None:
             gem5_args.insert(
                 1, '--debug-flags={debug}'.format(debug=self.options.gem5_debug))
+        if self.options.gem5_debug_file is not None:
+            gem5_args.insert(
+                1, '--debug-file={debug}'.format(debug=self.options.gem5_debug_file))
         if self.options.gem5_debug_start is not None:
             gem5_args.insert(
                 1, '--debug-start={d}'.format(d=self.options.gem5_debug_start))

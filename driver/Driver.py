@@ -562,6 +562,8 @@ if __name__ == '__main__':
     # Parse gem5 debug flag.
     parser.add_option('--gem5-debug', type='string',
                       action='store', dest='gem5_debug', default=None)
+    parser.add_option('--gem5-debug-file', type='string',
+                      action='store', dest='gem5_debug_file', default=None)
     parser.add_option('--gem5-debug-start', type='int',
                       action='store', dest='gem5_debug_start', default=None)
     parser.add_option('--gem5-max-ticks', type='int',
