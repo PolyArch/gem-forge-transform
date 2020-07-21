@@ -1,11 +1,14 @@
 {
-    "id": "i4.tlb.8x8c-l{link}-s{llc_interleave}.l2pf{l2_pf_dist}",
+    "id": "i4.tlb.8x8c-l{link}-s{llc_interleave}.pf{pf_dist}-l2pf{l2_pf_dist}-blk",
     "options": [
         "--gem-forge-num-active-cpus=1",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2",
+        "--gem-forge-prefetcher=stride",
+        "--gem-forge-prefetch-dist={pf_dist}",
         "--gem-forge-l2-prefetcher=stride",
         "--gem-forge-l2-prefetch-dist={l2_pf_dist}",
+        "--gem-forge-l2-bulk-prefetch",
         "--link-width-bits={link}",
         "--llc-select-low-bit={log2Byte(llc_interleave)}"
     ],
@@ -18,6 +21,7 @@
             "1kB"
         ],
         "link": [256],
+        "pf_dist": [8],
         "l2_pf_dist": [8]
     },
     "support-transform-ids": [

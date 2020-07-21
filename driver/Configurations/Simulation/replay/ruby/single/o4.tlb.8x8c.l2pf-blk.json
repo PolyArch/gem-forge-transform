@@ -5,7 +5,7 @@
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2",
         "--gem-forge-l2-prefetcher=stride",
-        "--gem-forge-l2-prefetch_dist={l2_pf_dist}",
+        "--gem-forge-l2-prefetch-dist={l2_pf_dist}",
         "--gem-forge-l2-bulk-prefetch",
         "--link-width-bits={link}",
         "--llc-select-low-bit={log2Byte(llc_interleave)}"
