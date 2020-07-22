@@ -13,7 +13,7 @@
     ],
     "design_space": {
         "llc_interleave": [
-            "1kB"
+            "64B"
         ],
         "link": [256]
     },

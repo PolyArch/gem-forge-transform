@@ -18,7 +18,7 @@
     ],
     "design_space": [
         {
-            "llc_interleave": "1kB"
+            "llc_interleave": "64B"
         }
     ],
     "support-transform-ids": [

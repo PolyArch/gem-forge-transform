@@ -16,7 +16,7 @@
     ],
     "design_space": {
         "llc_interleave": [
-            "1kB"
+            "64B"
         ],
         "link": [256],
         "l2_pf_dist": [8]
