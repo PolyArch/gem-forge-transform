@@ -21,7 +21,7 @@
             "1kB"
         ],
         "link": [256],
-        "stream_fifo": [192],
+        "stream_fifo": [96],
         "stream_ahead": [16]
     },
     "support-transform-ids": [

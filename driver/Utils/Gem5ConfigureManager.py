@@ -219,14 +219,17 @@ class Gem5ReplayConfigureManager(object):
     LLC_256kB = [
         '--l2_size=256kB',
         '--l2_assoc=16',
+        '--l3_lat=10',
     ]
     LLC_1MB = [
         '--l2_size=1MB',
         '--l2_assoc=16',
+        '--l3_lat=10',
     ]
     LLC_4MB = [
         '--l2_size=4MB',
         '--l2_assoc=16',
+        '--l3_lat=10',
     ]
     LLC_SELECT_4kB = [
         '--llc-select-low-bit=12',
@@ -269,16 +272,19 @@ class Gem5ReplayConfigureManager(object):
         '--l1_5d_size=256kB',
         '--l1_5d_assoc=16',
         '--l1_5d_mshrs=16',
+        '--l2_lat=8',
     ]
     MLC_64kB = [
         '--l1_5d_size=64kB',
         '--l1_5d_assoc=16',
         '--l1_5d_mshrs=16',
+        '--l2_lat=8',
     ]
     MLC_32MB = [
         '--l1_5d_size=32MB',
         '--l1_5d_assoc=16',
         '--l1_5d_mshrs=16',
+        '--l2_lat=8',
     ]
     RUBY_L3_BASE = [
         "--ruby",
