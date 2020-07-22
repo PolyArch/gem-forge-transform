@@ -75,9 +75,6 @@ GEM5_M5OPS_RISCV = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_riscv.S')
 GEM5_M5OPS_EMPTY = os.path.join(GEM5_DIR, 'util', 'm5', 'm5op_empty.cpp')
 
 M5_THREADS_LIB = os.getenv('M5_THREADS_LIB')
-if M5_THREADS_LIB is None:
-    print('Please define M5_THREADS_LIB.')
-    assert(False)
 
 HOFFMAN2_GEM5_DIR = '/u/home/s/seanzw/llvm-trace-cpu'
 HOFFMAN2_GEM5_X86 = os.path.join(HOFFMAN2_GEM5_DIR, 'build/X86/gem5.opt')

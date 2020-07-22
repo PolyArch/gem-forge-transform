@@ -129,6 +129,9 @@ class ParsecBenchmark(Benchmark):
         ]
     
     def get_gem5_links(self):
+        if C.M5_THREADS_LIB is None:
+            print('Please define M5_THREADS_LIB.')
+            assert(False)
         return [
             '-lm',
             C.M5_THREADS_LIB,
