@@ -394,6 +394,13 @@ class Gem5ReplayConfigureManager(object):
             "--prog-interval=10000", # Hz
             "--tlb-timing-se",
         ] + L2_TLB,
+        'o8.tlb': [
+            "--cpu-type=DerivO3CPU",
+            "--llvm-issue-width=8",
+            "--gem-forge-enable-func-acc-tick",
+            "--prog-interval=10000", # Hz
+            "--tlb-timing-se",
+        ] + L2_TLB,
         'i2': [
             "--cpu-type=MinorCPU",
             "--llvm-issue-width=2",
