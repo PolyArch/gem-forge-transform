@@ -545,6 +545,8 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
     int ChosenNumQualifiedDepStreams = -1;
     for (auto &S : InstStream.second) {
       if (S->isQualified() && S->SStream->isQualified()) {
+        LLVM_DEBUG(llvm::dbgs() << "==== Choose stream StaticOuterMost for "
+                      << S->formatName() << '\n');
         /**
          * Instead of just choose the out-most loop, we use
          * a heuristic to select the level with most number
@@ -555,9 +557,11 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
         for (auto DepSS : S->SStream->DependentStreams) {
           if (DepSS->isQualified()) {
             NumQualifiedDepStreams++;
+            LLVM_DEBUG(llvm::dbgs() << "==== Qualified DepS "
+                          << DepSS->formatName() << '\n');
           }
         }
-        if (NumQualifiedDepStreams > ChosenNumQualifiedDepStreams) {
+        if (NumQualifiedDepStreams >= ChosenNumQualifiedDepStreams) {
           ChosenStream = S;
           ChosenNumQualifiedDepStreams = NumQualifiedDepStreams;
         }
@@ -566,6 +570,8 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
     if (ChosenStream != nullptr) {
       this->InstChosenStreamMap.emplace(Inst, ChosenStream);
       ChosenStream->markChosen();
+      LLVM_DEBUG(llvm::dbgs() << "== Choose "
+                    << ChosenStream->formatName() << '\n');
     }
   }
 }
