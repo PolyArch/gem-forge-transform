@@ -941,26 +941,13 @@ class Benchmark(object):
                 if gem5_args[i] == '--gem-forge-stream-engine-max-total-run-ahead-length=48':
                     gem5_args[i] = '--gem-forge-stream-engine-max-total-run-ahead-length=96'
 
-        adhoc_mc2_benchmarks = [
-            'gfm.omp_dense_mv',
-            'gfm.omp_conv3d2',
+        adhoc_mc0_benchmarks = [
+            'rodinia.hotspot3D-avx512-fix',
         ]
-        if self.get_name() in adhoc_mc2_benchmarks:
+        if self.get_name() in adhoc_mc0_benchmarks:
             for i in range(len(gem5_args)):
-                if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=0':
-                    gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2'
-        adhoc_mc1by2_benchmarks = [
-            'gfm.omp_dense_mv_blk',
-        ]
-        if self.get_name() in adhoc_mc1by2_benchmarks:
-            for i in range(len(gem5_args)):
-                if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=0':
-                    gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=2'
-                    # gem5_args.insert(i, '--gem-forge-stream-engine-llc-multicast-group-size-y=1')
-                    break
-            # gem5_args.append('--gem-forge-stream-engine-enable-float-idea-flow')
-            # gem5_args.append('--gem-forge-stream-engine-llc-multicast-issue-policy=first_allocated')
-
+                if gem5_args[i] == '--gem-forge-stream-engine-llc-multicast-group-size=2':
+                    gem5_args[i] = '--gem-forge-stream-engine-llc-multicast-group-size=0'
         # Append the arguments.
         if self.get_sim_args() is not None:
             gem5_args.append(
