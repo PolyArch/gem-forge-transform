@@ -56,6 +56,8 @@ class TileStatsParser(object):
                 'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_stream'),
             'l2_evicts_noreuse_ctrl_pkts': self.format_re(
                 'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_ctrl_msg'),
+            'l2_evicts_noreuse_ctrl_evict_pkts': self.format_re(
+                'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_ctrl_evict_msg'),
             'l2_evicts_noreuse_data_pkts': self.format_re(
                 'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_data_msg'),
             'l3_access': self.format_re(
@@ -250,18 +252,18 @@ def print_stats(tile_stats):
         v=sum(ts.l1d_misses for ts in tile_stats) /
         sum_or_nan(ts.l1d_access for ts in tile_stats)
     ))
-    print('l2tlb miss / tlb access {v}'.format(
-        v=sum_or_nan(value_or_nan(ts, 'l2tlb_misses') for ts in tile_stats) /
-        sum_or_nan(value_or_nan(ts, 'l1tlb_access') for ts in tile_stats)
-    ))
-    print('l2tlb miss / l2 access  {v}'.format(
-        v=sum_or_nan(value_or_nan(ts, 'l2tlb_misses') for ts in tile_stats) /
-        sum_or_nan(value_or_nan(ts, 'l2tlb_access') for ts in tile_stats)
-    ))
-    print('l1tlb miss / tlb access {v}'.format(
-        v=sum_or_nan(value_or_nan(ts, 'l1tlb_misses') for ts in tile_stats) /
-        sum_or_nan(value_or_nan(ts, 'l1tlb_access') for ts in tile_stats)
-    ))
+    # print('l2tlb miss / tlb access {v}'.format(
+    #     v=sum_or_nan(value_or_nan(ts, 'l2tlb_misses') for ts in tile_stats) /
+    #     sum_or_nan(value_or_nan(ts, 'l1tlb_access') for ts in tile_stats)
+    # ))
+    # print('l2tlb miss / l2 access  {v}'.format(
+    #     v=sum_or_nan(value_or_nan(ts, 'l2tlb_misses') for ts in tile_stats) /
+    #     sum_or_nan(value_or_nan(ts, 'l2tlb_access') for ts in tile_stats)
+    # ))
+    # print('l1tlb miss / tlb access {v}'.format(
+    #     v=sum_or_nan(value_or_nan(ts, 'l1tlb_misses') for ts in tile_stats) /
+    #     sum_or_nan(value_or_nan(ts, 'l1tlb_access') for ts in tile_stats)
+    # ))
     print('total l2 evicts         {v}'.format(
         v=sum_or_nan(value_or_nan(ts, 'l2_evicts') for ts in tile_stats)
     ))
@@ -283,15 +285,6 @@ def print_stats(tile_stats):
     print('noc packets             {v}'.format(
         v=value_or_nan(main_ts, 'noc_packet')
     ))
-    # print('control flits           {v}'.format(
-    #     v=value_or_nan(main_ts, 'control_flits')
-    # ))
-    # print('data flits              {v}'.format(
-    #     v=value_or_nan(main_ts, 'data_flits')
-    # ))
-    # print('stream flits            {v}'.format(
-    #     v=value_or_nan(main_ts, 'stream_flits')
-    # ))
     print('control hops            {v}'.format(
         v=value_or_nan(main_ts, 'control_hops')
     ))
@@ -367,6 +360,15 @@ def print_stats(tile_stats):
     ))
     print('num llc llc multi req   {v}'.format(
         v=sum(value_or_zero(ts, 'llc_llc_multicast_stream_requests') for ts in tile_stats)
+    ))
+    print('num l2 noreuse ctrl pkt {v}'.format(
+        v=sum(value_or_zero(ts, 'l2_evicts_noreuse_ctrl_pkts') for ts in tile_stats)
+    ))
+    print('num l2 noreuse evic pkt {v}'.format(
+        v=sum(value_or_zero(ts, 'l2_evicts_noreuse_ctrl_evict_pkts') for ts in tile_stats)
+    ))
+    print('num l2 noreuse data pkt {v}'.format(
+        v=sum(value_or_zero(ts, 'l2_evicts_noreuse_data_pkts') for ts in tile_stats)
     ))
 
 
