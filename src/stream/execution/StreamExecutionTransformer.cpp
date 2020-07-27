@@ -210,7 +210,7 @@ void StreamExecutionTransformer::transformStreamRegion(
 void StreamExecutionTransformer::configureStreamsAtLoop(
     StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop) {
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
-  if (ConfigureInfo.TotalConfiguredStreams == 0) {
+  if (ConfigureInfo.getSortedStreams().empty()) {
     // No stream configured at this loop.
     return;
   }
