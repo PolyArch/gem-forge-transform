@@ -112,6 +112,9 @@ class GemForgeMicroBenchmark(Benchmark):
         avx512_workloads = [
             'omp_array_sum',
             'omp_conv3d2',
+            'omp_conv3d2_no_unroll',
+            'omp_conv3d2_unroll',
+            'omp_conv3d2_unroll_xy',
             'omp_dense_mv_blk',
             'omp_dense_mv',
         ]
@@ -144,6 +147,8 @@ class GemForgeMicroBenchmark(Benchmark):
                 '-std=c11',
                 '-gline-tables-only',
                 '-I{INCLUDE}'.format(INCLUDE=C.GEM5_INCLUDE_DIR),
+                '-mllvm',
+                '-enable-load-pre=true',
                 '-o',
                 bytecode,
             ]
