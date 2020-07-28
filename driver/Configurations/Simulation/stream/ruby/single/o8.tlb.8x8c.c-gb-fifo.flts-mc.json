@@ -29,7 +29,7 @@
     ],
     "design_space": {
         "llc_interleave": [
-            "64B"
+            "1kB"
         ],
         "link": [256],
         "stream_fifo": [192],
