@@ -1,0 +1,45 @@
+{
+    "id": "i4.ch2.l3.f{stream_fifo}-a{stream_ahead}-c-gb",
+    "options": [
+        "--l1d_size=32kB",
+        "--l1d_lat=2",
+        "--l1d_mshrs=8",
+        "--l1d_assoc=8",
+        "--l1_5dcache",
+        "--l1_5d_size=256kB",
+        "--l1_5d_assoc=16",
+        "--l1_5d_mshrs=16",
+        "--l2_size=8MB",
+        "--l2_lat=20",
+        "--l2_mshrs=20",
+        "--l2_assoc=8",
+        "--l2bus_width=16",
+        "--mem-channels=2",
+        "--gem-forge-cache-load-ports=2",
+        "--gem-forge-cache-store-ports=2",
+        "--gem-forge-stream-engine-enable",
+        "--gem-forge-stream-engine-max-run-ahead-length={stream_ahead}",
+        "--gem-forge-stream-engine-max-total-run-ahead-length={stream_fifo}",
+        "--gem-forge-stream-engine-enable-lsq",
+        "--gem-forge-stream-engine-enable-coalesce",
+        "--gem-forge-stream-engine-throttling=global"
+    ],
+    "snippts": [
+        "i4.tlb"
+    ],
+    "design_space": {
+        "stream_fifo": [48],
+        "stream_ahead": [16]
+    },
+    "support-transform-ids": [
+        "stream.i",
+        "stream.ex.i",
+        "stream.ex.so",
+        "stream.ex.static.i",
+        "stream.ex.static.so",
+        "stream.ex.static.i.store",
+        "stream.ex.static.so.store",
+        "stream.ex.static.so.store.cmp",
+        "stream.ex.static.so.store.rdc"
+    ]
+}
