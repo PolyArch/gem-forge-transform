@@ -1,6 +1,6 @@
 """
 Simple process script to process stats for multi-core configurations.
-Assume MinorCPU.
+Assume no ruby.
 """
 
 import re
@@ -17,12 +17,6 @@ class TileStats(object):
         self.l2_misses = 0
         self.l3_access = 0
         self.l3_misses = 0
-        self.control_flits = 0
-        self.data_flits = 0
-        self.stream_flits = 0
-        self.control_hops = 0
-        self.data_hops = 0
-        self.stream_hops = 0
         pass
 
 
@@ -41,29 +35,29 @@ class TileStatsParser(object):
             'load_blocked_ratio': self.format_re(
                 'system.future_cpus{tile_id}.loadBlockedCyclesPercen*'),
             'l1d_access': self.format_re(
-                'system.ruby.l0_cntrl{tile_id}.Dcache.demand_accesses'),
+                'system.cpu{tile_id}.dcache.demand_accesses::total'),
             'l1d_misses': self.format_re(
-                'system.ruby.l0_cntrl{tile_id}.Dcache.demand_misses'),
+                'system.cpu{tile_id}.dcache.demand_misses::total'),
             'l2_access': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.demand_accesses'),
+                'system.cpu{tile_id}.l1_5dcache.demand_accesses::total'),
             'l2_misses': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.demand_misses'),
-            'l2_evicts': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.deallocated'),
-            'l2_evicts_noreuse': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse'),
-            'l2_evicts_noreuse_stream': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_stream'),
-            'l2_evicts_noreuse_ctrl_pkts': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_ctrl_msg'),
-            'l2_evicts_noreuse_ctrl_evict_pkts': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_ctrl_evict_msg'),
-            'l2_evicts_noreuse_data_pkts': self.format_re(
-                'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_data_msg'),
+                'system.cpu{tile_id}.l1_5dcache.demand_misses::total'),
+            # 'l2_evicts': self.format_re(
+            #     'system.ruby.l1_cntrl{tile_id}.cache.deallocated'),
+            # 'l2_evicts_noreuse': self.format_re(
+            #     'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse'),
+            # 'l2_evicts_noreuse_stream': self.format_re(
+            #     'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_stream'),
+            # 'l2_evicts_noreuse_ctrl_pkts': self.format_re(
+            #     'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_ctrl_msg'),
+            # 'l2_evicts_noreuse_ctrl_evict_pkts': self.format_re(
+            #     'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_ctrl_evict_msg'),
+            # 'l2_evicts_noreuse_data_pkts': self.format_re(
+            #     'system.ruby.l1_cntrl{tile_id}.cache.deallocated_no_reuse_noc_data_msg'),
             'l3_access': self.format_re(
-                'system.ruby.l2_cntrl{tile_id}.L2cache.demand_accesses'),
+                'system.l2.demand_accesses::total'),
             'l3_misses': self.format_re(
-                'system.ruby.l2_cntrl{tile_id}.L2cache.demand_misses'),
+                'system.l2.demand_misses::total'),
             'l1tlb_access': self.format_re(
                 'system.future_cpus{tile_id}.dtb.l1Accesses'),
             'l1tlb_misses': self.format_re(
@@ -72,11 +66,11 @@ class TileStatsParser(object):
                 'system.future_cpus{tile_id}.dtb.l2Accesses'),
             'l2tlb_misses': self.format_re(
                 'system.future_cpus{tile_id}.dtb.l2Misses'),
-            'noc_flit': ['system.ruby.network.flits_injected::total'],
-            'noc_packet': ['system.ruby.network.packets_injected::total'],
-            'total_hops': ['system.ruby.network.total_hops'],
-            'crossbar_act': self.format_re(
-                'system.ruby.network.routers{tile_id}.crossbar_activity'),
+            # 'noc_flit': ['system.ruby.network.flits_injected::total'],
+            # 'noc_packet': ['system.ruby.network.packets_injected::total'],
+            # 'total_hops': ['system.ruby.network.total_hops'],
+            # 'crossbar_act': self.format_re(
+            #     'system.ruby.network.routers{tile_id}.crossbar_activity'),
             'commit_op': self.format_re(
                 'system.future_cpus{tile_id}.committedOps'),
             'commit_inst': self.format_re(
@@ -103,28 +97,34 @@ class TileStatsParser(object):
                 'system.future_cpus{tile_id}.accelManager.se.numLLCMigrated'),
             'mlc_response': self.format_re(
                 'system.future_cpus{tile_id}.accelManager.se.numMLCResponse'),
-            'dcache_core_requests': self.format_re(
-                'system.ruby.l0_cntrl{tile_id}.coreRequests'),
-            'dcache_core_stream_requests': self.format_re(
-                'system.ruby.l0_cntrl{tile_id}.coreStreamRequests'),
-            'llc_core_requests': self.format_re(
-                'system.ruby.l2_cntrl{tile_id}.coreRequests'),
-            'llc_core_stream_requests': self.format_re(
-                'system.ruby.l2_cntrl{tile_id}.coreStreamRequests'),
-            'llc_llc_stream_requests': self.format_re(
-                'system.ruby.l2_cntrl{tile_id}.llcStreamRequests'),
-            'llc_llc_ind_stream_requests': self.format_re(
-                'system.ruby.l2_cntrl{tile_id}.llcIndStreamRequests'),
-            'llc_llc_multicast_stream_requests': self.format_re(
-                'system.ruby.l2_cntrl{tile_id}.llcMulticastStreamRequests'),
+            # 'dcache_core_requests': self.format_re(
+            #     'system.ruby.l0_cntrl{tile_id}.coreRequests'),
+            # 'dcache_core_stream_requests': self.format_re(
+            #     'system.ruby.l0_cntrl{tile_id}.coreStreamRequests'),
+            # 'llc_core_requests': self.format_re(
+            #     'system.ruby.l2_cntrl{tile_id}.coreRequests'),
+            # 'llc_core_stream_requests': self.format_re(
+            #     'system.ruby.l2_cntrl{tile_id}.coreStreamRequests'),
+            # 'llc_llc_stream_requests': self.format_re(
+            #     'system.ruby.l2_cntrl{tile_id}.llcStreamRequests'),
+            # 'llc_llc_ind_stream_requests': self.format_re(
+            #     'system.ruby.l2_cntrl{tile_id}.llcIndStreamRequests'),
+            # 'llc_llc_multicast_stream_requests': self.format_re(
+            #     'system.ruby.l2_cntrl{tile_id}.llcMulticastStreamRequests'),
         }
 
     def format_re(self, expression):
         # Return two possible cases.
-        return [
+        regs = [
             expression.format(tile_id='{x}'.format(x=self.tile_stats.tile_id)),
             expression.format(tile_id='0{x}'.format(x=self.tile_stats.tile_id)),
         ]
+        # If single core we have:
+        if self.tile_stats.tile_id == 0:
+            regs.append(
+                expression.format(tile_id=''),
+            )
+        return regs
 
     def parse(self, fields):
         if len(fields) < 2:
@@ -194,7 +194,7 @@ class TileStatsParser(object):
 def findTileIdForPrefix(x, prefix):
     if x.startswith(prefix):
         idx = x.find('.', len(prefix))
-        if idx != -1:
+        if idx != -1 and idx > len(prefix):
             return int(x[len(prefix):idx])
     return -1
 
@@ -212,7 +212,7 @@ def findTileId(x):
     return -1
 
 def process(f):
-    tile_stats = [TileStats(i) for i in range(64)]
+    tile_stats = [TileStats(i) for i in range(4)]
     tile_stats_parser = [TileStatsParser(ts) for ts in tile_stats]
     for line in f:
         if line.find('End Simulation Statistics') != -1:

@@ -257,6 +257,11 @@ class GemForgeMicroSuite:
             abs_source_path = os.path.join(abs_path, item + '.c')
             if os.path.isdir(abs_path):
                 if os.path.isfile(abs_source_path):
+                    benchmark_name = 'gfm.{b}'.format(b=item)
+                    if benchmark_args.options.benchmark:
+                        if benchmark_name not in benchmark_args.options.benchmark:
+                            # Ignore benchmark not required.
+                            continue
                     self.benchmarks.append(
                         GemForgeMicroBenchmark(benchmark_args, abs_path))
                 else:

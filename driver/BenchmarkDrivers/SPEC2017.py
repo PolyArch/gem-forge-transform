@@ -188,9 +188,12 @@ class SPEC2017Benchmark(Benchmark):
         # If we are going to trace the stdlib.
         raw_bc = self.get_raw_bc()
         binary = self.target
-        # Special rule for gcc_s, whose binary is sgcc
         if self.target == 'gcc_s':
+            # Special rule for gcc_s, whose binary is sgcc
             binary = 'sgcc'
+        elif self.target == 'xalancbmk_r':
+            binary = 'cpuxalan_r'
+
         if self.build_system == 'gclang':
             # Extract the bitcode from the binary.
             extract_cmd = [
@@ -284,6 +287,17 @@ class SPEC2017Benchmark(Benchmark):
                     '--threads', '1', '-b', '-F',
                     'RAWTGA', '-s', '849', '-e', '849', '-a',
                 ]
+            elif self.work_load.endswith('xalancbmk_r'):
+                return ['-v', 't5.xml', 'xalanc.xsl']
+            elif self.work_load.endswith('xz_r'):
+                return [
+                    'cld.tar.xz',
+                    '160',
+                    '19cf30ae51eddcbefda78dd06014b4b96281456e078ca7c13e1c0c9e6aaea8dff3efb4ad6b0456697718cede6bd5454852652806a657bb56e07d61128434b474',
+                    '59796407',
+                    '61004416',
+                    '6',
+                ]
             # Ignore the first one and redirect one.
             # Also ignore other invoke for now.
             return fields[1:-5]
@@ -305,9 +319,6 @@ class SPEC2017Benchmark(Benchmark):
 
     def get_additional_gem5_simulate_command(self):
         args = []
-        if self.get_name() == 'spec.657.xz_s':
-            # This benchmark requires significantly large memory.
-            args += ['--mem-size=2GB']
         """
         Some benchmarks takes too long to finish, so we use work item
         to ensure that we simualte for the same amount of work.
@@ -329,15 +340,13 @@ class SPEC2017Benchmark(Benchmark):
         return args
 
     def get_gem5_mem_size(self):
-        # SPEC should not require too much memory?
+        large_mem_benchmarks = [
+            'spec.657.xz_s'
+        ]
+        for p in large_mem_benchmarks:
+            if self.get_name().startswith(p):
+                return '16GB'
         return '2GB'
-        # large_mem_benchmarks = [
-        #     'nn', 'srad_v2', 'bfs', 'b+tree', 'nw', 'pathfinder', 'hotspot-'
-        # ]
-        # for p in large_mem_benchmarks:
-        #     if self.benchmark_name.startswith(p):
-        #         return '16GB'
-        # return None
 
 
 class SPEC2017Benchmarks:
@@ -354,7 +363,11 @@ class SPEC2017Benchmarks:
             'name': '638.imagick_s',
             'links': ['-lm'],
             # 'trace_func': 'MagickCommandGenesis',
-            'trace_func': 'HorizontalFilter',
+            'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join([
+                # 'ReadTGAImage',
+                'HorizontalFilter', 
+                'WritePixelCachePixels',
+            ]),
             'lang': 'C',
         },
         'nab_s': {
@@ -381,13 +394,19 @@ class SPEC2017Benchmarks:
             'trace_func': 'primal_bea_mpp',
             'lang': 'C',
         },
+        'xz_r': {
+            'name': '557.xz_r',
+            'links': [],
+            'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join(['uncompressStream', 'compressStream']),
+            'lang': 'C',
+        },
         'xz_s': {
             'name': '657.xz_s',
             'links': [],
             # I failed to find the pattern.
             # To trace this, instrument the tracer twice, one with
             # compressStream traced, the other with uncompressStream traced
-            'trace_func': 'uncompressStream',
+            'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join(['uncompressStream', 'compressStream']),
             'lang': 'C',
         },
         'gcc_s': {
@@ -421,6 +440,11 @@ class SPEC2017Benchmarks:
             'name': '508.namd_r',
             'links': [],
             'trace_func': 'ComputeNonbondedUtil::calc_self_energy',
+            'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join([
+                'ComputeNonbondedUtil::calc_self_energy',
+                'Patch::zeroforces',
+                'Patch::setforces',
+            ]),
             'lang': 'CPP',
         },
         # Will throw exception.
@@ -443,6 +467,12 @@ class SPEC2017Benchmarks:
 
         # Does not work with ellcc as it uses linux header.
         # Does not throw.
+        'xalancbmk_r': {
+            'name': '523.xalancbmk_r',
+            'links': [],
+            'trace_func': 'xercesc_2_7::ValueStore::contains',
+            'lang': 'CPP',
+        },
         'xalancbmk_s': {
             'name': '623.xalancbmk_s',
             'links': [],
