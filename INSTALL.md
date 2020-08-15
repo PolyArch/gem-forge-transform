@@ -2,54 +2,6 @@
 
 ## Without stdlib
 
-### LLVM 6.0
-
-Checkout LLVM 6.0. The rest is optional for now.
-
-```bash
-mkdir llvm-6.0
-cd llvm-6.0
-svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_601/final/ llvm
-cd llvm/tools
-svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_601/final/ clang
-cd ../runtimes
-svn co http://llvm.org/svn/llvm-project/libunwind/tags/RELEASE_601/final/ libunwind
-```
-
-In order to use the golden linker plugin we have download the include file.
-
-```bash
-git clone --depth 1 git://sourceware.org/git/binutils-gdb.git binutils
-```
-
-Build it. Build type must be "Debug", otherwise we can not use `-debug-only` flag. Notice that we also build shared library to avoid redefinition. We also specify the include directory of binutils to build the golden linker plugin.
-
-```bash
-cd LLVM_BUILD_DEBUG_ROOT
-cmake -G "Unix Makefiles" \
--DCMAKE_BUILD_TYPE=Debug \
--DCMAKE_INSTALL_PREFIX=LLVM_INSTALL_DEBUG_ROOT \
--DLLVM_BINUTILS_INCDIR=BINUTILS_INCLUDE \
--DBUILD_SHARED_LIBS=ON \
-LLVM_SRC_ROOT
-make -j9
-make install
-```
-
-Also build a release version.
-
-```bash
-cd LLVM_BUILD_DEBUG_ROOT
-cmake -G "Unix Makefiles" \
--DCMAKE_BUILD_TYPE=Release \
--DCMAKE_INSTALL_PREFIX=LLVM_INSTALL_RELEASE_ROOT \
--DLLVM_BINUTILS_INCDIR=BINUTILS_INCLUDE \
--DBUILD_SHARED_LIBS=ON \
-LLVM_SRC_ROOT
-make -j9
-make install
-```
-
 ### LLVM 8.0.1
 
 This repo should also work with LLVM 8.0.1. Checkout the repo.
@@ -87,6 +39,14 @@ make -j9
 make install
 ```
 
+### GemForgeCPU
+
+Get the gem5 and build it. Some required packages:
+
+```bash
+sudo apt install python-dev m4
+```
+
 ### Python Environment
 
 We suggest using Anaconda to manager the environment. The driver is written in Python 2.7 and requires numpy and sklearn to perform simpoint. So after installing anaconda:
@@ -95,6 +55,7 @@ We suggest using Anaconda to manager the environment. The driver is written in P
 conda activate ENVIRONMENT
 conda install numpy
 conda install scikit-learn
+conda install enum34
 ```
 
 Remember to setup the python version of protobuf. If you are using Anaconda to manager the environment, type this:

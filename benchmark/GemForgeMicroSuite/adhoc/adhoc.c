@@ -20,11 +20,13 @@ Value a[N + STEP_AHEAD * 16];
 
 __attribute__((noinline)) Value foo(Value **pa, int N) {
   volatile Value *a = *pa;
+  Value sum = 0;
 #pragma nounroll
   for (long long i = 0; i < N; i += STRIDE) {
-    __atomic_fetch_add(a + i, 1, __ATOMIC_RELAXED);
+    a[20] = 1;
+    sum += a[i];
   }
-  return 0.0f;
+  return sum;
 }
 
 int main() {

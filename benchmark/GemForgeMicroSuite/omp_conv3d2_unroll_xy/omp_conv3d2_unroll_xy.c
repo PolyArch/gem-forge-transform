@@ -60,10 +60,10 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
     __m512 valK_2_2 = _mm512_load_ps(K + idxK(2, 2));
 #pragma clang loop unroll(disable) interleave(disable)
     // for (uint64_t yy = 0; yy < Ny; yy += By) {
-    for (uint64_t yy = 0; yy < By + By; yy += By) {
+    for (uint64_t yy = 0; yy < By * 4; yy += By) {
 #pragma clang loop unroll(disable) interleave(disable)
       // for (uint64_t xx = 0; xx < Nx; xx += Bx) {
-      for (uint64_t xx = 0; xx < Bx + Bx; xx += Bx) {
+      for (uint64_t xx = 0; xx < Bx * 4; xx += Bx) {
         Value localSum[ByPad][BxPad][Ni];
         for (uint64_t x = 0; x < Bx; ++x) {
           for (uint64_t y = 0; y < By; ++y) {
