@@ -13,6 +13,7 @@
 #include <queue>
 
 #define DEBUG_TYPE "StreamExecutionTransformer"
+#define DEBUG_FUNC "WritePixelCachePixels"
 
 /**
  * Debug flag to control whether emit specific instruction.
@@ -35,6 +36,10 @@ StreamExecutionTransformer::StreamExecutionTransformer(
   // Copy the module.
   LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
   this->ClonedModule = llvm::CloneModule(*(this->Module), this->ClonedValueMap);
+  LLVM_DEBUG(if (auto Func = this->ClonedModule->getFunction(DEBUG_FUNC)) {
+    llvm::dbgs() << "--------------- Just Cloned --------------\n";
+    Func->print(llvm::dbgs());
+  });
   this->ClonedDataLayout =
       std::make_unique<llvm::DataLayout>(this->ClonedModule.get());
   // Initialize the CachedLI for the cloned module.
@@ -351,6 +356,13 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
       StreamConfigArgs);
 
   for (auto S : ConfigureInfo.getSortedStreams()) {
+
+    LLVM_DEBUG(if (ClonedPreheader->getParent()->getName() == DEBUG_FUNC) {
+      llvm::dbgs() << "--------------- Before Config " << S->formatName()
+                   << " --------------\n";
+      ClonedPreheader->getParent()->print(llvm::dbgs());
+    });
+
     InputValueVec ClonedInputValues;
     if (S->SStream->Type == StaticStream::TypeT::IV) {
       this->generateIVStreamConfiguration(S, ClonedPreheaderTerminator,
@@ -372,14 +384,16 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
         // Float -> Int32
         ClonedInputType =
             llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext());
-        ClonedInputValue =
-            Builder.CreateBitCast(ClonedInputValue, ClonedInputType);
+        ClonedInputValue = Builder.CreateBitCast(
+            ClonedInputValue, ClonedInputType,
+            "ssp.input.bitcast." + S->getInst()->getName());
       } else if (ClonedInputType->isDoubleTy()) {
         // Double -> Int64
         ClonedInputType =
             llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
-        ClonedInputValue =
-            Builder.CreateBitCast(ClonedInputValue, ClonedInputType);
+        ClonedInputValue = Builder.CreateBitCast(
+            ClonedInputValue, ClonedInputType,
+            "ssp.input.bitcast." + S->getInst()->getName());
       }
 
       // Final extension: Int8/Int16/Int32 -> Int64.
@@ -623,7 +637,8 @@ void StreamExecutionTransformer::transformLoadInst(
    */
   auto ClonedLoadInst = this->getClonedValue(LoadInst);
   auto StreamLoadInst =
-      this->addStreamLoad(S, ClonedLoadInst->getType(), ClonedLoadInst);
+      this->addStreamLoad(S, ClonedLoadInst->getType(), ClonedLoadInst,
+                          &ClonedLoadInst->getDebugLoc());
   ClonedLoadInst->replaceAllUsesWith(StreamLoadInst);
 
   // Insert the load into the pending removed set.
@@ -633,8 +648,10 @@ void StreamExecutionTransformer::transformLoadInst(
   this->mergePredicatedStreams(Analyzer, S);
 }
 
-llvm::Value *StreamExecutionTransformer::addStreamLoad(
-    Stream *S, llvm::Type *LoadType, llvm::Instruction *ClonedInsertBefore) {
+llvm::Value *
+StreamExecutionTransformer::addStreamLoad(Stream *S, llvm::Type *LoadType,
+                                          llvm::Instruction *ClonedInsertBefore,
+                                          const llvm::DebugLoc *DebugLoc) {
   /**
    * Insert a StreamLoad for S.
    */
@@ -706,6 +723,9 @@ llvm::Value *StreamExecutionTransformer::addStreamLoad(
                                       llvm::Intrinsic::ID::ssp_stream_load,
                                       StreamLoadTypes),
       StreamLoadArgs);
+  if (DebugLoc) {
+    StreamLoadInst->setDebugLoc(llvm::DebugLoc(DebugLoc->get()));
+  }
   this->StreamToStreamLoadInstMap.emplace(S, StreamLoadInst);
   if (NeedTruncate) {
     auto TruncateInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
@@ -714,7 +734,9 @@ llvm::Value *StreamExecutionTransformer::addStreamLoad(
     auto IntToPtrInst = Builder.CreateIntToPtr(StreamLoadInst, LoadType);
     return IntToPtrInst;
   } else if (NeedBitcast) {
-    auto BitcastInst = Builder.CreateBitCast(StreamLoadInst, LoadType);
+    auto BitcastInst =
+        Builder.CreateBitCast(StreamLoadInst, LoadType,
+                              "ssp.load.bitcast." + S->getInst()->getName());
     return BitcastInst;
   } else {
     return StreamLoadInst;
@@ -1065,22 +1087,19 @@ StreamExecutionTransformer::findStepPosition(Stream *StepStream,
 
 void StreamExecutionTransformer::cleanClonedModule() {
   // ! After this point, the ClonedValueMap is no longer injective.
+  // ! Also, we release CachedLoopInfo so that we can safely remove any
+  // ! instructions.
+  this->ClonedCachedLI->clearAnalysis();
+
+  // Group by functions.
+  std::unordered_map<llvm::Function *, std::list<llvm::Instruction *>>
+      FuncPendingRemovedInstMap;
   for (auto *Inst : this->PendingRemovedInsts) {
-    /**
-     * There are some instructions that may not be eliminated by the DCE,
-     * e.g. the replaced store instruction.
-     * So we delete them here.
-     */
-    assert(Inst->use_empty() && "PendingRemoveInst has use.");
     auto Func = Inst->getFunction();
-    LLVM_DEBUG(llvm::dbgs() << "Remove inst " << Func->getName() << " "
-                            << Inst->getName() << "\n");
-    Inst->eraseFromParent();
-    if (llvm::verifyFunction(*Func, &llvm::dbgs())) {
-      llvm::errs() << "Function broken after removing PendingRemovedInsts.";
-      Func->print(llvm::dbgs());
-      assert(false && "Function broken.");
-    }
+    FuncPendingRemovedInstMap
+        .emplace(std::piecewise_construct, std::forward_as_tuple(Func),
+                 std::forward_as_tuple())
+        .first->second.push_back(Inst);
   }
   this->PendingRemovedInsts.clear();
 
@@ -1095,14 +1114,47 @@ void StreamExecutionTransformer::cleanClonedModule() {
     if (ClonedFunc.isDeclaration()) {
       continue;
     }
-    bool Changed = false;
-    auto TTI = this->ClonedCachedLI->getTargetTransformInfo(&ClonedFunc);
-    do {
-      Changed = TransformUtils::eliminateDeadCode(
-          ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
-      Changed |= TransformUtils::simplifyCFG(
-          ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo(), TTI);
-    } while (Changed);
+
+    auto PendingRemovedInstIter = FuncPendingRemovedInstMap.find(&ClonedFunc);
+    if (PendingRemovedInstIter != FuncPendingRemovedInstMap.end()) {
+      LLVM_DEBUG(if (ClonedFunc.getName() == DEBUG_FUNC) {
+        llvm::dbgs() << "------------------- Before Removing "
+                        "PendingInst ---------------\n";
+        ClonedFunc.print(llvm::dbgs());
+      });
+
+      for (auto *Inst : PendingRemovedInstIter->second) {
+        /**
+         * There are some instructions that may not be eliminated by the DCE,
+         * e.g. the replaced store instruction.
+         * So we delete them here.
+         */
+        assert(Inst->use_empty() && "PendingRemoveInst has use.");
+        auto Func = Inst->getFunction();
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Remove inst " << Func->getName() << " "
+                   << Utils::formatLLVMInstWithoutFunc(Inst) << "\n");
+        Inst->eraseFromParent();
+        if (llvm::verifyFunction(*Func, &llvm::dbgs())) {
+          llvm::errs() << "Function broken after removing PendingRemovedInsts.";
+          Func->print(llvm::dbgs());
+          assert(false && "Function broken.");
+        }
+      }
+
+      bool Changed = false;
+      auto TTI = this->ClonedCachedLI->getTargetTransformInfo(&ClonedFunc);
+      do {
+        LLVM_DEBUG(llvm::dbgs()
+                       << "------------------- Before DCE and Simplify CFG "
+                          "PendingInst ---------------\n";
+                   ClonedFunc.print(llvm::dbgs()));
+        Changed = TransformUtils::eliminateDeadCode(
+            ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
+        Changed |= TransformUtils::simplifyCFG(
+            ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo(), TTI);
+      } while (Changed);
+    }
   }
   /**
    * The last thing is to remove any StreamLoad that has no user instruction.

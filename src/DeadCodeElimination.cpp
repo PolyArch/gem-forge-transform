@@ -6,6 +6,8 @@
 
 using namespace llvm;
 
+#define DEBUG_TYPE "DeadCodeElimination"
+
 /**
  * I copied this from llvm code base DCE.cpp.
  * The functions there are static and I want to use them.
@@ -32,6 +34,8 @@ static bool DCEInstruction(Instruction *I,
           WorkList.insert(OpI);
     }
 
+    LLVM_DEBUG(llvm::dbgs()
+               << "Erasing " << Utils::formatLLVMInstWithoutFunc(I) << '\n');
     I->eraseFromParent();
     return true;
   }

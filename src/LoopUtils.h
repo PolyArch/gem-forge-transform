@@ -64,7 +64,7 @@ public:
   static std::string formatLLVMInst(const llvm::Instruction *Inst);
   static std::string formatLLVMValue(const llvm::Value *Value);
 
-  static const std::unordered_set<std::string> SupportedMathFunctions;
+  static const std::unordered_set<std::string> LoopContinuityIgnoredFunctions;
 
   static llvm::Instruction *getUnrollableTerminator(llvm::Loop *Loop);
 
@@ -209,6 +209,11 @@ public:
   llvm::ScalarEvolution *getScalarEvolution(llvm::Function *Func);
   llvm::SCEVExpander *getSCEVExpander(llvm::Function *Func);
   llvm::Instruction *getUnrollableTerminator(llvm::Loop *Loop);
+
+  /**
+   * Clear some cached Analysis so that we can modify the module.
+   */
+  void clearAnalysis();
 
   llvm::TargetTransformInfo getTargetTransformInfo(llvm::Function *Func);
 

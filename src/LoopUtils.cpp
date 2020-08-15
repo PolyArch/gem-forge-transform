@@ -20,9 +20,13 @@
 //          (StaticInst->getParent()->getFirstNonPHI() == StaticInst);
 // }
 
-const std::unordered_set<std::string> LoopUtils::SupportedMathFunctions{
-    "exp", "sin",  "sqrt", "sqrtf",  "acos",  "fabs",
-    "abs", "rand", "log",  "lgamma", "printf", "omp_get_thread_num"};
+const std::unordered_set<std::string> LoopUtils::LoopContinuityIgnoredFunctions{
+    "exp", "sin",  "sqrt", "sqrtf",  "acos",   "fabs",
+    "abs", "rand", "log",  "lgamma", "printf", "omp_get_thread_num",
+    "feof",
+    // Specific to spec2017 imagick_s
+    // "ReadBlob", "ThrowMagickException", "CloseBlob", "DestroyImage",
+    };
 
 std::unordered_map<const llvm::Loop *, bool>
     LoopUtils::MemorizedIsLoopContinuous;
@@ -66,7 +70,8 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
       }
       // Check if calling some supported math function.
       if (Callee->isDeclaration()) {
-        if (LoopUtils::SupportedMathFunctions.count(Callee->getName()) != 0) {
+        if (LoopUtils::LoopContinuityIgnoredFunctions.count(
+                Callee->getName()) != 0) {
           continue;
         }
       }
@@ -332,6 +337,14 @@ void StaticInnerMostLoop::computeLiveInOutValues(llvm::Loop *Loop) {
 }
 
 CachedLoopInfo::~CachedLoopInfo() {
+  this->clearAnalysis();
+  delete this->DL;
+  this->DL = nullptr;
+  delete this->TLI;
+  this->TLI = nullptr;
+}
+
+void CachedLoopInfo::clearAnalysis() {
   for (auto &Entry : this->SEExpanderCache) {
     delete Entry.second;
   }
@@ -340,8 +353,6 @@ CachedLoopInfo::~CachedLoopInfo() {
     delete Entry.second;
   }
   this->SECache.clear();
-
-  // Release the cached static loops.
   for (auto &Entry : this->LICache) {
     delete Entry.second;
   }
@@ -355,10 +366,6 @@ CachedLoopInfo::~CachedLoopInfo() {
   }
   this->ACCache.clear();
 
-  delete this->DL;
-  this->DL = nullptr;
-  delete this->TLI;
-  this->TLI = nullptr;
 }
 
 llvm::AssumptionCache *
