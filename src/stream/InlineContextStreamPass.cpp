@@ -1151,7 +1151,8 @@ void InlineContextStreamPass::analyzeStream() {
         // Untraced calls, we have to check if we support this function.
         auto Callee = Utils::getCalledFunction(PrevCallInst);
         if (Callee != nullptr &&
-            (LoopUtils::SupportedMathFunctions.count(Callee->getName()) ||
+            (LoopUtils::LoopContinuityIgnoredFunctions.count(
+                 Callee->getName()) ||
              Callee->isIntrinsic())) {
           // This is supported. We consider it as CONTINUOUS and do nothing.
         } else {

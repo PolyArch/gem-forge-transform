@@ -137,7 +137,8 @@ private:
                            InputValueVec &ClonedInputValues,
                            ProtoStreamParam *ProtoParam);
   llvm::Value *addStreamLoad(Stream *S, llvm::Type *LoadType,
-                             llvm::Instruction *ClonedInsertBefore);
+                             llvm::Instruction *ClonedInsertBefore,
+                             const llvm::DebugLoc *DebugLoc = nullptr);
 
   void writeModule();
   void writeAllConfiguredRegions();
