@@ -74,6 +74,8 @@ class TileStatsParser(object):
                 'system.future_cpus{tile_id}.dtb.l2Misses'),
             'noc_flit': ['system.ruby.network.flits_injected::total'],
             'noc_packet': ['system.ruby.network.packets_injected::total'],
+            'avg_flit_network_lat': ['system.ruby.network.average_flit_network_latency'],
+            'avg_flit_queue_lat': ['system.ruby.network.average_flit_queueing_latency'],
             'total_hops': ['system.ruby.network.total_hops'],
             'crossbar_act': self.format_re(
                 'system.ruby.network.routers{tile_id}.crossbar_activity'),

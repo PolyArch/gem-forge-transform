@@ -5,7 +5,7 @@ def configureMemoryControl(self):
     mc = self.gem5Sys['mem_ctrls'][0]
     mcpat_mc = self.xml.sys.mc
     mcpat_mc.mc_clock = self.toMHz(self.getSystemClockDomain())
-    mcpat_mc.memory_channels_per_mc = mc['channels']
+    mcpat_mc.memory_channels_per_mc = 1
     mcpat_mc.number_ranks = mc['ranks_per_channel']
     mcpat_mc.llc_line_length = mc['write_buffer_size']
 

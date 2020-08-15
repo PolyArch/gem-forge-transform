@@ -43,7 +43,8 @@ class TileStatsParser(object):
         }
 
     def format_re(self, expression):
-        return expression.format(tile_id=self.tile_stats.tile_id)
+        return expression.format(
+            tile_id='[0]*{x}'.format(x=self.tile_stats.tile_id))
 
     def parse(self, fields):
         if len(fields) < 2:

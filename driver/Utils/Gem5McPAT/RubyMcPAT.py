@@ -26,7 +26,7 @@ def configureL1ICache(self, cntrl):
 
     config = mcpatL1I.icache_config
     config[0] = cache.size
-    config[1] = cache.replacement_policy.block_size
+    config[1] = 64
     config[2] = cache.assoc
     config[3] = 4 # Bank
     config[4] = 4 # Throughput
@@ -51,7 +51,7 @@ def configureL1DCache(self, cntrl):
 
     config = mcpatL1D.dcache_config
     config[0] = cache.size
-    config[1] = cache.replacement_policy.block_size
+    config[1] = 64
     config[2] = cache.assoc
     config[3] = 4 # Bank
     config[4] = 4 # Throughput
@@ -129,7 +129,7 @@ def configureL2CacheBank(self, cntrl):
 
     L2_config = mcpatL2.L2_config
     L2_config[0] = L2cache.size
-    L2_config[1] = L2cache.replacement_policy.block_size
+    L2_config[1] = 64
     L2_config[2] = L2cache.assoc
     L2_config[3] = 4 # Bank
     L2_config[4] = 4 # Throughput
@@ -193,7 +193,7 @@ def configureL3CacheBank(self, cntrl):
 
     L3_config = mcpatL3.L3_config
     L3_config[0] = L3cache.size
-    L3_config[1] = L3cache.replacement_policy.block_size
+    L3_config[1] = 64
     L3_config[2] = L3cache.assoc
     L3_config[3] = 4 # Bank
     L3_config[4] = 4 # Throughput

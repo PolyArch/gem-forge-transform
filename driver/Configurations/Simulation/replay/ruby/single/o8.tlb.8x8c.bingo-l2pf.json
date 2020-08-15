@@ -19,7 +19,7 @@
             "64B"
         ],
         "link": [256],
-        "l2_pf_dist": [16]
+        "l2_pf_dist": [4, 8, 16]
     },
     "support-transform-ids": [
         "valid.ex"
