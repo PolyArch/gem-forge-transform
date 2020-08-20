@@ -126,6 +126,35 @@ class SDVBSBenchmark(Benchmark):
             'getANMS',
         ],
     }
+    
+    # This is used for execution simulation
+    ROI_FUNC = {
+        'disparity': [
+            'computeSAD',
+            'integralImage2D2D',
+            'finalSAD',
+            'findDisparity'
+        ],
+        'localization': ['weightedSample'],
+        'mser': ['mser'],
+        'multi_ncut': ['fSortIndices'],
+        'sift': ['sift', 'normalizeImage'],
+        'stitch': ['getANMS', 'harris', 'extractFeatures'],
+        'svm': ['gem_forge_work'],
+        'texture_synthesis': ['create_all_candidates', 'create_candidates', 'compare_neighb', 'compare_rest', 'compare_full_neighb'],
+        'tracking': [
+            'imageBlur',
+            'imageResize',
+            'calcSobel_dX',
+            'calcSobel_dY',
+            'calcGoodFeature',
+            'fReshape',
+            'fillFeatures',
+            'fTranspose',
+            'getANMS',
+        ],
+    }
+
 
     TRACE_IDS = {
         # 'disparity': [0],
@@ -146,6 +175,23 @@ class SDVBSBenchmark(Benchmark):
         'svm': [0, 1, 2, 3, 4, 5, 6, 7, 8],
         'texture_synthesis': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'tracking': [0, 1, 5, 6, 7, 8, 9]
+    }
+
+    """
+    For some benchmarks, it takes too long to finish the large input set.
+    We limit the number of work items here, by limiting the number of 
+    microops to be roughly 1e8.
+    """
+    WORK_ITEMS = {
+        'disparity': 3,  # 1 Init, 1 correlateSAD_2D, 1 findDisparity
+        'localization': 10,  # 10 Iteration
+        'mser': 10,  # 10 work items total, reduce if takes too long
+        'multi_ncut': 4,  # 4 work items total
+        'sift': 6,  # 6 work items total
+        'stitch': 4,  # 4 work items total
+        'svm': 2 + 4, # 2 preprocess + 4 iterations.
+        'texture_synthesis': 3, # 3 loops.
+        'tracking': 8, # 8 work items per frame.
     }
 
     LEGAL_INPUT_SIZE = ('test', 'sim_fast', 'sim',
@@ -187,20 +233,21 @@ class SDVBSBenchmark(Benchmark):
         Util.mkdir_chain(self.common_src_bc_dir)
 
         if C.EXPERIMENTS == 'stream':
-            self.flags = SDVBSBenchmark.FLAGS_STREAM[self.benchmark_name]
+            self.flags = list(SDVBSBenchmark.FLAGS_STREAM[self.benchmark_name])
         elif C.EXPERIMENTS == 'fractal':
-            self.flags = SDVBSBenchmark.FLAGS_FRACTAL[self.benchmark_name]
+            self.flags = list(
+                SDVBSBenchmark.FLAGS_FRACTAL[self.benchmark_name])
         self.flags.append('gline-tables-only')
-        self.defines = SDVBSBenchmark.DEFINES
+        self.defines = dict(SDVBSBenchmark.DEFINES)
         self.includes = [
             self.source_dir,
             self.common_src_dir,
             C.GEM5_INCLUDE_DIR,
         ]
-        self.trace_functions = '|'.join(
-            SDVBSBenchmark.TRACE_FUNC[self.benchmark_name])
+        self.trace_functions = Benchmark.ROI_FUNC_SEPARATOR.join(
+            SDVBSBenchmark.ROI_FUNC[self.benchmark_name])
 
-        self.trace_ids = SDVBSBenchmark.TRACE_IDS[self.benchmark_name]
+        self.trace_ids = list(SDVBSBenchmark.TRACE_IDS[self.benchmark_name])
         self.start_inst = 1
         self.max_inst = 1e7
         self.skip_inst = 1e8
@@ -342,6 +389,22 @@ class SDVBSBenchmark(Benchmark):
         self.run_trace()
         os.chdir(self.cwd)
 
+    def get_additional_gem5_simulate_command(self):
+        """
+        Some benchmarks takes too long to finish, so we use work item
+        to ensure that we simualte for the same amount of work.
+        """
+        work_items = SDVBSBenchmark.WORK_ITEMS[self.benchmark_name]
+        if not work_items or work_items == -1:
+            # This benchmark can finish.
+            return list()
+        return [
+            '--work-end-exit-count={v}'.format(v=work_items)
+        ]
+
+    def get_gem5_mem_size(self):
+        return '2GB'
+
 
 class SDVBSSuite:
 
@@ -349,6 +412,10 @@ class SDVBSSuite:
         self.folder = os.getenv('SDVBS_SUITE_PATH')
         self.benchmarks = list()
         for benchmark_name in SDVBSBenchmark.FLAGS_FRACTAL:
+            full_benchmark_name = 'sdvbs.{b}'.format(b=benchmark_name)
+            if benchmark_args.options.benchmark:
+                if full_benchmark_name not in benchmark_args.options.benchmark:
+                    continue
             benchmark = SDVBSBenchmark(
                 benchmark_args,
                 self.folder, benchmark_name)
