@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.4)
+project("GemForge")
 
 set(ELLCC_PATH /home/zhengrong/Documents/ellcc CACHE PATH "Where to find ellcc.")
 set(ELLCC_LLVM_PATH /home/zhengrong/Documents/ellcc/build/build-ecc/llvm/x86_64-linux CACHE PATH "Where to find llvm when use ellcc.")
 option(USE_ELLCC "Use ellcc to trace stdlib" OFF)
+
+set(CMAKE_CXX_STANDARD 14)
 
 set(LLVM_PATH "$ENV{LLVM_DEBUG_INSTALL_PATH}")
 if (${LLVM_PATH} STREQUAL "")
