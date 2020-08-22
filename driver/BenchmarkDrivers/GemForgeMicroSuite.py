@@ -161,6 +161,8 @@ class GemForgeMicroBenchmark(Benchmark):
         Util.call_helper([C.OPT, '-instnamer', bc, '-o', bc])
         Util.call_helper([C.LLVM_DIS, bc])
 
+        self.post_build_raw_bc(bc)
+
         os.chdir(self.cwd)
 
     def get_additional_transform_options(self):

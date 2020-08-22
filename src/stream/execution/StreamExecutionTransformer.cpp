@@ -27,10 +27,12 @@
 #define GENERATE_STREAM_END
 
 StreamExecutionTransformer::StreamExecutionTransformer(
-    llvm::Module *_Module, CachedLoopInfo *_CachedLI,
-    std::string _OutputExtraFolderPath, bool _TransformTextMode,
+    llvm::Module *_Module,
+    const std::unordered_set<llvm::Function *> &_ROIFunctions,
+    CachedLoopInfo *_CachedLI, std::string _OutputExtraFolderPath,
+    bool _TransformTextMode,
     const std::vector<StreamRegionAnalyzer *> &Analyzers)
-    : Module(_Module), CachedLI(_CachedLI),
+    : Module(_Module), ROIFunctions(_ROIFunctions), CachedLI(_CachedLI),
       OutputExtraFolderPath(_OutputExtraFolderPath),
       TransformTextMode(_TransformTextMode) {
   // Copy the module.
@@ -56,6 +58,9 @@ StreamExecutionTransformer::StreamExecutionTransformer(
   // Clean up the module.
   LLVM_DEBUG(llvm::errs() << "Clean the module.\n");
   this->cleanClonedModule();
+
+  // Replace memset with our stream memset.
+  this->replaceWithStreamMemset();
 
   // Generate the module.
   LLVM_DEBUG(llvm::errs() << "Write the module.\n");
@@ -1570,6 +1575,49 @@ void StreamExecutionTransformer::addStreamInputValue(
     ClonedInputValues.push_back(const_cast<llvm::Value *>(ClonedValue));
   }
   return;
+}
+
+void StreamExecutionTransformer::replaceWithStreamMemset() {
+  // Check if we have stream_memset.
+  auto ClonedStreamMemsetFunc =
+      this->ClonedModule->getFunction("stream_memset");
+  if (!ClonedStreamMemsetFunc) {
+    return;
+  }
+  for (auto Func : this->ROIFunctions) {
+    for (auto BBIter = Func->begin(), BBEnd = Func->end(); BBIter != BBEnd;
+         ++BBIter) {
+      for (auto InstIter = BBIter->begin(), InstEnd = BBIter->end();
+           InstIter != InstEnd; ++InstIter) {
+        auto Inst = &*InstIter;
+        if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
+          auto Callee = CallInst->getCalledFunction();
+          if (Callee->getIntrinsicID() == llvm::Intrinsic::ID::memset) {
+            // Check that the last volatile argument is false.
+            auto ClonedCallInst = this->getClonedValue(CallInst);
+            auto DestArg = ClonedCallInst->getOperand(0);
+            auto ValArg = ClonedCallInst->getOperand(1);
+            auto LenArg = ClonedCallInst->getOperand(2);
+            auto VolatileArg = ClonedCallInst->getOperand(3);
+            if (auto ConstVolatileArg =
+                    llvm::dyn_cast<llvm::ConstantInt>(VolatileArg)) {
+              if (ConstVolatileArg->isZero()) {
+                llvm::IRBuilder<> Builder(ClonedCallInst);
+                // We ignore the last volatile arguments.
+                std::vector<llvm::Value *> Args{
+                    DestArg,
+                    ValArg,
+                    LenArg,
+                };
+                Builder.CreateCall(ClonedStreamMemsetFunc, Args);
+                ClonedCallInst->eraseFromParent();
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 #undef DEBUG_TYPE

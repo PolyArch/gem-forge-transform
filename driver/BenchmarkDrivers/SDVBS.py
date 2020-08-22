@@ -370,6 +370,8 @@ class SDVBSBenchmark(Benchmark):
         ]
         Util.call_helper(optimize_cmd)
 
+        self.post_build_raw_bc(raw_bc)
+
         os.chdir(self.cwd)
 
     def trace(self):

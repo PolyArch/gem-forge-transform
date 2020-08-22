@@ -399,6 +399,22 @@ class Benchmark(object):
         os.chdir(self.cwd)
 
     """
+    Post build raw_bc processing.
+    Mainly link the stream_memset into raw_bc.
+    """
+
+    def post_build_raw_bc(self, raw_bc):
+        link_cmd = [
+            C.LLVM_LINK,
+            raw_bc,
+            os.path.join(C.LLVM_TDG_BUILD_DIR,
+                         'src/stream/execution/StreamMemset.ll'),
+            '-o',
+            raw_bc,
+        ]
+        Util.call_helper(link_cmd)
+
+    """
     Constructed the unmodified binary.
     """
 
@@ -933,9 +949,10 @@ class Benchmark(object):
         if self.get_name() == 'rodinia.srad_v2-avx512-fix':
             for i in range(len(gem5_args)):
                 if gem5_args[i].startswith('--gem-forge-stream-engine'):
-                    gem5_args.insert(i, '--gem-forge-stream-engine-enable-float-cancel')
+                    gem5_args.insert(
+                        i, '--gem-forge-stream-engine-enable-float-cancel')
                     break
-            
+
         if self.get_name() == 'gfm.omp_conv3d':
             for i in range(len(gem5_args)):
                 if gem5_args[i] == '--gem-forge-stream-engine-max-total-run-ahead-length=48':
