@@ -10,8 +10,7 @@ void StreamExecutionPass::transformStream() {
   auto SelectedStreamRegionAnalyzers = this->selectStreamRegionAnalyzers();
 
   // Use the transformer to transform the regions.
-  StreamExecutionTransformer(this->Module, 
-                             this->CachedLI,
+  StreamExecutionTransformer(this->Module, this->ROIFunctions, this->CachedLI,
                              this->OutputExtraFolderPath,
                              GemForgeOutputDataGraphTextMode,
                              SelectedStreamRegionAnalyzers);

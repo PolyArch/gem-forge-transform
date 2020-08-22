@@ -44,6 +44,10 @@ bool GemForgeBasePass::initialize(llvm::Module &Module) {
   if (GemForgeROIFunctionNames.getNumOccurrences() == 1) {
     this->ROIFunctions = Utils::decodeFunctions(
         GemForgeROIFunctionNames.getValue(), this->Module);
+    // Make sure stream_memset is considered as ROI, if presented.
+    if (auto StreamMemsetFunc = this->Module->getFunction("stream_memset")) {
+      this->ROIFunctions.insert(StreamMemsetFunc);
+    }
   }
 
   return true;

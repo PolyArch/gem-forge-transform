@@ -18,3 +18,4 @@ add_custom_target(PyStreamProtobufSrc ALL
     DEPENDS ${STREAM_PROTOBUF_PY})
 
 add_subdirectory(ae)
+add_subdirectory(execution)

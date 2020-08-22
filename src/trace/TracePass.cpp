@@ -104,6 +104,10 @@ public:
       // Append a comma to eliminate a corner case.
       this->tracedFunctions =
           Utils::decodeFunctions(TraceFunctionNames.getValue(), this->Module);
+      // Make sure stream_memset is traced, if presented.
+      if (auto StreamMemsetFunc = this->Module->getFunction("stream_memset")) {
+        this->tracedFunctions.insert(StreamMemsetFunc);
+      }
       if (TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
           TraceReachableFunctionOnly.getValue()) {
         this->findReachableFunctions();
