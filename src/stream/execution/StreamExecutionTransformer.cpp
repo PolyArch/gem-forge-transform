@@ -1408,6 +1408,8 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     assert(false);
   } else {
     llvm::errs() << "Can't handle this stream " << SS->formatName() << '\n';
+    llvm::errs() << "AddrSCEV: ";
+    AddrSCEV->print(llvm::errs());
     assert(false && "Can't handle this Addr.");
   }
 }

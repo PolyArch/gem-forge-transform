@@ -12,13 +12,13 @@ run_test () {
     local sim_valid_prefix=replay/ruby/single/$cpu.tlb
     local sim_valid=$sim_valid_prefix.${RubyConfig}
 
-    local stream_trans=stream/ex/static/so.store.cmp
+    local stream_trans=stream/ex/static/so.store
     local sim_stream_prefix=stream/ruby/single/$cpu.tlb
     local sim_ssp=$sim_stream_prefix.$rubyc.c
 
     local trans=$valid_trans,$stream_trans
     local all_sim=$sim_valid,$sim_valid.bingo,$sim_valid.idea,$sim_ssp,$sim_ssp.flts,$sim_ssp-idea
-    local parallel=4
+    local parallel=3
     python Driver.py -b $bench \
         -t $trans \
         --sim-configs $all_sim \
@@ -37,7 +37,7 @@ python Driver.py -b ${Benchmark} --trace --fake-trace
 python Driver.py -b $Benchmark --transform-text -t valid.ex -d
 
 RubyConfig=8x8c
-StreamTransform=stream/ex/static/so.store.cmp
+StreamTransform=stream/ex/static/so.store
 python Driver.py -b ${Benchmark} --transform-text -t ${StreamTransform} \
     -d --transform-debug StreamExecutionTransformer,StaticStream
 

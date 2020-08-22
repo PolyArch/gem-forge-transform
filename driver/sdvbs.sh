@@ -4,8 +4,8 @@
 
 # Benchmark=sdvbs.disparity
 # Benchmark=sdvbs.localization
-Benchmark=sdvbs.mser
-# Benchmark=sdvbs.multi_ncut
+# Benchmark=sdvbs.mser
+Benchmark=sdvbs.multi_ncut
 # Benchmark=sdvbs.sift
 # Benchmark=sdvbs.stitch
 # Benchmark=sdvbs.svm
@@ -25,8 +25,8 @@ i4=$sim_replay_prefix/i4.tlb.${RubyConfig}
 o4=$sim_replay_prefix/o4.tlb.${RubyConfig}
 o8=$sim_replay_prefix/o8.tlb.${RubyConfig}
 sim_replay=$o8,$o8.bingo-l2pf
-# python Driver.py -b $Benchmark -t valid.ex --sim-input-size $SimInput \
-#     --sim-configs $sim_replay -s &
+python Driver.py -b $Benchmark -t valid.ex --sim-input-size $SimInput \
+    --sim-configs $sim_replay -s &
     # --gem5-debug SyscallBase
 
 StreamTransform=stream/ex/static/so.store
@@ -49,8 +49,8 @@ run_ssp () {
         --sim-configs $all_sim \
         --sim-input $input \
         --input-threads $threads \
-        -s -j $parallel \
-        --gem5-debug StreamEngine,StreamBase,StreamAlias --gem5-debug-start 49451008404 | tee mser.log
+        -s -j $parallel &
+        # --gem5-debug O3CPUDelegator,StreamEngine,StreamBase,StreamAlias,StreamElement --gem5-debug-start 73879211696 | tee mser.log
         # --gem5-debug RubyStreamLife | tee bfs.log &
 }
 RubyConfig=8x8c

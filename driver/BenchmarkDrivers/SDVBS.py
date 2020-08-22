@@ -137,8 +137,15 @@ class SDVBSBenchmark(Benchmark):
         ],
         'localization': ['weightedSample'],
         'mser': ['mser'],
-        'multi_ncut': ['fSortIndices'],
-        'sift': ['sift', 'normalizeImage'],
+        'multi_ncut': [
+            'fSetArray',
+            'imageBlur',
+            'segment_image',
+            'fSortIndices',
+        ],
+        'sift': [
+            'imsmooth',
+        ],
         'stitch': ['getANMS', 'harris', 'extractFeatures'],
         'svm': ['gem_forge_work'],
         'texture_synthesis': ['create_all_candidates', 'create_candidates', 'compare_neighb', 'compare_rest', 'compare_full_neighb'],
@@ -186,8 +193,8 @@ class SDVBSBenchmark(Benchmark):
         'disparity': 3,  # 1 Init, 1 correlateSAD_2D, 1 findDisparity
         'localization': 10,  # 10 Iteration
         'mser': 10,  # 10 work items total, reduce if takes too long
-        'multi_ncut': 4,  # 4 work items total
-        'sift': 6,  # 6 work items total
+        'multi_ncut': 2,  # 4 work items total, but I can only finish 2 as they are too long.
+        'sift': 2,  # 8 work items total, but we can only finish 2 (imsmooth)
         'stitch': 4,  # 4 work items total
         'svm': 2 + 4, # 2 preprocess + 4 iterations.
         'texture_synthesis': 3, # 3 loops.
@@ -356,6 +363,12 @@ class SDVBSBenchmark(Benchmark):
         link_cmd = [C.LLVM_LINK] + bcs + ['-o', raw_bc]
         self.debug('Linking to raw bitcode {raw_bc}'.format(raw_bc=raw_bc))
         Util.call_helper(link_cmd)
+
+        # Add a final O3 pass.
+        optimize_cmd = [
+            C.OPT, '-O3', raw_bc, '-o', raw_bc,
+        ]
+        Util.call_helper(optimize_cmd)
 
         os.chdir(self.cwd)
 
