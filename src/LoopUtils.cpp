@@ -21,12 +21,23 @@
 // }
 
 const std::unordered_set<std::string> LoopUtils::LoopContinuityIgnoredFunctions{
-    "exp", "sin",  "sqrt", "sqrtf",  "acos",   "fabs",
-    "abs", "rand", "log",  "lgamma", "printf", "omp_get_thread_num",
+    "exp",
+    "sin",
+    "sqrt",
+    "sqrtf",
+    "acos",
+    "fabs",
+    "abs",
+    "rand",
+    "pow",
+    "log",
+    "lgamma",
+    "printf",
+    "omp_get_thread_num",
     "feof",
     // Specific to spec2017 imagick_s
     // "ReadBlob", "ThrowMagickException", "CloseBlob", "DestroyImage",
-    };
+};
 
 std::unordered_map<const llvm::Loop *, bool>
     LoopUtils::MemorizedIsLoopContinuous;
@@ -365,7 +376,6 @@ void CachedLoopInfo::clearAnalysis() {
     delete Entry.second;
   }
   this->ACCache.clear();
-
 }
 
 llvm::AssumptionCache *
