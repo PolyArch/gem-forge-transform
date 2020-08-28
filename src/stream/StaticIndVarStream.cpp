@@ -26,6 +26,17 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
               hasConstantTripCount = true;
             }
           }
+          if (this->formatName() ==
+              "(imsmooth.c::18(imsmooth) 0 bb115 bb94::tmp95(phi))") {
+            llvm::dbgs() << this->formatName() << " Loop "
+                         << LoopUtils::getLoopId(CurrentLoop) << " "
+                         << this->SE->hasLoopInvariantBackedgeTakenCount(
+                                CurrentLoop)
+                         << '\n';
+            this->SE->getBackedgeTakenCount(CurrentLoop)->print(llvm::dbgs());
+            this->SE->getConstantMaxBackedgeTakenCount(CurrentLoop)
+                ->print(llvm::dbgs());
+          }
           if (!hasConstantTripCount) {
             this->StaticStreamInfo.set_not_stream_reason(
                 LLVM::TDG::StaticStreamInfo::VARIANT_BACKEDGE_TAKEN);

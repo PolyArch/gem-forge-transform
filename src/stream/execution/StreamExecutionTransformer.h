@@ -90,7 +90,7 @@ private:
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
 
-  void replaceWithStreamMemset();
+  void replaceWithStreamMemIntrinsic();
 
   /**
    * Utility functions.
