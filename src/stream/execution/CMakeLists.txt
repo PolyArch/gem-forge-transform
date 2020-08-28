@@ -1,10 +1,10 @@
 
-# Generate the stream_memset LLVM IR.
-add_custom_target(StreamMemsetIR ALL
-    clang -O3 -mavx512f -S -emit-llvm ${CMAKE_CURRENT_SOURCE_DIR}/StreamMemset.c
+# Generate the stream intrinsic LLVM IR.
+add_custom_target(StreamMemIntrinsicIR ALL
+    clang -O3 -mavx512f -S -emit-llvm ${CMAKE_CURRENT_SOURCE_DIR}/StreamMemIntrinsic.c
     COMMAND opt -instnamer
-        StreamMemset.ll
-        -S -o StreamMemset.ll
+        StreamMemIntrinsic.ll
+        -S -o StreamMemIntrinsic.ll
     # COMMAND opt -load $<TARGET_FILE:LLVMTDGPass>
     #     -trace-pass
     #     -trace-inst-uid-file StreamMemset.uid
@@ -19,7 +19,7 @@ add_custom_target(StreamMemsetIR ALL
     #     StreamMemset.ll
     #     -gem-forge-inst-uid-file StreamMemset.uid
     #     -S -o StreamMemset.ssp.ll
-    COMMENT "Generate StreamMemset Intrinsic"
-    SOURCES StreamMemset.c
+    COMMENT "Generate StreamMem Intrinsic"
+    SOURCES StreamMemIntrinsic.c
 )
-add_dependencies(StreamMemsetIR LLVMTDGPass)
+add_dependencies(StreamMemIntrinsicIR LLVMTDGPass)
