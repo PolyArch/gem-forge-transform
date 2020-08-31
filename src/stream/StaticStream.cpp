@@ -47,36 +47,57 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   // Set the element size.
   SSI.set_mem_element_size(this->getMemElementSize());
   SSI.set_core_element_size(this->getCoreElementSize());
+
+  // Set data type if we can support it.
+  auto CoreElementType = this->getCoreElementType();
+  if (CoreElementType->isFloatTy()) {
+    SSI.set_core_element_type(::LLVM::TDG::StreamDataType::FLOAT);
+  } else if (CoreElementType->isDoubleTy()) {
+    SSI.set_core_element_type(::LLVM::TDG::StreamDataType::DOUBLE);
+  }
+  auto MemElementType = this->getMemElementType();
+  if (MemElementType->isFloatTy()) {
+    SSI.set_mem_element_type(::LLVM::TDG::StreamDataType::FLOAT);
+  } else if (MemElementType->isDoubleTy()) {
+    SSI.set_mem_element_type(::LLVM::TDG::StreamDataType::DOUBLE);
+  }
 }
 
-int StaticStream::getMemElementSize() const {
+llvm::Type *StaticStream::getMemElementType() const {
   switch (this->Inst->getOpcode()) {
   case llvm::Instruction::PHI:
   case llvm::Instruction::Load:
   case llvm::Instruction::AtomicRMW:
-    return this->DataLayout->getTypeStoreSize(this->Inst->getType());
+    return this->Inst->getType();
   case llvm::Instruction::AtomicCmpXchg:
   case llvm::Instruction::Store: {
     auto AddrType = Utils::getMemAddrValue(this->Inst)->getType();
     auto ElementType = AddrType->getPointerElementType();
-    return this->DataLayout->getTypeStoreSize(ElementType);
+    return ElementType;
   }
   default:
     llvm_unreachable("Unsupported StreamType.");
   }
 }
 
-int StaticStream::getCoreElementSize() const {
+int StaticStream::getMemElementSize() const {
+  return this->DataLayout->getTypeStoreSize(this->getMemElementType());
+}
+
+llvm::Type *StaticStream::getCoreElementType() const {
   /**
    * In most case, the core element size is the same as the memory,
    * except for FusedLoadOps. This is only used for AtomicCmpXchg.
    */
   if (!this->FusedLoadOps.empty()) {
-    return this->DataLayout->getTypeStoreSize(
-        this->FusedLoadOps.back()->getType());
+    return this->FusedLoadOps.back()->getType();
   } else {
-    return this->getMemElementSize();
+    return this->getMemElementType();
   }
+}
+
+int StaticStream::getCoreElementSize() const {
+  return this->DataLayout->getTypeStoreSize(this->getCoreElementType());
 }
 
 void StaticStream::handleFirstTimeComputeNode(

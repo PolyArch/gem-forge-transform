@@ -20,6 +20,12 @@ enum StreamValuePattern {
   REDUCTION = 7;
 }
 
+enum StreamDataType {
+  UNKNOWN_TYPE = 0;
+  FLOAT = 1;
+  DOUBLE = 2;
+}
+
 message StreamParam {
   int64 value = 1;
   bool is_static = 2;
@@ -88,6 +94,7 @@ message StaticStreamInfo {
   ExecFuncInfo pred_func_info = 21;
   bool no_core_user = 22; // This stream has not core user.
 
+
   // AliasedStreamInfo
   StreamId alias_base_stream = 32;
   uint32 alias_offset = 33;
@@ -98,6 +105,9 @@ message StaticStreamInfo {
 
   int32 core_element_size = 60;
   int32 mem_element_size = 61;
+  // Optional data type for debug purpose.
+  StreamDataType core_element_type = 62;
+  StreamDataType mem_element_type = 63;
 
   enum StaticNotStreamReason {
     UNKNOWN = 0;
