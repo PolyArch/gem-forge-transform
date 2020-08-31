@@ -408,7 +408,7 @@ class Benchmark(object):
             C.LLVM_LINK,
             raw_bc,
             os.path.join(C.LLVM_TDG_BUILD_DIR,
-                         'src/stream/execution/StreamMemset.ll'),
+                         'src/stream/execution/StreamMemIntrinsic.ll'),
             '-o',
             raw_bc,
         ]
