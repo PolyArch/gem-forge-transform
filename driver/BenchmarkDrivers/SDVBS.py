@@ -110,7 +110,10 @@ class SDVBSBenchmark(Benchmark):
         'localization': ['gem_forge_work'],
         'mser': ['mser'],
         'multi_ncut': ['fSortIndices'],
-        'sift': ['sift', 'normalizeImage'],
+        'sift': [
+            'sift',
+            'normalizeImage',
+        ],
         'stitch': ['getANMS', 'harris', 'extractFeatures'],
         'svm': ['gem_forge_work'],
         'texture_synthesis': ['create_all_candidates', 'create_candidates', 'compare_neighb', 'compare_rest', 'compare_full_neighb'],
@@ -126,7 +129,7 @@ class SDVBSBenchmark(Benchmark):
             'getANMS',
         ],
     }
-    
+
     # This is used for execution simulation
     ROI_FUNC = {
         'disparity': [
@@ -145,23 +148,30 @@ class SDVBSBenchmark(Benchmark):
         ],
         'sift': [
             'imsmooth',
+            'normalizeImage',
+            'gaussianss',
+            'doubleSize',
         ],
         'stitch': ['getANMS', 'harris', 'extractFeatures'],
-        'svm': ['gem_forge_work'],
+        'svm': [
+            'polynomial',
+            'cal_learned_func',
+            'ffVertcat',
+        ],
         'texture_synthesis': ['create_all_candidates', 'create_candidates', 'compare_neighb', 'compare_rest', 'compare_full_neighb'],
         'tracking': [
-            'imageBlur',
-            'imageResize',
-            'calcSobel_dX',
-            'calcSobel_dY',
-            'calcGoodFeature',
-            'fReshape',
-            'fillFeatures',
-            'fTranspose',
-            'getANMS',
+            'calcAreaSum',
+            # 'imageBlur',
+            # 'imageResize',
+            # 'calcSobel_dX',
+            # 'calcSobel_dY',
+            # 'calcGoodFeature',
+            # 'fReshape',
+            # 'fillFeatures',
+            # 'fTranspose',
+            # 'getANMS',
         ],
     }
-
 
     TRACE_IDS = {
         # 'disparity': [0],
@@ -193,12 +203,15 @@ class SDVBSBenchmark(Benchmark):
         'disparity': 3,  # 1 Init, 1 correlateSAD_2D, 1 findDisparity
         'localization': 10,  # 10 Iteration
         'mser': 10,  # 10 work items total, reduce if takes too long
-        'multi_ncut': 2,  # 4 work items total, but I can only finish 2 as they are too long.
-        'sift': 2,  # 8 work items total, but we can only finish 2 (imsmooth)
-        'stitch': 4,  # 4 work items total
-        'svm': 2 + 4, # 2 preprocess + 4 iterations.
-        'texture_synthesis': 3, # 3 loops.
-        'tracking': 8, # 8 work items per frame.
+        # 4 work items total, but I can only finish 2 as they are too long.
+        'multi_ncut': 2,
+        # 9 work items total, but we can only finish 3 (after imsmooth)
+        'sift': 3,
+        # 4 work items total. Takes too 20 hours before finish 2 items....
+        'stitch': 4,
+        'svm': 1000,  # 3 iteration of work 0 (training)...
+        'texture_synthesis': 3,  # 3 loops.
+        'tracking': 8,  # 8 work items per frame. Takes 7 hours to finish.
     }
 
     LEGAL_INPUT_SIZE = ('test', 'sim_fast', 'sim',
@@ -364,9 +377,10 @@ class SDVBSBenchmark(Benchmark):
         self.debug('Linking to raw bitcode {raw_bc}'.format(raw_bc=raw_bc))
         Util.call_helper(link_cmd)
 
-        # Add a final O3 pass.
+        # Add a final inline and loop idiom pass.
+        # The order matters.
         optimize_cmd = [
-            C.OPT, '-O3', raw_bc, '-o', raw_bc,
+            C.OPT, raw_bc, '-o', raw_bc, '-inline', '-loop-idiom',
         ]
         Util.call_helper(optimize_cmd)
 
