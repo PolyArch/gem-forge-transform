@@ -8,6 +8,8 @@
 #include <time.h>
 #endif
 #include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 // Used to readin an array and warm up the cache.
 #define CACHE_LINE_SIZE 64
