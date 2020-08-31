@@ -70,6 +70,8 @@ public:
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
   int getCoreElementSize() const;
   int getMemElementSize() const;
+  llvm::Type *getCoreElementType() const;
+  llvm::Type *getMemElementType() const;
 
   std::string formatType() const {
     switch (this->Type) {
