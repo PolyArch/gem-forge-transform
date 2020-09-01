@@ -13,8 +13,7 @@ const char *getNewTraceFileName(int tid);
 // Library implemented.
 void printFuncEnterImpl(int tid, const char *FunctionName);
 
-void printInstImpl(int tid, const char *FunctionName, const char *BBName,
-                   unsigned Id, uint64_t UID, const char *OpCodeName);
+void printInstImpl(int tid, uint64_t UID);
 
 // Predefined tag:
 // 'p' for parameter
