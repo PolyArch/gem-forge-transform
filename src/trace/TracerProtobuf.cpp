@@ -1,4 +1,5 @@
 // Implement the tracer interface with protobuf.
+#include "../ProtobufSerializer.h"
 #include "TraceMessage.pb.h"
 #include "TracerImpl.h"
 
@@ -6,20 +7,13 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
-
-#include <google/protobuf/io/gzip_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
 
 void cleanup();
 
 // Extension for multi-thread.
 namespace {
 struct ThreadState {
-  std::ofstream o;
-  google::protobuf::io::OstreamOutputStream *fStream = nullptr;
-  google::protobuf::io::GzipOutputStream *gzipStream = nullptr;
-  google::protobuf::io::CodedOutputStream *codedStream = nullptr;
+  GzipMultipleProtobufSerializer *serializer = nullptr;
   LLVM::TDG::DynamicLLVMTraceEntry protobufTraceEntry;
 };
 
@@ -28,20 +22,14 @@ static std::array<ThreadState, MaxNThreads> states;
 
 } // namespace
 
-inline google::protobuf::io::CodedOutputStream &getTraceFile(int tid) {
+inline GzipMultipleProtobufSerializer &getTraceFile(int tid) {
   auto &ts = states.at(tid);
-  if (!ts.o.is_open()) {
-    ts.o.open(getNewTraceFileName(tid), std::ios::out | std::ios::binary);
+  if (!ts.serializer) {
+    ts.serializer =
+        new GzipMultipleProtobufSerializer(getNewTraceFileName(tid));
     std::atexit(cleanup);
-    ts.fStream = new google::protobuf::io::OstreamOutputStream(&ts.o);
-    ts.gzipStream = new google::protobuf::io::GzipOutputStream(ts.fStream);
-    ts.codedStream = new google::protobuf::io::CodedOutputStream(ts.gzipStream);
   }
-  assert(ts.o.is_open());
-  assert(ts.fStream != nullptr);
-  assert(ts.gzipStream != nullptr);
-  assert(ts.codedStream != nullptr);
-  return *ts.codedStream;
+  return *ts.serializer;
 }
 
 static uint64_t count = 0;
@@ -49,15 +37,9 @@ static uint64_t count = 0;
 void cleanup(int tid) {
   std::cout << "Clean up tid " << tid << ".\n";
   auto &ts = states.at(tid);
-  if (ts.o.is_open()) {
-    delete ts.codedStream;
-    ts.codedStream = nullptr;
-    ts.gzipStream->Close();
-    delete ts.gzipStream;
-    ts.gzipStream = nullptr;
-    delete ts.fStream;
-    ts.fStream = nullptr;
-    ts.o.close();
+  if (ts.serializer) {
+    delete ts.serializer;
+    ts.serializer = nullptr;
     std::cout << "Thread " << tid << " Traced #" << count << std::endl;
   }
 }
@@ -87,8 +69,7 @@ void printFuncEnterImpl(int tid, const char *FunctionName) {
   protobufTraceEntry.mutable_func_enter()->set_func(FunctionName);
 }
 
-void printInstImpl(int tid, const char *FunctionName, const char *BBName,
-                   unsigned Id, uint64_t UID, const char *OpCodeName) {
+void printInstImpl(int tid, uint64_t UID) {
   auto &protobufTraceEntry = states.at(tid).protobufTraceEntry;
   if (protobufTraceEntry.has_func_enter()) {
     // The previous one is func enter.
@@ -131,7 +112,9 @@ static void addValueToDynamicInst(int tid, const char Tag,
     value = protobufTraceEntry.mutable_inst()->mutable_result();
     break;
   }
-  default: { assert(false); }
+  default: {
+    assert(false);
+  }
   }
   if (isInt) {
     value->set_v_int(*(static_cast<const uint64_t *>(valueBuffer)));
@@ -177,8 +160,7 @@ void printInstEndImpl(int tid) {
   assert(!protobufTraceEntry.has_func_enter() &&
          "Should not contain func enter for inst.");
   auto &trace = getTraceFile(tid);
-  trace.WriteVarint32(protobufTraceEntry.ByteSize());
-  protobufTraceEntry.SerializeWithCachedSizes(&trace);
+  trace.serialize(protobufTraceEntry);
   count++;
   // std::cout << "printInstEnd" << std::endl;
 }
@@ -191,7 +173,6 @@ void printFuncEnterEndImpl(int tid) {
     std::cout << "The first one is func enter.\n";
   }
   auto &trace = getTraceFile(tid);
-  trace.WriteVarint32(protobufTraceEntry.ByteSize());
-  protobufTraceEntry.SerializeWithCachedSizes(&trace);
+  trace.serialize(protobufTraceEntry);
   count++;
 }

@@ -42,6 +42,7 @@ add_library(LLVMTDGPass SHARED
     GemForgeBasePass.cpp
     Replay.cpp
     TraceStatisticPass.cpp
+    ProtobufSerializer.cpp
     Gem5ProtobufSerializer.cpp
     TDGSerializer.cpp
     CacheWarmer.cpp

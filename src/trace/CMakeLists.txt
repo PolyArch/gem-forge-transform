@@ -34,6 +34,7 @@ add_library(TracerProtobuf STATIC
     ${UID_MAP_PROTOBUF_SRCS}
     InstructionUIDMapReader.cpp
     ${PROFILE_PROTOBUF_SRCS}
+    ../ProtobufSerializer.cpp
     TracerProtobuf.cpp
     ${TRACE_PROTOBUF_SRCS}
 )

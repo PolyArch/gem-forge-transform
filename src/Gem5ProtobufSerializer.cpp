@@ -1,7 +1,5 @@
 #include "Gem5ProtobufSerializer.h"
 
-#include "llvm/Support/raw_ostream.h"
-
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/text_format.h>
@@ -16,43 +14,10 @@ namespace {
 static const uint32_t Gem5MagicNumber = 0x356d6567;
 } // namespace
 
-ProtobufSerializer::ProtobufSerializer(const std::string &FileName,
-                                       std::ios_base::openmode OpenMode) {
-  // llvm::errs() << "Try to open protobuf serializer file " << FileName << '\n';
-  this->OutFileStream.open(FileName, OpenMode);
-
-  assert(this->OutFileStream.is_open() &&
-         "Failed to open output protobuf serialize file.");
-  // Create the zero copy stream.
-  this->OutZeroCopyStream =
-      new google::protobuf::io::OstreamOutputStream(&this->OutFileStream);
-}
-
-ProtobufSerializer::~ProtobufSerializer() {
-  delete this->OutZeroCopyStream;
-  this->OutZeroCopyStream = nullptr;
-  this->OutFileStream.close();
-}
-
 Gem5ProtobufSerializer::Gem5ProtobufSerializer(const std::string &FileName)
-    : ProtobufSerializer(FileName, std::ios::out | std::ios::binary) {
-  this->GzipStream =
-      new google::protobuf::io::GzipOutputStream(this->OutZeroCopyStream);
+    : GzipMultipleProtobufSerializer(FileName) {
   // Write the magic number so that gem5 can read this.
-  google::protobuf::io::CodedOutputStream CodedStream(this->GzipStream);
-  CodedStream.WriteLittleEndian32(Gem5MagicNumber);
-}
-
-Gem5ProtobufSerializer::~Gem5ProtobufSerializer() {
-  delete this->GzipStream;
-  this->GzipStream = nullptr;
-}
-
-void Gem5ProtobufSerializer::serialize(
-    const google::protobuf::Message &Message) {
-  google::protobuf::io::CodedOutputStream CodedStream(this->GzipStream);
-  CodedStream.WriteVarint32(Message.ByteSize());
-  Message.SerializeWithCachedSizes(&CodedStream);
+  CodedStream->WriteLittleEndian32(Gem5MagicNumber);
 }
 
 void TextProtobufSerializer::serialize(

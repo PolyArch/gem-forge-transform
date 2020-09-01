@@ -407,7 +407,9 @@ bool TracerThreadState::isInROI() {
   case TraceROI::SpecifiedFunction: {
     return tracedFunctionsInStack > 0;
   }
-  default: { assert(false && "Illegal traceROI."); }
+  default: {
+    assert(false && "Illegal traceROI.");
+  }
   }
 }
 
@@ -450,7 +452,9 @@ bool TracerThreadState::shouldLog() {
     }
     return instCount < interval.second;
   }
-  default: { assert(false && "Unknown trace mode."); }
+  default: {
+    assert(false && "Unknown trace mode.");
+  }
   }
 }
 
@@ -485,7 +489,9 @@ bool TracerThreadState::shouldSwitchTraceFile() {
     }
     return false;
   }
-  default: { assert(false && "Unknown trace mode."); }
+  default: {
+    assert(false && "Unknown trace mode.");
+  }
   }
 }
 
@@ -510,7 +516,9 @@ bool TracerThreadState::shouldExit() {
   case TraceMode::TraceSpecifiedInterval: {
     return intervals.empty();
   }
-  default: { assert(false && "Unknown trace mode."); };
+  default: {
+    assert(false && "Unknown trace mode.");
+  };
   }
 }
 
@@ -681,8 +689,6 @@ void printInst(const char *FunctionName, uint64_t UID) {
     }
   }
 
-  std::string FuncStr(FunctionName);
-  std::string BBStr(BBName);
   /**
    * Profile if we are in ROI.
    * Normally we should profile for every basic block,
@@ -691,6 +697,8 @@ void printInst(const char *FunctionName, uint64_t UID) {
    * correctly partition the profiling interval.
    */
   if (tts.isInROI()) {
+    std::string FuncStr(FunctionName);
+    std::string BBStr(BBName);
     tts.profile.addBasicBlock(FuncStr, BBStr);
   }
 
@@ -716,7 +724,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
     }
   }
   if (tts.shouldLog()) {
-    printInstImpl(tts.seqTid, FunctionName, BBName, Id, UID, OpCodeName);
+    printInstImpl(tts.seqTid, UID);
   }
   TracerLibExit();
 }
