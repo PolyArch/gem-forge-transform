@@ -21,6 +21,18 @@
 #include <set>
 #include <unordered_set>
 
+enum TraceDetailLevelE {
+  // Instructions with operands and results.
+  Detail = 0,
+  // Instructions only (no operands or results).
+  InstructionOnly,
+  // BBs only (By only trace FirstInst/Ret/Landingpad
+  // without operands or results).
+  // We need ret/landingpad in case we want to track
+  // stack at run time.
+  BasicBlockOnly,
+};
+
 static llvm::cl::opt<std::string> TraceFunctionNames(
     "trace-function",
     llvm::cl::desc("Trace function names. For C functions, just the name. For "
@@ -37,9 +49,15 @@ namespace {
 const char TraceFunctionNameSeparator = '.';
 } // namespace
 
-static llvm::cl::opt<bool>
-    TraceInstructionOnly("trace-inst-only",
-                         llvm::cl::desc("Trace instruction only."));
+static llvm::cl::opt<TraceDetailLevelE> TraceDetailLevel(
+    "trace-detail-level", llvm::cl::desc("Choose trace detail level:"),
+    llvm::cl::values(
+        clEnumValN(TraceDetailLevelE::Detail, "detail",
+                   "All instructions with operands/results."),
+        clEnumValN(TraceDetailLevelE::InstructionOnly, "inst-only",
+                   "All instructions without operands/results.."),
+        clEnumValN(TraceDetailLevelE::BasicBlockOnly, "bb-only",
+                   "First instruction in BB without operands/results.")));
 
 /**
  * Some times when we try to trace into stdlib, we want to reduce the overhead
@@ -340,15 +358,26 @@ private:
       LLVM_DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
       llvm::Instruction *Inst = &*InstIter;
 
-      if (IsHeadInst(Inst)) {
-        // Special case for head instructions as they must be grouped at the
-        // top of the basic block. Push them into a vector for later
-        // processing.
-        HeadInsts.emplace_back(Inst, PosInBB);
-        continue;
+      bool ShouldTrace = true;
+      if (PosInBB > 0 &&
+          TraceDetailLevel == TraceDetailLevelE::BasicBlockOnly) {
+        // We ingore NonFirst instructions unless this is a landingpad/ret.
+        if (Inst->getOpcode() != llvm::Instruction::Ret &&
+            Inst->getOpcode() != llvm::Instruction::LandingPad) {
+          ShouldTrace = false;
+        }
       }
 
-      traceNonPhiInst(Inst, FunctionNameValue, PosInBB);
+      if (ShouldTrace) {
+        if (IsHeadInst(Inst)) {
+          // Special case for head instructions as they must be grouped at the
+          // top of the basic block. Push them into a vector for later
+          // processing.
+          HeadInsts.emplace_back(Inst, PosInBB);
+        } else {
+          traceNonPhiInst(Inst, FunctionNameValue, PosInBB);
+        }
+      }
     }
 
     LLVM_DEBUG(llvm::errs() << "After transformation.\n");
@@ -359,7 +388,7 @@ private:
 
     // Handle all the phi nodes now.
     if (!HeadInsts.empty()) {
-      auto InsertBefore = HeadInsts.back().first->getNextNode();
+      auto InsertBefore = &*(BB.getFirstInsertionPt());
       // Ignore landingpadinst.
       assert(!IsHeadInst(InsertBefore) &&
              "InsertBefore should not be head instruction.");
@@ -392,7 +421,7 @@ private:
     llvm::IRBuilder<> Builder(InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
-    if (!TraceInstructionOnly.getValue()) {
+    if (TraceDetailLevel == TraceDetailLevelE::Detail) {
       // Call printValue for each parameter before the instruction.
       for (unsigned IncomingValueId = 0,
                     NumIncomingValues = Inst->getNumIncomingValues();
@@ -433,7 +462,7 @@ private:
     llvm::IRBuilder<> Builder((InsertBefore == nullptr) ? Inst : InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
-    if (!TraceInstructionOnly) {
+    if (TraceDetailLevel == TraceDetailLevelE::Detail) {
       // Call printValue for each parameter before the instruction.
       for (unsigned OperandId = 0, NumOperands = Inst->getNumOperands();
            OperandId < NumOperands; OperandId++) {

@@ -512,7 +512,7 @@ class Benchmark(object):
             self.get_raw_bc(),
             '-o',
             bc,
-            '-trace-inst-only',
+            '-trace-detail-level=inst-only',
             '-trace-inst-uid-file',
             self.get_profile_inst_uid(),
         ]
