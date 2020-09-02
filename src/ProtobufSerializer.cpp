@@ -7,8 +7,11 @@ ProtobufSerializer::ProtobufSerializer(const std::string &FileName,
                                        std::ios_base::openmode OpenMode) {
   this->OutFileStream.open(FileName, OpenMode);
 
-  assert(this->OutFileStream.is_open() &&
-         "Failed to open output protobuf serialize file.");
+  if (!this->OutFileStream.is_open()) {
+    printf("Failed to open output protobuf serialize file %s.\n",
+           FileName.c_str());
+    assert(false && "Failed to open output protobuf serialize file.");
+  }
   // Create the zero copy stream.
   this->OutZeroCopyStream =
       new google::protobuf::io::OstreamOutputStream(&this->OutFileStream);
