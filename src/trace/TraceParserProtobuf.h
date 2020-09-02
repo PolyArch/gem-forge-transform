@@ -5,13 +5,11 @@
 #include "trace/InstructionUIDMap.h"
 #include "trace/TraceParser.h"
 
-#include <google/protobuf/io/gzip_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-
 #include <fstream>
 
+class GzipMultipleProtobufReader;
 class TraceParserProtobuf : public TraceParser {
- public:
+public:
   TraceParserProtobuf(const std::string &TraceFileName,
                       const InstructionUIDMap &_InstUIDMap);
   ~TraceParserProtobuf();
@@ -19,11 +17,8 @@ class TraceParserProtobuf : public TraceParser {
   TracedInst parseLLVMInstruction() override;
   TracedFuncEnter parseFunctionEnter() override;
 
- private:
-  std::ifstream TraceFile;
-  google::protobuf::io::IstreamInputStream *IStream;
-  google::protobuf::io::GzipInputStream *GzipIStream;
-  google::protobuf::io::CodedInputStream *CodedIStream;
+private:
+  GzipMultipleProtobufReader *Reader = nullptr;
   LLVM::TDG::DynamicLLVMTraceEntry TraceEntry;
 
   const InstructionUIDMap &InstUIDMap;
@@ -37,8 +32,8 @@ class TraceParserProtobuf : public TraceParser {
    * In order to not break user code, here we transform the value
    * to string.
    */
-  std::string parseLLVMDynamicValueToString(
-      const ::LLVM::TDG::DynamicLLVMValue &Value);
+  std::string
+  parseLLVMDynamicValueToString(const ::LLVM::TDG::DynamicLLVMValue &Value);
 };
 
 #endif

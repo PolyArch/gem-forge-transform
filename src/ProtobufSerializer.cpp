@@ -44,3 +44,45 @@ void GzipMultipleProtobufSerializer::serialize(
   this->CodedStream->WriteVarint32(Message.ByteSize());
   Message.SerializeWithCachedSizes(CodedStream);
 }
+
+GzipMultipleProtobufReader::GzipMultipleProtobufReader(
+    const std::string &FileName)
+    : InFileStream(FileName, std::ios::in | std::ios::binary) {
+  assert(this->InFileStream.is_open() &&
+         "Failed to open input gem5 protobuf serialize file.");
+  // Create the zero copy stream.
+  this->InZeroCopyStream =
+      new google::protobuf::io::IstreamInputStream(&this->InFileStream);
+  this->GzipStream =
+      new google::protobuf::io::GzipInputStream(this->InZeroCopyStream);
+  this->CodedStream =
+      new google::protobuf::io::CodedInputStream(this->GzipStream);
+}
+
+GzipMultipleProtobufReader::~GzipMultipleProtobufReader() {
+  delete this->CodedStream;
+  this->CodedStream = nullptr;
+  delete this->GzipStream;
+  this->GzipStream = nullptr;
+  delete this->InZeroCopyStream;
+  this->InZeroCopyStream = nullptr;
+  this->InFileStream.close();
+}
+
+bool GzipMultipleProtobufReader::read(google::protobuf::Message &Message) {
+  uint32_t Size;
+  if (this->CodedStream->ReadVarint32(&Size)) {
+    google::protobuf::io::CodedInputStream::Limit Limit =
+        this->CodedStream->PushLimit(Size);
+    if (Message.ParseFromCodedStream(this->CodedStream)) {
+      this->CodedStream->PopLimit(Limit);
+      // All went well, the message is parsed and the limit is
+      // popped again
+      return true;
+    } else {
+      assert(false && "Failed to read message from gem5 protobuf stream.");
+    }
+  }
+
+  return false;
+}

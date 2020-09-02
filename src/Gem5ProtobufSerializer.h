@@ -16,17 +16,9 @@ public:
   void serialize(const google::protobuf::Message &Message) override;
 };
 
-class Gem5ProtobufReader {
+class Gem5ProtobufReader : public GzipMultipleProtobufReader {
 public:
   Gem5ProtobufReader(const std::string &FileName);
-  ~Gem5ProtobufReader();
-
-  bool read(google::protobuf::Message &Message);
-
-private:
-  std::ifstream InFileStream;
-  google::protobuf::io::ZeroCopyInputStream *InZeroCopyStream;
-  google::protobuf::io::GzipInputStream *GzipStream;
 };
 
 #endif
