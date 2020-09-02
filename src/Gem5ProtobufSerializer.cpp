@@ -31,45 +31,10 @@ void TextProtobufSerializer::serialize(
 }
 
 Gem5ProtobufReader::Gem5ProtobufReader(const std::string &FileName)
-    : InFileStream(FileName, std::ios::in | std::ios::binary) {
-  assert(this->InFileStream.is_open() &&
-         "Failed to open input gem5 protobuf serialize file.");
-  // Create the zero copy stream.
-  this->InZeroCopyStream =
-      new google::protobuf::io::IstreamInputStream(&this->InFileStream);
-  this->GzipStream =
-      new google::protobuf::io::GzipInputStream(this->InZeroCopyStream);
+    : GzipMultipleProtobufReader(FileName) {
 
   uint32_t MagicNum;
-  google::protobuf::io::CodedInputStream CodedStream(this->GzipStream);
-  assert(CodedStream.ReadLittleEndian32(&MagicNum) &&
+  assert(this->CodedStream->ReadLittleEndian32(&MagicNum) &&
          "Failed to read in the magic number.");
   assert(MagicNum == Gem5MagicNumber && "Mismatch gem5 magic number.");
-}
-
-Gem5ProtobufReader::~Gem5ProtobufReader() {
-  delete this->GzipStream;
-  this->GzipStream = nullptr;
-  delete this->InZeroCopyStream;
-  this->InZeroCopyStream = nullptr;
-  this->InFileStream.close();
-}
-
-bool Gem5ProtobufReader::read(google::protobuf::Message &Message) {
-  uint32_t Size;
-  google::protobuf::io::CodedInputStream CodedStream(this->GzipStream);
-  if (CodedStream.ReadVarint32(&Size)) {
-    google::protobuf::io::CodedInputStream::Limit Limit =
-        CodedStream.PushLimit(Size);
-    if (Message.ParseFromCodedStream(&CodedStream)) {
-      CodedStream.PopLimit(Limit);
-      // All went well, the message is parsed and the limit is
-      // popped again
-      return true;
-    } else {
-      assert(false && "Failed to read message from gem5 protobuf stream.");
-    }
-  }
-
-  return false;
 }

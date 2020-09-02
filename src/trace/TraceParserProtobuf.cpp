@@ -1,4 +1,5 @@
-#include "trace/TraceParserProtobuf.h"
+#include "TraceParserProtobuf.h"
+#include "../ProtobufSerializer.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -12,24 +13,16 @@
 
 TraceParserProtobuf::TraceParserProtobuf(const std::string &TraceFileName,
                                          const InstructionUIDMap &_InstUIDMap)
-    : TraceFile(TraceFileName, std::ios::in | std::ios::binary),
+    : Reader(new GzipMultipleProtobufReader(TraceFileName)),
       InstUIDMap(_InstUIDMap), Count(0) {
-  assert(this->TraceFile.is_open() && "Failed openning trace file.");
-  this->IStream =
-      new google::protobuf::io::IstreamInputStream(&this->TraceFile);
-  this->GzipIStream = new google::protobuf::io::GzipInputStream(this->IStream);
-  this->CodedIStream =
-      new google::protobuf::io::CodedInputStream(this->GzipIStream);
   this->TraceEntry.Clear();
   this->readNextEntry();
 }
 
 TraceParserProtobuf::~TraceParserProtobuf() {
   std::cerr << "Parsed " << Count << std::endl;
-  delete this->CodedIStream;
-  delete this->GzipIStream;
-  delete this->IStream;
-  this->TraceFile.close();
+  delete this->Reader;
+  this->Reader = nullptr;
 }
 
 TraceParser::Type TraceParserProtobuf::getNextType() {
@@ -58,7 +51,9 @@ std::string TraceParserProtobuf::parseLLVMDynamicValueToString(
     return Value.v_bytes();
     break;
   }
-  default: { return std::string(""); }
+  default: {
+    return std::string("");
+  }
   }
 }
 
@@ -107,22 +102,7 @@ void TraceParserProtobuf::readNextEntry() {
   // TODO: Consider using LimitZeroCopyStream from protobuf.
   this->TraceEntry.Clear();
 
-  // Read a message from the stream by getting the size, using it as
-  // a limit when parsing the message, then popping the limit again
-  uint32_t Size;
-
-  if (this->CodedIStream->ReadVarint32(&Size)) {
-    auto Limit = this->CodedIStream->PushLimit(Size);
-    if (this->TraceEntry.ParseFromCodedStream(this->CodedIStream)) {
-      this->CodedIStream->PopLimit(Limit);
-      // All went well, the message is parsed and the limit is
-      // popped again
-      this->Count++;
-      return;
-    } else {
-      assert(false && "Failed parsing protobuf.");
-    }
-  }
+  this->Reader->read(this->TraceEntry);
 }
 
 #undef DEBUG_TYPE

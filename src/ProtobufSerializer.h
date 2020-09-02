@@ -33,4 +33,18 @@ protected:
   google::protobuf::io::CodedOutputStream *CodedStream = nullptr;
 };
 
+class GzipMultipleProtobufReader {
+public:
+  GzipMultipleProtobufReader(const std::string &FileName);
+  virtual ~GzipMultipleProtobufReader();
+
+  bool read(google::protobuf::Message &Message);
+
+protected:
+  std::ifstream InFileStream;
+  google::protobuf::io::ZeroCopyInputStream *InZeroCopyStream = nullptr;
+  google::protobuf::io::GzipInputStream *GzipStream = nullptr;
+  google::protobuf::io::CodedInputStream *CodedStream = nullptr;
+};
+
 #endif
