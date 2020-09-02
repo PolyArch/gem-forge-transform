@@ -1,4 +1,5 @@
 #include "Tracer.h"
+#include "BasicBlockTracer.h"
 #include "InstructionUIDMapReader.h"
 #include "ProfileLogger.h"
 #include "TracerImpl.h"
@@ -254,6 +255,8 @@ public:
   bool insideMyself = false;
   // ! TracerThreadState initialization should be protected by lock.
   bool initialized = false;
+  // ! TracerThreadState second intialization is unprotected by lock.
+  bool secondInitialized = false;
   pthread_t tid;
   int seqTid = 0;
   uint64_t count = 0;
@@ -265,6 +268,9 @@ public:
 
   // Profile the code.
   ProfileLogger profile;
+
+  // Trace the basic blocks.
+  BasicBlockTracer bbtracer;
 
   /**
    * The tracer will maintain a stack at run time to determine if we are in a
@@ -282,11 +288,13 @@ public:
 
   size_t samples = 0;
   char fileName[1024];
-  static constexpr size_t MaxProfileFileNameBytes = 128;
-  char profileFileName[MaxProfileFileNameBytes];
+  static constexpr size_t MaxFileNameBytes = 128;
+  char profileFileName[MaxFileNameBytes];
+  char bbTraceFileName[MaxFileNameBytes];
 
   const char *getNewTraceFileName();
   void getProfileFileName(char *buf, size_t size);
+  void getBBTraceFileName(char *buf, size_t size);
   bool isInROI();
   bool shouldLog();
   bool shouldSwitchTraceFile();
@@ -295,20 +303,20 @@ public:
   void pushStack(const char *funcName, bool isTraced);
   void popStack();
   void unwind();
+  void secondInitialize();
 };
 
 TracerThreadState threadStates[MaxNThreads];
 pthread_mutex_t threadStatesAllocationLock;
 
 static void cleanup() {
-  static constexpr size_t profileFileNameSize = 128;
-  static char profileFileName[profileFileNameSize];
   for (auto i = 0; i < MaxNThreads; ++i) {
     auto &tts = threadStates[i];
     if (tts.initialized) {
-      tts.getProfileFileName(profileFileName, profileFileNameSize);
-      std::string profileFileNameStr(profileFileName);
+      tts.getProfileFileName(tts.profileFileName, tts.MaxFileNameBytes);
+      std::string profileFileNameStr(tts.profileFileName);
       tts.profile.serializeToFile(profileFileNameStr);
+      tts.bbtracer.cleanup();
     }
   }
   /**
@@ -323,7 +331,8 @@ static void cleanup() {
 TracerThreadState &getOrInitializeThreadState() {
   /**
    * ! This function is not protected by insideMyself.
-   * ! Must contain no code that may trigger recursive call chain.
+   * ! Must contain no code that may trigger recursive call chain,
+   * ! e.g. std::string (may also be traced through template specialization).
    * ! Also it is called before initialize(). So anything initialized in
    * ! initialize() should not be used.
    */
@@ -361,6 +370,7 @@ TracerThreadState &getOrInitializeThreadState() {
           profileIntervalSize = 10000000;
         }
         tts.profile.initialize(profileIntervalSize);
+
         pthread_mutex_unlock(&threadStatesAllocationLock);
         return tts;
       } else {
@@ -380,6 +390,21 @@ const char *getNewTraceFileName(int tid) {
   return tts.getNewTraceFileName();
 }
 
+void TracerThreadState::secondInitialize() {
+  if (this->secondInitialized) {
+    return;
+  }
+  /**
+   * ! Unlike the first initalization, here we are protected by
+   * ! insideMyself and can use all variables from initialize().
+   */
+  // We initialize the bbtracer here.
+  this->getBBTraceFileName(this->bbTraceFileName, this->MaxFileNameBytes);
+  this->bbtracer.initialize(this->bbTraceFileName);
+
+  this->secondInitialized = true;
+}
+
 const char *TracerThreadState::getNewTraceFileName() {
   std::sprintf(fileName, "%s/%d.%zu.trace", traceFolder, seqTid, samples);
   samples++;
@@ -393,6 +418,16 @@ void TracerThreadState::getProfileFileName(char *buf, size_t size) {
     return;
   }
   printf("Failed to get profile file name.\n");
+  std::exit(1);
+}
+
+void TracerThreadState::getBBTraceFileName(char *buf, size_t size) {
+  auto writtenBytes =
+      std::snprintf(buf, size, "%s/%d.bbtrace", traceFolder, seqTid);
+  if (writtenBytes >= 0 && writtenBytes < size) {
+    return;
+  }
+  printf("Failed to get BBTrace file name.\n");
   std::exit(1);
 }
 
@@ -642,6 +677,7 @@ void printFuncEnter(const char *FunctionName, unsigned IsTraced) {
   checkIsMain(FunctionName);
   TracerLibEnter();
   initialize();
+  tts.secondInitialize();
   // printf("%s:%d, inside? %d\n", __FILE__, __LINE__, insideMyself);
   // Update the stack only if we considered specified function as ROI.
   if (traceROI == TraceROI::SpecifiedFunction) {
@@ -700,6 +736,7 @@ void printInst(const char *FunctionName, uint64_t UID) {
     std::string FuncStr(FunctionName);
     std::string BBStr(BBName);
     tts.profile.addBasicBlock(FuncStr, BBStr);
+    tts.bbtracer.addBasicBlock(UID);
   }
 
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
