@@ -45,6 +45,10 @@ void GzipMultipleProtobufSerializer::serialize(
   Message.SerializeWithCachedSizes(CodedStream);
 }
 
+void GzipMultipleProtobufSerializer::writeVarint64(uint64_t V) {
+  this->CodedStream->WriteVarint64(V);
+}
+
 GzipMultipleProtobufReader::GzipMultipleProtobufReader(
     const std::string &FileName)
     : InFileStream(FileName, std::ios::in | std::ios::binary) {
@@ -70,6 +74,7 @@ GzipMultipleProtobufReader::~GzipMultipleProtobufReader() {
 }
 
 bool GzipMultipleProtobufReader::read(google::protobuf::Message &Message) {
+  this->resetCodedStream();
   uint32_t Size;
   if (this->CodedStream->ReadVarint32(&Size)) {
     google::protobuf::io::CodedInputStream::Limit Limit =
@@ -80,9 +85,33 @@ bool GzipMultipleProtobufReader::read(google::protobuf::Message &Message) {
       // popped again
       return true;
     } else {
+      std::cout << "TotalBytesLimit " << this->CodedStream->CurrentPosition()
+                << " " << this->CodedStream->BytesUntilTotalBytesLimit()
+                << '\n';
       assert(false && "Failed to read message from gem5 protobuf stream.");
     }
   }
 
   return false;
+}
+
+bool GzipMultipleProtobufReader::readVarint64(uint64_t &V) {
+  this->resetCodedStream();
+  return this->CodedStream->ReadVarint64(&V);
+}
+
+void GzipMultipleProtobufReader::resetCodedStream() {
+  auto BytesUntilTotalBytesLimit =
+      this->CodedStream->BytesUntilTotalBytesLimit();
+  auto CurrentPos = this->CodedStream->CurrentPosition();
+  if ((BytesUntilTotalBytesLimit >= 0 &&
+       BytesUntilTotalBytesLimit < 1024 * 1024) ||
+      (BytesUntilTotalBytesLimit == -1 &&
+       (INT_MAX - CurrentPos < 1024 * 1024))) {
+    delete this->CodedStream;
+    this->CodedStream =
+        new google::protobuf::io::CodedInputStream(this->GzipStream);
+    std::cout << "TotalBytesLimit " << this->CodedStream->CurrentPosition()
+              << '\n';
+  }
 }
