@@ -27,6 +27,7 @@ public:
   ~GzipMultipleProtobufSerializer() override;
 
   void serialize(const google::protobuf::Message &Message) override;
+  void writeVarint64(uint64_t V);
 
 protected:
   google::protobuf::io::GzipOutputStream *GzipStream = nullptr;
@@ -39,12 +40,15 @@ public:
   virtual ~GzipMultipleProtobufReader();
 
   bool read(google::protobuf::Message &Message);
+  bool readVarint64(uint64_t &V);
 
 protected:
   std::ifstream InFileStream;
   google::protobuf::io::ZeroCopyInputStream *InZeroCopyStream = nullptr;
   google::protobuf::io::GzipInputStream *GzipStream = nullptr;
   google::protobuf::io::CodedInputStream *CodedStream = nullptr;
+
+  void resetCodedStream();
 };
 
 #endif
