@@ -7,12 +7,8 @@
 
 void ProfileLogger::addInst(const std::string &Func, const std::string &BB) {
   // operator[] will implicitly create the BBMap;
-  auto &BBMap = Profile[Func];
-  if (BBMap.find(BB) == BBMap.end()) {
-    BBMap.emplace(BB, 1);
-  } else {
-    BBMap.at(BB)++;
-  }
+  auto &BBMap = this->Profile[Func];
+  BBMap.emplace(BB, 0).first->second++;
 
   // Update the function count.
   this->FuncProfile.emplace(Func, 0).first->second++;
@@ -30,6 +26,12 @@ void ProfileLogger::saveAndRestartInterval() {
   auto &ProtobufFuncs = *(ProtobufInterval->mutable_funcs());
   this->convertFunctionProfileMapTToProtobufFunctionProfile(
       this->IntervalProfile, ProtobufFuncs);
+  // Remember to clear counter, etc.
+  this->IntervalLHS = this->InstCount;
+  this->IntervalProfile.clear();
+}
+
+void ProfileLogger::discardAndRestartInterval() {
   // Remember to clear counter, etc.
   this->IntervalLHS = this->InstCount;
   this->IntervalProfile.clear();
@@ -107,13 +109,13 @@ void FixedSizeIntervalProfileLogger::initialize(uint64_t _INTERVAL_SIZE) {
 
 void FixedSizeIntervalProfileLogger::addInst(const std::string &Func,
                                              const std::string &BB) {
-  this->logger.addInst(Func, BB);
+  this->Logger.addInst(Func, BB);
 
   // If we reached the interval limit, store the current interval and create
   // a new one.
-  if (this->logger.getCurrentInstCount() -
-          this->logger.getCurrentIntervalLHS() ==
+  if (this->Logger.getCurrentInstCount() -
+          this->Logger.getCurrentIntervalLHS() ==
       INTERVAL_SIZE) {
-    this->logger.saveAndRestartInterval();
+    this->Logger.saveAndRestartInterval();
   }
 }
