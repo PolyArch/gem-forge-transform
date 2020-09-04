@@ -1,8 +1,7 @@
 #ifndef LLVM_TDG_BASIC_BLOCK_TRACER_H
 #define LLVM_TDG_BASIC_BLOCK_TRACER_H
 
-#include "BasicBlockTraceMessage.pb.h"
-
+#include <cstdint>
 #include <vector>
 
 // A thin wrapper over the LLVM::TDG::Profile structure.
@@ -14,14 +13,13 @@ public:
   void initialize(const char *fileName);
 
   // Increase the counter of the specific basic block.
-  void addBasicBlock(uint64_t uid);
+  void addInst(uint64_t uid);
 
   // Serialize the trace results to a file.
   void cleanup();
 
 private:
-  LLVM::TDG::DynamicLLVMBasicBlock currentBB;
-  std::vector<LLVM::TDG::DynamicLLVMBasicBlock> bufferedBB;
+  std::vector<uint64_t> bufferedBB;
   const char *fileName = nullptr;
   GzipMultipleProtobufSerializer *serializer = nullptr;
 
