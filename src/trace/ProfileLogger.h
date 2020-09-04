@@ -22,6 +22,7 @@ public:
   uint64_t getCurrentIntervalLHS() const { return this->IntervalLHS; }
 
   void saveAndRestartInterval();
+  void discardAndRestartInterval();
 
 private:
   using FunctionProfileMapT =
@@ -55,13 +56,13 @@ public:
 
   // Serialize the profile result to a file.
   void serializeToFile(const std::string &FileName) {
-    this->logger.serializeToFile(FileName);
+    this->Logger.serializeToFile(FileName);
   }
 
 private:
   bool initialized = false;
   uint64_t INTERVAL_SIZE = 0;
 
-  ProfileLogger logger;
+  ProfileLogger Logger;
 };
 #endif
