@@ -5,14 +5,7 @@
 #include <fstream>
 #include <iomanip>
 
-void ProfileLogger::initialize(uint64_t _INTERVAL_SIZE) {
-  assert(!this->initialized && "Already initialized.");
-  this->initialized = true;
-  this->INTERVAL_SIZE = _INTERVAL_SIZE;
-}
-
-void ProfileLogger::addBasicBlock(const std::string &Func,
-                                  const std::string &BB) {
+void ProfileLogger::addInst(const std::string &Func, const std::string &BB) {
   // operator[] will implicitly create the BBMap;
   auto &BBMap = Profile[Func];
   if (BBMap.find(BB) == BBMap.end()) {
@@ -24,25 +17,22 @@ void ProfileLogger::addBasicBlock(const std::string &Func,
   // Update the function count.
   this->FuncProfile.emplace(Func, 0).first->second++;
 
-  // Update the Interval.
-  // If we reached the interval limit, store the current interval and create
-  // a new one.
-  if (this->BBCount - this->IntervalLHS == INTERVAL_SIZE) {
-    auto ProtobufInterval = this->ProtobufProfile.add_intervals();
-    ProtobufInterval->set_inst_lhs(this->IntervalLHS);
-    ProtobufInterval->set_inst_rhs(this->BBCount);
-    auto &ProtobufFuncs = *(ProtobufInterval->mutable_funcs());
-    this->convertFunctionProfileMapTToProtobufFunctionProfile(
-        this->IntervalProfile, ProtobufFuncs);
-    // Remember to clear counter, etc.
-    this->IntervalLHS = this->BBCount;
-    this->IntervalProfile.clear();
-  }
-
   // Update the interval.
   this->IntervalProfile[Func].emplace(BB, 0).first->second++;
 
-  BBCount++;
+  this->InstCount++;
+}
+
+void ProfileLogger::saveAndRestartInterval() {
+  auto ProtobufInterval = this->ProtobufProfile.add_intervals();
+  ProtobufInterval->set_inst_lhs(this->IntervalLHS);
+  ProtobufInterval->set_inst_rhs(this->InstCount);
+  auto &ProtobufFuncs = *(ProtobufInterval->mutable_funcs());
+  this->convertFunctionProfileMapTToProtobufFunctionProfile(
+      this->IntervalProfile, ProtobufFuncs);
+  // Remember to clear counter, etc.
+  this->IntervalLHS = this->InstCount;
+  this->IntervalProfile.clear();
 }
 
 void ProfileLogger::convertFunctionProfileMapTToProtobufFunctionProfile(
@@ -60,7 +50,7 @@ void ProfileLogger::convertFunctionProfileMapTToProtobufFunctionProfile(
 
 void ProfileLogger::serializeToFile(const std::string &FileName) {
 
-  if (this->BBCount == 0) {
+  if (this->InstCount == 0) {
     // There is no file traced.
     return;
   }
@@ -94,7 +84,7 @@ void ProfileLogger::serializeToFile(const std::string &FileName) {
     double Accumulated = 0.0;
     for (const auto &Func : SortedFunctions) {
       double Percentage = static_cast<double>(this->FuncProfile.at(Func)) /
-                          static_cast<double>(this->BBCount);
+                          static_cast<double>(this->InstCount);
       File << std::setw(7) << std::fixed << std::setprecision(4) << Accumulated
            << std::setw(7) << std::fixed << std::setprecision(4) << Percentage
            << ' ' << Func << '\n';
@@ -106,9 +96,24 @@ void ProfileLogger::serializeToFile(const std::string &FileName) {
     File.close();
   }
 
-  // std::string OutString;
-  // google::protobuf::TextFormat::PrintToString(ProtobufProfile,
-  // &OutString); std::cout << OutString << std::endl;
+  std::cout << "Profiled Inst #" << this->InstCount << std::endl;
+}
 
-  std::cout << "Profiled Basic Block #" << BBCount << std::endl;
+void FixedSizeIntervalProfileLogger::initialize(uint64_t _INTERVAL_SIZE) {
+  assert(!this->initialized && "Already initialized.");
+  this->initialized = true;
+  this->INTERVAL_SIZE = _INTERVAL_SIZE;
+}
+
+void FixedSizeIntervalProfileLogger::addInst(const std::string &Func,
+                                             const std::string &BB) {
+  this->logger.addInst(Func, BB);
+
+  // If we reached the interval limit, store the current interval and create
+  // a new one.
+  if (this->logger.getCurrentInstCount() -
+          this->logger.getCurrentIntervalLHS() ==
+      INTERVAL_SIZE) {
+    this->logger.saveAndRestartInterval();
+  }
 }

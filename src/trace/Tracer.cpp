@@ -267,7 +267,7 @@ public:
   size_t currentInstValueDescriptorId = 0;
 
   // Profile the code.
-  ProfileLogger profile;
+  FixedSizeIntervalProfileLogger profile;
 
   // Trace the basic blocks.
   BasicBlockTracer bbtracer;
@@ -735,8 +735,8 @@ void printInst(const char *FunctionName, uint64_t UID) {
   if (tts.isInROI()) {
     std::string FuncStr(FunctionName);
     std::string BBStr(BBName);
-    tts.profile.addBasicBlock(FuncStr, BBStr);
-    tts.bbtracer.addBasicBlock(UID);
+    tts.profile.addInst(FuncStr, BBStr);
+    tts.bbtracer.addInst(UID);
   }
 
   // printf("%s %s:%d, inside? %d count %lu\n", FunctionName, __FILE__,
