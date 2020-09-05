@@ -21,8 +21,8 @@ public:
   uint64_t getCurrentInstCount() const { return this->InstCount; }
   uint64_t getCurrentIntervalLHS() const { return this->IntervalLHS; }
 
-  void saveAndRestartInterval();
-  void discardAndRestartInterval();
+  void saveAndRestartInterval(uint64_t MarkCount = 0);
+  void discardAndRestartInterval(uint64_t MarkCount = 0);
 
 private:
   using FunctionProfileMapT =
@@ -35,6 +35,7 @@ private:
 
   FunctionProfileMapT IntervalProfile;
   uint64_t IntervalLHS = 0;
+  uint64_t IntervalLHSMarkCount = 0;
 
   uint64_t InstCount = 0;
 

@@ -509,6 +509,10 @@ if __name__ == '__main__':
                       dest='profile', default=False)
     parser.add_option('--simpoint', action='store_true',
                       dest='simpoint', default=False)
+    parser.add_option('--simpoint-mode', action='store', type='choice',
+                      dest='simpoint_mode', default='fix',
+                      choices=['fix', 'region'],
+                      help='simpoint mode: fix, region [default: %default]')
     parser.add_option('--trace', action='store_true',
                       dest='trace', default=False)
     parser.add_option('-d', '--build-datagraph', action='store_true',

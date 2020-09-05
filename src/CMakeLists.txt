@@ -23,6 +23,9 @@ add_library(LLVMTDGPass SHARED
     trace/ProfileParser.cpp
     trace/InstructionUIDMap.cpp
     trace/ProfileAnalyzePass.cpp
+    trace/ProfileLogger.cpp
+    trace/SimpointIntervalSelectPass.cpp
+    trace/CallLoopProfileTree.cpp
     $<TARGET_OBJECTS:ProtobufTraceMessage>
     ${TDG_PROTOBUF_SRCS}
     DynamicInstruction.cpp

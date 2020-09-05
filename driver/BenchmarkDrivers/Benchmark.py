@@ -186,12 +186,25 @@ class Benchmark(object):
         # TODO: Search for profile for non-main thread.
         return os.path.join(self.get_profile_folder_abs(), '0.profile')
 
+    def get_bbtrace_abs(self):
+        # This only works for single thread workloads (0 -> main thread).
+        # TODO: Search for profile for non-main thread.
+        return os.path.join(self.get_profile_folder_abs(), '0.bbtrace')
+
+    def get_region_profile_abs(self):
+        # This only works for single thread workloads (0 -> main thread).
+        # TODO: Search for profile for non-main thread.
+        return os.path.join(self.get_profile_folder_abs(), '0.bbtrace.profile')
+
     """
     Get some constant values for simpoint.
     """
 
     def get_simpoint_abs(self):
         return os.path.join(self.get_profile_folder_abs(), 'simpoints.txt')
+
+    def get_region_simpoint_abs_new(self):
+        return os.path.join(self.get_profile_folder_abs(), 'region.simpoints.new.txt')
 
     def get_region_simpoint_abs(self):
         return os.path.join(self.get_profile_folder_abs(), 'region.simpoints.txt')
@@ -262,10 +275,12 @@ class Benchmark(object):
                 if line.startswith('#'):
                     continue
                 fields = line.split(' ')
-                assert(len(fields) == 3)
+                assert(len(fields) == 5)
                 lhs = int(fields[0])
                 rhs = int(fields[1])
-                weight = float(fields[2])
+                lhs_mark = int(fields[2])
+                rhs_mark = int(fields[3])
+                weight = float(fields[4])
                 trace_fn = os.path.join(
                     self.get_trace_folder_abs(),
                     '0.{tid}.trace'.format(tid=trace_id),
@@ -386,8 +401,34 @@ class Benchmark(object):
         Util.mkdir_p(transform_path)
 
     def simpoint(self):
+        if self.options.simpoint_mode == 'fix':
+            self.simpoint_fixed_interval()
+        elif self.options.simpoint_mode == 'region':
+            self.simpoint_region()
+
+    def simpoint_region(self):
         os.chdir(self.get_exe_path())
-        print('Doing simpoints')
+        # We also do simpoint interval selection.
+        print('Selecting region markers')
+        opt_cmd = [
+            C.OPT,
+            '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
+            '-simpoint-interval',
+            self.get_raw_bc(),
+            '-trace-file={trace}'.format(trace=self.get_bbtrace_abs()),
+            '-gem-forge-inst-uid-file={inst_uid}'.format(
+                inst_uid=self.get_profile_inst_uid()),
+        ]
+        Util.call_helper(opt_cmd)
+        # Perform the simpoint on these intervals.
+        print('Selecting region simpoints')
+        from Utils import SimPoint
+        SimPoint.SimPoint(self.get_region_profile_abs(), self.get_region_simpoint_abs_new())
+        os.chdir(self.cwd)
+
+    def simpoint_fixed_interval(self):
+        os.chdir(self.get_exe_path())
+        print('Selecting fix size simpoints')
         from Utils import SimPoint
         SimPoint.SimPoint(self.get_profile(), self.get_simpoint_abs())
         os.chdir(self.cwd)

@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='ProfileMessage.proto',
   package='LLVM.TDG',
   syntax='proto3',
-  serialized_pb=_b('\n\x14ProfileMessage.proto\x12\x08LLVM.TDG\"|\n\x0f\x46unctionProfile\x12\x0c\n\x04\x66unc\x18\x01 \x01(\t\x12/\n\x03\x62\x62s\x18\x02 \x03(\x0b\x32\".LLVM.TDG.FunctionProfile.BbsEntry\x1a*\n\x08\x42\x62sEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x04:\x02\x38\x01\"\xa5\x01\n\x08Interval\x12\x10\n\x08inst_lhs\x18\x01 \x01(\x04\x12\x10\n\x08inst_rhs\x18\x02 \x01(\x04\x12,\n\x05\x66uncs\x18\x03 \x03(\x0b\x32\x1d.LLVM.TDG.Interval.FuncsEntry\x1aG\n\nFuncsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12(\n\x05value\x18\x02 \x01(\x0b\x32\x19.LLVM.TDG.FunctionProfile:\x02\x38\x01\"\xb4\x01\n\x07Profile\x12\x0c\n\x04name\x18\x01 \x01(\t\x12+\n\x05\x66uncs\x18\x02 \x03(\x0b\x32\x1c.LLVM.TDG.Profile.FuncsEntry\x12%\n\tintervals\x18\x03 \x03(\x0b\x32\x12.LLVM.TDG.Interval\x1aG\n\nFuncsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12(\n\x05value\x18\x02 \x01(\x0b\x32\x19.LLVM.TDG.FunctionProfile:\x02\x38\x01\x62\x06proto3')
+  serialized_pb=_b('\n\x14ProfileMessage.proto\x12\x08LLVM.TDG\"|\n\x0f\x46unctionProfile\x12\x0c\n\x04\x66unc\x18\x01 \x01(\t\x12/\n\x03\x62\x62s\x18\x02 \x03(\x0b\x32\".LLVM.TDG.FunctionProfile.BbsEntry\x1a*\n\x08\x42\x62sEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x04:\x02\x38\x01\"\xc9\x01\n\x08Interval\x12\x10\n\x08inst_lhs\x18\x01 \x01(\x04\x12\x10\n\x08inst_rhs\x18\x02 \x01(\x04\x12\x10\n\x08mark_lhs\x18\x03 \x01(\x04\x12\x10\n\x08mark_rhs\x18\x04 \x01(\x04\x12,\n\x05\x66uncs\x18\x05 \x03(\x0b\x32\x1d.LLVM.TDG.Interval.FuncsEntry\x1aG\n\nFuncsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12(\n\x05value\x18\x02 \x01(\x0b\x32\x19.LLVM.TDG.FunctionProfile:\x02\x38\x01\"\xb4\x01\n\x07Profile\x12\x0c\n\x04name\x18\x01 \x01(\t\x12+\n\x05\x66uncs\x18\x02 \x03(\x0b\x32\x1c.LLVM.TDG.Profile.FuncsEntry\x12%\n\tintervals\x18\x03 \x03(\x0b\x32\x12.LLVM.TDG.Interval\x1aG\n\nFuncsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12(\n\x05value\x18\x02 \x01(\x0b\x32\x19.LLVM.TDG.FunctionProfile:\x02\x38\x01\x62\x06proto3')
 )
 
 
@@ -133,8 +133,8 @@ _INTERVAL_FUNCSENTRY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=255,
-  serialized_end=326,
+  serialized_start=291,
+  serialized_end=362,
 )
 
 _INTERVAL = _descriptor.Descriptor(
@@ -159,8 +159,22 @@ _INTERVAL = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='funcs', full_name='LLVM.TDG.Interval.funcs', index=2,
-      number=3, type=11, cpp_type=10, label=3,
+      name='mark_lhs', full_name='LLVM.TDG.Interval.mark_lhs', index=2,
+      number=3, type=4, cpp_type=4, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='mark_rhs', full_name='LLVM.TDG.Interval.mark_rhs', index=3,
+      number=4, type=4, cpp_type=4, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='funcs', full_name='LLVM.TDG.Interval.funcs', index=4,
+      number=5, type=11, cpp_type=10, label=3,
       has_default_value=False, default_value=[],
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -178,7 +192,7 @@ _INTERVAL = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=161,
-  serialized_end=326,
+  serialized_end=362,
 )
 
 
@@ -215,8 +229,8 @@ _PROFILE_FUNCSENTRY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=255,
-  serialized_end=326,
+  serialized_start=291,
+  serialized_end=362,
 )
 
 _PROFILE = _descriptor.Descriptor(
@@ -259,8 +273,8 @@ _PROFILE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=329,
-  serialized_end=509,
+  serialized_start=365,
+  serialized_end=545,
 )
 
 _FUNCTIONPROFILE_BBSENTRY.containing_type = _FUNCTIONPROFILE

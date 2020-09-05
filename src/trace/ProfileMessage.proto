@@ -11,7 +11,9 @@ message FunctionProfile {
 message Interval {
     uint64 inst_lhs = 1;
     uint64 inst_rhs = 2;
-    map<string, FunctionProfile> funcs = 3;
+    uint64 mark_lhs = 3;
+    uint64 mark_rhs = 4;
+    map<string, FunctionProfile> funcs = 5;
 }
 
 message Profile {
