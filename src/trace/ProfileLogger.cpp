@@ -19,21 +19,25 @@ void ProfileLogger::addInst(const std::string &Func, const std::string &BB) {
   this->InstCount++;
 }
 
-void ProfileLogger::saveAndRestartInterval() {
+void ProfileLogger::saveAndRestartInterval(uint64_t MarkCount) {
   auto ProtobufInterval = this->ProtobufProfile.add_intervals();
   ProtobufInterval->set_inst_lhs(this->IntervalLHS);
   ProtobufInterval->set_inst_rhs(this->InstCount);
+  ProtobufInterval->set_mark_lhs(this->IntervalLHSMarkCount);
+  ProtobufInterval->set_mark_rhs(MarkCount);
   auto &ProtobufFuncs = *(ProtobufInterval->mutable_funcs());
   this->convertFunctionProfileMapTToProtobufFunctionProfile(
       this->IntervalProfile, ProtobufFuncs);
   // Remember to clear counter, etc.
   this->IntervalLHS = this->InstCount;
+  this->IntervalLHSMarkCount = MarkCount;
   this->IntervalProfile.clear();
 }
 
-void ProfileLogger::discardAndRestartInterval() {
+void ProfileLogger::discardAndRestartInterval(uint64_t MarkCount) {
   // Remember to clear counter, etc.
   this->IntervalLHS = this->InstCount;
+  this->IntervalLHSMarkCount = MarkCount;
   this->IntervalProfile.clear();
 }
 

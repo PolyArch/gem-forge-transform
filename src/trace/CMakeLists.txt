@@ -4,13 +4,10 @@ protobuf_generate_cpp(TRACE_PROTOBUF_SRCS TRACE_PROTOBUF_HDRS
     TraceMessage.proto
 )
 
-protobuf_generate_cpp(BB_TRACE_PROTOBUF_SRCS BB_TRACE_PROTOBUF_HDRS
-    BasicBlockTraceMessage.proto
-)
-
 protobuf_generate_cpp(PROFILE_PROTOBUF_SRCS PROFILE_PROTOBUF_HDRS
     ProfileMessage.proto
 )
+protobuf_generate_python(PROFILE_PROTOBUF_PY ProfileMessage.proto)
 
 protobuf_generate_cpp(UID_MAP_PROTOBUF_SRCS UID_MAP_PROTOBUF_HDRS
     UIDMap.proto
@@ -20,7 +17,6 @@ protobuf_generate_python(UID_MAP_PROTOBUF_PY UIDMap.proto)
 # Add an object lib for parent folder to use.
 add_library(ProtobufTraceMessage OBJECT
     ${TRACE_PROTOBUF_SRCS}
-    ${BB_TRACE_PROTOBUF_SRCS}
     ${PROFILE_PROTOBUF_SRCS}
     ${UID_MAP_PROTOBUF_SRCS}
 )
@@ -42,7 +38,6 @@ add_library(TracerProtobuf STATIC
     ../ProtobufSerializer.cpp
     TracerProtobuf.cpp
     ${TRACE_PROTOBUF_SRCS}
-    ${BB_TRACE_PROTOBUF_SRCS}
     BasicBlockTracer.cpp
 )
 target_include_directories(TracerProtobuf PUBLIC 
@@ -55,6 +50,7 @@ set_target_properties(TracerProtobuf PROPERTIES
 )
 
 # Copy the generated python protobuf file to benchmark/Utils/.
-add_custom_target(PyUIDMapProtobufSrc ALL
+add_custom_target(PyProtobufSrc ALL
     cp ${UID_MAP_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/driver/Utils/
-    DEPENDS ${UID_MAP_PROTOBUF_PY})
+    COMMAND cp ${PROFILE_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/driver/Utils/
+    DEPENDS ${UID_MAP_PROTOBUF_PY} ${PROFILE_PROTOBUF_PY})
