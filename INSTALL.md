@@ -33,10 +33,14 @@ cd PROTOBUF_SRC_ROOT
 CPPFLAGS=-DGOOGLE_PROTOBUF_NO_RTTI \
 CXXFLAGS=-fPIC \
 ./configure \
+--prefix=${HOME}/root \
 --enable-shared=no \
 --with-zlib=yes
 make -j9
 make install
+# Build python files.
+cd python
+python setup.py build
 ```
 
 ### GemForgeCPU
