@@ -325,6 +325,8 @@ class CortexBenchmark(Benchmark):
         self.debug('Linking to raw bitcode {raw_bc}'.format(raw_bc=raw_bc))
         Util.call_helper(link_cmd)
 
+        self.post_build_raw_bc()
+
         os.chdir(self.cwd)
 
     def trace(self):

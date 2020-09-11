@@ -16,22 +16,25 @@ SimInput=fullhd
 
 # python Driver.py -b $Benchmark --build
 # python Driver.py -b $Benchmark --profile
-python Driver.py -b $Benchmark --simpoint --simpoint-mode=region
+# python Driver.py -b $Benchmark --simpoint --simpoint-mode=region
+# python Driver.py -b $Benchmark --trace --simpoint-mode=region
+# python Driver.py -b $Benchmark --trace --simpoint-mode=region --fake-trace
 # python Driver.py -b $Benchmark --trace --fake-trace
 
-# python Driver.py -b $Benchmark -t valid.ex -d
+# python Driver.py -b $Benchmark -t valid.ex -d --simpoint-mode=region --fake-trace
 RubyConfig=8x8c
 sim_replay_prefix=replay/ruby/single
 i4=$sim_replay_prefix/i4.tlb.${RubyConfig}
 o4=$sim_replay_prefix/o4.tlb.${RubyConfig}
 o8=$sim_replay_prefix/o8.tlb.${RubyConfig}
 sim_replay=$o8.bingo-l2pf
-# python Driver.py -b $Benchmark -t valid.ex --sim-input-size $SimInput \
-#     --sim-configs $sim_replay -s &
-    # --gem5-debug SyscallBase
+# python Driver.py -b $Benchmark -t valid.ex --sim-input-size $SimInput --simpoint-mode=region --fake-trace \
+#     --trace-id 11 \
+#     --sim-configs $sim_replay -s \
+#     --gem5-debug PseudoInst
 
 StreamTransform=stream/ex/static/so.store
-# python Driver.py -b $Benchmark -t $StreamTransform -d 
+# python Driver.py -b $Benchmark -t $StreamTransform -d --simpoint-mode=region --fake-trace
 
 run_ssp () {
     local bench=$1
@@ -47,6 +50,7 @@ run_ssp () {
     # local all_sim=${o8_link}-gb-fifo.flts-mc
     local all_sim=$o8
     python Driver.py -b $bench -t $trans \
+        --simpoint-mode=region --fake-trace --trace-id 11 \
         --sim-configs $all_sim \
         --sim-input $input \
         --input-threads $threads \
@@ -57,4 +61,4 @@ run_ssp () {
 RubyConfig=8x8c
 Threads=1
 Parallel=1
-# run_ssp $Benchmark $StreamTransform $RubyConfig $SimInput $Threads $Parallel
+run_ssp $Benchmark $StreamTransform $RubyConfig $SimInput $Threads $Parallel

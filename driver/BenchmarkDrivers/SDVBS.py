@@ -136,7 +136,8 @@ class SDVBSBenchmark(Benchmark):
             'computeSAD',
             'integralImage2D2D',
             'finalSAD',
-            'findDisparity'
+            'findDisparity',
+            'correlateSAD_2D',
         ],
         'localization': ['weightedSample'],
         'mser': ['mser'],
@@ -422,7 +423,12 @@ class SDVBSBenchmark(Benchmark):
         """
         Some benchmarks takes too long to finish, so we use work item
         to ensure that we simualte for the same amount of work.
+        This is only used for execution simulation with no simpoints.
         """
+        if not self.options.fake_trace:
+            return list()
+        if self.options.simpoint_mode == 'region':
+            return list()
         work_items = SDVBSBenchmark.WORK_ITEMS[self.benchmark_name]
         if not work_items or work_items == -1:
             # This benchmark can finish.

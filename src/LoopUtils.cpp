@@ -35,6 +35,8 @@ const std::unordered_set<std::string> LoopUtils::LoopContinuityIgnoredFunctions{
     "printf",
     "omp_get_thread_num",
     "feof",
+    "m5_work_mark",
+    "m5_switch_cpu",
     // Specific to spec2017 imagick_s
     // "ReadBlob", "ThrowMagickException", "CloseBlob", "DestroyImage",
 };

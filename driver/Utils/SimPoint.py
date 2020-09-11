@@ -216,6 +216,8 @@ class SimPoint:
                 lhs=interval.inst_lhs, rhs=interval.inst_rhs,
                 lhs_mark=interval.mark_lhs, rhs_mark=interval.mark_rhs,
                 weight=simpoint_weight))
+            # for func in interval.funcs:
+            #     points.write('- {func}\n'.format(func=func))
             points.write('# =========== SimPoint #{i} [{lhs} {rhs}) [{lhs_mark} {rhs_mark}) ============ \n'.format(
                 i=i, lhs=interval.inst_lhs, rhs=interval.inst_rhs,
                 lhs_mark=interval.mark_lhs, rhs_mark=interval.mark_rhs,

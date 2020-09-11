@@ -19,8 +19,10 @@ class TraceObj(object):
     def __init__(self, fn, trace_id, weight):
         self.fn = fn
         self.trace_id = trace_id
-        self.lhs = 0
-        self.rhs = 0
+        self.lhs_inst = 0
+        self.rhs_inst = 0
+        self.lhs_mark = 0
+        self.rhs_mark = 0
         self.weight = weight
         # print('Find trace {weight}: {fn}'.format(
         #     weight=self.weight, fn=self.fn))
@@ -193,18 +195,40 @@ class Benchmark(object):
 
     def get_region_profile_abs(self):
         # This only works for single thread workloads (0 -> main thread).
-        # TODO: Search for profile for non-main thread.
         return os.path.join(self.get_profile_folder_abs(), '0.bbtrace.profile')
+
+    def get_region_simpoint_bc(self):
+        # This only works for single thread workloads (0 -> main thread).
+        return os.path.join(self.get_profile_folder_abs(), 'region.simpoint.bc')
+
+    def get_transform_input_bc(self):
+        # If we are using region simpoint with fake trace,
+        # then we have to use a special bc.
+        if self.options.simpoint_mode == 'region' and self.options.fake_trace:
+            return self.get_region_simpoint_bc()
+        else:
+            return self.get_raw_bc()
 
     """
     Get some constant values for simpoint.
     """
 
     def get_simpoint_abs(self):
+        if self.options.simpoint_mode == 'fix':
+            return self.get_fixed_size_simpoint_abs()
+        elif self.options.simpoint_mode == 'region':
+            return self.get_region_simpoint_abs_new()
+        else:
+            return 'none'
+
+    def get_fixed_size_simpoint_abs(self):
         return os.path.join(self.get_profile_folder_abs(), 'simpoints.txt')
 
     def get_region_simpoint_abs_new(self):
         return os.path.join(self.get_profile_folder_abs(), 'region.simpoints.new.txt')
+
+    def get_region_simpoint_timeline_abs(self):
+        return self.get_bbtrace_abs() + '.timeline.txt'
 
     def get_region_simpoint_abs(self):
         return os.path.join(self.get_profile_folder_abs(), 'region.simpoints.txt')
@@ -217,6 +241,10 @@ class Benchmark(object):
         ret = 'trace'
         if self.get_input_name():
             ret += '.' + self.get_input_name()
+        if self.options.simpoint_mode == 'region':
+            ret += '.region'
+        if self.options.fake_trace:
+            ret += '.fake'
         return ret
 
     def get_trace_folder_abs(self):
@@ -257,11 +285,13 @@ class Benchmark(object):
         if self.options.region_simpoint and os.path.isfile(self.get_region_simpoint_abs()):
             self.init_traces_from_region_simpoint(
                 self.get_region_simpoint_abs())
-            return
-        if os.path.isfile(self.get_simpoint_abs()):
+        elif self.options.simpoint_mode != 'none' and os.path.isfile(self.get_simpoint_abs()):
             self.init_traces_from_simpoint(self.get_simpoint_abs())
-            return
-        self.init_traces_from_glob()
+        else:
+            self.init_traces_from_glob()
+        # Filter out trace ids not specified by the user.
+        if self.options.trace_id:
+            self.traces = [t for t in self.traces if t.trace_id in self.options.trace_id]
 
     def init_traces_from_simpoint(self, simpoint_fn):
         """
@@ -276,8 +306,8 @@ class Benchmark(object):
                     continue
                 fields = line.split(' ')
                 assert(len(fields) == 5)
-                lhs = int(fields[0])
-                rhs = int(fields[1])
+                lhs_inst = int(fields[0])
+                rhs_inst = int(fields[1])
                 lhs_mark = int(fields[2])
                 rhs_mark = int(fields[3])
                 weight = float(fields[4])
@@ -285,22 +315,14 @@ class Benchmark(object):
                     self.get_trace_folder_abs(),
                     '0.{tid}.trace'.format(tid=trace_id),
                 )
-                assert(os.path.isfile(trace_fn))
-                self.traces.append(
-                    TraceObj(trace_fn, trace_id, weight)
-                )
+                # assert(os.path.isfile(trace_fn))
+                trace_obj = TraceObj(trace_fn, trace_id, weight)
+                trace_obj.lhs_inst = lhs_inst
+                trace_obj.rhs_inst = rhs_inst
+                trace_obj.lhs_mark = lhs_mark
+                trace_obj.rhs_mark = rhs_mark
+                self.traces.append(trace_obj)
                 trace_id += 1
-
-    def init_traces_fake(self):
-        trace_fn = os.path.join(
-            self.get_trace_folder_abs(),
-            'fake.trace',
-        )
-        trace_id = 0
-        weight = 1.0
-        self.traces.append(
-            TraceObj(trace_fn, trace_id, weight)
-        )
 
     def init_traces_from_region_simpoint(self, region_simpoint_fn):
         Util.mkdir_p(self.get_trace_folder_abs())
@@ -364,10 +386,6 @@ class Benchmark(object):
         trace_fns.sort(cmp=sort_by)
         for trace_id in range(len(trace_fns)):
             trace_fn = trace_fns[trace_id]
-            # Ignore the trace id not specified by the user.
-            if self.options.trace_id:
-                if trace_id not in self.options.trace_id:
-                    continue
             self.traces.append(
                 TraceObj(trace_fn, trace_id, 1.0)
             )
@@ -379,19 +397,19 @@ class Benchmark(object):
         return [self.get_tdg(transform_config, trace) for trace in self.traces]
 
     def get_tdg(self, transform_config, trace):
+        tdg_base = ''
         if self.get_input_name():
-            return '{transform_path}/{input_name}.{trace_id}.tdg'.format(
-                transform_path=self.get_transform_path(
-                    transform_config.get_transform_id()),
-                input_name=self.get_input_name(),
-                trace_id=trace.get_trace_id(),
-            )
-        else:
-            return '{transform_path}/{trace_id}.tdg'.format(
-                transform_path=self.get_transform_path(
-                    transform_config.get_transform_id()),
-                trace_id=trace.get_trace_id(),
-            )
+            tdg_base += self.get_input_name() + '.'
+        if self.options.simpoint_mode == 'region':
+            tdg_base += 'region.'
+        if self.options.fake_trace:
+            tdg_base += 'fake.'
+        return '{transform_path}/{tdg_base}{trace_id}.tdg'.format(
+            transform_path=self.get_transform_path(
+                transform_config.get_transform_id()),
+            tdg_base=tdg_base,
+            trace_id=trace.get_trace_id(),
+        )
 
     def get_tdg_extra_path(self, transform_config, trace):
         return self.get_tdg(transform_config, trace) + '.extra'
@@ -400,9 +418,15 @@ class Benchmark(object):
         transform_path = self.get_transform_path(transform_id)
         Util.mkdir_p(transform_path)
 
+    def add_transform_debug(self, cmd):
+        if self.options.transform_debug:
+            cmd.append(
+                '-debug-only={debugs}'.format(debugs=self.options.transform_debug))
+        return cmd
+
     def simpoint(self):
         if self.options.simpoint_mode == 'fix':
-            self.simpoint_fixed_interval()
+            self.simpoint_fixed_size()
         elif self.options.simpoint_mode == 'region':
             self.simpoint_region()
 
@@ -418,19 +442,24 @@ class Benchmark(object):
             '-trace-file={trace}'.format(trace=self.get_bbtrace_abs()),
             '-gem-forge-inst-uid-file={inst_uid}'.format(
                 inst_uid=self.get_profile_inst_uid()),
+            '-o',
+            self.get_region_simpoint_bc(),
         ]
+        opt_cmd = self.add_transform_debug(opt_cmd)
         Util.call_helper(opt_cmd)
         # Perform the simpoint on these intervals.
         print('Selecting region simpoints')
         from Utils import SimPoint
-        SimPoint.SimPoint(self.get_region_profile_abs(), self.get_region_simpoint_abs_new())
+        SimPoint.SimPoint(self.get_region_profile_abs(),
+                          self.get_region_simpoint_abs_new())
         os.chdir(self.cwd)
 
-    def simpoint_fixed_interval(self):
+    def simpoint_fixed_size(self):
         os.chdir(self.get_exe_path())
         print('Selecting fix size simpoints')
         from Utils import SimPoint
-        SimPoint.SimPoint(self.get_profile(), self.get_simpoint_abs())
+        SimPoint.SimPoint(self.get_profile(),
+                          self.get_fixed_size_simpoint_abs())
         os.chdir(self.cwd)
 
     def perf(self):
@@ -561,9 +590,7 @@ class Benchmark(object):
             trace_cmd.append('-trace-function=' + self.get_trace_func())
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
-        if self.options.transform_debug:
-            trace_cmd.append(
-                '-debug-only={debugs}'.format(debugs=self.options.transform_debug))
+        trace_cmd = self.add_transform_debug(trace_cmd)
         print('# Instrumenting profiler...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
@@ -649,15 +676,19 @@ class Benchmark(object):
         if self.options.fake_trace:
             # Do not bother really run the trace
             # but generate a fake one.
-            trace_fn = os.path.join(
-                self.get_trace_folder_abs(),
-                'fake.0.0.trace',
-            )
-            if os.path.isfile(trace_fn):
-                rm_cmd = ['rm', trace_fn]
-                Util.call_helper(trace_fn)
-            touch_cmd = ['touch', trace_fn]
-            Util.call_helper(touch_cmd)
+            num_traces = 1
+            if self.options.simpoint_mode == 'region':
+                num_traces = len(self.traces)
+            for i in range(num_traces):
+                trace_fn = os.path.join(
+                    self.get_trace_folder_abs(),
+                    '0.{i}.trace'.format(i=i),
+                )
+                if os.path.isfile(trace_fn):
+                    rm_cmd = ['rm', trace_fn]
+                    Util.call_helper(rm_cmd)
+                touch_cmd = ['touch', trace_fn]
+                Util.call_helper(touch_cmd)
         else:
             # Remember to set the environment for trace.
             os.putenv('LLVM_TDG_TRACE_FOLDER', self.get_trace_folder_abs())
@@ -687,7 +718,7 @@ class Benchmark(object):
             C.OPT,
             '-load={PASS_SO}'.format(PASS_SO=self.pass_so),
             '-trace-pass',
-            self.get_raw_bc(),
+            self.get_transform_input_bc(),
             '-o',
             self.get_trace_bc(),
             '-trace-inst-uid-file',
@@ -697,9 +728,7 @@ class Benchmark(object):
             trace_cmd.append('-trace-function=' + self.get_trace_func())
         if trace_reachable_only:
             trace_cmd.append('-trace-reachable-only=1')
-        if self.options.transform_debug:
-            trace_cmd.append(
-                '-debug-only={debugs}'.format(debugs=self.options.transform_debug))
+        trace_cmd = self.add_transform_debug(trace_cmd)
         print('# Instrumenting tracer...')
         Util.call_helper(trace_cmd)
         if link_stdlib:
@@ -718,7 +747,6 @@ class Benchmark(object):
         else:
             link_cmd = C.get_native_cxx_compiler(C.CXX)
             link_cmd += [
-                '-v',
                 self.get_trace_bc(),
                 self.trace_lib,
                 '-o',
@@ -775,7 +803,7 @@ class Benchmark(object):
                 profile_folder=self.get_profile_folder_abs()),
             '-trace-format={format}'.format(format=self.trace_format),
             '-datagraph-detail={detail}'.format(detail=tdg_detail),
-            self.get_raw_bc(),
+            self.get_transform_input_bc(),
             '-o',
             self.get_replay_bc(),
         ]
@@ -812,9 +840,7 @@ class Benchmark(object):
             opt_cmd.append('-output-extra-folder-path=' + output_extra_folder)
         else:
             assert(False)
-        if self.options.transform_debug:
-            opt_cmd.append(
-                '-debug-only={debugs}'.format(debugs=self.options.transform_debug))
+        opt_cmd = self.add_transform_debug(opt_cmd)
         if self.options.perf_command:
             opt_cmd = ['perf', 'record'] + opt_cmd
         print('# Processing trace...')
@@ -937,6 +963,11 @@ class Benchmark(object):
             '--caches',
             '--l2cache',
         ]
+        print('hhh')
+        if self.options.simpoint_mode == 'region' and self.options.fake_trace:
+            # We are doing region simpoint with execution simulation.
+            gem5_args.append(
+                '--gem-forge-work-mark-history={t}'.format(t=self.get_region_simpoint_timeline_abs()))
         if self.options.gem5_debug is not None:
             gem5_args.insert(
                 1, '--debug-flags={debug}'.format(debug=self.options.gem5_debug))
@@ -1021,6 +1052,7 @@ class Benchmark(object):
 
     def simulate_execution_transform(self, trace, transform_config, simulation_config):
         assert(transform_config.is_execution_transform())
+        assert(self.options.fake_trace)
         tdg = self.get_tdg(transform_config, trace)
         gem5_out_dir = simulation_config.get_gem5_dir(
             tdg, self.get_sim_input_name())
@@ -1030,6 +1062,13 @@ class Benchmark(object):
             outdir=gem5_out_dir,
             standalone=False,
         )
+        if self.options.simpoint_mode == 'region' and self.options.fake_trace:
+            # We are doing region simpoint with execution simulation.
+            assert(trace.rhs_mark > trace.lhs_mark)
+            gem5_args += [
+                '--gem-forge-work-mark-switch-cpu={t}'.format(t=trace.lhs_mark),
+                '--gem-forge-work-mark-end={t}'.format(t=trace.rhs_mark),
+            ]
         # ! Always fast forward.
         gem5_args.append('--fast-forward=-1')
         # Do not add the tdg file, so that gem5 will simulate the binary.
