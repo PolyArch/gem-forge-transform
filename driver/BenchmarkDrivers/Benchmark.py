@@ -289,9 +289,38 @@ class Benchmark(object):
             self.init_traces_from_simpoint(self.get_simpoint_abs())
         else:
             self.init_traces_from_glob()
+        self.remove_insignificant_trace()
         # Filter out trace ids not specified by the user.
         if self.options.trace_id:
             self.traces = [t for t in self.traces if t.trace_id in self.options.trace_id]
+
+    def remove_insignificant_trace(self):
+        # If there is no trace, just return.
+        if not self.traces:
+            return
+        # Normalize traces weight.
+        sum_weight = sum([trace.weight for trace in self.traces])
+        for trace in self.traces:
+            trace.weight = trace.weight / sum_weight
+        self.traces.sort(key=lambda t: t.weight, reverse=True)
+        selected_traces = list()
+        selected_weight = 0.0
+        for trace in self.traces:
+            selected_traces.append(trace)
+            selected_weight += trace.weight
+            print('Select {total} #{id} weight {weight} sum {sum}'.format(
+                total=len(selected_traces),
+                id=trace.trace_id,
+                weight=trace.weight,
+                sum=selected_weight,
+            ))
+            if selected_weight > 0.97:
+                break
+        self.traces = selected_traces
+        # Normalize again.
+        for trace in self.traces:
+            trace.weight = trace.weight / selected_weight
+
 
     def init_traces_from_simpoint(self, simpoint_fn):
         """
