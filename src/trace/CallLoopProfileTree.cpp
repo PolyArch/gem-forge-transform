@@ -256,11 +256,9 @@ CallLoopProfileTree::Node::getOutEdge(InstPtr BridgeInst, InstPtr DestInst) {
   return nullptr;
 }
 
-const std::vector<CallLoopProfileTree::EdgeTraversePoint> &
-CallLoopProfileTree::selectEdges() {
+void CallLoopProfileTree::selectEdges() {
   this->estimateNodeMaxDepth();
   this->selectCandidateEdges();
-  return this->SelectedEdgeTimeline;
 }
 
 void CallLoopProfileTree::estimateNodeMaxDepth() {
@@ -332,8 +330,9 @@ void CallLoopProfileTree::selectCandidateEdges() {
   }
   // Let's sort with SumInstCount.
   std::sort(this->CandidateEdges.begin(), this->CandidateEdges.end(),
-            [](const std::shared_ptr<Edge> &A, const std::shared_ptr<Edge> &B)
-                -> bool { return A->SumInstCount > B->SumInstCount; });
+            [](const EdgePtr &A, const EdgePtr &B) -> bool {
+              return A->SumInstCount > B->SumInstCount;
+            });
 
   // We also calculate the Cov.
   double SumCov = 0;
@@ -364,6 +363,7 @@ void CallLoopProfileTree::selectCandidateEdges() {
     }
     this->SelectedEdges.push_back(E);
     E->Selected = true;
+    E->SelectedID = this->SelectedEdges.size();
   }
 
   // Select interval points now.

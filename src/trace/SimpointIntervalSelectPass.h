@@ -2,7 +2,6 @@
 #define LLVM_TDG_SIMPOINT_INTERVAL_SELECT_PASS_H
 
 #include "../GemForgeBasePass.h"
-#include "../ProtobufSerializer.h"
 #include "CallLoopProfileTree.h"
 
 class SimpointIntervalSelectPass : public GemForgeBasePass {
@@ -15,7 +14,13 @@ public:
 
 private:
   CallLoopProfileTree *CLProfileTree = nullptr;
-  GzipMultipleProtobufReader *Reader = nullptr;
+
+  llvm::Value *EdgeMarkFunc = nullptr;
+
+  void generateProfileInterval();
+  void generateEdgeTimeline();
+  void registerEdgeMarkFunc();
+  void insertEdgeMark(const CallLoopProfileTree::EdgePtr &Edge);
 };
 
 #endif
