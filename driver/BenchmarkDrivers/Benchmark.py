@@ -705,13 +705,13 @@ class Benchmark(object):
         if self.options.fake_trace:
             # Do not bother really run the trace
             # but generate a fake one.
-            num_traces = 1
-            if self.options.simpoint_mode == 'region':
-                num_traces = len(self.traces)
-            for i in range(num_traces):
+            trace_ids = [0]
+            if self.traces:
+                trace_ids = [t.trace_id for t in self.traces]
+            for trace_id in trace_ids:
                 trace_fn = os.path.join(
                     self.get_trace_folder_abs(),
-                    '0.{i}.trace'.format(i=i),
+                    '0.{i}.trace'.format(i=trace_id),
                 )
                 if os.path.isfile(trace_fn):
                     rm_cmd = ['rm', trace_fn]
