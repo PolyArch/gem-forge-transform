@@ -321,10 +321,7 @@ void StreamRegionAnalyzer::finalizeStreamConfigureLoopInfo(
   std::unordered_set<int> CoalescedGroupSet;
   for (auto &S : SortedStreams) {
     auto CoalesceGroup = S->getCoalesceGroup();
-    if (CoalesceGroup == Stream::InvalidCoalesceGroup) {
-      // This is not coalesced.
-      Info.SortedCoalescedStreams.push_back(S);
-    } else if (CoalescedGroupSet.count(CoalesceGroup) == 0) {
+    if (CoalescedGroupSet.count(CoalesceGroup) == 0) {
       // First time we see this.
       Info.SortedCoalescedStreams.push_back(S);
       CoalescedGroupSet.insert(CoalesceGroup);
@@ -546,7 +543,7 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
     for (auto &S : InstStream.second) {
       if (S->isQualified() && S->SStream->isQualified()) {
         LLVM_DEBUG(llvm::dbgs() << "==== Choose stream StaticOuterMost for "
-                      << S->formatName() << '\n');
+                                << S->formatName() << '\n');
         /**
          * Instead of just choose the out-most loop, we use
          * a heuristic to select the level with most number
@@ -558,7 +555,7 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
           if (DepSS->isQualified()) {
             NumQualifiedDepStreams++;
             LLVM_DEBUG(llvm::dbgs() << "==== Qualified DepS "
-                          << DepSS->formatName() << '\n');
+                                    << DepSS->formatName() << '\n');
           }
         }
         if (NumQualifiedDepStreams >= ChosenNumQualifiedDepStreams) {
@@ -570,8 +567,8 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
     if (ChosenStream != nullptr) {
       this->InstChosenStreamMap.emplace(Inst, ChosenStream);
       ChosenStream->markChosen();
-      LLVM_DEBUG(llvm::dbgs() << "== Choose "
-                    << ChosenStream->formatName() << '\n');
+      LLVM_DEBUG(llvm::dbgs()
+                 << "== Choose " << ChosenStream->formatName() << '\n');
     }
   }
 }
