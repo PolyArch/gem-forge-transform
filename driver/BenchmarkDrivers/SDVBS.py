@@ -322,6 +322,13 @@ class SDVBSBenchmark(Benchmark):
         else:
             return 63500
 
+    def get_region_simpoint_candidate_edge_min_insts(self):
+        if self.benchmark_name == 'stitch':
+            return 1000000
+        else:
+            # Others we use 10 million as default.
+            return 10000000
+
     def find_all_sources(self, folder):
         sources = list()
         for root, dirs, files in os.walk(folder):

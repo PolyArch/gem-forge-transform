@@ -120,8 +120,6 @@ private:
   std::vector<EdgePtr> SelectedEdges;
   std::vector<EdgeTraversePoint> SelectedEdgeTimeline;
 
-  static constexpr uint64_t MinimumInstCount = 10000000;
-
   void estimateNodeMaxDepth();
   void selectCandidateEdges();
 };

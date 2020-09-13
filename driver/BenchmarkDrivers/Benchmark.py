@@ -193,6 +193,9 @@ class Benchmark(object):
         # TODO: Search for profile for non-main thread.
         return os.path.join(self.get_profile_folder_abs(), '0.bbtrace')
 
+    def get_region_simpoint_candidate_edge_min_insts(self):
+        return 10000000
+
     def get_region_profile_abs(self):
         # This only works for single thread workloads (0 -> main thread).
         return os.path.join(self.get_profile_folder_abs(), '0.bbtrace.profile')
@@ -471,11 +474,13 @@ class Benchmark(object):
             '-trace-file={trace}'.format(trace=self.get_bbtrace_abs()),
             '-gem-forge-inst-uid-file={inst_uid}'.format(
                 inst_uid=self.get_profile_inst_uid()),
+            '-call-loop-profile-tree-candidate-edge-min-insts={v}'.format(
+                v=self.get_region_simpoint_candidate_edge_min_insts()),
             '-o',
             self.get_region_simpoint_bc(),
         ]
         opt_cmd = self.add_transform_debug(opt_cmd)
-        Util.call_helper(opt_cmd)
+        # Util.call_helper(opt_cmd)
         # Perform the simpoint on these intervals.
         print('Selecting region simpoints')
         from Utils import SimPoint
