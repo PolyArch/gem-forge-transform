@@ -4,6 +4,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <queue>
 
 #define DEBUG_TYPE "StreamRegionAnalyzer"
 #if !defined(LLVM_DEBUG) && defined(DEBUG)
@@ -1078,6 +1079,118 @@ std::string StreamRegionAnalyzer::classifyStream(const MemStream &S) const {
   }
 
   return "RANDOM";
+}
+
+void StreamRegionAnalyzer::finalizeCoalesceInfo() {
+  /**
+   * In the old trace-based transformation, we use the trace to coalesce
+   * streams. However, it lacks coalesce offset, and thus not very efficient
+   * and realistic. We will switch to new execution-based coalescing, in which
+   * the compiler really analyzes if there is a constant offset.
+   */
+  // this->getFuncSE()->finalizeCoalesceInfo();
+
+  std::queue<llvm::Loop *> LoopQueue;
+  LoopQueue.push(TopLoop);
+  while (!LoopQueue.empty()) {
+    auto CurrentLoop = LoopQueue.front();
+    LoopQueue.pop();
+    for (auto &SubLoop : CurrentLoop->getSubLoops()) {
+      LoopQueue.push(SubLoop);
+    }
+    this->coalesceStreamsAtLoop(CurrentLoop);
+  }
+}
+
+void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
+  const auto &ConfigureInfo = this->getConfigureLoopInfo(Loop);
+  if (ConfigureInfo.TotalConfiguredStreams == 0) {
+    // No streams here.
+    return;
+  }
+  /**
+   * We coalesce memory streams if:
+   * 1. They share the same step root.
+   * 2. They have scev.
+   * 3. Their SCEV has a constant offset.
+   */
+  std::list<std::vector<std::pair<Stream *, int64_t>>> CoalescedGroup;
+  for (auto S : ConfigureInfo.getSortedStreams()) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "====== Try to coalesce stream: " << S->formatName() << '\n');
+    if (S->getBaseStepRootStreams().size() != 1 ||
+        S->SStream->Type == StaticStream::TypeT::IV) {
+      // These streams are not coalesced, set the coalesce group to itself.
+      S->setCoalesceGroup(S->getStreamId(), 0);
+      continue;
+    }
+    auto SS = S->SStream;
+    auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
+    auto AddrSCEV = SS->SE->getSCEV(Addr);
+
+    bool Coalesced = false;
+    if (AddrSCEV) {
+      LLVM_DEBUG(llvm::errs() << "AddrSCEV: "; AddrSCEV->dump());
+      for (auto &Group : CoalescedGroup) {
+        auto TargetS = Group.front().first;
+        if (TargetS->getBaseStepRootStreams() != S->getBaseStepRootStreams()) {
+          // Do not share the same step root.
+          continue;
+        }
+        auto TargetSS = TargetS->SStream;
+        // Check the load/store.
+        if (TargetSS->Inst->getOpcode() != SS->Inst->getOpcode()) {
+          continue;
+        }
+        auto TargetAddr =
+            const_cast<llvm::Value *>(Utils::getMemAddrValue(TargetSS->Inst));
+        auto TargetAddrSCEV = TargetSS->SE->getSCEV(TargetAddr);
+        if (!TargetAddrSCEV) {
+          continue;
+        }
+        // Check the scev.
+        LLVM_DEBUG(llvm::errs() << "TargetAddrSCEV: "; TargetAddrSCEV->dump());
+        auto MinusSCEV = SS->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
+        LLVM_DEBUG(llvm::errs() << "MinusSCEV: "; MinusSCEV->dump());
+        auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(MinusSCEV);
+        if (!OffsetSCEV) {
+          // Not constant offset.
+          continue;
+        }
+        LLVM_DEBUG(llvm::errs() << "OffsetSCEV: "; OffsetSCEV->dump());
+        int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
+        LLVM_DEBUG(llvm::errs()
+                   << "Coalesced, offset: " << Offset
+                   << " with stream: " << TargetS->formatName() << '\n');
+        Coalesced = true;
+        Group.emplace_back(S, Offset);
+        break;
+      }
+    }
+
+    if (!Coalesced) {
+      LLVM_DEBUG(llvm::errs() << "New coalesce group\n");
+      CoalescedGroup.emplace_back();
+      CoalescedGroup.back().emplace_back(S, 0);
+    }
+  }
+
+  // Sort each group with increasing order of offset.
+  for (auto &Group : CoalescedGroup) {
+    std::sort(Group.begin(), Group.end(),
+              [](const std::pair<Stream *, int64_t> &a,
+                 const std::pair<Stream *, int64_t> &b) -> bool {
+                return a.second < b.second;
+              });
+    // Set the base/offset.
+    auto BaseS = Group.front().first;
+    int64_t BaseOffset = Group.front().second;
+    for (auto &StreamOffset : Group) {
+      auto S = StreamOffset.first;
+      auto Offset = StreamOffset.second;
+      S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
+    }
+  }
 }
 
 void StreamRegionAnalyzer::dumpStats() const {

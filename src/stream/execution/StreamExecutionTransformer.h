@@ -68,7 +68,6 @@ private:
                              llvm::Constant *ConfigIdxValue);
   void insertStreamReduceAtLoop(StreamRegionAnalyzer *Analyzer,
                                 llvm::Loop *Loop, Stream *ReduceStream);
-  void coalesceStreamsAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop);
   void transformLoadInst(StreamRegionAnalyzer *Analyzer,
                          llvm::LoadInst *LoadInst);
   void transformStoreInst(StreamRegionAnalyzer *Analyzer,
