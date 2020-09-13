@@ -71,12 +71,9 @@ public:
   }
   int getRegionStreamId() const { return this->RegionStreamId; }
 
-  static constexpr uint64_t InvalidCoalesceGroup = 0;
   void setCoalesceGroup(uint64_t CoalesceGroup, int32_t CoalesceOffset = -1) {
-    assert(this->CoalesceGroup == InvalidCoalesceGroup &&
+    assert(this->CoalesceGroup == this->getStreamId() &&
            "Coalesce group is already set.");
-    assert(CoalesceGroup != InvalidCoalesceGroup &&
-           "Coalesce group is invalid.");
     this->CoalesceGroup = CoalesceGroup;
     this->CoalesceOffset = CoalesceOffset;
   }
@@ -293,8 +290,11 @@ protected:
    */
   int RegionStreamId;
 
-  uint64_t CoalesceGroup = InvalidCoalesceGroup;
-  int32_t CoalesceOffset = -1;
+  /**
+   * CoalesceGroup. Default to myself with Offset 0.
+   */
+  uint64_t CoalesceGroup;
+  int32_t CoalesceOffset;
   /**
    * Stores the total iterations for this stream
    */

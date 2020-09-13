@@ -8,9 +8,9 @@ Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
                const StaticStream *_SStream, llvm::DataLayout *DataLayout)
     : SStream(_SStream), Folder(_Folder), RelativeFolder(_RelativeFolder),
       HasMissingBaseStream(false), Qualified(false), Chosen(false),
-      RegionStreamId(-1), TotalIters(0), TotalAccesses(0), TotalStreams(0),
-      Iters(1), LastAccessIters(0), StartId(DynamicInstruction::InvalidId),
-      Pattern() {
+      RegionStreamId(-1), CoalesceGroup(_SStream->StreamId), CoalesceOffset(0),
+      TotalIters(0), TotalAccesses(0), TotalStreams(0), Iters(1),
+      LastAccessIters(0), StartId(DynamicInstruction::InvalidId), Pattern() {
   auto PatternFolder = this->Folder + "/pattern";
   auto ErrCode = llvm::sys::fs::create_directory(PatternFolder);
   assert(!ErrCode && "Failed to create pattern folder.");

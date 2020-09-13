@@ -435,7 +435,7 @@ void StreamPass::transformStream() {
        * Notify all region analyzer to wrap up.
        */
       for (auto &LoopStreamAnalyzer : this->LoopStreamAnalyzerMap) {
-        LoopStreamAnalyzer.second->getFuncSE()->finalizeCoalesceInfo();
+        LoopStreamAnalyzer.second->finalizeCoalesceInfo();
       }
       break;
     }
