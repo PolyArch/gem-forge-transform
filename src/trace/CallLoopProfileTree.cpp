@@ -343,27 +343,39 @@ void CallLoopProfileTree::selectCandidateEdges() {
             });
 
   // We also calculate the Cov.
+  // Ignore Cov one entrance as those are going to make Cov average too low
+  // to use as threshold.
   double SumCov = 0;
+  uint64_t NumSumCov = 0;
   for (const auto &E : this->CandidateEdges) {
-    SumCov += E->VarianceCoefficient;
+    if (E->InstCount.size() > 1) {
+      SumCov += E->VarianceCoefficient;
+      NumSumCov++;
+    }
   }
   this->AvgCovOfCandidateEdges = SumCov / this->CandidateEdges.size();
   this->StdCovOfCandidateEdges = 0;
-  for (const auto &E : this->CandidateEdges) {
-    auto CovDiff = this->AvgCovOfCandidateEdges - E->VarianceCoefficient;
-    this->StdCovOfCandidateEdges += CovDiff * CovDiff;
+  if (NumSumCov > 0) {
+    for (const auto &E : this->CandidateEdges) {
+      if (E->InstCount.size() > 1) {
+        auto CovDiff = this->AvgCovOfCandidateEdges - E->VarianceCoefficient;
+        this->StdCovOfCandidateEdges += CovDiff * CovDiff;
+      }
+    }
+    this->StdCovOfCandidateEdges =
+        sqrt(this->StdCovOfCandidateEdges / NumSumCov);
   }
-  this->StdCovOfCandidateEdges =
-      sqrt(this->StdCovOfCandidateEdges / this->CandidateEdges.size());
 
   /**
    * So far we simply select edges that below AvgCov + StdCov, with a valid
    * Start/Bridge/DestInst.
+   * Only enforce Cov if we have NumSumCov > 0.
    */
   this->SelectedEdges.clear();
   for (auto &E : this->CandidateEdges) {
-    if (E->VarianceCoefficient >
-        this->AvgCovOfCandidateEdges + this->StdCovOfCandidateEdges) {
+    if (NumSumCov > 0 &&
+        E->VarianceCoefficient >
+            this->AvgCovOfCandidateEdges + this->StdCovOfCandidateEdges) {
       continue;
     }
     if (!E->BridgeInst || !E->StartInst || !E->DestInst) {
