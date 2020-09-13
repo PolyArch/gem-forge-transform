@@ -480,7 +480,7 @@ class Benchmark(object):
             self.get_region_simpoint_bc(),
         ]
         opt_cmd = self.add_transform_debug(opt_cmd)
-        # Util.call_helper(opt_cmd)
+        Util.call_helper(opt_cmd)
         # Perform the simpoint on these intervals.
         print('Selecting region simpoints')
         from Utils import SimPoint

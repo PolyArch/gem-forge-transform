@@ -27,18 +27,24 @@ class SimPoint:
         print('Creating BBV...')
         self.BBVs = [self._createBBV(interval)
                      for interval in self.profile.intervals]
+        self.BBVIntervalIdx = [i for i in range(len(self.BBVs))]
         print('Creating Weight...')
         self.weights = [self._computeIntervalWeight(interval)
                         for interval in self.profile.intervals]
+        print('Merge Identical Intervals...')
+        self._mergeIdenticalInterval()
 
         self.BBVs = numpy.array(self.BBVs)
         self.weights = numpy.array(self.weights)
         print(len(self.profile.intervals))
 
         print('Doing PCA...')
-        self.X_projected = self._PCA(15)
-        self._kmeans(15)
-        self._findSimPoints()
+        if len(self.BBVIntervalIdx) <= 15:
+            self._acceptAllIntervalsAsSimPoints()
+        else:
+            self.X_projected = self._PCA(15)
+            self._kmeans(15)
+            self._findSimPoints()
         self._dumpSimPoints(out_fn)
 
     def _createBBVMap(self):
@@ -67,6 +73,38 @@ class SimPoint:
 
     def _computeIntervalWeight(self, interval):
         return float(interval.inst_rhs - interval.inst_lhs) / self.total_insts
+
+    def _mergeIdenticalInterval(self):
+        merged_bbvs = list()
+        merged_bbv_interval_index = list()
+        merged_bbv_weights = list()
+        for i in range(len(self.BBVs)):
+            bbv = self.BBVs[i]
+            weight = self.weights[i]
+            interval_idx = self.BBVIntervalIdx[i]
+            merged = False
+            numpy_bbv = numpy.array(bbv)
+            for j in range(len(merged_bbvs)):
+                target_bbv = merged_bbvs[j]
+                numpy_target_bbv = numpy.array(target_bbv)
+                diff = numpy_bbv - numpy_target_bbv
+                distance = numpy.linalg.norm(diff)
+                if distance < 1e-7:
+                    # Merge the weight.
+                    merged_bbv_weights[j] += weight
+                    merged = True
+                    break
+            if not merged:
+                merged_bbvs.append(bbv)
+                merged_bbv_weights.append(weight)
+                merged_bbv_interval_index.append(interval_idx)
+        print('Merge {x} intervals into {y}'.format(
+            x=len(self.BBVs),
+            y=len(merged_bbvs),
+        ))
+        self.BBVs = merged_bbvs
+        self.BBVIntervalIdx = merged_bbv_interval_index
+        self.weights = merged_bbv_weights
 
     def _PCA(self, dim):
         X = self.BBVs
@@ -196,6 +234,12 @@ class SimPoint:
         self.simpoint_weights = dict(
             zip(unique, [sum(self.weights[numpy.where(y == i)]) for i in unique]))
 
+    def _acceptAllIntervalsAsSimPoints(self):
+        print('accept all {x} intervals as simpoints'.format(x=len(self.BBVIntervalIdx)))
+        self.simpoints = [i for i in range(len(self.BBVIntervalIdx))]
+        self.simpoint_weights = [w for w in self.weights]
+        self.simpoints_label = [i for i in range(len(self.BBVIntervalIdx))]
+
     def _dumpSimPoints(self, out_fn):
         print('dumpSimPoints to {out_fn}.'.format(out_fn=out_fn))
         points = open(out_fn, 'w')
@@ -205,11 +249,12 @@ class SimPoint:
         self._dumpEstimatedFuncProfile(points)
 
         for i in range(len(self.simpoints)):
-            simpoint = self.simpoints[i]
+            simpoint_bbv = self.simpoints[i]
+            simpoint_interval = self.BBVIntervalIdx[simpoint_bbv]
             simpoint_label = self.simpoints_label[i]
             simpoint_weight = self.simpoint_weights[simpoint_label]
 
-            interval = self.profile.intervals[simpoint]
+            interval = self.profile.intervals[simpoint_interval]
 
             # Raw file for program to read.
             points.write('{lhs} {rhs} {lhs_mark} {rhs_mark} {weight}\n'.format(
@@ -223,7 +268,7 @@ class SimPoint:
                 lhs_mark=interval.mark_lhs, rhs_mark=interval.mark_rhs,
             ))
 
-            BBV = self.BBVs[simpoint]
+            BBV = self.BBVs[simpoint_bbv]
             sorted_bb_idx = numpy.argsort(-BBV)
             summed = 0.0
             for bb_idx in sorted_bb_idx:
@@ -270,12 +315,13 @@ class SimPoint:
         func_inst_count = dict()
         total_inst_count = 0
         for i in range(len(self.simpoints)):
-            simpoint = self.simpoints[i]
+            simpoint_bbv = self.simpoints[i]
+            simpoint_interval = self.BBVIntervalIdx[simpoint_bbv]
             simpoint_label = self.simpoints_label[i]
             simpoint_weight = self.simpoint_weights[simpoint_label]
-            sample_weight = self.weights[simpoint]
+            sample_weight = self.weights[simpoint_bbv]
 
-            interval = self.profile.intervals[simpoint]
+            interval = self.profile.intervals[simpoint_interval]
             for func in interval.funcs:
                 inst_count = 0
                 for bb in interval.funcs[func].bbs:
