@@ -7,15 +7,15 @@
  * Try to coalescer direct memory streams with the same step root.
  */
 class DynamicStreamCoalescer {
- public:
+public:
   using CoalescerMatrixT = std::vector<std::vector<uint32_t>>;
   DynamicStreamCoalescer(
       const std::unordered_set<FunctionalStream *> &FuncStreams);
 
   DynamicStreamCoalescer(const DynamicStreamCoalescer &Other) = delete;
   DynamicStreamCoalescer(DynamicStreamCoalescer &&Other) = delete;
-  DynamicStreamCoalescer &operator=(const DynamicStreamCoalescer &Other) =
-      delete;
+  DynamicStreamCoalescer &
+  operator=(const DynamicStreamCoalescer &Other) = delete;
   DynamicStreamCoalescer &operator=(DynamicStreamCoalescer &&Other) = delete;
 
   ~DynamicStreamCoalescer();
@@ -24,14 +24,13 @@ class DynamicStreamCoalescer {
 
   void finalize();
 
- private:
+private:
   std::unordered_map<FunctionalStream *, size_t> FSIdMap;
+  std::unordered_map<size_t, FunctionalStream *> IdFSMap;
   CoalescerMatrixT CoalescerMatrix;
   uint32_t TotalSteps;
 
   std::vector<int> UFArray;
-
-  std::unordered_map<int, int> LocalToGlobalCoalesceGroupMap;
 
   void coalesce(int A, int B);
   int findRoot(int X) const;
@@ -41,8 +40,6 @@ class DynamicStreamCoalescer {
    * Helper function to determine direct memory stream.
    */
   static bool isDirectMemStream(FunctionalStream *FuncS);
-  static int allocateGlobalCoalesceGroup();
-  static int AllocatedGlobalCoalesceGroup;
 };
 
 #endif

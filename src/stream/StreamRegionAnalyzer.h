@@ -84,6 +84,8 @@ public:
   void endRegion(StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
                  StreamPassChooseStrategyE StreamPassChooseStrategy);
   void endTransform();
+  void finalizeCoalesceInfo();
+  void coalesceStreamsAtLoop(llvm::Loop *Loop);
   void dumpStats() const;
 
   /**

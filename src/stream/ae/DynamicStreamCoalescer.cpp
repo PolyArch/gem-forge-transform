@@ -1,13 +1,5 @@
 #include "DynamicStreamCoalescer.h"
 
-int DynamicStreamCoalescer::AllocatedGlobalCoalesceGroup =
-    Stream::InvalidCoalesceGroup;
-
-int DynamicStreamCoalescer::allocateGlobalCoalesceGroup() {
-  // Make the coalesce group starts from InvalidCoalesceGroup + 1.
-  return ++AllocatedGlobalCoalesceGroup;
-}
-
 DynamicStreamCoalescer::DynamicStreamCoalescer(
     const std::unordered_set<FunctionalStream *> &FuncStreams)
     : TotalSteps(0) {
@@ -19,6 +11,7 @@ DynamicStreamCoalescer::DynamicStreamCoalescer(
 
     auto FSId = this->FSIdMap.size();
     this->FSIdMap.emplace(FS, FSId);
+    this->IdFSMap.emplace(FSId, FS);
   }
 
   // Initialize the coalesce matrix and the UFArray.
@@ -97,14 +90,12 @@ void DynamicStreamCoalescer::finalize() {
 
   // Allocate all the global coalesce group id.
   for (auto &FSId : this->FSIdMap) {
-    auto LocalGroup = this->findRoot(FSId.second);
-    if (this->LocalToGlobalCoalesceGroupMap.count(LocalGroup) == 0) {
-      this->LocalToGlobalCoalesceGroupMap.emplace(
-          LocalGroup, DynamicStreamCoalescer::allocateGlobalCoalesceGroup());
-    }
-    auto GlobalGroup = this->LocalToGlobalCoalesceGroupMap.at(LocalGroup);
-    FSId.first->getStream()->setCoalesceGroup(GlobalGroup);
-    // llvm::errs() << "Setting Coalesce group " << GlobalGroup << " of "
+    auto RootId = this->findRoot(FSId.second);
+    // Use root stream id as the coalesce group.
+    auto CoalesceRootFS = this->IdFSMap.at(RootId);
+    auto CoalesceGroup = CoalesceRootFS->getStream()->getStreamId();
+    FSId.first->getStream()->setCoalesceGroup(CoalesceGroup);
+    // llvm::errs() << "Setting Coalesce group " << CoalesceGroup << " of "
     //              << FSId.first->getStream()->formatName() << '\n';
   }
 }
