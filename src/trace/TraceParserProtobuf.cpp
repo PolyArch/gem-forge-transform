@@ -99,10 +99,10 @@ TraceParser::TracedFuncEnter TraceParserProtobuf::parseFunctionEnter() {
 }
 
 void TraceParserProtobuf::readNextEntry() {
-  // TODO: Consider using LimitZeroCopyStream from protobuf.
   this->TraceEntry.Clear();
 
   this->Reader->read(this->TraceEntry);
+  Count++;
 }
 
 #undef DEBUG_TYPE
