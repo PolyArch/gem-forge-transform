@@ -354,7 +354,7 @@ void CallLoopProfileTree::selectCandidateEdges() {
    */
   this->SelectedEdges.clear();
   for (auto &E : this->CandidateEdges) {
-    if (E->VarianceCoefficient >=
+    if (E->VarianceCoefficient >
         this->AvgCovOfCandidateEdges + this->StdCovOfCandidateEdges) {
       continue;
     }
