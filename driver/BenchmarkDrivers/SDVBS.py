@@ -135,6 +135,9 @@ class SDVBSBenchmark(Benchmark):
         'disparity': [
             'computeSAD',
             'integralImage2D2D',
+            'finalSAD2',
+            'finalSAD4',
+            'finalSAD8',
             'finalSAD',
             'findDisparity',
             'correlateSAD_2D',
