@@ -3,6 +3,14 @@
 
 #include <cmath>
 
+llvm::cl::opt<uint64_t> CallLoopProfileTreeCandidateEdgeMinInst(
+    "call-loop-profile-tree-candidate-edge-min-insts", llvm::cl::init(10000000),
+    llvm::cl::desc("Minimum number of avg. inst to be candidate edge."));
+
+llvm::cl::opt<uint64_t> CallLoopProfileTreeIntervalMinInst(
+    "call-loop-profile-tree-interval-min-insts", llvm::cl::init(10000000),
+    llvm::cl::desc("Minimum number of avg. inst to form interval."));
+
 CallLoopProfileTree::CallLoopProfileTree(CachedLoopInfo *_CachedLI)
     : CachedLI(_CachedLI), RootNode(nullptr) {
   this->RegionStack.emplace_back(&this->RootNode, this->GlobalInstCount,
@@ -322,7 +330,7 @@ void CallLoopProfileTree::selectCandidateEdges() {
   for (auto &N : SortedNodes) {
     // Processing all incoming edges.
     for (auto &E : N->InEdges) {
-      if (E->AvgInstCount < MinimumInstCount) {
+      if (E->AvgInstCount < CallLoopProfileTreeCandidateEdgeMinInst) {
         continue;
       }
       this->CandidateEdges.push_back(E);
@@ -388,7 +396,7 @@ void CallLoopProfileTree::selectCandidateEdges() {
     } else {
       // Select if the interval is large enough.
       if (Point.TraverseInstCount - PrevSelectedPointInstCount >=
-          MinimumInstCount) {
+          CallLoopProfileTreeIntervalMinInst) {
         Point.Selected = true;
         PrevSelectedPointInstCount = Point.TraverseInstCount;
       }
