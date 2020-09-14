@@ -1,0 +1,9 @@
+{
+    "id": "stream.so.store",
+    "options": [
+        "-stream-pass",
+        "-stream-pass-choose-strategy=static-outer",
+        "-stream-pass-allow-aliased-stream",
+        "-stream-pass-enable-store"
+    ]
+}

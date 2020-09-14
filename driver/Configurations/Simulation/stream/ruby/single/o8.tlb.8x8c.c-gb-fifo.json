@@ -27,6 +27,7 @@
     },
     "support-transform-ids": [
         "stream.i",
+        "stream.so.store",
         "stream.ex.i",
         "stream.ex.so",
         "stream.ex.static.i",
