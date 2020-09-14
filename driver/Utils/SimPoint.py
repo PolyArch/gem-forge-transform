@@ -319,15 +319,16 @@ class SimPoint:
             simpoint_interval = self.BBVIntervalIdx[simpoint_bbv]
             simpoint_label = self.simpoints_label[i]
             simpoint_weight = self.simpoint_weights[simpoint_label]
-            sample_weight = self.weights[simpoint_bbv]
 
             interval = self.profile.intervals[simpoint_interval]
+            interval_insts = interval.inst_rhs - interval.inst_lhs
+            interval_weight = float(interval_insts) / float(self.total_insts)
             for func in interval.funcs:
                 inst_count = 0
                 for bb in interval.funcs[func].bbs:
                     inst_count += interval.funcs[func].bbs[bb]
                 # Weighted by this interval's weight.
-                inst_count = inst_count * simpoint_weight / sample_weight
+                inst_count = inst_count * simpoint_weight / interval_weight
                 if func not in func_inst_count:
                     func_inst_count[func] = inst_count
                 else:
