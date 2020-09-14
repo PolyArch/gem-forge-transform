@@ -89,7 +89,7 @@ class SimPoint:
                 numpy_target_bbv = numpy.array(target_bbv)
                 diff = numpy_bbv - numpy_target_bbv
                 distance = numpy.linalg.norm(diff)
-                if distance < 1e-7:
+                if distance < 1e-9:
                     # Merge the weight.
                     merged_bbv_weights[j] += weight
                     merged = True
@@ -170,7 +170,6 @@ class SimPoint:
         BIC = numpy.sum([n[i] * (numpy.log(n[i]) - numpy.log(N)) -
                          ((n[i] * d) / 2) * numpy.log(2 * numpy.pi * cluster_variance) -
                          ((n[i] - 1) * d / 2) for i in range(m)]) - const_term
-
         return BIC_weight
 
     def _kmeans(self, max_k):
@@ -218,13 +217,13 @@ class SimPoint:
         min_distances = [float('inf')] * (self.chosen_k + 1)
 
         self.simpoints = [-1] * (self.chosen_k + 1)
-        for interval in xrange(len(self.profile.intervals)):
-            k = y[interval]
+        for idx in range(len(y)):
+            group_id = y[idx]
             distance = numpy.linalg.norm(
-                self.X_projected[interval] - centers[k])
-            if distance < min_distances[k]:
-                min_distances[k] = distance
-                self.simpoints[k] = interval
+                self.X_projected[idx] - centers[group_id])
+            if distance < min_distances[group_id]:
+                min_distances[group_id] = distance
+                self.simpoints[group_id] = idx
         for p in self.simpoints:
             assert(p != -1)
         self.simpoints_label = numpy.argsort(self.simpoints)
@@ -297,6 +296,7 @@ class SimPoint:
         func_list.sort(key=lambda func: func_inst_count[func], reverse=True)
         accumulated = 0.0
         threshold = 0.99
+        self.real_func_profile = list()
         f.write('# ================== Real Func Profile ================\n')
         for func in func_list:
             percentage = float(func_inst_count[func]) / float(total_inst_count)
@@ -304,6 +304,7 @@ class SimPoint:
                 acc=accumulated, percentage=percentage, func=func,
             ))
             accumulated += percentage
+            self.real_func_profile.append((func, percentage))
             if accumulated > threshold:
                 break
 
@@ -341,12 +342,34 @@ class SimPoint:
         func_list.sort(key=lambda func: func_inst_count[func], reverse=True)
         accumulated = 0.0
         threshold = 0.99
+        self.estimated_func_profile = list()
         f.write('# ================== Estimated Func Profile ================\n')
         for func in func_list:
             percentage = float(func_inst_count[func]) / float(total_inst_count)
             f.write('# {acc:0.4f} {percentage:0.4f} {func}\n'.format(
                 acc=accumulated, percentage=percentage, func=func,
             ))
+            self.estimated_func_profile.append((func, percentage))
             accumulated += percentage
+            if accumulated > threshold:
+                break
+        
+        # Check for our estimation.
+        accumulated = 0.0
+        threshold = 0.9
+        for i in range(len(self.real_func_profile)):
+            real_func = self.real_func_profile[i][0]
+            real_percentage = self.real_func_profile[i][1]
+            if i >= len(self.estimated_func_profile):
+                print('\033[93mWarn: Missing EstimatedFuncProfile\033[0m')
+                break
+            est_func = self.estimated_func_profile[i][0]
+            est_percentage = self.estimated_func_profile[i][1]
+            if real_func != est_func or abs(real_percentage - est_percentage) > 0.01:
+                print('\033[93mWarn: Mismatch Real {real} {v_real} != Estmated {est} {v_est}\033[0m'.format(
+                    real=real_func, v_real=real_percentage,
+                    est=est_func, v_est=est_percentage,
+                ))
+            accumulated += real_percentage
             if accumulated > threshold:
                 break
