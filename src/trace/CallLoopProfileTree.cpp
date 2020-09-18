@@ -17,6 +17,8 @@ CallLoopProfileTree::CallLoopProfileTree(CachedLoopInfo *_CachedLI)
                                  this->PrevInst);
 }
 
+#define DEBUG_TYPE "CallLoopProfileTree"
+
 void CallLoopProfileTree::addInstruction(InstPtr Inst) {
 
   // Get the new RegionInst.
@@ -102,6 +104,27 @@ CallLoopProfileTree::InstPtr CallLoopProfileTree::getRegionInst(InstPtr Inst) {
 CallLoopProfileTree::Node *
 CallLoopProfileTree::getOrAllocateNode(InstPtr RegionInst) {
   return &this->RegionInstNodeMap.emplace(RegionInst, RegionInst).first->second;
+}
+
+CallLoopProfileTree::Node *CallLoopProfileTree::getNode(InstPtr RegionInst) {
+  auto Iter = this->RegionInstNodeMap.find(RegionInst);
+  if (Iter == this->RegionInstNodeMap.end()) {
+    llvm::errs() << "Failed to getNode "
+                 << this->formatPossibleNullInst(RegionInst) << '\n';
+    assert(false);
+  }
+  return &Iter->second;
+}
+
+const CallLoopProfileTree::Node *
+CallLoopProfileTree::getNode(InstPtr RegionInst) const {
+  auto Iter = this->RegionInstNodeMap.find(RegionInst);
+  if (Iter == this->RegionInstNodeMap.end()) {
+    llvm::errs() << "Failed to getNode "
+                 << this->formatPossibleNullInst(RegionInst) << '\n';
+    assert(false);
+  }
+  return &Iter->second;
 }
 
 std::shared_ptr<CallLoopProfileTree::Edge>
@@ -375,11 +398,35 @@ void CallLoopProfileTree::selectCandidateEdges() {
   for (auto &E : this->CandidateEdges) {
     if (NumSumCov > 0 &&
         E->VarianceCoefficient >
-            this->AvgCovOfCandidateEdges + this->StdCovOfCandidateEdges) {
+            this->AvgCovOfCandidateEdges + 2 * this->StdCovOfCandidateEdges) {
       continue;
     }
     if (!E->BridgeInst || !E->StartInst || !E->DestInst) {
       continue;
+    }
+    /**
+     * Sanity check of indirect call edges.
+     */
+    if (Utils::isCallOrInvokeInst(E->BridgeInst) &&
+        !Utils::getCalledFunction(E->BridgeInst)) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Indirect Call " << Utils::formatLLVMInst(E->BridgeInst)
+                 << "\n  -> "
+                 << Utils::formatLLVMFunc(E->DestInst->getFunction()) << '\n');
+      auto DestNode = this->getNode(E->DestInst);
+      for (auto &E : DestNode->InEdges) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << " Incoming from "
+                   << this->formatPossibleNullInst(E->BridgeInst) << '\n');
+      }
+      auto StartNode = this->getNode(E->StartInst);
+      for (auto &OutE : StartNode->OutEdges) {
+        if (OutE->BridgeInst == E->BridgeInst) {
+          LLVM_DEBUG(llvm::dbgs()
+                     << " Called "
+                     << this->formatPossibleNullInst(OutE->DestInst) << '\n');
+        }
+      }
     }
     this->SelectedEdges.push_back(E);
     E->Selected = true;
@@ -394,6 +441,27 @@ void CallLoopProfileTree::selectCandidateEdges() {
                                               TraversePoint.TraverseInstCount);
       this->SelectedEdgeTimeline.back().TraverseMarkCount =
           this->SelectedEdgeTimeline.size() - 1;
+    }
+  }
+
+  // Sanity check that selected intervals covered most of the region.
+  if (this->SelectedEdgeTimeline.empty()) {
+    llvm::errs() << "[Warn!] No selected edges, considering lower candidate "
+                    "threshold.\n";
+    // assert(false);
+  } else {
+    auto SelectedEdgeLHSInst =
+        this->SelectedEdgeTimeline.front().TraverseInstCount;
+    auto SelectedEdgeRHSInst =
+        this->SelectedEdgeTimeline.back().TraverseInstCount;
+    auto CoveredRatio =
+        static_cast<double>(SelectedEdgeRHSInst - SelectedEdgeLHSInst) /
+        static_cast<double>(this->GlobalInstCount);
+    if (CoveredRatio < 0.9f) {
+      llvm::errs() << "[Warn!] Covered ratio " << CoveredRatio << " too low ["
+                   << SelectedEdgeLHSInst << ", " << SelectedEdgeRHSInst
+                   << "], Considereing lower candidate threshold.\n";
+      // assert(false);
     }
   }
 
@@ -413,5 +481,14 @@ void CallLoopProfileTree::selectCandidateEdges() {
         PrevSelectedPointInstCount = Point.TraverseInstCount;
       }
     }
+  }
+}
+
+std::string CallLoopProfileTree::formatPossibleNullInst(
+    const llvm::Instruction *Inst) const {
+  if (Inst) {
+    return Utils::formatLLVMInst(Inst);
+  } else {
+    return "Root(nullptr)";
   }
 }

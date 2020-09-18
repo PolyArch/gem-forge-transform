@@ -35,13 +35,13 @@ bool SimpointIntervalSelectPass::runOnModule(llvm::Module &Module) {
   this->CLProfileTree->aggregateStats();
   this->CLProfileTree->selectEdges();
 
-  this->generateProfileInterval();
-  this->generateEdgeTimeline();
-
   std::string TreeFileName = TraceFileName + ".tree.txt";
   std::ofstream OTree(TreeFileName);
   this->CLProfileTree->dump(OTree);
   OTree.close();
+
+  this->generateProfileInterval();
+  this->generateEdgeTimeline();
 
   // Insert the edge mark.
   this->registerEdgeMarkFunc();
@@ -175,11 +175,32 @@ void SimpointIntervalSelectPass::insertEdgeMark(
       llvm::IRBuilder<> Builder(BridgeInst);
       Builder.CreateCall(this->EdgeMarkFunc, EdgeMarkArgs);
     } else {
-      llvm::errs() << "Cannot handle IndirectCall Edge " << SelectedID
-                   << " ====\n  " << Utils::formatLLVMInst(StartInst) << "\n  "
-                   << Utils::formatLLVMInst(BridgeInst) << "\n  "
-                   << Utils::formatLLVMInst(DestInst) << '\n';
-      assert(false && "Cannot handle IndirectCall so far.");
+      // Check if this indirect call has single destination.
+      const CallLoopProfileTree::Node *StartNode =
+          this->CLProfileTree->getNode(StartInst);
+      int NumSameBridgeEdges = 0;
+      bool HasDifferentCallee = false;
+      for (auto &OutE : StartNode->OutEdges) {
+        if (OutE->BridgeInst == BridgeInst) {
+          NumSameBridgeEdges++;
+          if (OutE->DestInst != DestInst) {
+            HasDifferentCallee = true;
+          }
+        }
+      }
+      if (NumSameBridgeEdges == 1 && !HasDifferentCallee) {
+        // This indirect call has same destination, can be treated as
+        // direct call.
+        llvm::IRBuilder<> Builder(BridgeInst);
+        Builder.CreateCall(this->EdgeMarkFunc, EdgeMarkArgs);
+      } else {
+        llvm::errs() << "Cannot handle IndirectCall Edge with Multiple Callees "
+                     << SelectedID << " ====\n  "
+                     << Utils::formatLLVMInst(StartInst) << "\n  "
+                     << Utils::formatLLVMInst(BridgeInst) << "\n  "
+                     << Utils::formatLLVMInst(DestInst) << '\n';
+        assert(false && "Cannot handle IndirectCall so far.");
+      }
     }
   } else if (auto BridgeBrInst = llvm::dyn_cast<llvm::BranchInst>(BridgeInst)) {
     if (BridgeBrInst->isUnconditional()) {
