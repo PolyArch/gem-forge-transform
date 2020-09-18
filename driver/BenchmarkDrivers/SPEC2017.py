@@ -317,6 +317,23 @@ class SPEC2017Benchmark(Benchmark):
         self.run_trace()
         os.chdir(self.cwd)
 
+    def get_region_simpoint_candidate_edge_min_insts(self):
+        if self.get_name() == 'spec.605.mcf_s':
+            # mcf_s is quite fragmented, we use 100k as threshold.
+            return 100 * 1000
+        if self.get_name() == 'spec.638.imagick_s':
+            # imagick_s is a little fragmented, we use 1 million threshold.
+            return 1000 * 1000
+        if self.get_name() == 'spec.508.namd_r':
+            # namd_r is a little fragmented in calc_pair_energy, we use 1 million threshold.
+            return 1000 * 1000
+        if self.get_name() == 'spec.557.xz_r':
+            return 1000 * 1000
+        if self.get_name() == 'spec.523.xalancbmk_r':
+            return 50 * 1000
+        # Others we use 10 million as default.
+        return 10000000
+
     def get_additional_gem5_simulate_command(self):
         args = []
         """
@@ -366,6 +383,7 @@ class SPEC2017Benchmarks:
             'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join([
                 # 'ReadTGAImage',
                 'HorizontalFilter', 
+                'VerticalFilter',
                 'WritePixelCachePixels',
             ]),
             'lang': 'C',
@@ -397,7 +415,9 @@ class SPEC2017Benchmarks:
         'xz_r': {
             'name': '557.xz_r',
             'links': [],
-            'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join(['uncompressStream', 'compressStream']),
+            'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join([
+                'lzma_decode',
+            ]),
             'lang': 'C',
         },
         'xz_s': {
@@ -471,6 +491,10 @@ class SPEC2017Benchmarks:
             'name': '523.xalancbmk_r',
             'links': [],
             'trace_func': 'xercesc_2_7::ValueStore::contains',
+            'trace_func': Benchmark.ROI_FUNC_SEPARATOR.join([
+                'xercesc_2_7::ValueStore::contains',
+                'xercesc_2_7::NameDatatypeValidator::compare',
+            ]),
             'lang': 'CPP',
         },
         'xalancbmk_s': {
