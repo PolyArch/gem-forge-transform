@@ -138,6 +138,10 @@ class Driver:
 
     def _get_suites(self):
         suites = list()
+        # Make sure we get user specified suites.
+        if self.options.suite:
+            suites += self.options.suite
+        
         for b in self.options.benchmark:
             # Benchmark has name suite.benchmark.
             idx = b.find('.')
@@ -452,7 +456,7 @@ def main(options):
         driver.clean()
 
 
-def parse_benchmarks(option, opt, value, parser):
+def parse_comma_sep(option, opt, value, parser):
     setattr(parser.values, option.dest, value.split(','))
 
 
@@ -543,10 +547,12 @@ if __name__ == '__main__':
     parser.add_option('--fake-trace', action='store_true',
                       dest='fake_trace', default=False)
 
+    parser.add_option('--suite', type='string', action='callback',
+                      dest='suite', callback=parse_comma_sep)
     parser.add_option('-b', '--benchmark', type='string', action='callback',
-                      dest='benchmark', callback=parse_benchmarks)
+                      dest='benchmark', callback=parse_comma_sep)
     parser.add_option('--exclude-benchmark', type='string', action='callback',
-                      dest='exclude_benchmark', callback=parse_benchmarks)
+                      dest='exclude_benchmark', callback=parse_comma_sep)
     parser.add_option('--trace-id', type='string', action='callback',
                       dest='trace_id', callback=parse_trace_ids)
 
