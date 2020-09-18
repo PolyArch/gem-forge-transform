@@ -80,6 +80,9 @@ public:
     return this->SelectedEdges;
   }
 
+  const Node *getNode(InstPtr RegionInst) const;
+  Node *getNode(InstPtr RegionInst);
+
 private:
   CachedLoopInfo *CachedLI;
 
@@ -122,6 +125,8 @@ private:
 
   void estimateNodeMaxDepth();
   void selectCandidateEdges();
+
+  std::string formatPossibleNullInst(const llvm::Instruction *Inst) const;
 };
 
 #endif
