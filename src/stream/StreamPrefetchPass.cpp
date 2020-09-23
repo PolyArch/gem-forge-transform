@@ -54,7 +54,7 @@ void StreamPrefetchPass::transformStream() {
       if (NewLoop != nullptr) {
         IsAtHeadOfCandidate =
             LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst) &&
-            this->isLoopContinuous(NewLoop);
+            this->isLoopCandidate(NewLoop);
       }
     } else {
       // This is the end.

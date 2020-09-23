@@ -105,14 +105,9 @@ void StreamPass::popLoopStack(LoopStackT &LoopStack) {
   LoopStack.pop_back();
 }
 
-bool StreamPass::isLoopContinuous(const llvm::Loop *Loop) {
-  auto Iter = this->MemorizedLoopContinuous.find(Loop);
-  if (Iter == this->MemorizedLoopContinuous.end()) {
-    Iter = this->MemorizedLoopContinuous
-               .emplace(Loop, LoopUtils::isLoopContinuous(Loop))
-               .first;
-  }
-  return Iter->second;
+bool StreamPass::isLoopCandidate(const llvm::Loop *Loop) {
+  return LoopUtils::isLoopContinuous(Loop) &&
+         !LoopUtils::isLoopRemainderOrEpilogue(Loop);
 }
 
 void StreamPass::analyzeStream() {
@@ -151,7 +146,7 @@ void StreamPass::analyzeStream() {
       if (NewLoop != nullptr) {
         IsAtHeadOfCandidate =
             LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst) &&
-            this->isLoopContinuous(NewLoop);
+            this->isLoopCandidate(NewLoop);
       }
     } else {
       // This is the end.
@@ -418,7 +413,7 @@ void StreamPass::transformStream() {
       if (NewLoop != nullptr) {
         IsAtHeadOfCandidate =
             LoopUtils::isStaticInstLoopHead(NewLoop, NewStaticInst) &&
-            this->isLoopContinuous(NewLoop);
+            this->isLoopCandidate(NewLoop);
       }
     } else {
       // This is the end.

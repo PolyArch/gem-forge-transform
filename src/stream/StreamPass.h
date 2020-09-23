@@ -128,7 +128,7 @@ protected:
    *************************************************************/
 
   void analyzeStream();
-  bool isLoopContinuous(const llvm::Loop *Loop);
+  bool isLoopCandidate(const llvm::Loop *Loop);
   void addAccess(DynamicInstruction *DynamicInst);
 
   void pushLoopStack(LoopStackT &LoopStack, llvm::Loop *NewLoop);
@@ -162,7 +162,6 @@ protected:
                      std::unordered_set<llvm::Instruction *>>
       MemorizedStreamInst;
   std::unordered_map<const llvm::Loop *, int> MemorizedLoopPossiblePaths;
-  std::unordered_map<const llvm::Loop *, bool> MemorizedLoopContinuous;
 
   std::unordered_map<llvm::Instruction *, uint64_t> MemAccessInstCount;
 

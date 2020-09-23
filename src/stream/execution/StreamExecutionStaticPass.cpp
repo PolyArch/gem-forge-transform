@@ -68,7 +68,8 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
       }
       LLVM_DEBUG(llvm::errs()
                  << "Processing loop " << LoopUtils::getLoopId(Loop) << '\n');
-      if (LoopUtils::isLoopContinuous(Loop)) {
+      if (LoopUtils::isLoopContinuous(Loop) &&
+          !LoopUtils::isLoopRemainderOrEpilogue(Loop)) {
         // Check if loop is continuous.
         auto Analyzer = new StreamRegionAnalyzer(
             Analyzers.size(), this->CachedLI, this->CachedPDF,
