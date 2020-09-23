@@ -98,6 +98,11 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
   assert(this->TopLoop->contains(InnerMostLoop) &&
          "Stream inst is not within top loop.");
 
+  // Ignore remainder/epilogue loop.
+  if (LoopUtils::isLoopRemainderOrEpilogue(InnerMostLoop)) {
+    return;
+  }
+
   auto &Streams =
       this->InstStaticStreamMap
           .emplace(std::piecewise_construct, std::forward_as_tuple(StreamInst),

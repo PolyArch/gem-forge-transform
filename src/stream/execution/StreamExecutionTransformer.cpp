@@ -1346,7 +1346,7 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
   while (ClonedConfigureLoop->contains(CurrentLoop)) {
     RecurLevel++;
     LLVM_DEBUG({
-      llvm::errs() << "Peeling " << CurrentLoop->getName() << ' ';
+      llvm::errs() << "Peeling LoopHeader " << CurrentLoop->getName() << ' ';
       CurrentSCEV->dump();
     });
     if (!ClonedSE->isLoopInvariant(CurrentSCEV, CurrentLoop)) {

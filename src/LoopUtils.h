@@ -36,6 +36,12 @@ public:
   static bool isLoopContinuous(const llvm::Loop *Loop);
 
   /**
+   * Returns true if a loop is the remainder of unroll or epilogure of
+   * vectorization.
+   */
+  static bool isLoopRemainderOrEpilogue(const llvm::Loop *Loop);
+
+  /**
    * Get a global id for this loop.
    * Func::Header
    */

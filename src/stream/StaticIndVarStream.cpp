@@ -27,7 +27,7 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
             }
           }
           if (this->formatName() ==
-              "(imsmooth.c::18(imsmooth) 0 bb115 bb94::tmp95(phi))") {
+              "(dense_mv.c::15(foo) 0 bb12 bb40::tmp41(phi))") {
             llvm::dbgs() << this->formatName() << " Loop "
                          << LoopUtils::getLoopId(CurrentLoop) << " "
                          << this->SE->hasLoopInvariantBackedgeTakenCount(

@@ -4,6 +4,7 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/LoopUtils.h"
 
 #define DEBUG_TYPE "LoopUtils"
 #if !defined(LLVM_DEBUG) && defined(DEBUG)
@@ -101,6 +102,17 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
   }
   MemorizedIsLoopContinuous.emplace(Loop, IsContinuous);
   return IsContinuous;
+}
+
+bool LoopUtils::isLoopRemainderOrEpilogue(const llvm::Loop *Loop) {
+  if (llvm::findStringMetadataForLoop(Loop, "llvm.loop.unroll_is_remainder")) {
+    return true;
+  }
+  if (llvm::findStringMetadataForLoop(Loop,
+                                      "llvm.loop.vectorize_is_epilogue")) {
+    return true;
+  }
+  return false;
 }
 
 std::string LoopUtils::getLoopId(const llvm::Loop *Loop) {
