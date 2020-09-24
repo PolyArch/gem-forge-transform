@@ -310,8 +310,9 @@ class Driver:
                 # Schedule the job.
                 self.transform_jobs[name][transform_id][trace_id] = (
                     job_scheduler.add_job(
-                        name='{name}.{transform_id}.transform'.format(
+                        name='{name}.{trace_id}.{transform_id}'.format(
                             name=name,
+                            trace_id=trace_id,
                             transform_id=transform_id
                         ),
                         job=transform,
@@ -352,8 +353,9 @@ class Driver:
             for simulation_config in simulation_configs:
                 simulation_id = simulation_config.get_simulation_id()
                 self.simulate_jobs[name][transform_id][trace_id][simulation_id] = job_scheduler.add_job(
-                    name='{name}.{transform_id}.{simulation_id}'.format(
+                    name='{name}.{trace_id}.{transform_id}.{simulation_id}'.format(
                         name=name,
+                        trace_id=trace_id,
                         transform_id=transform_id,
                         simulation_id=simulation_config.get_simulation_id()
                     ),
