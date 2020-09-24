@@ -8,8 +8,54 @@ from scipy.spatial import distance
 
 import os
 
+class SimPoint(object):
+    def __init__(self, simpoint_id, weight):
+        self.id = simpoint_id
+        self.lhs_inst = 0
+        self.rhs_inst = 0
+        self.lhs_mark = 0
+        self.rhs_mark = 0
+        self.weight = weight
+        # print('Find trace {weight}: {simpoint_id}'.format(
+        #     weight=self.weight, simpoint_id=self.id))
 
-class SimPoint:
+    def get_weight(self):
+        return self.weight
+
+    def get_id(self):
+        return self.id
+
+
+def parse_simpoint_from_file(simpoint_fn):
+    """
+    Read in the simpoint and try to find the trace.
+    Since simpoint only works for single thread workloads,
+    we will always assume thread id to be zero.
+    """
+    simpoints = list()
+    with open(simpoint_fn, 'r') as f:
+        simpoint_id = 0
+        for line in f:
+            if line.startswith('#'):
+                continue
+            fields = line.split(' ')
+            assert(len(fields) == 5)
+            lhs_inst = int(fields[0])
+            rhs_inst = int(fields[1])
+            lhs_mark = int(fields[2])
+            rhs_mark = int(fields[3])
+            weight = float(fields[4])
+            simpoint_obj = SimPoint(simpoint_id, weight)
+            simpoint_obj.lhs_inst = lhs_inst
+            simpoint_obj.rhs_inst = rhs_inst
+            simpoint_obj.lhs_mark = lhs_mark
+            simpoint_obj.rhs_mark = rhs_mark
+            simpoints.append(simpoint_obj)
+            simpoint_id += 1
+    return simpoints
+
+
+class SimPointBuilder:
     def __init__(self, fn, out_fn):
         self.fn = fn
         self.directory = os.path.dirname(fn)

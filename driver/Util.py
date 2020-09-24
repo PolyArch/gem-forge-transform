@@ -46,3 +46,24 @@ def create_symbolic_link(src, dest):
         src,
         dest,
     ])
+
+"""
+Filter out obj with insignificant weight.
+@assume obj.weight
+"""
+def filter_tail(objs, threshold):
+    sum_weight = sum([obj.weight for obj in objs])
+    for obj in objs:
+        obj.weight = obj.weight / sum_weight
+    objs.sort(key=lambda t: t.weight, reverse=True)
+    selected_objs = list()
+    selected_weight = 0.0
+    for obj in objs:
+        selected_objs.append(obj)
+        selected_weight += obj.weight
+        if selected_weight > threshold:
+            break
+    # Normalize again.
+    for obj in objs:
+        obj.weight = obj.weight / selected_weight
+    return (selected_objs, selected_weight)

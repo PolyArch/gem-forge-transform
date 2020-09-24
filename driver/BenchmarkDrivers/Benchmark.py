@@ -104,6 +104,11 @@ class Benchmark(object):
         return None
 
     """
+    Used to filter out traces with tiny weight.
+    """
+    TRACE_WEIGHT_SUM_THRESHOLD = 0.97
+
+    """
     Used to separate multiple functions.
     """
     ROI_FUNC_SEPARATOR = '|'
@@ -301,29 +306,11 @@ class Benchmark(object):
         # If there is no trace, just return.
         if not self.traces:
             return
-        # Normalize traces weight.
-        sum_weight = sum([trace.weight for trace in self.traces])
-        for trace in self.traces:
-            trace.weight = trace.weight / sum_weight
-        self.traces.sort(key=lambda t: t.weight, reverse=True)
-        selected_traces = list()
-        selected_weight = 0.0
-        for trace in self.traces:
-            selected_traces.append(trace)
-            selected_weight += trace.weight
-            print('Select {total} #{id} weight {weight} sum {sum}'.format(
-                total=len(selected_traces),
-                id=trace.trace_id,
-                weight=trace.weight,
-                sum=selected_weight,
-            ))
-            if selected_weight > 0.97:
-                break
-        self.traces = selected_traces
-        # Normalize again.
-        for trace in self.traces:
-            trace.weight = trace.weight / selected_weight
-
+        self.traces, selected_weight = Util.filter_tail(self.traces, Benchmark.TRACE_WEIGHT_SUM_THRESHOLD)
+        print('Select {total} traces weight {w}'.format(
+            total=len(self.traces),
+            w=selected_weight,
+        ))
 
     def init_traces_from_simpoint(self, simpoint_fn):
         """
@@ -331,30 +318,19 @@ class Benchmark(object):
         Since simpoint only works for single thread workloads,
         we will always assume thread id to be zero.
         """
-        with open(simpoint_fn, 'r') as f:
-            trace_id = 0
-            for line in f:
-                if line.startswith('#'):
-                    continue
-                fields = line.split(' ')
-                assert(len(fields) == 5)
-                lhs_inst = int(fields[0])
-                rhs_inst = int(fields[1])
-                lhs_mark = int(fields[2])
-                rhs_mark = int(fields[3])
-                weight = float(fields[4])
-                trace_fn = os.path.join(
-                    self.get_trace_folder_abs(),
-                    '0.{tid}.trace'.format(tid=trace_id),
-                )
-                # assert(os.path.isfile(trace_fn))
-                trace_obj = TraceObj(trace_fn, trace_id, weight)
-                trace_obj.lhs_inst = lhs_inst
-                trace_obj.rhs_inst = rhs_inst
-                trace_obj.lhs_mark = lhs_mark
-                trace_obj.rhs_mark = rhs_mark
-                self.traces.append(trace_obj)
-                trace_id += 1
+        from Utils import SimPoint
+        for simpoint in SimPoint.parse_simpoint_from_file(simpoint_fn):
+            trace_fn = os.path.join(
+                self.get_trace_folder_abs(),
+                '0.{tid}.trace'.format(tid=simpoint.id),
+            )
+            # assert(os.path.isfile(trace_fn))
+            trace_obj = TraceObj(trace_fn, simpoint.id, simpoint.weight)
+            trace_obj.lhs_inst = simpoint.lhs_inst
+            trace_obj.rhs_inst = simpoint.rhs_inst
+            trace_obj.lhs_mark = simpoint.lhs_mark
+            trace_obj.rhs_mark = simpoint.rhs_mark
+            self.traces.append(trace_obj)
 
     def init_traces_from_region_simpoint(self, region_simpoint_fn):
         Util.mkdir_p(self.get_trace_folder_abs())
@@ -484,16 +460,16 @@ class Benchmark(object):
         # Perform the simpoint on these intervals.
         print('Selecting region simpoints')
         from Utils import SimPoint
-        SimPoint.SimPoint(self.get_region_profile_abs(),
-                          self.get_region_simpoint_abs_new())
+        SimPoint.SimPointBuilder(self.get_region_profile_abs(),
+                                 self.get_region_simpoint_abs_new())
         os.chdir(self.cwd)
 
     def simpoint_fixed_size(self):
         os.chdir(self.get_exe_path())
         print('Selecting fix size simpoints')
         from Utils import SimPoint
-        SimPoint.SimPoint(self.get_profile(),
-                          self.get_fixed_size_simpoint_abs())
+        SimPoint.SimPointBuilder(self.get_profile(),
+                                 self.get_fixed_size_simpoint_abs())
         os.chdir(self.cwd)
 
     def perf(self):
@@ -880,6 +856,8 @@ class Benchmark(object):
         print('# Processing trace...')
         Util.call_helper(opt_cmd)
         if tdg_detail == 'integrated':
+            # Integrated TDG is disabled for now.
+            assert(False)
             build_cmd = [
                 C.CC if self.get_lang() == 'C' else C.CXX,
                 '-static',
@@ -963,8 +941,17 @@ class Benchmark(object):
             output_tdg=tdg,
         )
 
-        if transform_config.is_execution_transform():
-            self.build_replay_exe(transform_config, trace)
+        # Generate the binary for all cases.
+        # If this is trace transformation, I just copy the
+        # replay_bc as replay_exe_bc.
+        if not transform_config.is_execution_transform():
+            cp_cmd = [
+                'cp',
+                self.get_replay_bc(),
+                self.get_replay_exe(transform_config, trace, 'bc')
+            ]
+            Util.call_helper(cp_cmd)
+        self.build_replay_exe(transform_config, trace)
 
         os.chdir(cwd)
 
@@ -1134,7 +1121,7 @@ class Benchmark(object):
         Util.call_helper(['mkdir', '-p', gem5_out_dir])
         gem5_args = self.get_gem5_simulate_command(
             simulation_config=simulation_config,
-            binary=self.get_replay_bin(),
+            binary=self.get_replay_exe(transform_config, trace, 'exe'),
             outdir=gem5_out_dir,
             standalone=self.standalone
         )
