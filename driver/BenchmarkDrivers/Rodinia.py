@@ -43,6 +43,9 @@ class RodiniaBenchmark(Benchmark):
         'hotspot-avx512-fix': {
             'large':  ['1024', '1024', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
+        'hotspot-fix': {
+            'large':  ['1024', '1024', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
+        },
         'hotspot-avx512-fix2k': {
             'large':  ['1024', '2048', '10', '$NTHREADS', '{DATA}/temp_1024.data', '{DATA}/power_1024.data', 'output.txt'],
         },
@@ -57,6 +60,9 @@ class RodiniaBenchmark(Benchmark):
             'large':  ['512', '8', '100', '$NTHREADS', '{DATA}/temp_512x8.data', '{DATA}/power_512x8.data', 'output.txt'],
         },
         'hotspot3D-avx512-fix': {
+            'large':  ['512', '8', '100', '$NTHREADS', '{DATA}/temp_512x8.data', '{DATA}/power_512x8.data', 'output.txt'],
+        },
+        'hotspot3D-fix': {
             'large':  ['512', '8', '100', '$NTHREADS', '{DATA}/temp_512x8.data', '{DATA}/power_512x8.data', 'output.txt'],
         },
         'kmeans': {
@@ -92,7 +98,7 @@ class RodiniaBenchmark(Benchmark):
         'pathfinder': {
             'test': ['100', '100', '$NTHREADS'],
             'medium': ['1000', '100', '$NTHREADS'],
-            'large': ['100000', '100', '$NTHREADS'],
+            'large': ['1572864', '8', '$NTHREADS'],
         },
         'pathfinder-avx512': {
             'test': ['100', '100', '$NTHREADS'],
@@ -115,6 +121,10 @@ class RodiniaBenchmark(Benchmark):
             'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
         },
         'srad_v2-avx512-fix': {
+            # 'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
+            'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
+        },
+        'srad_v2-fix': {
             # 'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
             'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
         },
@@ -145,6 +155,9 @@ class RodiniaBenchmark(Benchmark):
         'hotspot-avx512-fix': [
             '.omp_outlined.',
         ],
+        'hotspot-fix': [
+            '.omp_outlined.',
+        ],
         'hotspot-avx512-fix2k': [
             '.omp_outlined.',
         ],
@@ -155,6 +168,9 @@ class RodiniaBenchmark(Benchmark):
             '.omp_outlined.',
         ],
         'hotspot3D-avx512-fix': [
+            '.omp_outlined.',
+        ],
+        'hotspot3D-fix': [
             '.omp_outlined.',
         ],
         'kmeans': [
@@ -205,6 +221,10 @@ class RodiniaBenchmark(Benchmark):
             '.omp_outlined..14',
             '.omp_outlined..15',
         ],
+        'srad_v2-fix': [
+            '.omp_outlined..14',
+            '.omp_outlined..15',
+        ],
     }
 
     """
@@ -216,24 +236,27 @@ class RodiniaBenchmark(Benchmark):
         'b+tree': 2, # Two commands.
         'bfs': 2 * int(1e8 / 15e5),  # One iter takes 15e5 ops.
         'cfd': 4 * int(1e8 / 2e7), 
-        'hotspot': 4, # Two iters takes 10 min.
-        'hotspot-avx512': 4, # Two iters takes 10 min.
+        'hotspot': 2, # Two iters takes 10 min.
+        'hotspot-avx512': 2, # Two iters takes 10 min.
         'hotspot-avx512-fix': 2, # Two iters takes 10 min.
+        'hotspot-fix': 2, # Two iters takes 10 min.
         'hotspot-avx512-fix2k': 2, # Two iters takes 10 min.
         'hotspot3D': 1 * int(1e8 / 2e7),
         'hotspot3D-avx512': 1 * int(1e8 / 2e7),
         'hotspot3D-avx512-fix': 1 * int(1e8 / 2e7),
+        'hotspot3D-fix': 1 * int(1e8 / 2e7),
         'kmeans': 3 * 1, 
         'lavaMD': 1,            # Invoke kernel for once.
         'nw': 2,                # nw can finish.
         'nw-blk32': 2,                # nw can finish.
         'nn': 4,                # One iteration is 4 work items.
         'particlefilter': 9 * 1, # One itertion is enough.
-        'pathfinder': 99,        # pathfinder takes 99 iterations.
+        'pathfinder': 149,        # pathfinder takes 99 iterations.
         'pathfinder-avx512': 149,        # pathfinder takes 99 iterations.
         'srad_v2': 2 * 1, # One iteration is enough.
         'srad_v2-avx512': 2 * 1, # One iteration is enough.
         'srad_v2-avx512-fix': 2 * 1, # One iteration is enough.
+        'srad_v2-fix': 2 * 1, # One iteration is enough.
     }
 
     def __init__(self, benchmark_args, benchmark_path):
