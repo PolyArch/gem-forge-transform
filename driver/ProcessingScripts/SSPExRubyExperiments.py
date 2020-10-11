@@ -76,6 +76,8 @@ class TileStatsParser(object):
             'noc_packet': ['system.ruby.network.packets_injected::total'],
             'avg_flit_network_lat': ['system.ruby.network.average_flit_network_latency'],
             'avg_flit_queue_lat': ['system.ruby.network.average_flit_queueing_latency'],
+            'avg_sequencer_miss_lat': ['system.ruby.miss_latency_hist_seqr::mean'],
+            'avg_sequencer_hit_lat': ['system.ruby.hit_latency_hist_seqr::mean'],
             'total_hops': ['system.ruby.network.total_hops'],
             'crossbar_act': self.format_re(
                 'system.ruby.network.routers{tile_id}.crossbar_activity'),
@@ -119,6 +121,8 @@ class TileStatsParser(object):
                 'system.ruby.l2_cntrl{tile_id}.llcIndStreamRequests'),
             'llc_llc_multicast_stream_requests': self.format_re(
                 'system.ruby.l2_cntrl{tile_id}.llcMulticastStreamRequests'),
+            'stream_wait_cycles': self.format_re(
+                'system.cpu{tile_id}.accelManager.se.numLoadElementWaitCycles'),
         }
 
     def format_re(self, expression):
