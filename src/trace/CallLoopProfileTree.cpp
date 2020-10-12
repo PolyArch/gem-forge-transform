@@ -414,18 +414,27 @@ void CallLoopProfileTree::selectCandidateEdges() {
                  << "\n  -> "
                  << Utils::formatLLVMFunc(E->DestInst->getFunction()) << '\n');
       auto DestNode = this->getNode(E->DestInst);
+      int NumDestInEdges = DestNode->InEdges.size();
       for (auto &E : DestNode->InEdges) {
         LLVM_DEBUG(llvm::dbgs()
                    << " Incoming from "
                    << this->formatPossibleNullInst(E->BridgeInst) << '\n');
       }
       auto StartNode = this->getNode(E->StartInst);
+      int NumCallees = 0;
       for (auto &OutE : StartNode->OutEdges) {
         if (OutE->BridgeInst == E->BridgeInst) {
           LLVM_DEBUG(llvm::dbgs()
                      << " Called "
                      << this->formatPossibleNullInst(OutE->DestInst) << '\n');
+          NumCallees++;
         }
+      }
+      if (NumCallees > 1 && NumDestInEdges > 1) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << " Ingored as #" << NumCallees << " callees and #"
+                   << NumDestInEdges << " dest incoming edges.\n");
+        continue;
       }
     }
     this->SelectedEdges.push_back(E);

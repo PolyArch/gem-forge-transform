@@ -178,7 +178,10 @@ void SimpointIntervalSelectPass::insertEdgeMark(
       // Check if this indirect call has single destination.
       const CallLoopProfileTree::Node *StartNode =
           this->CLProfileTree->getNode(StartInst);
+      const CallLoopProfileTree::Node *DestNode =
+          this->CLProfileTree->getNode(DestInst);
       int NumSameBridgeEdges = 0;
+      int NumDestInEdges = DestNode->InEdges.size();
       bool HasDifferentCallee = false;
       for (auto &OutE : StartNode->OutEdges) {
         if (OutE->BridgeInst == BridgeInst) {
@@ -193,8 +196,16 @@ void SimpointIntervalSelectPass::insertEdgeMark(
         // direct call.
         llvm::IRBuilder<> Builder(BridgeInst);
         Builder.CreateCall(this->EdgeMarkFunc, EdgeMarkArgs);
+      } else if (NumDestInEdges == 1) {
+        // The callee only has one coming edge. We can move the edge to
+        // the callee.
+        llvm::IRBuilder<> Builder(
+            &*BridgeInst->getParent()->getFirstInsertionPt());
+        Builder.CreateCall(this->EdgeMarkFunc, EdgeMarkArgs);
       } else {
-        llvm::errs() << "Cannot handle IndirectCall Edge with Multiple Callees "
+        llvm::errs() << "Cannot handle IndirectCall Edge with #"
+                     << NumSameBridgeEdges << " Callees "
+                     << " and #" << NumDestInEdges << " DestInEdges "
                      << SelectedID << " ====\n  "
                      << Utils::formatLLVMInst(StartInst) << "\n  "
                      << Utils::formatLLVMInst(BridgeInst) << "\n  "
