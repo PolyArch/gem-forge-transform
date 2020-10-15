@@ -307,9 +307,10 @@ class Benchmark(object):
         if not self.traces:
             return
         self.traces, selected_weight = Util.filter_tail(self.traces, Benchmark.TRACE_WEIGHT_SUM_THRESHOLD)
-        print('Select {total} traces weight {w}'.format(
+        print('Select {total} traces weight {w:.4f}: {ts}'.format(
             total=len(self.traces),
             w=selected_weight,
+            ts=', '.join(['{id}({w:.4f})'.format(id=t.trace_id, w=t.weight) for t in self.traces])
         ))
 
     def init_traces_from_simpoint(self, simpoint_fn):

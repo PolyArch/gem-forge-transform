@@ -339,7 +339,12 @@ class SPEC2017Benchmark(Benchmark):
         """
         Some benchmarks takes too long to finish, so we use work item
         to ensure that we simualte for the same amount of work.
+        This is only used for execution simulation with no simpoints.
         """
+        if not self.options.fake_trace:
+            return list()
+        if self.options.simpoint_mode == 'region':
+            return list()
         work_items = -1
         if self.get_name() == 'spec.508.namd_r':
             # Just run one iteration.
@@ -358,7 +363,8 @@ class SPEC2017Benchmark(Benchmark):
 
     def get_gem5_mem_size(self):
         large_mem_benchmarks = [
-            'spec.657.xz_s'
+            'spec.657.xz_s',
+            'spec.619.lbm_s',
         ]
         for p in large_mem_benchmarks:
             if self.get_name().startswith(p):
