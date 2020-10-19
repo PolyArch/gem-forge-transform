@@ -51,6 +51,22 @@ Get the gem5 and build it. Some required packages:
 sudo apt install python-dev m4
 ```
 
+### GemForgeCPU
+
+Get the gem5 and build it. Some required packages:
+
+```bash
+sudo apt install python-dev m4
+```
+
+### GemForgeCPU
+
+Get the gem5 and build it. Some required packages:
+
+```bash
+sudo apt install python-dev m4
+```
+
 ### Python Environment
 
 We suggest using Anaconda to manager the environment. The driver is written in Python 2.7 and requires numpy and sklearn to perform simpoint. So after installing anaconda:
