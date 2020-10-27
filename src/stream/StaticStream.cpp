@@ -112,7 +112,12 @@ void StaticStream::handleFirstTimeComputeNode(
       if (llvm::isa<llvm::LoadInst>(Inst)) {
         // LoadBaseStream.
         auto LoadBaseStream = GetStream(Inst, this->ConfigureLoop);
-        assert(LoadBaseStream != nullptr && "Failed to find LoadBaseStream.");
+        if (!LoadBaseStream) {
+          llvm::errs() << "Failed to find LoadBaseStream "
+                       << Utils::formatLLVMInst(Inst) << " for "
+                       << this->formatName() << '\n';
+          assert(false && "Failed to find LoadBaseStream.");
+        }
         ComputeMNode->LoadBaseStreams.insert(LoadBaseStream);
         this->LoadBaseStreams.insert(LoadBaseStream);
         DFSStack.pop_back();

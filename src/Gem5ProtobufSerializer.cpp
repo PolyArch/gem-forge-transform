@@ -26,7 +26,7 @@ void TextProtobufSerializer::serialize(
   // For the json file, we do not log history.
   google::protobuf::util::MessageToJsonString(Message, &JsonString);
   // Write directly to the file stream.
-  this->OutFileStream << "=============== " << Message.ByteSize() << '\n';
+  this->OutFileStream << "=============== " << Message.ByteSizeLong() << '\n';
   this->OutFileStream << JsonString << '\n';
 }
 

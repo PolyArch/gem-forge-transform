@@ -41,7 +41,7 @@ GzipMultipleProtobufSerializer::~GzipMultipleProtobufSerializer() {
 
 void GzipMultipleProtobufSerializer::serialize(
     const google::protobuf::Message &Message) {
-  this->CodedStream->WriteVarint32(Message.ByteSize());
+  this->CodedStream->WriteVarint32(Message.ByteSizeLong());
   Message.SerializeWithCachedSizes(CodedStream);
 }
 

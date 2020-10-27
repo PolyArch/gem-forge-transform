@@ -26,13 +26,25 @@ void StaticMemStream::initializeMetaGraphConstruction(
 void StaticMemStream::analyzeIsCandidate() {
   /**
    * So far only look at inner most loop.
+   * Ignore streams in remainder/epilogue loop.
    */
+  if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop)) {
+    this->IsCandidate = false;
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::IN_LOOP_REMAINDER_OR_EPILOGUE);
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Loop Remainder/Epilogue "
+                            << this->formatName() << '\n');
+    return;
+  }
 
   if (!this->checkBaseStreamInnerMostLoopContainsMine()) {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::
             BASE_STREAM_INNER_MOST_LOOP_NOT_CONTAIN_MINE);
+    LLVM_DEBUG(llvm::dbgs()
+               << "[NotCandidate]: Base Stream InnerMostLoop Not Contain Mine "
+               << this->formatName() << '\n');
     return;
   }
 
@@ -42,6 +54,8 @@ void StaticMemStream::analyzeIsCandidate() {
    */
   if (!this->PHIMetaNodes.empty()) {
     this->IsCandidate = false;
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: No PhiMetaNode "
+                            << this->formatName() << '\n');
     return;
   }
   /**
@@ -51,6 +65,8 @@ void StaticMemStream::analyzeIsCandidate() {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::MULTI_STEP_ROOT);
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Multiple Step Root "
+                            << this->formatName() << '\n');
     return;
   }
   /**
@@ -60,6 +76,8 @@ void StaticMemStream::analyzeIsCandidate() {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STEP_ROOT);
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: No Step Root "
+                            << this->formatName() << '\n');
     return;
   }
   /**
@@ -68,12 +86,16 @@ void StaticMemStream::analyzeIsCandidate() {
   if (llvm::isa<llvm::StoreInst>(this->Inst)) {
     if (!StreamPassEnableStore) {
       this->IsCandidate = false;
+      LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Store Disabled "
+                              << this->formatName() << '\n');
       return;
     }
     if (this->UpdateStream) {
       this->StaticStreamInfo.set_not_stream_reason(
           ::LLVM::TDG::StaticStreamInfo::IS_UPDATE_STORE);
       this->IsCandidate = false;
+      LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Update Disabled "
+                              << this->formatName() << '\n');
       return;
     }
   }
@@ -90,6 +112,8 @@ void StaticMemStream::analyzeIsCandidate() {
     auto Inst = const_cast<llvm::Instruction *>(LoadBaseStream->Inst);
     if (!this->SE->isSCEVable(Inst->getType())) {
       this->IsCandidate = false;
+      LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Not SCEVable LoadBase "
+                              << this->formatName() << '\n');
       return;
     }
     InputSCEVs.insert(this->SE->getSCEV(Inst));
@@ -98,6 +122,8 @@ void StaticMemStream::analyzeIsCandidate() {
     auto Inst = const_cast<llvm::Instruction *>(IndVarBaseStream->Inst);
     if (!this->SE->isSCEVable(Inst->getType())) {
       this->IsCandidate = false;
+      LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Not SCEVable IVBase "
+                              << this->formatName() << '\n');
       return;
     }
     InputSCEVs.insert(this->SE->getSCEV(Inst));
@@ -105,17 +131,24 @@ void StaticMemStream::analyzeIsCandidate() {
   for (auto &LoopInvariantInput : this->LoopInvariantInputs) {
     if (!this->SE->isSCEVable(LoopInvariantInput->getType())) {
       this->IsCandidate = false;
+      LLVM_DEBUG(llvm::dbgs()
+                 << "[NotCandidate]: Not SCEVable LoopInvariantInput "
+                 << this->formatName() << '\n');
       return;
     }
     InputSCEVs.insert(
         this->SE->getSCEV(const_cast<llvm::Value *>(LoopInvariantInput)));
   }
-  if (this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
-    this->IsCandidate = true;
+  if (!this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEVStreamDG "
+                            << this->formatName() << " SCEV: ";
+               SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
+
+    this->IsCandidate = false;
     return;
   }
 
-  this->IsCandidate = false;
+  this->IsCandidate = true;
   return;
 }
 
