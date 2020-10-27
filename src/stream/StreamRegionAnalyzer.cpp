@@ -3,8 +3,8 @@
 #include "llvm/Support/FileSystem.h"
 
 #include <iomanip>
-#include <sstream>
 #include <queue>
+#include <sstream>
 
 #define DEBUG_TYPE "StreamRegionAnalyzer"
 #if !defined(LLVM_DEBUG) && defined(DEBUG)
@@ -555,10 +555,14 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
         for (auto DepSS : S->SStream->DependentStreams) {
           if (DepSS->isQualified()) {
             NumQualifiedDepStreams++;
-            LLVM_DEBUG(llvm::dbgs() << "==== Qualified DepS "
+            LLVM_DEBUG(llvm::dbgs() << "====== Qualified DepS "
                                     << DepSS->formatName() << '\n');
           }
         }
+        LLVM_DEBUG(llvm::dbgs()
+                   << "======= # Qualified DepS = " << NumQualifiedDepStreams
+                   << ", ChosenNumQualifiedDepStreams = "
+                   << ChosenNumQualifiedDepStreams << '\n');
         if (NumQualifiedDepStreams >= ChosenNumQualifiedDepStreams) {
           ChosenStream = S;
           ChosenNumQualifiedDepStreams = NumQualifiedDepStreams;

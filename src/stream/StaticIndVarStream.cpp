@@ -188,6 +188,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
    * 3. Exactly one "unique" non-empty compute path.
    * 4. In this unique non-empty compute path:
    *   a. The non-empty ComputePath must be a recognizable ValuePattern.
+   * 5. Not from remainder/epilogue loop.
    */
 
   // 1.
@@ -298,6 +299,14 @@ void StaticIndVarStream::analyzeIsCandidate() {
   } else {
     this->StaticStreamInfo.set_stp_pattern(
         LLVM::TDG::StreamStepPattern::UNCONDITIONAL);
+  }
+
+  // 5.
+  if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop)) {
+    this->IsCandidate = false;
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::IN_LOOP_REMAINDER_OR_EPILOGUE);
+    return;
   }
 
   this->IsCandidate = true;

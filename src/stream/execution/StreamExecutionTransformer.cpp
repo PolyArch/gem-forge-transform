@@ -1278,30 +1278,24 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     AddrSCEV->dump();
   });
 
-  if (llvm::isa<llvm::SCEVAddRecExpr>(AddrSCEV)) {
-    auto ClonedConfigureLoop =
-        this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
-    auto ClonedInnerMostLoop =
-        this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
-    auto ClonedAddrSCEV = ClonedSE->getSCEV(ClonedAddr);
-    auto ClonedAddrAddRecSCEV =
-        llvm::dyn_cast<llvm::SCEVAddRecExpr>(ClonedAddrSCEV);
-    this->generateAddRecStreamConfiguration(
-        ClonedConfigureLoop, ClonedInnerMostLoop, ClonedAddrAddRecSCEV,
-        InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
-        ProtoConfiguration);
-  } else if (SS->StaticStreamInfo.val_pattern() ==
-             ::LLVM::TDG::StreamValuePattern::INDIRECT) {
+  if (SS->StaticStreamInfo.val_pattern() ==
+      ::LLVM::TDG::StreamValuePattern::INDIRECT) {
     // Check if this is indirect stream.
     LLVM_DEBUG(llvm::errs() << "This is Indirect MemStream.\n");
     for (auto BaseS : S->getChosenBaseStreams()) {
       auto BaseSS = BaseS->SStream;
       if (BaseSS->ConfigureLoop != SS->ConfigureLoop ||
           BaseSS->InnerMostLoop != SS->InnerMostLoop) {
-        llvm::errs() << "Cannot handle indirect streams with mismatch loop: \n";
-        llvm::errs() << "Base: " << BaseSS->formatName() << '\n';
-        llvm::errs() << "Dep:  " << SS->formatName() << '\n';
-        assert(false && "Mismatch in configure loop for indirect streams.");
+        if (SS->StaticStreamInfo.stp_pattern() !=
+                ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL ||
+            BaseSS->StaticStreamInfo.stp_pattern() !=
+                ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
+          llvm::errs() << "Cannot handle indirect streams (mismatch loop, "
+                          "conditional step): \n";
+          llvm::errs() << "Base: " << BaseSS->formatName() << '\n';
+          llvm::errs() << "Dep:  " << SS->formatName() << '\n';
+          assert(false && "Mismatch in configure loop for indirect streams.");
+        }
       }
     }
     // Set the IV pattern to indirect, and the stream will fill in AddrFunc
@@ -1312,19 +1306,37 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     for (auto Input : S->getAddrFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
     }
+    return;
   } else if (SS->StaticStreamInfo.val_pattern() ==
-                 ::LLVM::TDG::StreamValuePattern::LINEAR &&
-             SS->StaticStreamInfo.stp_pattern() ==
-                 ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
-    llvm::errs() << "Can't handle conditional linear mem stream "
-                 << S->formatName() << '\n';
-    assert(false);
-  } else {
-    llvm::errs() << "Can't handle this stream " << SS->formatName() << '\n';
-    llvm::errs() << "AddrSCEV: ";
-    AddrSCEV->print(llvm::errs());
-    assert(false && "Can't handle this Addr.");
+             ::LLVM::TDG::StreamValuePattern::LINEAR) {
+    if (SS->StaticStreamInfo.stp_pattern() ==
+        ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
+      assert(llvm::isa<llvm::SCEVAddRecExpr>(AddrSCEV) &&
+             "Unconditional linear stream should have AddRecSCEV.");
+      auto ClonedConfigureLoop =
+          this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
+      auto ClonedInnerMostLoop =
+          this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
+      auto ClonedAddrSCEV = ClonedSE->getSCEV(ClonedAddr);
+      auto ClonedAddrAddRecSCEV =
+          llvm::dyn_cast<llvm::SCEVAddRecExpr>(ClonedAddrSCEV);
+      this->generateAddRecStreamConfiguration(
+          ClonedConfigureLoop, ClonedInnerMostLoop, ClonedAddrAddRecSCEV,
+          InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
+          ProtoConfiguration);
+      return;
+    } else if (SS->StaticStreamInfo.stp_pattern() ==
+               ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
+      llvm::errs() << "Can't handle conditional linear mem stream "
+                   << S->formatName() << '\n';
+      assert(false);
+    }
   }
+
+  llvm::errs() << "Can't handle this stream " << SS->formatName() << '\n';
+  llvm::errs() << "AddrSCEV: ";
+  AddrSCEV->print(llvm::errs());
+  assert(false && "Can't handle this Addr.");
 }
 
 void StreamExecutionTransformer::generateAddRecStreamConfiguration(
@@ -1346,7 +1358,7 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
   while (ClonedConfigureLoop->contains(CurrentLoop)) {
     RecurLevel++;
     LLVM_DEBUG({
-      llvm::errs() << "Peeling LoopHeader " << CurrentLoop->getName() << ' ';
+      llvm::dbgs() << "Peeling LoopHeader " << CurrentLoop->getName() << ' ';
       CurrentSCEV->dump();
     });
     if (!ClonedSE->isLoopInvariant(CurrentSCEV, CurrentLoop)) {
@@ -1363,6 +1375,9 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
         auto StartSCEV = AddRecSCEV->getStart();
         CurrentSCEV = StartSCEV;
       } else {
+        llvm::errs() << "Cannot handle this LoopVariant SCEV:";
+        CurrentSCEV->print(llvm::errs());
+        llvm::errs() << '\n';
         assert(false && "Cannot handle this LoopVariant SCEV.");
       }
     } else {
