@@ -606,6 +606,9 @@ StreamExecutionTransformer::addStreamLoad(Stream *S, llvm::Type *LoadType,
       // Make sure these are correct type.
       auto CastedNumInt64 = 0;
       switch (NumBits) {
+      case 64:
+        CastedNumInt64 = 1;
+        break;
       case 128:
         CastedNumInt64 = 2;
         break;
@@ -616,12 +619,18 @@ StreamExecutionTransformer::addStreamLoad(Stream *S, llvm::Type *LoadType,
         CastedNumInt64 = 8;
         break;
       default:
-        llvm::errs() << "Invalid vector type bits " << NumBits << '\n';
+        llvm::errs() << "Invalid vector type bits " << NumBits << " Type:\n";
+        LoadType->print(llvm::errs());
         llvm_unreachable("Invalid number of bits for vector.");
       }
-      StreamLoadType = llvm::VectorType::get(
-          llvm::IntegerType::get(this->ClonedModule->getContext(), 64),
-          CastedNumInt64);
+      if (CastedNumInt64 == 1) {
+        StreamLoadType =
+            llvm::IntegerType::get(this->ClonedModule->getContext(), 64);
+      } else {
+        StreamLoadType = llvm::VectorType::get(
+            llvm::IntegerType::get(this->ClonedModule->getContext(), 64),
+            CastedNumInt64);
+      }
       NeedBitcast = true;
     } else {
       llvm::errs() << "Invalid vector element type.";

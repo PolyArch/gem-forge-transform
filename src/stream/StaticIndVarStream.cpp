@@ -26,16 +26,19 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
               hasConstantTripCount = true;
             }
           }
-          if (this->formatName() ==
-              "(dense_mv.c::15(foo) 0 bb12 bb40::tmp41(phi))") {
-            llvm::dbgs() << this->formatName() << " Loop "
-                         << LoopUtils::getLoopId(CurrentLoop) << " "
-                         << this->SE->hasLoopInvariantBackedgeTakenCount(
-                                CurrentLoop)
-                         << '\n';
-            this->SE->getBackedgeTakenCount(CurrentLoop)->print(llvm::dbgs());
-            this->SE->getConstantMaxBackedgeTakenCount(CurrentLoop)
-                ->print(llvm::dbgs());
+          if (!hasConstantTripCount) {
+            LLVM_DEBUG(
+                llvm::dbgs()
+                    << "Variant BackEdge for " << this->formatName() << '\n';
+                llvm::dbgs()
+                << " Loop " << LoopUtils::getLoopId(CurrentLoop) << " "
+                << this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)
+                << '\n';
+                this->SE->getBackedgeTakenCount(CurrentLoop)
+                    ->print(llvm::dbgs());
+                this->SE->getConstantMaxBackedgeTakenCount(CurrentLoop)
+                    ->print(llvm::dbgs()));
+                llvm::dbgs() << '\n';
           }
           if (!hasConstantTripCount) {
             this->StaticStreamInfo.set_not_stream_reason(
