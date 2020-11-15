@@ -61,6 +61,18 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
   if (MemorizedIsLoopContinuous.count(Loop)) {
     return MemorizedIsLoopContinuous.at(Loop);
   }
+  /**
+   * Sometimes we want to just enable loops in one function.
+   */
+  auto Func = Loop->getHeader()->getParent();
+  auto FuncUID = Utils::formatLLVMFunc(Func);
+  if (FuncUID.find("RelaxEdges") != std::string::npos) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "Mark LoopContinuous in Func " << FuncUID << '\n');
+    MemorizedIsLoopContinuous.emplace(Loop, true);
+    return true;
+  }
+
   // Check if there is any calls to unsupported function.
   bool IsContinuous = true;
   for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
