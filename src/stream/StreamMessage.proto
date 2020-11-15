@@ -123,6 +123,7 @@ message StaticStreamInfo {
     VARIANT_BACKEDGE_TAKEN = 9;
     IS_UPDATE_STORE = 10;
     IN_LOOP_REMAINDER_OR_EPILOGUE = 11;
+    IV_NO_MEM_DEPENDENT = 12;
     // Not Qualified Reason.
     BASE_STREAM_NOT_QUALIFIED = 20;
     NO_STATIC_MAPPING = 21;

@@ -38,7 +38,7 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
                     ->print(llvm::dbgs());
                 this->SE->getConstantMaxBackedgeTakenCount(CurrentLoop)
                     ->print(llvm::dbgs()));
-                llvm::dbgs() << '\n';
+            llvm::dbgs() << '\n';
           }
           if (!hasConstantTripCount) {
             this->StaticStreamInfo.set_not_stream_reason(
@@ -309,6 +309,15 @@ void StaticIndVarStream::analyzeIsCandidate() {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::IN_LOOP_REMAINDER_OR_EPILOGUE);
+    return;
+  }
+
+  if (this->DependentStreams.empty() &&
+      this->StaticStreamInfo.val_pattern() !=
+          LLVM::TDG::StreamValuePattern::REDUCTION) {
+    this->IsCandidate = false;
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::IV_NO_MEM_DEPENDENT);
     return;
   }
 
