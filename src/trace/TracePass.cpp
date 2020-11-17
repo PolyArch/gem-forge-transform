@@ -129,6 +129,10 @@ public:
       if (auto StreamMemcpyFunc = this->Module->getFunction("stream_memcpy")) {
         this->tracedFunctions.insert(StreamMemcpyFunc);
       }
+      if (auto StreamMemmoveFunc =
+              this->Module->getFunction("stream_memmove")) {
+        this->tracedFunctions.insert(StreamMemmoveFunc);
+      }
       if (TraceReachableFunctionOnly.getNumOccurrences() == 1 &&
           TraceReachableFunctionOnly.getValue()) {
         this->findReachableFunctions();

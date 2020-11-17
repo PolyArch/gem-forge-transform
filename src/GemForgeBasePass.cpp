@@ -51,6 +51,9 @@ bool GemForgeBasePass::initialize(llvm::Module &Module) {
     if (auto StreamMemcpyFunc = this->Module->getFunction("stream_memcpy")) {
       this->ROIFunctions.insert(StreamMemcpyFunc);
     }
+    if (auto StreamMemmoveFunc = this->Module->getFunction("stream_memmove")) {
+      this->ROIFunctions.insert(StreamMemmoveFunc);
+    }
   }
 
   return true;
