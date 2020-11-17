@@ -1320,8 +1320,13 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
              ::LLVM::TDG::StreamValuePattern::LINEAR) {
     if (SS->StaticStreamInfo.stp_pattern() ==
         ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
-      assert(llvm::isa<llvm::SCEVAddRecExpr>(AddrSCEV) &&
-             "Unconditional linear stream should have AddRecSCEV.");
+      if (!llvm::isa<llvm::SCEVAddRecExpr>(AddrSCEV)) {
+        llvm::errs() << "Unconditional LinearMemStream " << SS->formatName()
+                     << " should have AddRecSCEV, but got ";
+        AddrSCEV->print(llvm::errs());
+        llvm::errs() << '\n';
+        assert(false && "Unconditional linear stream should have AddRecSCEV.");
+      }
       auto ClonedConfigureLoop =
           this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
       auto ClonedInnerMostLoop =
@@ -1515,7 +1520,10 @@ void StreamExecutionTransformer::replaceWithStreamMemIntrinsic() {
       this->ClonedModule->getFunction("stream_memset");
   auto ClonedStreamMemcpyFunc =
       this->ClonedModule->getFunction("stream_memcpy");
-  if (!ClonedStreamMemsetFunc && !ClonedStreamMemcpyFunc) {
+  auto ClonedStreamMemmoveFunc =
+      this->ClonedModule->getFunction("stream_memmove");
+  if (!ClonedStreamMemsetFunc && !ClonedStreamMemcpyFunc &&
+      !ClonedStreamMemmoveFunc) {
     return;
   }
   for (auto Func : this->ROIFunctions) {
@@ -1567,6 +1575,28 @@ void StreamExecutionTransformer::replaceWithStreamMemIntrinsic() {
                     LenArg,
                 };
                 Builder.CreateCall(ClonedStreamMemcpyFunc, Args);
+                ClonedCallInst->eraseFromParent();
+              }
+            }
+          } else if (Callee->getIntrinsicID() == llvm::Intrinsic::ID::memmove &&
+                     ClonedStreamMemmoveFunc) {
+            // Check that the last volatile argument is false.
+            auto ClonedCallInst = this->getClonedValue(CallInst);
+            auto DestArg = ClonedCallInst->getOperand(0);
+            auto SrcArg = ClonedCallInst->getOperand(1);
+            auto LenArg = ClonedCallInst->getOperand(2);
+            auto VolatileArg = ClonedCallInst->getOperand(3);
+            if (auto ConstVolatileArg =
+                    llvm::dyn_cast<llvm::ConstantInt>(VolatileArg)) {
+              if (ConstVolatileArg->isZero()) {
+                llvm::IRBuilder<> Builder(ClonedCallInst);
+                // We ignore the last volatile arguments.
+                std::vector<llvm::Value *> Args{
+                    DestArg,
+                    SrcArg,
+                    LenArg,
+                };
+                Builder.CreateCall(ClonedStreamMemmoveFunc, Args);
                 ClonedCallInst->eraseFromParent();
               }
             }
