@@ -148,6 +148,18 @@ void StaticMemStream::analyzeIsCandidate() {
     return;
   }
 
+  if (this->LoadBaseStreams.empty()) {
+    // For direct MemStream we want to enforce AddRecSCEV.
+    if (!llvm::isa<llvm::SCEVAddRecExpr>(SCEV)) {
+      LLVM_DEBUG(llvm::dbgs()
+                     << "[NotCandidate]: DirectMemStream Requires AddRecSCEV "
+                     << this->formatName() << " SCEV: ";
+                 SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
+      this->IsCandidate = false;
+      return;
+    }
+  }
+
   this->IsCandidate = true;
   return;
 }
@@ -189,11 +201,24 @@ bool StaticMemStream::validateSCEVAsStreamDG(
         break;
       }
       SCEV = LoopVariantSCEV;
+      continue;
     } else if (auto CastSCEV = llvm::dyn_cast<llvm::SCEVCastExpr>(SCEV)) {
       SCEV = CastSCEV->getOperand();
-    } else {
-      return false;
+      continue;
+    } else if (auto UDivSCEV = llvm::dyn_cast<llvm::SCEVUDivExpr>(SCEV)) {
+      // We allow the divisor to be a power of 2.
+      auto Divisor = UDivSCEV->getRHS();
+      if (auto ConstantDivisor = llvm::dyn_cast<llvm::SCEVConstant>(Divisor)) {
+        if (ConstantDivisor->getAPInt().isPowerOf2()) {
+          SCEV = UDivSCEV->getLHS();
+          continue;
+        }
+      }
     }
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEV in StreamDG "
+                            << this->formatName() << " SCEV: ";
+               SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
+    return false;
   }
   return true;
 }
