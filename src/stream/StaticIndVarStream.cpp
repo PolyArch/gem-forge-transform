@@ -246,6 +246,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_NON_EMPTY_COMPUTE_PATH);
+    LLVM_DEBUG(llvm::dbgs() << "Missing NonEmptyComputePath.\n");
     return;
   }
 
@@ -404,10 +405,10 @@ void StaticIndVarStream::constructComputePathRecursive(
 }
 
 void StaticIndVarStream::ComputePath::debug() const {
-  llvm::dbgs() << "ComputePath ";
+  llvm::dbgs() << "ComputePath";
   for (const auto &ComputeMNode : this->ComputeMetaNodes) {
     char Empty = ComputeMNode->isEmpty() ? 'E' : 'F';
-    llvm::dbgs() << ComputeMNode->format() << Empty;
+    llvm::dbgs() << ' ' << ComputeMNode->format() << '-' << Empty << '-';
     if (!ComputeMNode->isEmpty()) {
       for (const auto &ComputeInst : ComputeMNode->ComputeInsts) {
         llvm::dbgs() << Utils::formatLLVMInstWithoutFunc(ComputeInst) << ',';
@@ -422,8 +423,11 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->isCandidate()) {
     return false;
   }
+  LLVM_DEBUG(llvm::dbgs() << "Check IsQualifed Without BackEdgeDep for "
+                          << this->formatName() << '\n');
   // Make sure we only has one back edge.
   if (this->BackMemBaseStreams.size() > 1) {
+    LLVM_DEBUG(llvm::dbgs() << "[Unqualified] Multiple BackMemBaseStreams.\n");
     return false;
   }
   // Check all the base streams are qualified.
@@ -431,6 +435,8 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
     if (!BaseStream->isQualified()) {
       this->StaticStreamInfo.set_not_stream_reason(
           LLVM::TDG::StaticStreamInfo::BASE_STREAM_NOT_QUALIFIED);
+      LLVM_DEBUG(llvm::dbgs() << "[Unqualified] Unqualified BackMemBaseStream "
+                              << BaseStream->formatName() << ".\n");
       return false;
     }
   }
@@ -439,6 +445,7 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
+    LLVM_DEBUG(llvm::dbgs() << "[Unqualified] No StaticMapping.\n");
     return false;
   }
   return true;
