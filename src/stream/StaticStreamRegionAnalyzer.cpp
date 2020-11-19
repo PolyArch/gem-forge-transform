@@ -82,10 +82,10 @@ void StaticStreamRegionAnalyzer::initializeStreams() {
     for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
          ++InstIter) {
       auto StaticInst = &*InstIter;
-      if (!Utils::isMemAccessInst(StaticInst)) {
-        continue;
+      if (Utils::isMemAccessInst(StaticInst) ||
+          UserDefinedMemStream::isUserDefinedMemStream(StaticInst)) {
+        this->initializeStreamForAllLoops(StaticInst);
       }
-      this->initializeStreamForAllLoops(StaticInst);
     }
   }
 }
@@ -118,6 +118,9 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
       NewStream = new StaticIndVarStream(PHIInst, ConfigureLoop, InnerMostLoop,
                                          SE, PDT, DataLayout);
+    } else if (UserDefinedMemStream::isUserDefinedMemStream(StreamInst)) {
+      NewStream = new UserDefinedMemStream(StreamInst, ConfigureLoop,
+                                           InnerMostLoop, SE, PDT, DataLayout);
     } else {
       NewStream = new StaticMemStream(StreamInst, ConfigureLoop, InnerMostLoop,
                                       SE, PDT, DataLayout);

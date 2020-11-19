@@ -76,7 +76,7 @@ void TDGSerializer::write() {
       std::string OutString;
       LLVM_DEBUG(google::protobuf::TextFormat::PrintToString(
           this->TDG.instructions(DUMPED), &OutString));
-      LLVM_DEBUG(llvm::errs() << OutString << '\n');
+      LLVM_DEBUG(llvm::dbgs() << OutString << '\n');
     }
   }
 

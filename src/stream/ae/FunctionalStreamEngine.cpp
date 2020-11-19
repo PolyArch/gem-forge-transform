@@ -7,7 +7,7 @@
 
 FunctionalStreamEngine::FunctionalStreamEngine(
     std::unique_ptr<llvm::Interpreter> &_Interpreter,
-    const std::unordered_set<Stream *> &_ChosenStreams)
+    const std::unordered_set<DynStream *> &_ChosenStreams)
     : Interpreter(_Interpreter) {
   // Initialize all functional streams.
   for (auto &S : _ChosenStreams) {
@@ -35,10 +35,10 @@ FunctionalStreamEngine::FunctionalStreamEngine(
    * we do not bother defining a hash function for std::unordered_map. Instead
    * we use std::map.
    */
-  std::map<std::pair<const llvm::Loop *, const Stream *>,
+  std::map<std::pair<const llvm::Loop *, const DynStream *>,
            std::unordered_set<FunctionalStream *>>
       PotentialCoalescingGroups;
-  auto IsDirectMemWithStepStream = [](const Stream *S) -> bool {
+  auto IsDirectMemWithStepStream = [](const DynStream *S) -> bool {
     if (S->SStream->Type != StaticStream::TypeT::MEM) {
       return false;
     }
@@ -85,12 +85,12 @@ FunctionalStreamEngine::FunctionalStreamEngine(
   }
 }
 
-void FunctionalStreamEngine::configure(Stream *S, DataGraph *DG) {
+void FunctionalStreamEngine::configure(DynStream *S, DataGraph *DG) {
   auto &FS = this->StreamMap.at(S);
   FS.configure(DG);
 }
 
-void FunctionalStreamEngine::step(Stream *S, DataGraph *DG) {
+void FunctionalStreamEngine::step(DynStream *S, DataGraph *DG) {
   /**
    * Propagate the step signal along the dependence chain, BFS.
    */
@@ -132,7 +132,7 @@ void FunctionalStreamEngine::step(Stream *S, DataGraph *DG) {
   }
 }
 
-void FunctionalStreamEngine::updateWithValue(Stream *S, DataGraph *DG,
+void FunctionalStreamEngine::updateWithValue(DynStream *S, DataGraph *DG,
                                              const DynamicValue &DynamicVal) {
   auto &FS = this->StreamMap.at(S);
   FS.setValue(DynamicVal);
@@ -171,7 +171,7 @@ void FunctionalStreamEngine::updateWithValue(Stream *S, DataGraph *DG,
   }
 }
 
-void FunctionalStreamEngine::endStream(Stream *S) {
+void FunctionalStreamEngine::endStream(DynStream *S) {
   auto &FS = this->StreamMap.at(S);
   FS.endStream();
 }
@@ -183,7 +183,7 @@ void FunctionalStreamEngine::endAll() {
   }
 }
 
-void FunctionalStreamEngine::access(Stream *S) {
+void FunctionalStreamEngine::access(DynStream *S) {
   auto &FS = this->StreamMap.at(S);
   FS.access();
 }

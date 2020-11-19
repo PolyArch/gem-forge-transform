@@ -136,7 +136,7 @@ public:
   }
   void dump() const {
     for (auto Inst : this->StaticInstructions) {
-      LLVM_DEBUG(llvm::errs() << "Subgraph " << Inst->getName() << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "Subgraph " << Inst->getName() << '\n');
     }
   }
 };
@@ -155,7 +155,7 @@ public:
   llvm::Instruction *InsertionPoint;
   std::unordered_set<llvm::Instruction *> ReplacedInsts;
   void dump() override {
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "CCA insertion point: " << InsertionPoint->getName() << '\n');
   }
 };
@@ -178,7 +178,7 @@ protected:
       }
       auto DependentId = Numbering.at(DependentInst);
       if (DependentId > Latest) {
-        // LLVM_DEBUG(llvm::errs() << "Set Latest to " << DependentId << " of "
+        // LLVM_DEBUG(llvm::dbgs() << "Set Latest to " << DependentId << " of "
         //                    << DependentInst->getName() << '\n');
         Latest = DependentId;
       }
@@ -202,7 +202,7 @@ protected:
       for (auto Inst : SubGraph.StaticInstructions) {
         if (Numbering.find(Inst) == Numbering.end()) {
           for (auto DumpInst : SubGraph.StaticInstructions) {
-            LLVM_DEBUG(llvm::errs() << "Failed to look up numbering for inst "
+            LLVM_DEBUG(llvm::dbgs() << "Failed to look up numbering for inst "
                                     << DumpInst->getName() << '\n');
           }
           assert(false);
@@ -210,7 +210,7 @@ protected:
         auto Idx = Numbering.at(Inst);
         if (Idx > Latest && Idx < Earliest) {
           // Found one.
-          // LLVM_DEBUG(llvm::errs() << "Found insertion point for subgraph "
+          // LLVM_DEBUG(llvm::dbgs() << "Found insertion point for subgraph "
           //                    << Inst->getName() << '\n');
           InsertionPoint = Inst;
           break;
@@ -361,7 +361,7 @@ protected:
       if (InsertionPoint != nullptr &&
           this->estimateSpeedUp(CurrentSubGraph) > 1.10) {
         // Take a copy of the current subgraph.
-        LLVM_DEBUG(llvm::errs() << "Detect subgraph:\n");
+        LLVM_DEBUG(llvm::dbgs() << "Detect subgraph:\n");
         CurrentSubGraph.dump();
         SubGraphs.emplace_back(CurrentSubGraph);
       } else {
@@ -411,7 +411,7 @@ protected:
     size_t NumOccurrence = this->getNumOccurrence(BB);
     for (size_t i = 0; i < NumOccurrence; ++i) {
       ReplacedStaticMap.clear();
-      // LLVM_DEBUG(llvm::errs() << "Replacing occurrence #" << i << " / "
+      // LLVM_DEBUG(llvm::dbgs() << "Replacing occurrence #" << i << " / "
       //                    << NumOccurrence << '\n');
       for (auto &SubGraph : SubGraphs) {
         // Ignore those subgraph without insertion point.
@@ -433,7 +433,7 @@ protected:
         // But do not modify the graph for now.
         bool Inserted = false;
         for (auto StaticInst : SubGraph.StaticInstructions) {
-          //  LLVM_DEBUG(llvm::errs()
+          //  LLVM_DEBUG(llvm::dbgs()
           //         << "Processing inst " << StaticInst->getName() << '\n');
           assert(this->Trace->StaticToDynamicMap.find(StaticInst) !=
                      this->Trace->StaticToDynamicMap.end() &&
@@ -457,12 +457,12 @@ protected:
                  "This replaced dynamic instruction should be an llvm "
                  "instruction.");
           // Transfer any dependence.
-          // LLVM_DEBUG(llvm::errs() << "Transfering dynamic dependence for inst
+          // LLVM_DEBUG(llvm::dbgs() << "Transfering dynamic dependence for inst
           // "
           //                    << StaticInst->getName() << '\n');
           this->transferDependence(SubGraphDynamicInsts, CCADynamicInst,
                                    DynamicInst);
-          // LLVM_DEBUG(llvm::errs() << "Transfering dynamic dependence for
+          // LLVM_DEBUG(llvm::dbgs() << "Transfering dynamic dependence for
           // inst: "
           //                    << StaticInst->getName() << ": Done\n");
           // Remove any dependence.
@@ -478,7 +478,7 @@ protected:
                  "This replaced dynamic instruction should be an llvm "
                  "instruction.");
           // Remove the dynamic inst.
-          // LLVM_DEBUG(llvm::errs()
+          // LLVM_DEBUG(llvm::dbgs()
           //       << "Removing inst " << StaticInst->getName() << " from
           //       list\n");
           if (DynamicInst->Prev != nullptr) {
@@ -493,7 +493,7 @@ protected:
           }
           // Check if this is the insertion point for the new cca inst.
           if (SubGraph.InsertionPoint == StaticInst) {
-            // LLVM_DEBUG(llvm::errs() << "Inserting cca inst in place of "
+            // LLVM_DEBUG(llvm::dbgs() << "Inserting cca inst in place of "
             //                    << StaticInst->getName() << '\n');
             assert(!Inserted &&
                    "The new CCA instruction has already been inserted.");
@@ -544,7 +544,7 @@ protected:
           continue;
         }
         auto SubGraphs = this->detectSubGraph(BB);
-        LLVM_DEBUG(llvm::errs() << "CCA Transforming on " << FuncIter->getName()
+        LLVM_DEBUG(llvm::dbgs() << "CCA Transforming on " << FuncIter->getName()
                                 << "::" << BB->getName() << " Subgraphs "
                                 << SubGraphs.size() << '\n');
         // Replace every thing.
@@ -572,7 +572,7 @@ protected:
       }
       Iter = Iter->Next;
     }
-    LLVM_DEBUG(llvm::errs() << "Replaced dynamic instructions "
+    LLVM_DEBUG(llvm::dbgs() << "Replaced dynamic instructions "
                             << this->ReplacedDynamicInsts << '\n');
   }
 

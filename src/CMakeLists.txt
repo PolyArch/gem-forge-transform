@@ -64,12 +64,13 @@ add_library(LLVMTDGPass SHARED
     stream/StaticStream.cpp
     stream/StaticIndVarStream.cpp
     stream/StaticMemStream.cpp
-    stream/Stream.cpp
-    stream/IndVarStream.cpp
-    stream/MemStream.cpp
-    stream/StreamTransformPlan.cpp
-    stream/StreamRegionAnalyzer.cpp
+    stream/UserDefinedMemStream.cpp
     stream/StaticStreamRegionAnalyzer.cpp
+    stream/DynStream.cpp
+    stream/DynIndVarStream.cpp
+    stream/DynMemStream.cpp
+    stream/StreamTransformPlan.cpp
+    stream/DynStreamRegionAnalyzer.cpp
     stream/StreamPassOptions.cpp
     stream/StreamPass.cpp
     stream/StreamPrefetchPass.cpp

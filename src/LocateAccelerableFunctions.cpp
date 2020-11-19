@@ -54,7 +54,7 @@ bool LocateAccelerableFunctions::runOnModule(llvm::Module &Module) {
     Queue.pop_front();
     Visited.insert(Node);
     if (ReverseCG.find(Node) == ReverseCG.end()) {
-      LLVM_DEBUG(llvm::errs() << "Missing node in reverse CG for " << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "Missing node in reverse CG for " << '\n');
       continue;
     }
     // assert(ReverseCG.find(Node) != ReverseCG.end() &&
@@ -149,21 +149,21 @@ bool AccelerableFunctionInfo::runOnFunction(llvm::Function &Function) {
 }
 
 bool AccelerableFunctionInfo::doFinalization(llvm::Module &Module) {
-  LLVM_DEBUG(llvm::errs() << "AFI: FunctionCount               "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: FunctionCount               "
                           << this->FunctionCount << '\n');
-  LLVM_DEBUG(llvm::errs() << "AFI: AccelerableFunctionCount    "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: AccelerableFunctionCount    "
                           << this->AccelerableFunctionCount << '\n');
-  LLVM_DEBUG(llvm::errs() << "AFI: InstructionCount            "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: InstructionCount            "
                           << this->InstructionCount << '\n');
-  LLVM_DEBUG(llvm::errs() << "AFI: AccelerableInstructionCount "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: AccelerableInstructionCount "
                           << this->AccelerableInstructionCount << '\n');
-  LLVM_DEBUG(llvm::errs() << "AFI: TopLoopCount                "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: TopLoopCount                "
                           << this->TopLevelLoopCount << '\n');
-  LLVM_DEBUG(llvm::errs() << "AFI: AccelerableTopLoopCount     "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: AccelerableTopLoopCount     "
                           << this->AccelerableTopLevelLoopCount << '\n');
-  LLVM_DEBUG(llvm::errs() << "AFI: AllLoopCount                "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: AllLoopCount                "
                           << this->AllLoopCount << '\n');
-  LLVM_DEBUG(llvm::errs() << "AFI: AccelerableAllLoopCount     "
+  LLVM_DEBUG(llvm::dbgs() << "AFI: AccelerableAllLoopCount     "
                           << this->AccelerableAllLoopCount << '\n');
   return false;
 }

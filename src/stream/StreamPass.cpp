@@ -38,7 +38,7 @@ void StreamPass::dumpStats(std::ostream &O) {
   }
 }
 
-StreamRegionAnalyzer *
+DynStreamRegionAnalyzer *
 StreamPass::getAnalyzerByLoop(const llvm::Loop *Loop) const {
   if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
     return nullptr;
@@ -66,7 +66,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
   if (LoopStack.empty()) {
     // Get or create the region analyzer.
     if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
-      auto StreamAnalyzer = std::make_unique<StreamRegionAnalyzer>(
+      auto StreamAnalyzer = std::make_unique<DynStreamRegionAnalyzer>(
           this->RegionIdx, this->CachedLI, this->CachedPDF,
           this->CachedBBPredDG, Loop, this->Trace->DataLayout,
           this->OutputExtraFolderPath);
@@ -111,7 +111,7 @@ bool StreamPass::isLoopCandidate(const llvm::Loop *Loop) {
 }
 
 void StreamPass::analyzeStream() {
-  LLVM_DEBUG(llvm::errs() << "Stream: Start analysis.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Stream: Start analysis.\n");
 
   LoopStackT LoopStack;
 
@@ -219,7 +219,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     assert(this->LoopStreamAnalyzerMap.count(NewLoop) != 0 &&
            "Missing analyzer for transforming loops.");
     this->CurrentStreamAnalyzer = this->LoopStreamAnalyzerMap.at(NewLoop).get();
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Enter Region " << LoopUtils::getLoopId(NewLoop) << '\n');
   }
 
@@ -243,7 +243,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
   const auto &SortedStreams = Info.getSortedStreams();
   for (auto &S : SortedStreams) {
     // Inform the stream engine.
-    LLVM_DEBUG(llvm::errs() << "Configure stream " << S->formatName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Configure stream " << S->formatName() << '\n');
     this->CurrentStreamAnalyzer->getFuncSE()->configure(S, this->Trace);
 
     auto Inst = S->getInst();
@@ -364,20 +364,20 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
 }
 
 void StreamPass::DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst) {
-  LLVM_DEBUG(llvm::errs() << DynamicInst->getId() << ' '
+  LLVM_DEBUG(llvm::dbgs() << DynamicInst->getId() << ' '
                           << DynamicInst->getOpName() << ' ');
   if (auto StaticInst = DynamicInst->getStaticInstruction()) {
-    LLVM_DEBUG(llvm::errs() << LoopUtils::formatLLVMInst(StaticInst));
+    LLVM_DEBUG(llvm::dbgs() << LoopUtils::formatLLVMInst(StaticInst));
   }
-  LLVM_DEBUG(llvm::errs() << " reg-deps ");
+  LLVM_DEBUG(llvm::dbgs() << " reg-deps ");
   for (const auto &RegDep : this->Trace->RegDeps.at(DynamicInst->getId())) {
-    LLVM_DEBUG(llvm::errs() << RegDep.second << ' ');
+    LLVM_DEBUG(llvm::dbgs() << RegDep.second << ' ');
   }
-  LLVM_DEBUG(llvm::errs() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << '\n');
 }
 
 void StreamPass::transformStream() {
-  LLVM_DEBUG(llvm::errs() << "Stream: Start transform.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Stream: Start transform.\n");
 
   LoopStackT LoopStack;
   ActiveStreamInstMapT ActiveStreamInstMap;
@@ -669,7 +669,7 @@ void StreamPass::transformStream() {
 #undef DEBUG_LOOP_TRANSFORMED
   }
 
-  LLVM_DEBUG(llvm::errs() << "Stream: Transform done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Stream: Transform done.\n");
 }
 
 #undef DEBUG_TYPE

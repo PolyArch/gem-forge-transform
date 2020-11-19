@@ -64,7 +64,7 @@ void StreamPattern::LinearValuePatternFSM::update(uint64_t Val) {
         this->Stride = BaseStrideResult.second.second;
         this->I = this->Updates - 1;
         this->State = SUCCESS;
-        LLVM_DEBUG(llvm::errs() << "Stride " << this->Stride << " Base "
+        LLVM_DEBUG(llvm::dbgs() << "Stride " << this->Stride << " Base "
                                 << this->Base << " I " << this->I << '\n');
       }
     }
@@ -110,13 +110,13 @@ void StreamPattern::QuardricValuePatternFSM::update(uint64_t Val) {
 
   this->Updates++;
   this->PrevValue = Val;
-  LLVM_DEBUG(llvm::errs() << "get address " << Val << " confirmed size "
+  LLVM_DEBUG(llvm::dbgs() << "get address " << Val << " confirmed size "
                           << this->ConfirmedVals.size() << '\n');
   if (this->State == UNKNOWN) {
     this->ConfirmedVals.emplace_back(this->Updates - 1, Val);
     if (this->ConfirmedVals.size() == 3) {
       if (this->isAligned()) {
-        LLVM_DEBUG(llvm::errs() << "Is aligned\n");
+        LLVM_DEBUG(llvm::dbgs() << "Is aligned\n");
         // The three confirmed addresses is still aligned, remove the middle one
         // and keep waiting for future access.
         auto Iter = this->ConfirmedVals.begin();
@@ -130,12 +130,12 @@ void StreamPattern::QuardricValuePatternFSM::update(uint64_t Val) {
         auto BaseStrideResult = ValuePatternFSM::computeLinearBaseStride(
             this->ConfirmedVals.front(), *SecondPairIter);
         if (!BaseStrideResult.first) {
-          LLVM_DEBUG(llvm::errs() << "Failed to compute the base stride for "
+          LLVM_DEBUG(llvm::dbgs() << "Failed to compute the base stride for "
                                      "quardric address pattern.\n");
-          LLVM_DEBUG(llvm::errs()
+          LLVM_DEBUG(llvm::dbgs()
                      << this->ConfirmedVals.front().first << " "
                      << this->ConfirmedVals.front().second << '\n');
-          LLVM_DEBUG(llvm::errs() << SecondPairIter->first << " "
+          LLVM_DEBUG(llvm::dbgs() << SecondPairIter->first << " "
                                   << SecondPairIter->second << '\n');
           this->State = FAILURE;
         } else {
@@ -146,7 +146,7 @@ void StreamPattern::QuardricValuePatternFSM::update(uint64_t Val) {
           this->StrideJ = Val - this->Base;
           this->J = 1;
           this->State = SUCCESS;
-          LLVM_DEBUG(llvm::errs()
+          LLVM_DEBUG(llvm::dbgs()
                      << "StrideJ " << this->StrideJ << " NI " << NI << '\n');
         }
       }

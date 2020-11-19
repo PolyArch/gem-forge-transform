@@ -2,15 +2,15 @@
 #define LLVM_TDG_STREAM_MEM_STREAM_H
 
 #include "MemoryFootprint.h"
-#include "stream/Stream.h"
+#include "stream/DynStream.h"
 #include "stream/ae/StreamDataGraph.h"
 
-class MemStream : public Stream {
+class DynMemStream : public DynStream {
 public:
-  MemStream(const std::string &_Folder, const std::string &_RelativeFolder,
-            const StaticStream *_SStream, llvm::DataLayout *DataLayout,
-            IsIndVarFunc IsInductionVar)
-      : Stream(_Folder, _RelativeFolder, _SStream, DataLayout),
+  DynMemStream(const std::string &_Folder, const std::string &_RelativeFolder,
+               const StaticStream *_SStream, llvm::DataLayout *DataLayout,
+               IsIndVarFunc IsInductionVar)
+      : DynStream(_Folder, _RelativeFolder, _SStream, DataLayout),
         AddrDG(_SStream->ConfigureLoop, Utils::getMemAddrValue(_SStream->Inst),
                IsInductionVar) {
     assert(Utils::isMemAccessInst(this->getInst()) &&

@@ -5,8 +5,8 @@
 #include "LoopUtils.h"
 #include "Utils.h"
 
-#include "stream/IndVarStream.h"
-#include "stream/MemStream.h"
+#include "stream/DynIndVarStream.h"
+#include "stream/DynMemStream.h"
 #include "stream/StaticStreamRegionAnalyzer.h"
 #include "stream/StreamTransformPlan.h"
 #include "stream/ae/FunctionalStreamEngine.h"
@@ -21,11 +21,11 @@ public:
   StreamConfigureLoopInfo(const std::string &_Folder,
                           const std::string &_RelativeFolder,
                           const llvm::Loop *_Loop,
-                          std::vector<Stream *> _SortedStreams);
+                          std::vector<DynStream *> _SortedStreams);
 
   const std::string &getRelativePath() const { return this->RelativePath; }
   const llvm::Loop *getLoop() const { return this->Loop; }
-  const std::vector<Stream *> getSortedStreams() const {
+  const std::vector<DynStream *> getSortedStreams() const {
     return this->SortedStreams;
   }
 
@@ -50,7 +50,7 @@ public:
   int TotalSubLoopCoalescedStreams;
   int TotalAliveStreams;
   int TotalAliveCoalescedStreams;
-  std::vector<Stream *> SortedCoalescedStreams;
+  std::vector<DynStream *> SortedCoalescedStreams;
 
   void dump(llvm::DataLayout *DataLayout) const;
 
@@ -59,23 +59,24 @@ private:
   const std::string RelativePath;
   const std::string JsonPath;
   const llvm::Loop *Loop;
-  std::vector<Stream *> SortedStreams;
+  std::vector<DynStream *> SortedStreams;
 };
 
-class StreamRegionAnalyzer {
+class DynStreamRegionAnalyzer {
 public:
-  StreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
-                       CachedPostDominanceFrontier *_CachedPDF,
-                       CachedBBPredicateDataGraph *_CachedBBPredDG,
-                       llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
-                       const std::string &_RootPath);
+  DynStreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
+                          CachedPostDominanceFrontier *_CachedPDF,
+                          CachedBBPredicateDataGraph *_CachedBBPredDG,
+                          llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
+                          const std::string &_RootPath);
 
-  StreamRegionAnalyzer(const StreamRegionAnalyzer &Other) = delete;
-  StreamRegionAnalyzer(StreamRegionAnalyzer &&Other) = delete;
-  StreamRegionAnalyzer &operator=(const StreamRegionAnalyzer &Other) = delete;
-  StreamRegionAnalyzer &operator=(StreamRegionAnalyzer &&Other) = delete;
+  DynStreamRegionAnalyzer(const DynStreamRegionAnalyzer &Other) = delete;
+  DynStreamRegionAnalyzer(DynStreamRegionAnalyzer &&Other) = delete;
+  DynStreamRegionAnalyzer &
+  operator=(const DynStreamRegionAnalyzer &Other) = delete;
+  DynStreamRegionAnalyzer &operator=(DynStreamRegionAnalyzer &&Other) = delete;
 
-  ~StreamRegionAnalyzer();
+  ~DynStreamRegionAnalyzer();
 
   void addMemAccess(DynamicInstruction *DynamicInst, DataGraph *DG);
   void addIVAccess(DynamicInstruction *DynamicInst);
@@ -111,7 +112,7 @@ public:
   const StreamConfigureLoopInfo &
   getConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
 
-  Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
+  DynStream *getChosenStreamByInst(const llvm::Instruction *Inst);
 
   const StreamTransformPlan &
   getTransformPlanByInst(const llvm::Instruction *Inst);
@@ -146,25 +147,26 @@ private:
    * Key data structure, map from instruction to the list of streams.
    * Starting from the inner-most loop streams.
    */
-  std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
+  std::unordered_map<const llvm::Instruction *, std::list<DynStream *>>
       InstStreamMap;
 
   /**
    * Map from an instruction to its chosen stream.
    */
-  std::unordered_map<const llvm::Instruction *, Stream *> InstChosenStreamMap;
+  std::unordered_map<const llvm::Instruction *, DynStream *>
+      InstChosenStreamMap;
 
   /**
    * Map from a loop to all the streams with this loop as the inner most loop.
    */
-  std::unordered_map<const llvm::Loop *, std::unordered_set<Stream *>>
+  std::unordered_map<const llvm::Loop *, std::unordered_set<DynStream *>>
       InnerMostLoopStreamMap;
 
   /**
    * Map from a loop to all the streams configured at the entry point to this
    * loop.
    */
-  std::unordered_map<const llvm::Loop *, std::unordered_set<Stream *>>
+  std::unordered_map<const llvm::Loop *, std::unordered_set<DynStream *>>
       ConfigureLoopStreamMap;
 
   /**
@@ -184,7 +186,7 @@ private:
 
   void initializeStreams();
 
-  Stream *
+  DynStream *
   getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
                                   const llvm::Loop *ConfigureLoop) const;
   void buildStreamAddrDepGraph();
@@ -208,7 +210,7 @@ private:
   // Must be called after allocate the StreamConfigureLoopInfo.
   void allocateRegionStreamId(const llvm::Loop *ConfigureLoop);
 
-  std::vector<Stream *>
+  std::vector<DynStream *>
   sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
 
   /**
@@ -221,7 +223,7 @@ private:
   void dumpTransformPlan();
   void dumpConfigurePlan();
   void dumpStreamInfos();
-  std::string classifyStream(const MemStream &S) const;
+  std::string classifyStream(const DynMemStream &S) const;
 };
 
 #endif

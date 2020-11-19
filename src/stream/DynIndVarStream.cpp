@@ -1,4 +1,4 @@
-#include "stream/IndVarStream.h"
+#include "stream/DynIndVarStream.h"
 
 #include <list>
 
@@ -7,19 +7,19 @@
 #define LLVM_DEBUG DEBUG
 #endif
 
-IndVarStream::IndVarStream(const std::string &_Folder,
-                           const std::string &_RelativeFolder,
-                           const StaticStream *_SStream,
-                           llvm::DataLayout *DataLayout)
-    : Stream(_Folder, _RelativeFolder, _SStream, DataLayout),
+DynIndVarStream::DynIndVarStream(const std::string &_Folder,
+                                 const std::string &_RelativeFolder,
+                                 const StaticStream *_SStream,
+                                 llvm::DataLayout *DataLayout)
+    : DynStream(_Folder, _RelativeFolder, _SStream, DataLayout),
       PHIInst(llvm::cast<llvm::PHINode>(_SStream->Inst)) {
   this->searchComputeInsts(this->PHIInst, this->getLoop());
   this->StepInsts =
-      IndVarStream::searchStepInsts(this->PHIInst, this->getInnerMostLoop());
+      DynIndVarStream::searchStepInsts(this->PHIInst, this->getInnerMostLoop());
   this->IsCandidateStatic = this->isCandidateStatic();
 }
 
-bool IndVarStream::isCandidateStatic() const {
+bool DynIndVarStream::isCandidateStatic() const {
   if ((!this->PHIInst->getType()->isIntegerTy()) &&
       (!this->PHIInst->getType()->isPointerTy())) {
     return false;
@@ -83,11 +83,11 @@ bool IndVarStream::isCandidateStatic() const {
   return true;
 }
 
-void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
-                                      const llvm::Loop *Loop) {
+void DynIndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
+                                         const llvm::Loop *Loop) {
   std::list<llvm::Instruction *> Queue;
 
-  LLVM_DEBUG(llvm::errs() << "Search compute instructions for "
+  LLVM_DEBUG(llvm::dbgs() << "Search compute instructions for "
                           << LoopUtils::formatLLVMInst(PHINode) << " at loop "
                           << LoopUtils::getLoopId(Loop) << '\n');
 
@@ -101,7 +101,7 @@ void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
     auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
     if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
       Queue.emplace_back(IncomingInst);
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Enqueue inst " << LoopUtils::formatLLVMInst(IncomingInst)
                  << '\n');
     }
@@ -110,20 +110,20 @@ void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
   while (!Queue.empty()) {
     auto CurrentInst = Queue.front();
     Queue.pop_front();
-    LLVM_DEBUG(llvm::errs() << "Processing "
+    LLVM_DEBUG(llvm::dbgs() << "Processing "
                             << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     if (this->ComputeInsts.count(CurrentInst) != 0) {
       // We have already processed this one.
-      LLVM_DEBUG(llvm::errs() << "Already processed\n");
+      LLVM_DEBUG(llvm::dbgs() << "Already processed\n");
       continue;
     }
     if (!Loop->contains(CurrentInst)) {
       // This instruction is out of our analysis level. ignore it.
-      LLVM_DEBUG(llvm::errs() << "Not in loop\n");
+      LLVM_DEBUG(llvm::dbgs() << "Not in loop\n");
       continue;
     }
 
-    LLVM_DEBUG(llvm::errs() << "Found compute inst "
+    LLVM_DEBUG(llvm::dbgs() << "Found compute inst "
                             << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     this->ComputeInsts.insert(CurrentInst);
 
@@ -144,7 +144,7 @@ void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
       auto OperandValue = CurrentInst->getOperand(OperandIdx);
       if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
         Queue.emplace_back(OperandInst);
-        LLVM_DEBUG(llvm::errs()
+        LLVM_DEBUG(llvm::dbgs()
                    << "Enqueue inst " << LoopUtils::formatLLVMInst(OperandInst)
                    << '\n');
       }
@@ -153,11 +153,11 @@ void IndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
 }
 
 std::unordered_set<const llvm::Instruction *>
-IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
-                              const llvm::Loop *Loop) {
+DynIndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
+                                 const llvm::Loop *Loop) {
   std::list<llvm::Instruction *> Queue;
 
-  LLVM_DEBUG(llvm::errs() << "Search step instructions for "
+  LLVM_DEBUG(llvm::dbgs() << "Search step instructions for "
                           << LoopUtils::formatLLVMInst(PHINode) << " at loop "
                           << LoopUtils::getLoopId(Loop) << '\n');
 
@@ -171,7 +171,7 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
     auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
     if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
       Queue.emplace_back(IncomingInst);
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Enqueue inst " << LoopUtils::formatLLVMInst(IncomingInst)
                  << '\n');
     }
@@ -183,29 +183,29 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
   while (!Queue.empty()) {
     auto CurrentInst = Queue.front();
     Queue.pop_front();
-    LLVM_DEBUG(llvm::errs() << "Processing "
+    LLVM_DEBUG(llvm::dbgs() << "Processing "
                             << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
     if (VisitedInsts.count(CurrentInst) != 0) {
       // We have already processed this one.
-      LLVM_DEBUG(llvm::errs() << "Already processed\n");
+      LLVM_DEBUG(llvm::dbgs() << "Already processed\n");
       continue;
     }
     if (!Loop->contains(CurrentInst)) {
       // This instruction is out of our analysis level. ignore it.
-      LLVM_DEBUG(llvm::errs() << "Not in loop\n");
+      LLVM_DEBUG(llvm::dbgs() << "Not in loop\n");
       continue;
     }
     if (Utils::isCallOrInvokeInst(CurrentInst)) {
       // So far I do not know how to process the call/invoke instruction.
-      LLVM_DEBUG(llvm::errs() << "Is call or invoke\n");
+      LLVM_DEBUG(llvm::dbgs() << "Is call or invoke\n");
       continue;
     }
 
     VisitedInsts.insert(CurrentInst);
 
-    if (Stream::isStepInst(CurrentInst)) {
+    if (DynStream::isStepInst(CurrentInst)) {
       // Find a step instruction, do not go further.
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Found step inst " << LoopUtils::formatLLVMInst(CurrentInst)
                  << '\n');
       StepInsts.insert(CurrentInst);
@@ -220,7 +220,7 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
         if (auto OperandInst =
                 llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
           Queue.emplace_back(OperandInst);
-          LLVM_DEBUG(llvm::errs()
+          LLVM_DEBUG(llvm::dbgs()
                      << "Enqueue inst "
                      << LoopUtils::formatLLVMInst(OperandInst) << '\n');
         }
@@ -230,7 +230,7 @@ IndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
   return StepInsts;
 }
 
-void IndVarStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
+void DynIndVarStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
   // Check the back edge.
   for (const auto &BaseLoad : this->BaseLoadInsts) {
     auto BaseMStream = GetStream(BaseLoad, this->getLoop());
@@ -239,9 +239,9 @@ void IndVarStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
   }
 }
 
-bool IndVarStream::isCandidate() const { return this->IsCandidateStatic; }
+bool DynIndVarStream::isCandidate() const { return this->IsCandidateStatic; }
 
-bool IndVarStream::isQualifySeed() const {
+bool DynIndVarStream::isQualifySeed() const {
   if (!this->isCandidate()) {
     // I am not even a static candidate.
     return false;
@@ -267,13 +267,13 @@ bool IndVarStream::isQualifySeed() const {
   return false;
 }
 
-Stream::InputValueList IndVarStream::getReduceFuncInputValues() const {
+DynStream::InputValueList DynIndVarStream::getReduceFuncInputValues() const {
   assert(this->isChosen() && "Only consider chosen stream's input values.");
   assert(this->SStream->ReduceDG && "No ReduceDG.");
   return this->getExecFuncInputValues(*this->SStream->ReduceDG);
 }
 
-void IndVarStream::fillProtobufAddrFuncInfo(
+void DynIndVarStream::fillProtobufAddrFuncInfo(
     ::llvm::DataLayout *DataLayout,
     ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {
 

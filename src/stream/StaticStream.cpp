@@ -162,7 +162,7 @@ void StaticStream::handleFirstTimeComputeNode(
           for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
                OperandIdx != NumOperands; ++OperandIdx) {
             DFSStack.emplace_back(ComputeMNode, Inst->getOperand(OperandIdx));
-            LLVM_DEBUG(llvm::errs()
+            LLVM_DEBUG(llvm::dbgs()
                        << "Pushing DFSNode "
                        << Utils::formatLLVMValue(ComputeMNode->RootValue)
                        << Utils::formatLLVMValue(Inst->getOperand(OperandIdx))
@@ -205,7 +205,7 @@ void StaticStream::handleFirstTimePHIMetaNode(
                                             &this->ComputeMetaNodes.back());
       // Push to the stack.
       DFSStack.emplace_back(&this->ComputeMetaNodes.back(), IncomingValue);
-      LLVM_DEBUG(llvm::errs() << "Pushing DFSNode "
+      LLVM_DEBUG(llvm::dbgs() << "Pushing DFSNode "
                               << Utils::formatLLVMValue(
                                      this->ComputeMetaNodes.back().RootValue)
                               << Utils::formatLLVMValue(IncomingValue) << '\n');
@@ -224,7 +224,7 @@ void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
                                         this->ConstructedComputeMetaNodeMap);
   while (!DFSStack.empty()) {
     auto &DNode = DFSStack.back();
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Processing DFSNode "
                << Utils::formatLLVMValue(DNode.ComputeMNode->RootValue)
                << Utils::formatLLVMValue(DNode.Value) << " Visit time "
@@ -370,7 +370,7 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     if (BaseStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
         BaseStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
       // Illegal base stream step pattern.
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Illegal BaseStream StepPattern " << BaseStpPattern
                  << " from " << BaseStream->formatName() << '\n');
       return false;
@@ -383,20 +383,20 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     // Most difficult part, check step count ratio is static.
     auto CurrentLoop = this->InnerMostLoop;
     while (CurrentLoop != BaseStream->InnerMostLoop) {
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Checking " << LoopUtils::getLoopId(CurrentLoop) << '\n');
       if (!this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
-        LLVM_DEBUG(llvm::errs() << "No loop invariant backedge count.\n");
+        LLVM_DEBUG(llvm::dbgs() << "No loop invariant backedge count.\n");
         return false;
       }
       auto BackEdgeTakenSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
       if (llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV)) {
-        LLVM_DEBUG(llvm::errs() << "No computable backedge count.\n");
+        LLVM_DEBUG(llvm::dbgs() << "No computable backedge count.\n");
         return false;
       }
       // The back edge should be invariant at ConfigureLoop.
       if (!this->SE->isLoopInvariant(BackEdgeTakenSCEV, this->ConfigureLoop)) {
-        LLVM_DEBUG(llvm::errs() << "No computable at configure loop.\n");
+        LLVM_DEBUG(llvm::dbgs() << "No computable at configure loop.\n");
         return false;
       }
       /**

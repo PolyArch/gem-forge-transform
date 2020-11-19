@@ -33,15 +33,15 @@
  * The Chosen dependence graph represents the final chosen graph.
  */
 
-class Stream {
+class DynStream {
 public:
   using IsIndVarFunc = std::function<bool(const llvm::PHINode *)>;
   const StaticStream *const SStream;
-  Stream(const std::string &_Folder, const std::string &_RelativeFolder,
-         const StaticStream *_SStream, llvm::DataLayout *DataLayout);
-  virtual ~Stream() = default;
+  DynStream(const std::string &_Folder, const std::string &_RelativeFolder,
+            const StaticStream *_SStream, llvm::DataLayout *DataLayout);
+  virtual ~DynStream() = default;
 
-  using StreamSet = std::unordered_set<Stream *>;
+  using StreamSet = std::unordered_set<DynStream *>;
 
   /**
    * Candidate: statically determined.
@@ -186,7 +186,7 @@ public:
   const StreamSet &getBaseStepRootStreams() const {
     return this->BaseStepRootStreams;
   }
-  const Stream *getSingleStepRootStream() const {
+  const DynStream *getSingleStepRootStream() const {
     assert(this->BaseStepRootStreams.size() <= 1 &&
            "Multiple StepRootStreams.");
     if (this->BaseStepRootStreams.empty()) {
@@ -207,7 +207,7 @@ public:
   const StreamSet &getChosenBaseStepStreams() const {
     return this->ChosenBaseStepStreams;
   }
-  const Stream *getSingleChosenStepRootStream() const {
+  const DynStream *getSingleChosenStepRootStream() const {
     assert(this->ChosenBaseStepRootStreams.size() <= 1 &&
            "Multiple chosen StepRootStreams.");
     if (this->ChosenBaseStepRootStreams.empty()) {
@@ -227,11 +227,11 @@ public:
    * Build the dependence graph by add all the base streams.
    */
   using GetStreamFuncT =
-      std::function<Stream *(const llvm::Instruction *, const llvm::Loop *)>;
+      std::function<DynStream *(const llvm::Instruction *, const llvm::Loop *)>;
   virtual void buildBasicDependenceGraph(GetStreamFuncT GetStream) = 0;
 
   using GetChosenStreamFuncT =
-      std::function<Stream *(const llvm::Instruction *)>;
+      std::function<DynStream *(const llvm::Instruction *)>;
   void buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream);
 
   /**
@@ -249,7 +249,7 @@ public:
   }
 
   InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
-  const Stream *getExecFuncInputStream(const llvm::Value *Value) const;
+  const DynStream *getExecFuncInputStream(const llvm::Value *Value) const;
 
   int getMemElementSize() const { return this->SStream->getMemElementSize(); }
   int getCoreElementSize() const { return this->SStream->getCoreElementSize(); }
@@ -346,8 +346,8 @@ protected:
                                 const std::string &FuncName,
                                 const ExecutionDataGraph &ExecDG) const;
 
-  void addBaseStream(Stream *Other);
-  void addBackEdgeBaseStream(Stream *Other);
+  void addBaseStream(DynStream *Other);
+  void addBackEdgeBaseStream(DynStream *Other);
 };
 
 #endif

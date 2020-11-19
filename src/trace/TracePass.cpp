@@ -102,7 +102,7 @@ public:
   static char ID;
   TracePass() : llvm::FunctionPass(ID) {}
   void getAnalysisUsage(llvm::AnalysisUsage &Info) const override {
-    // LLVM_DEBUG(llvm::errs() << "We have required the analysis.\n");
+    // LLVM_DEBUG(llvm::dbgs() << "We have required the analysis.\n");
     Info.addRequired<LocateAccelerableFunctions>();
     Info.addPreserved<LocateAccelerableFunctions>();
   }
@@ -110,7 +110,7 @@ public:
     this->Module = &Module;
     this->DataLayout = new llvm::DataLayout(this->Module);
 
-    LLVM_DEBUG(llvm::errs() << "Initialize TracePass\n");
+    LLVM_DEBUG(llvm::dbgs() << "Initialize TracePass\n");
 
     // Register the external log functions.
     registerPrintFunctions(Module);
@@ -147,7 +147,7 @@ public:
 
   bool runOnFunction(llvm::Function &Function) override {
     auto FunctionName = Function.getName().str();
-    LLVM_DEBUG(llvm::errs() << "Processing Function: " << FunctionName << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Processing Function: " << FunctionName << '\n');
 
     if (this->mustTracedFunctionNames.count(FunctionName) == 0) {
       // This function is not in the must traced set.
@@ -169,7 +169,7 @@ public:
 
     for (auto BBIter = Function.begin(), BBEnd = Function.end();
          BBIter != BBEnd; ++BBIter) {
-      // LLVM_DEBUG(llvm::errs() << "Found basic block: " << BBIter->getName()
+      // LLVM_DEBUG(llvm::dbgs() << "Found basic block: " << BBIter->getName()
       // <<
       // '\n');
       runOnBasicBlock(*BBIter);
@@ -351,7 +351,7 @@ private:
              llvm::isa<llvm::LandingPadInst>(Inst);
     };
 
-    LLVM_DEBUG(llvm::errs() << "Inside bb " << BB.getName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Inside bb " << BB.getName() << '\n');
 
     for (auto InstIter = BB.begin(); InstIter != BB.end();
          InstIter = NextInstIter, PosInBB++) {
@@ -359,7 +359,7 @@ private:
       NextInstIter++;
 
       std::string OpCodeName = InstIter->getOpcodeName();
-      LLVM_DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "Found instructions: " << OpCodeName << '\n');
       llvm::Instruction *Inst = &*InstIter;
 
       bool ShouldTrace = true;
@@ -384,10 +384,10 @@ private:
       }
     }
 
-    LLVM_DEBUG(llvm::errs() << "After transformation.\n");
+    LLVM_DEBUG(llvm::dbgs() << "After transformation.\n");
     for (auto InstIter = BB.begin(); InstIter != BB.end(); ++InstIter) {
       std::string OpCodeName = InstIter->getOpcodeName();
-      LLVM_DEBUG(llvm::errs() << "Found instructions: " << OpCodeName << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "Found instructions: " << OpCodeName << '\n');
     }
 
     // Handle all the phi nodes now.
@@ -421,7 +421,7 @@ private:
     std::vector<llvm::Value *> PrintInstArgs =
         getPrintInstArgs(Inst, FunctionNameValue, PosInBB);
     // Call printInst. After the instruction.
-    // LLVM_DEBUG(llvm::errs() << "Insert printInst for phi node.\n");
+    // LLVM_DEBUG(llvm::dbgs() << "Insert printInst for phi node.\n");
     llvm::IRBuilder<> Builder(InsertBefore);
     Builder.CreateCall(this->PrintInstFunc, PrintInstArgs);
 
@@ -430,7 +430,7 @@ private:
       for (unsigned IncomingValueId = 0,
                     NumIncomingValues = Inst->getNumIncomingValues();
            IncomingValueId < NumIncomingValues; IncomingValueId++) {
-        // LLVM_DEBUG(llvm::errs() << "Insert printValue for phi node.\n");
+        // LLVM_DEBUG(llvm::dbgs() << "Insert printValue for phi node.\n");
         auto PrintValueArgs = getPrintValueArgsForPhiParameter(
             Inst->getIncomingValue(IncomingValueId),
             Inst->getIncomingBlock(IncomingValueId));
@@ -439,7 +439,7 @@ private:
 
       // Call printResult after the instruction (if it has a result).
       if (Inst->getName() != "") {
-        // LLVM_DEBUG(llvm::errs() << "Insert printResult for phi node.\n");
+        // LLVM_DEBUG(llvm::dbgs() << "Insert printResult for phi node.\n");
         auto PrintValueArgs =
             getPrintValueArgs(PRINT_VALUE_TAG_RESULT, Inst, Builder);
         Builder.CreateCall(this->PrintValueFunc, PrintValueArgs);
@@ -455,7 +455,7 @@ private:
     std::string OpCodeName = Inst->getOpcodeName();
     assert(OpCodeName != "phi" && "traceNonPhiInst can't trace phi inst.");
 
-    // LLVM_DEBUG(llvm::errs() << "Trace non-phi inst " << Inst->getName() << "
+    // LLVM_DEBUG(llvm::dbgs() << "Trace non-phi inst " << Inst->getName() << "
     // op
     // "
     //                    << Inst->getOpcodeName() << '\n');
@@ -808,7 +808,7 @@ void TracePass::findReachableFunctions() {
       llvm::errs()
       << "==================== Reachable Functions ==================\n");
   for (auto Func : this->reachableFunctions) {
-    LLVM_DEBUG(llvm::errs() << Func->getName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << Func->getName() << '\n');
   }
   LLVM_DEBUG(
       llvm::errs()

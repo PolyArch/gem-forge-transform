@@ -6,7 +6,7 @@
 
 bool StreamExecutionStaticPass::runOnModule(llvm::Module &Module) {
   this->initialize(Module);
-  LLVM_DEBUG(llvm::errs() << "Select StreamRegionAnalyzer.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Select DynStreamRegionAnalyzer.\n");
   auto SelectedStreamRegionAnalyzers = this->selectStreamRegionAnalyzers();
 
   // Use the transformer to transform the regions.
@@ -52,13 +52,13 @@ bool StreamExecutionStaticPass::finalize(llvm::Module &Module) {
   return true;
 }
 
-std::vector<StreamRegionAnalyzer *>
+std::vector<DynStreamRegionAnalyzer *>
 StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
-  std::vector<StreamRegionAnalyzer *> Analyzers;
+  std::vector<DynStreamRegionAnalyzer *> Analyzers;
 
   // Search through all ROI functions.
   for (auto Func : this->ROIFunctions) {
-    LLVM_DEBUG(llvm::errs() << "Searching " << Func->getName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Searching " << Func->getName() << '\n');
     auto LI = this->CachedLI->getLoopInfo(Func);
     llvm::Loop *PrevAnalyzedLoop = nullptr;
     for (auto Loop : LI->getLoopsInPreorder()) {
@@ -66,12 +66,12 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
         // Skip this as it's already contained by other analyzer.
         continue;
       }
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Processing loop " << LoopUtils::getLoopId(Loop) << '\n');
       if (LoopUtils::isLoopContinuous(Loop) &&
           !LoopUtils::isLoopRemainderOrEpilogue(Loop)) {
         // Check if loop is continuous.
-        auto Analyzer = new StreamRegionAnalyzer(
+        auto Analyzer = new DynStreamRegionAnalyzer(
             Analyzers.size(), this->CachedLI, this->CachedPDF,
             this->CachedBBPredDG, Loop, this->DataLayout,
             this->OutputExtraFolderPath);
@@ -85,7 +85,7 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
 
         PrevAnalyzedLoop = Loop;
       } else {
-        LLVM_DEBUG(llvm::errs() << "Loop not continuous "
+        LLVM_DEBUG(llvm::dbgs() << "Loop not continuous "
                                 << LoopUtils::getLoopId(Loop) << '\n');
       }
     }
