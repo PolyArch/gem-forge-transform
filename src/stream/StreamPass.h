@@ -3,13 +3,11 @@
 
 #include "Replay.h"
 #include "Utils.h"
-#include "stream/IndVarStream.h"
-#include "stream/MemStream.h"
-#include "stream/StreamRegionAnalyzer.h"
+#include "stream/DynStreamRegionAnalyzer.h"
 
 class StreamStepInst : public DynamicInstruction {
 public:
-  StreamStepInst(Stream *_S, DynamicId _Id = InvalidId)
+  StreamStepInst(DynStream *_S, DynamicId _Id = InvalidId)
       : DynamicInstruction(), S(_S) {
     /**
      * Inherit the provided dynamic id if provided a valid id.
@@ -30,12 +28,12 @@ protected:
   }
 
 private:
-  Stream *S;
+  DynStream *S;
 };
 
 class StreamStoreInst : public DynamicInstruction {
 public:
-  StreamStoreInst(Stream *_S, DynamicId _Id = InvalidId)
+  StreamStoreInst(DynStream *_S, DynamicId _Id = InvalidId)
       : DynamicInstruction(), S(_S) {
     /**
      * Inherit the provided dynamic id if provided a valid id.
@@ -56,7 +54,7 @@ protected:
   }
 
 private:
-  Stream *S;
+  DynStream *S;
 };
 
 class StreamConfigInst : public DynamicInstruction {
@@ -105,7 +103,7 @@ public:
       : ReplayTrace(_ID), DynInstCount(0), DynMemInstCount(0), StepInstCount(0),
         ConfigInstCount(0), DeletedInstCount(0) {}
 
-  StreamRegionAnalyzer *getAnalyzerByLoop(const llvm::Loop *Loop) const;
+  DynStreamRegionAnalyzer *getAnalyzerByLoop(const llvm::Loop *Loop) const;
 
 protected:
   bool initialize(llvm::Module &Module) override;
@@ -115,12 +113,13 @@ protected:
 
   using ActiveIVStreamMapT = std::unordered_map<
       const llvm::Loop *,
-      std::unordered_map<const llvm::PHINode *, IndVarStream *>>;
+      std::unordered_map<const llvm::PHINode *, DynIndVarStream *>>;
   using LoopStackT = std::list<llvm::Loop *>;
 
-  std::unordered_map<const llvm::Loop *, std::unique_ptr<StreamRegionAnalyzer>>
+  std::unordered_map<const llvm::Loop *,
+                     std::unique_ptr<DynStreamRegionAnalyzer>>
       LoopStreamAnalyzerMap;
-  StreamRegionAnalyzer *CurrentStreamAnalyzer;
+  DynStreamRegionAnalyzer *CurrentStreamAnalyzer;
   uint64_t RegionIdx;
 
   /*************************************************************

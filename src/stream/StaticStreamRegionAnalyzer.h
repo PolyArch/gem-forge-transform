@@ -3,6 +3,7 @@
 
 #include "stream/StaticIndVarStream.h"
 #include "stream/StaticMemStream.h"
+#include "stream/UserDefinedMemStream.h"
 
 class StaticStreamRegionAnalyzer {
 public:

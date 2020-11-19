@@ -1,6 +1,6 @@
-#include "stream/MemStream.h"
+#include "stream/DynMemStream.h"
 
-void MemStream::searchAddressComputeInstructions(
+void DynMemStream::searchAddressComputeInstructions(
     std::function<bool(const llvm::PHINode *)> IsInductionVar) {
   std::list<llvm::Instruction *> Queue;
 
@@ -54,7 +54,7 @@ void MemStream::searchAddressComputeInstructions(
   }
 }
 
-void MemStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
+void DynMemStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
   for (const auto &BaseIV : this->BaseInductionVars) {
     auto BaseIVStream = GetStream(BaseIV, this->getLoop());
     assert(BaseIVStream != nullptr && "Missing base IVStream.");
@@ -62,12 +62,12 @@ void MemStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
   }
   for (const auto &BaseLoad : this->BaseLoads) {
     auto BaseMStream = GetStream(BaseLoad, this->getLoop());
-    assert(BaseMStream != nullptr && "Missing base MemStream.");
+    assert(BaseMStream != nullptr && "Missing base DynMemStream.");
     this->addBaseStream(BaseMStream);
   }
 }
 
-bool MemStream::isCandidate() const {
+bool DynMemStream::isCandidate() const {
   // I have to contain no circle to be a candidate.
   if (this->AddrDG.hasCircle()) {
     return false;
@@ -206,7 +206,7 @@ bool MemStream::isCandidate() const {
   return true;
 }
 
-bool MemStream::isQualifySeed() const {
+bool DynMemStream::isQualifySeed() const {
   if (!this->isCandidate()) {
     return false;
   }
@@ -234,16 +234,16 @@ bool MemStream::isQualifySeed() const {
   }
 }
 
-void MemStream::formatAdditionalInfoText(std::ostream &OStream) const {
+void DynMemStream::formatAdditionalInfoText(std::ostream &OStream) const {
   this->AddrDG.format(OStream);
 }
 
-MemStream::InputValueList MemStream::getAddrFuncInputValues() const {
+DynMemStream::InputValueList DynMemStream::getAddrFuncInputValues() const {
   assert(this->isChosen() && "Only consider chosen stream's input values.");
   return this->getExecFuncInputValues(this->AddrDG);
 }
 
-MemStream::InputValueList MemStream::getPredFuncInputValues() const {
+DynMemStream::InputValueList DynMemStream::getPredFuncInputValues() const {
   assert(this->isChosen() && "Only consider chosen stream's input values.");
   auto BBPredDG = this->SStream->BBPredDG;
   assert(BBPredDG && "No BBPredDG.");
@@ -251,7 +251,7 @@ MemStream::InputValueList MemStream::getPredFuncInputValues() const {
   return this->getExecFuncInputValues(*BBPredDG);
 }
 
-void MemStream::fillProtobufAddrFuncInfo(
+void DynMemStream::fillProtobufAddrFuncInfo(
     ::llvm::DataLayout *DataLayout,
     ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {
 
@@ -263,7 +263,7 @@ void MemStream::fillProtobufAddrFuncInfo(
                                  this->getAddressFunctionName(), this->AddrDG);
 }
 
-void MemStream::fillProtobufPredFuncInfo(
+void DynMemStream::fillProtobufPredFuncInfo(
     ::llvm::DataLayout *DataLayout,
     ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {
 
@@ -279,7 +279,7 @@ void MemStream::fillProtobufPredFuncInfo(
                                  BBPredDG->getFuncName(), *BBPredDG);
 }
 
-void MemStream::generateFunction(
+void DynMemStream::generateFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   this->AddrDG.generateFunction(this->getAddressFunctionName(), Module);
 }

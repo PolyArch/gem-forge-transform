@@ -240,7 +240,7 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "[UnQualify]: NoStaticMap " << this->formatName() << '\n');
     return false;
   }
@@ -264,7 +264,7 @@ LLVM::TDG::StreamStepPattern StaticMemStream::computeStepPattern() const {
     auto StepRootStream = *(this->BaseStepRootStreams.begin());
     auto StepRootStreamStpPattern =
         StepRootStream->StaticStreamInfo.stp_pattern();
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Computed step pattern " << StepRootStreamStpPattern
                << " for " << this->formatName() << '\n');
     return StepRootStreamStpPattern;

@@ -30,7 +30,7 @@ bool SpeculativePrecomputationPass::finalize(llvm::Module &Module) {
 }
 
 void SpeculativePrecomputationPass::transform() {
-  LLVM_DEBUG(llvm::errs() << "SpeculativePrecomputation: start.\n");
+  LLVM_DEBUG(llvm::dbgs() << "SpeculativePrecomputation: start.\n");
 
   size_t InstCount = 0;
   while (true) {
@@ -84,7 +84,7 @@ void SpeculativePrecomputationPass::transform() {
     }
   }
 
-  LLVM_DEBUG(llvm::errs() << "SpeculativePrecomputation: done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "SpeculativePrecomputation: done.\n");
 }
 
 void SpeculativePrecomputationPass::dumpStats(std::ostream &O) {}

@@ -1,4 +1,4 @@
-#include "StreamRegionAnalyzer.h"
+#include "DynStreamRegionAnalyzer.h"
 
 #include "llvm/Support/FileSystem.h"
 
@@ -13,7 +13,7 @@
 
 StreamConfigureLoopInfo::StreamConfigureLoopInfo(
     const std::string &_Folder, const std::string &_RelativeFolder,
-    const llvm::Loop *_Loop, std::vector<Stream *> _SortedStreams)
+    const llvm::Loop *_Loop, std::vector<DynStream *> _SortedStreams)
     : TotalConfiguredStreams(-1), TotalConfiguredCoalescedStreams(-1),
       TotalSubLoopStreams(-1), TotalSubLoopCoalescedStreams(-1),
       TotalAliveStreams(-1), TotalAliveCoalescedStreams(-1),
@@ -41,7 +41,7 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, this->JsonPath);
 }
 
-StreamRegionAnalyzer::StreamRegionAnalyzer(
+DynStreamRegionAnalyzer::DynStreamRegionAnalyzer(
     uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
     CachedPostDominanceFrontier *_CachedPDF,
     CachedBBPredicateDataGraph *_CachedBBPredDG, llvm::Loop *_TopLoop,
@@ -77,7 +77,7 @@ StreamRegionAnalyzer::StreamRegionAnalyzer(
   this->buildStreamAddrDepGraph();
 }
 
-StreamRegionAnalyzer::~StreamRegionAnalyzer() {
+DynStreamRegionAnalyzer::~DynStreamRegionAnalyzer() {
   for (auto &InstStreams : this->InstStreamMap) {
     for (auto &Stream : InstStreams.second) {
       delete Stream;
@@ -88,7 +88,7 @@ StreamRegionAnalyzer::~StreamRegionAnalyzer() {
   this->InstStreamMap.clear();
 }
 
-void StreamRegionAnalyzer::initializeStreams() {
+void DynStreamRegionAnalyzer::initializeStreams() {
   /**
    * Use the static streams as a template to initialize the dynamic streams.
    */
@@ -109,14 +109,15 @@ void StreamRegionAnalyzer::initializeStreams() {
       if (!this->TopLoop->contains(StaticStream->ConfigureLoop)) {
         break;
       }
-      Stream *NewStream = nullptr;
+      DynStream *NewStream = nullptr;
       if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
         NewStream =
-            new IndVarStream(this->AnalyzePath, this->AnalyzeRelativePath,
-                             StaticStream, this->DataLayout);
+            new DynIndVarStream(this->AnalyzePath, this->AnalyzeRelativePath,
+                                StaticStream, this->DataLayout);
       } else {
-        NewStream = new MemStream(this->AnalyzePath, this->AnalyzeRelativePath,
-                                  StaticStream, this->DataLayout, IsIVStream);
+        NewStream =
+            new DynMemStream(this->AnalyzePath, this->AnalyzeRelativePath,
+                             StaticStream, this->DataLayout, IsIVStream);
       }
       Streams.emplace_back(NewStream);
 
@@ -135,9 +136,9 @@ void StreamRegionAnalyzer::initializeStreams() {
   }
 }
 
-void StreamRegionAnalyzer::buildStreamAddrDepGraph() {
+void DynStreamRegionAnalyzer::buildStreamAddrDepGraph() {
   auto GetStream = [this](const llvm::Instruction *Inst,
-                          const llvm::Loop *ConfigureLoop) -> Stream * {
+                          const llvm::Loop *ConfigureLoop) -> DynStream * {
     return this->getStreamByInstAndConfigureLoop(Inst, ConfigureLoop);
   };
   for (auto &InstStream : this->InstStreamMap) {
@@ -158,8 +159,8 @@ void StreamRegionAnalyzer::buildStreamAddrDepGraph() {
   }
 }
 
-void StreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
-                                        DataGraph *DG) {
+void DynStreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
+                                           DataGraph *DG) {
   this->numDynamicMemAccesses++;
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Invalid llvm static instruction.");
@@ -191,7 +192,7 @@ void StreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
            "Invalid memory dependent llvm static instruction.");
 
     for (auto &S : Iter->second) {
-      auto MStream = reinterpret_cast<MemStream *>(S);
+      auto MStream = reinterpret_cast<DynMemStream *>(S);
       const auto ConfigureLoop = MStream->getLoop();
       const auto StartId = MStream->getStartId();
       if (StartId == DynamicInstruction::InvalidId) {
@@ -212,7 +213,7 @@ void StreamRegionAnalyzer::addMemAccess(DynamicInstruction *DynamicInst,
   }
 }
 
-void StreamRegionAnalyzer::addIVAccess(DynamicInstruction *DynamicInst) {
+void DynStreamRegionAnalyzer::addIVAccess(DynamicInstruction *DynamicInst) {
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Invalid llvm static instruction.");
   for (unsigned OperandIdx = 0, NumOperands = StaticInst->getNumOperands();
@@ -233,7 +234,7 @@ void StreamRegionAnalyzer::addIVAccess(DynamicInstruction *DynamicInst) {
   }
 }
 
-void StreamRegionAnalyzer::endIter(const llvm::Loop *Loop) {
+void DynStreamRegionAnalyzer::endIter(const llvm::Loop *Loop) {
   assert(this->TopLoop->contains(Loop) &&
          "End iteration for loop outside of TopLoop.");
   auto Iter = this->InnerMostLoopStreamMap.find(Loop);
@@ -244,7 +245,7 @@ void StreamRegionAnalyzer::endIter(const llvm::Loop *Loop) {
   }
 }
 
-void StreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
+void DynStreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
   assert(this->TopLoop->contains(Loop) &&
          "End loop for loop outside of TopLoop.");
   auto Iter = this->ConfigureLoopStreamMap.find(Loop);
@@ -255,7 +256,7 @@ void StreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
   }
 }
 
-void StreamRegionAnalyzer::endRegion(
+void DynStreamRegionAnalyzer::endRegion(
     StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
     StreamPassChooseStrategyE StreamPassChooseStrategy) {
   // Finalize all patterns.
@@ -287,7 +288,7 @@ void StreamRegionAnalyzer::endRegion(
   this->dumpConfigurePlan();
 }
 
-void StreamRegionAnalyzer::endTransform() {
+void DynStreamRegionAnalyzer::endTransform() {
   // This will set all the coalesce information.
   this->FuncSE->endAll();
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
@@ -310,7 +311,7 @@ void StreamRegionAnalyzer::endTransform() {
  * 2. Recursively compute TotalSubLoopStreams.
  * 3. Compute TotalAliveStreams.
  */
-void StreamRegionAnalyzer::finalizeStreamConfigureLoopInfo(
+void DynStreamRegionAnalyzer::finalizeStreamConfigureLoopInfo(
     const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "Should only finalize loops within TopLoop.");
@@ -365,7 +366,7 @@ void StreamRegionAnalyzer::finalizeStreamConfigureLoopInfo(
                                     ConfiguredCoalescedStreams;
 }
 
-Stream *StreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
+DynStream *DynStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
     const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const {
   auto Iter = this->InstStreamMap.find(Inst);
   if (Iter == this->InstStreamMap.end()) {
@@ -380,14 +381,14 @@ Stream *StreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
   llvm_unreachable("Failed to find the stream at specified loop level.");
 }
 
-void StreamRegionAnalyzer::markQualifiedStreams(
+void DynStreamRegionAnalyzer::markQualifiedStreams(
     StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
     StreamPassChooseStrategyE StreamPassChooseStrategy) {
 
   LLVM_DEBUG(llvm::dbgs() << "==== SRA: MarkQualifiedStreams\n");
 
   auto IsQualifySeed = [StreamPassQualifySeedStrategy,
-                        StreamPassChooseStrategy](Stream *S) -> bool {
+                        StreamPassChooseStrategy](DynStream *S) -> bool {
     if (StreamPassChooseStrategy == StreamPassChooseStrategyE::INNER_MOST) {
       if (S->SStream->ConfigureLoop != S->SStream->InnerMostLoop) {
         // Enforce the inner most loop constraint.
@@ -403,7 +404,7 @@ void StreamRegionAnalyzer::markQualifiedStreams(
     return S->isQualifySeed();
   };
 
-  std::list<Stream *> Queue;
+  std::list<DynStream *> Queue;
   for (auto &InstStream : this->InstStreamMap) {
     for (auto &S : InstStream.second) {
       if (IsQualifySeed(S)) {
@@ -439,14 +440,14 @@ void StreamRegionAnalyzer::markQualifiedStreams(
   }
 }
 
-void StreamRegionAnalyzer::disqualifyStreams() {
+void DynStreamRegionAnalyzer::disqualifyStreams() {
   /**
    * For IVStreams with base loads, we assume they are qualified from the
    * beginning point. Now it's time to check if their base memory streams are
    * actually qualified. If not, we need to propagate the dequalified signal
    * along the dependence chain.
    */
-  std::list<Stream *> DisqualifiedQueue;
+  std::list<DynStream *> DisqualifiedQueue;
   for (auto &InstStream : this->InstStreamMap) {
     for (auto &S : InstStream.second) {
       if (S->isQualified()) {
@@ -500,10 +501,10 @@ void StreamRegionAnalyzer::disqualifyStreams() {
   }
 }
 
-void StreamRegionAnalyzer::chooseStreamAtInnerMost() {
+void DynStreamRegionAnalyzer::chooseStreamAtInnerMost() {
   for (auto &InstStream : this->InstStreamMap) {
     auto Inst = InstStream.first;
-    Stream *ChosenStream = nullptr;
+    DynStream *ChosenStream = nullptr;
     for (auto &S : InstStream.second) {
       if (S->isQualified()) {
         ChosenStream = S;
@@ -519,10 +520,10 @@ void StreamRegionAnalyzer::chooseStreamAtInnerMost() {
   }
 }
 
-void StreamRegionAnalyzer::chooseStreamAtDynamicOuterMost() {
+void DynStreamRegionAnalyzer::chooseStreamAtDynamicOuterMost() {
   for (auto &InstStream : this->InstStreamMap) {
     auto Inst = InstStream.first;
-    Stream *ChosenStream = nullptr;
+    DynStream *ChosenStream = nullptr;
     for (auto &S : InstStream.second) {
       if (S->isQualified()) {
         // This will make sure we get the outer most qualified stream.
@@ -536,10 +537,10 @@ void StreamRegionAnalyzer::chooseStreamAtDynamicOuterMost() {
   }
 }
 
-void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
+void DynStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
   for (auto &InstStream : this->InstStreamMap) {
     auto Inst = InstStream.first;
-    Stream *ChosenStream = nullptr;
+    DynStream *ChosenStream = nullptr;
     int ChosenNumQualifiedDepStreams = -1;
     for (auto &S : InstStream.second) {
       if (S->isQualified() && S->SStream->isQualified()) {
@@ -578,8 +579,8 @@ void StreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
   }
 }
 
-void StreamRegionAnalyzer::buildChosenStreamDependenceGraph() {
-  auto GetChosenStream = [this](const llvm::Instruction *Inst) -> Stream * {
+void DynStreamRegionAnalyzer::buildChosenStreamDependenceGraph() {
+  auto GetChosenStream = [this](const llvm::Instruction *Inst) -> DynStream * {
     auto Iter = this->InstChosenStreamMap.find(Inst);
     if (Iter == this->InstChosenStreamMap.end()) {
       return nullptr;
@@ -592,7 +593,7 @@ void StreamRegionAnalyzer::buildChosenStreamDependenceGraph() {
   }
 }
 
-void StreamRegionAnalyzer::dumpStreamInfos() {
+void DynStreamRegionAnalyzer::dumpStreamInfos() {
   {
     LLVM::TDG::StreamRegion ProtobufStreamRegion;
     for (auto &InstStream : this->InstStreamMap) {
@@ -625,7 +626,7 @@ void StreamRegionAnalyzer::dumpStreamInfos() {
   }
 }
 
-void StreamRegionAnalyzer::insertAddrFuncInModule(
+void DynStreamRegionAnalyzer::insertAddrFuncInModule(
     std::unique_ptr<llvm::Module> &Module) {
   for (auto &InstStream : this->InstChosenStreamMap) {
     auto Inst = InstStream.first;
@@ -636,13 +637,13 @@ void StreamRegionAnalyzer::insertAddrFuncInModule(
       // If this is an IVStream.
       continue;
     }
-    auto MStream = reinterpret_cast<MemStream *>(S);
+    auto MStream = reinterpret_cast<DynMemStream *>(S);
     MStream->generateFunction(Module);
   }
   this->StaticAnalyzer->insertPredicateFuncInModule(Module);
 }
 
-void StreamRegionAnalyzer::buildAddressModule() {
+void DynStreamRegionAnalyzer::buildAddressModule() {
   auto AddressModulePath = this->AnalyzePath + "/addr.ll";
 
   auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
@@ -663,7 +664,7 @@ void StreamRegionAnalyzer::buildAddressModule() {
   // Create the interpreter and functional stream engine.
   this->AddrInterpreter =
       std::make_unique<llvm::Interpreter>(std::move(AddressModule));
-  std::unordered_set<Stream *> ChosenStreams;
+  std::unordered_set<DynStream *> ChosenStreams;
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
     auto ChosenStream = InstChosenStream.second;
     ChosenStreams.insert(ChosenStream);
@@ -672,7 +673,7 @@ void StreamRegionAnalyzer::buildAddressModule() {
                                                           ChosenStreams);
 }
 
-void StreamRegionAnalyzer::buildTransformPlan() {
+void DynStreamRegionAnalyzer::buildTransformPlan() {
   // First initialize the all the plans to nothing.
   for (auto BBIter = this->TopLoop->block_begin(),
             BBEnd = this->TopLoop->block_end();
@@ -709,14 +710,14 @@ void StreamRegionAnalyzer::buildTransformPlan() {
     auto &SelfInst = InstChosenStream.first;
     auto &S = InstChosenStream.second;
 
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "make transform plan for stream " << S->formatName() << '\n');
 
     // Handle all the step instructions.
     if (S->SStream->Type == StaticStream::TypeT::IV) {
       for (const auto &StepInst : S->getStepInsts()) {
         this->InstPlanMap.at(StepInst).planToStep(S);
-        LLVM_DEBUG(llvm::errs() << "Select transform plan for inst "
+        LLVM_DEBUG(llvm::dbgs() << "Select transform plan for inst "
                                 << LoopUtils::formatLLVMInst(StepInst) << " to "
                                 << StreamTransformPlan::formatPlanT(
                                        StreamTransformPlan::PlanT::STEP)
@@ -749,7 +750,7 @@ void StreamRegionAnalyzer::buildTransformPlan() {
           continue;
         }
         this->InstPlanMap.at(I).addUsedStream(S);
-        LLVM_DEBUG(llvm::errs() << "Add used stream for user "
+        LLVM_DEBUG(llvm::dbgs() << "Add used stream for user "
                                 << LoopUtils::formatLLVMInst(I)
                                 << " with stream " << S->formatName() << '\n');
       }
@@ -774,7 +775,7 @@ void StreamRegionAnalyzer::buildTransformPlan() {
       }
     }
 
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Select transform plan for inst "
                << LoopUtils::formatLLVMInst(SelfInst) << " to "
                << StreamTransformPlan::formatPlanT(SelfPlan.Plan) << '\n');
@@ -839,7 +840,7 @@ void StreamRegionAnalyzer::buildTransformPlan() {
   }
 }
 
-void StreamRegionAnalyzer::dumpTransformPlan() {
+void DynStreamRegionAnalyzer::dumpTransformPlan() {
   std::stringstream ss;
   ss << "DEBUG PLAN FOR LOOP " << LoopUtils::getLoopId(this->TopLoop)
      << "----------------\n";
@@ -866,7 +867,7 @@ void StreamRegionAnalyzer::dumpTransformPlan() {
   PlanFStream.close();
 }
 
-void StreamRegionAnalyzer::dumpConfigurePlan() {
+void DynStreamRegionAnalyzer::dumpConfigurePlan() {
   std::list<const llvm::Loop *> Stack;
   Stack.emplace_back(this->TopLoop);
   std::stringstream ss;
@@ -894,7 +895,7 @@ void StreamRegionAnalyzer::dumpConfigurePlan() {
   PlanFStream.close();
 }
 
-void StreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
+void DynStreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
     const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
@@ -911,7 +912,7 @@ void StreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
   }
 }
 
-void StreamRegionAnalyzer::allocateRegionStreamId(
+void DynStreamRegionAnalyzer::allocateRegionStreamId(
     const llvm::Loop *ConfigureLoop) {
   auto &ConfigureLoopInfo = this->getConfigureLoopInfo(ConfigureLoop);
   int UsedRegionId = 0;
@@ -930,7 +931,7 @@ void StreamRegionAnalyzer::allocateRegionStreamId(
 }
 
 const StreamConfigureLoopInfo &
-StreamRegionAnalyzer::getConfigureLoopInfo(const llvm::Loop *ConfigureLoop) {
+DynStreamRegionAnalyzer::getConfigureLoopInfo(const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
   assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) != 0 &&
@@ -938,7 +939,8 @@ StreamRegionAnalyzer::getConfigureLoopInfo(const llvm::Loop *ConfigureLoop) {
   return this->ConfigureLoopInfoMap.at(ConfigureLoop);
 }
 
-std::vector<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
+std::vector<DynStream *>
+DynStreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
     const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
@@ -953,8 +955,8 @@ std::vector<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
    * With the same DepDepth, we break the tie with stream id, as we allocate
    * them in order, we should be able to ensure new value dependence.
    */
-  std::stack<std::pair<Stream *, int>> ChosenStreams;
-  std::vector<Stream *> SortedStreams;
+  std::stack<std::pair<DynStream *, int>> ChosenStreams;
+  std::vector<DynStream *> SortedStreams;
   for (auto &InstChosenStream : this->InstChosenStreamMap) {
     auto &S = InstChosenStream.second;
     if (S->getLoop() == ConfigureLoop) {
@@ -963,7 +965,7 @@ std::vector<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
     }
   }
 
-  std::unordered_map<Stream *, int> StreamDepDepthMap;
+  std::unordered_map<DynStream *, int> StreamDepDepthMap;
   while (!ChosenStreams.empty()) {
     auto &Entry = ChosenStreams.top();
     auto &S = Entry.first;
@@ -1002,7 +1004,7 @@ std::vector<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
 
   // Finally we sort the streams.
   std::sort(SortedStreams.begin(), SortedStreams.end(),
-            [&StreamDepDepthMap](Stream *A, Stream *B) -> bool {
+            [&StreamDepDepthMap](DynStream *A, DynStream *B) -> bool {
               auto DepthA = StreamDepDepthMap.at(A);
               auto DepthB = StreamDepDepthMap.at(B);
               if (DepthA != DepthB) {
@@ -1015,8 +1017,8 @@ std::vector<Stream *> StreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
   return SortedStreams;
 }
 
-Stream *
-StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
+DynStream *
+DynStreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
   if (!this->TopLoop->contains(Inst)) {
     return nullptr;
   }
@@ -1029,16 +1031,17 @@ StreamRegionAnalyzer::getChosenStreamByInst(const llvm::Instruction *Inst) {
 }
 
 const StreamTransformPlan &
-StreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
+DynStreamRegionAnalyzer::getTransformPlanByInst(const llvm::Instruction *Inst) {
   assert(this->TopLoop->contains(Inst) && "Inst should be within the TopLoop.");
   return this->InstPlanMap.at(Inst);
 }
 
-FunctionalStreamEngine *StreamRegionAnalyzer::getFuncSE() {
+FunctionalStreamEngine *DynStreamRegionAnalyzer::getFuncSE() {
   return this->FuncSE.get();
 }
 
-std::string StreamRegionAnalyzer::classifyStream(const MemStream &S) const {
+std::string
+DynStreamRegionAnalyzer::classifyStream(const DynMemStream &S) const {
   if (S.getNumBaseLoads() > 0) {
     // We have dependent base loads here.
     return "INDIRECT";
@@ -1085,7 +1088,7 @@ std::string StreamRegionAnalyzer::classifyStream(const MemStream &S) const {
   return "RANDOM";
 }
 
-void StreamRegionAnalyzer::finalizeCoalesceInfo() {
+void DynStreamRegionAnalyzer::finalizeCoalesceInfo() {
   /**
    * In the old trace-based transformation, we use the trace to coalesce
    * streams. However, it lacks coalesce offset, and thus not very efficient
@@ -1106,7 +1109,7 @@ void StreamRegionAnalyzer::finalizeCoalesceInfo() {
   }
 }
 
-void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
+void DynStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
   const auto &ConfigureInfo = this->getConfigureLoopInfo(Loop);
   if (ConfigureInfo.TotalConfiguredStreams == 0) {
     // No streams here.
@@ -1118,7 +1121,7 @@ void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
    * 2. They have scev.
    * 3. Their SCEV has a constant offset.
    */
-  std::list<std::vector<std::pair<Stream *, int64_t>>> CoalescedGroup;
+  std::list<std::vector<std::pair<DynStream *, int64_t>>> CoalescedGroup;
   for (auto S : ConfigureInfo.getSortedStreams()) {
     LLVM_DEBUG(llvm::dbgs()
                << "====== Try to coalesce stream: " << S->formatName() << '\n');
@@ -1134,7 +1137,7 @@ void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
 
     bool Coalesced = false;
     if (AddrSCEV) {
-      LLVM_DEBUG(llvm::errs() << "AddrSCEV: "; AddrSCEV->dump());
+      LLVM_DEBUG(llvm::dbgs() << "AddrSCEV: "; AddrSCEV->dump());
       for (auto &Group : CoalescedGroup) {
         auto TargetS = Group.front().first;
         if (TargetS->getBaseStepRootStreams() != S->getBaseStepRootStreams()) {
@@ -1153,17 +1156,17 @@ void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
           continue;
         }
         // Check the scev.
-        LLVM_DEBUG(llvm::errs() << "TargetAddrSCEV: "; TargetAddrSCEV->dump());
+        LLVM_DEBUG(llvm::dbgs() << "TargetAddrSCEV: "; TargetAddrSCEV->dump());
         auto MinusSCEV = SS->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
-        LLVM_DEBUG(llvm::errs() << "MinusSCEV: "; MinusSCEV->dump());
+        LLVM_DEBUG(llvm::dbgs() << "MinusSCEV: "; MinusSCEV->dump());
         auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(MinusSCEV);
         if (!OffsetSCEV) {
           // Not constant offset.
           continue;
         }
-        LLVM_DEBUG(llvm::errs() << "OffsetSCEV: "; OffsetSCEV->dump());
+        LLVM_DEBUG(llvm::dbgs() << "OffsetSCEV: "; OffsetSCEV->dump());
         int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
-        LLVM_DEBUG(llvm::errs()
+        LLVM_DEBUG(llvm::dbgs()
                    << "Coalesced, offset: " << Offset
                    << " with stream: " << TargetS->formatName() << '\n');
         Coalesced = true;
@@ -1173,7 +1176,7 @@ void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
     }
 
     if (!Coalesced) {
-      LLVM_DEBUG(llvm::errs() << "New coalesce group\n");
+      LLVM_DEBUG(llvm::dbgs() << "New coalesce group\n");
       CoalescedGroup.emplace_back();
       CoalescedGroup.back().emplace_back(S, 0);
     }
@@ -1182,8 +1185,8 @@ void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
   // Sort each group with increasing order of offset.
   for (auto &Group : CoalescedGroup) {
     std::sort(Group.begin(), Group.end(),
-              [](const std::pair<Stream *, int64_t> &a,
-                 const std::pair<Stream *, int64_t> &b) -> bool {
+              [](const std::pair<DynStream *, int64_t> &a,
+                 const std::pair<DynStream *, int64_t> &b) -> bool {
                 return a.second < b.second;
               });
     // Set the base/offset.
@@ -1197,7 +1200,7 @@ void StreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
   }
 }
 
-void StreamRegionAnalyzer::dumpStats() const {
+void DynStreamRegionAnalyzer::dumpStats() const {
   std::string StatFilePath = this->AnalyzePath + "/stats.txt";
 
   std::ofstream O(StatFilePath);
@@ -1230,7 +1233,7 @@ void StreamRegionAnalyzer::dumpStats() const {
       continue;
     }
     for (auto &S : InstStreamEntry.second) {
-      auto &Stream = *reinterpret_cast<MemStream *>(S);
+      auto &Stream = *reinterpret_cast<DynMemStream *>(S);
       O << LoopUtils::getLoopId(Stream.getLoop());
       O << ' ' << LoopUtils::formatLLVMInst(Stream.getInst());
 
@@ -1290,7 +1293,7 @@ void StreamRegionAnalyzer::dumpStats() const {
       continue;
     }
     for (auto &S : InstStreamEntry.second) {
-      auto &IVStream = *reinterpret_cast<IndVarStream *>(S);
+      auto &IVStream = *reinterpret_cast<DynIndVarStream *>(S);
       O << LoopUtils::getLoopId(IVStream.getLoop());
       O << ' ' << LoopUtils::formatLLVMInst(IVStream.getPHIInst());
 

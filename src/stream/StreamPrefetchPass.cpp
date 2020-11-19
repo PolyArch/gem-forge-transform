@@ -23,7 +23,7 @@ protected:
 };
 
 void StreamPrefetchPass::transformStream() {
-  LLVM_DEBUG(llvm::errs() << "StreamPrefetch: Start transform.\n");
+  LLVM_DEBUG(llvm::dbgs() << "StreamPrefetch: Start transform.\n");
 
   LoopStackT LoopStack;
   ActiveStreamInstMapT ActiveStreamInstMap;
@@ -167,7 +167,7 @@ void StreamPrefetchPass::transformStream() {
     }
   }
 
-  LLVM_DEBUG(llvm::errs() << "StreamPrefetch: Transform done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "StreamPrefetch: Transform done.\n");
 }
 } // namespace
 

@@ -1,17 +1,18 @@
 #ifndef LLVM_TDG_STREAM_INDUCTION_VAR_STREAM_H
 #define LLVM_TDG_STREAM_INDUCTION_VAR_STREAM_H
 
-#include "stream/Stream.h"
+#include "stream/DynStream.h"
 
 #include <sstream>
-class IndVarStream : public Stream {
+class DynIndVarStream : public DynStream {
 public:
-  IndVarStream(const std::string &_Folder, const std::string &_RelativeFolder,
-               const StaticStream *_SStream, llvm::DataLayout *DataLayout);
-  IndVarStream(const IndVarStream &Other) = delete;
-  IndVarStream(IndVarStream &&Other) = delete;
-  IndVarStream &operator=(const IndVarStream &Other) = delete;
-  IndVarStream &operator=(IndVarStream &&Other) = delete;
+  DynIndVarStream(const std::string &_Folder,
+                  const std::string &_RelativeFolder,
+                  const StaticStream *_SStream, llvm::DataLayout *DataLayout);
+  DynIndVarStream(const DynIndVarStream &Other) = delete;
+  DynIndVarStream(DynIndVarStream &&Other) = delete;
+  DynIndVarStream &operator=(const DynIndVarStream &Other) = delete;
+  DynIndVarStream &operator=(DynIndVarStream &&Other) = delete;
 
   void buildBasicDependenceGraph(GetStreamFuncT GetStream) override;
 
@@ -49,7 +50,8 @@ public:
 
   std::string format() const {
     std::stringstream ss;
-    ss << "IndVarStream " << LoopUtils::formatLLVMInst(this->PHIInst) << '\n';
+    ss << "DynIndVarStream " << LoopUtils::formatLLVMInst(this->PHIInst)
+       << '\n';
 
     ss << "ComputeInsts: ------\n";
     for (const auto &ComputeInst : this->ComputeInsts) {

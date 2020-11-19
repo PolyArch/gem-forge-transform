@@ -277,7 +277,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
              else llvm::dbgs() << "None\n");
   this->StaticStreamInfo.set_val_pattern(
       this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
-  LLVM_DEBUG(llvm::errs() << this->formatName() << ": Value pattern "
+  LLVM_DEBUG(llvm::dbgs() << this->formatName() << ": Value pattern "
                           << ::LLVM::TDG::StreamValuePattern_Name(
                                  this->StaticStreamInfo.val_pattern())
                           << '\n');
