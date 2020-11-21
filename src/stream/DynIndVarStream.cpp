@@ -9,13 +9,11 @@
 
 DynIndVarStream::DynIndVarStream(const std::string &_Folder,
                                  const std::string &_RelativeFolder,
-                                 const StaticStream *_SStream,
+                                 StaticStream *_SStream,
                                  llvm::DataLayout *DataLayout)
     : DynStream(_Folder, _RelativeFolder, _SStream, DataLayout),
       PHIInst(llvm::cast<llvm::PHINode>(_SStream->Inst)) {
   this->searchComputeInsts(this->PHIInst, this->getLoop());
-  this->StepInsts =
-      DynIndVarStream::searchStepInsts(this->PHIInst, this->getInnerMostLoop());
   this->IsCandidateStatic = this->isCandidateStatic();
 }
 
@@ -88,7 +86,7 @@ void DynIndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
   std::list<llvm::Instruction *> Queue;
 
   LLVM_DEBUG(llvm::dbgs() << "Search compute instructions for "
-                          << LoopUtils::formatLLVMInst(PHINode) << " at loop "
+                          << Utils::formatLLVMInst(PHINode) << " at loop "
                           << LoopUtils::getLoopId(Loop) << '\n');
 
   for (unsigned IncomingIdx = 0,
@@ -101,17 +99,16 @@ void DynIndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
     auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
     if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
       Queue.emplace_back(IncomingInst);
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Enqueue inst " << LoopUtils::formatLLVMInst(IncomingInst)
-                 << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "Enqueue inst "
+                              << Utils::formatLLVMInst(IncomingInst) << '\n');
     }
   }
 
   while (!Queue.empty()) {
     auto CurrentInst = Queue.front();
     Queue.pop_front();
-    LLVM_DEBUG(llvm::dbgs() << "Processing "
-                            << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
+    LLVM_DEBUG(llvm::dbgs()
+               << "Processing " << Utils::formatLLVMInst(CurrentInst) << '\n');
     if (this->ComputeInsts.count(CurrentInst) != 0) {
       // We have already processed this one.
       LLVM_DEBUG(llvm::dbgs() << "Already processed\n");
@@ -124,7 +121,7 @@ void DynIndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
     }
 
     LLVM_DEBUG(llvm::dbgs() << "Found compute inst "
-                            << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
+                            << Utils::formatLLVMInst(CurrentInst) << '\n');
     this->ComputeInsts.insert(CurrentInst);
 
     if (Utils::isCallOrInvokeInst(CurrentInst)) {
@@ -144,90 +141,11 @@ void DynIndVarStream::searchComputeInsts(const llvm::PHINode *PHINode,
       auto OperandValue = CurrentInst->getOperand(OperandIdx);
       if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
         Queue.emplace_back(OperandInst);
-        LLVM_DEBUG(llvm::dbgs()
-                   << "Enqueue inst " << LoopUtils::formatLLVMInst(OperandInst)
-                   << '\n');
+        LLVM_DEBUG(llvm::dbgs() << "Enqueue inst "
+                                << Utils::formatLLVMInst(OperandInst) << '\n');
       }
     }
   }
-}
-
-std::unordered_set<const llvm::Instruction *>
-DynIndVarStream::searchStepInsts(const llvm::PHINode *PHINode,
-                                 const llvm::Loop *Loop) {
-  std::list<llvm::Instruction *> Queue;
-
-  LLVM_DEBUG(llvm::dbgs() << "Search step instructions for "
-                          << LoopUtils::formatLLVMInst(PHINode) << " at loop "
-                          << LoopUtils::getLoopId(Loop) << '\n');
-
-  for (unsigned IncomingIdx = 0,
-                NumIncomingValues = PHINode->getNumIncomingValues();
-       IncomingIdx != NumIncomingValues; ++IncomingIdx) {
-    auto BB = PHINode->getIncomingBlock(IncomingIdx);
-    if (!Loop->contains(BB)) {
-      continue;
-    }
-    auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
-    if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
-      Queue.emplace_back(IncomingInst);
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Enqueue inst " << LoopUtils::formatLLVMInst(IncomingInst)
-                 << '\n');
-    }
-  }
-
-  std::unordered_set<const llvm::Instruction *> StepInsts;
-  std::unordered_set<const llvm::Instruction *> VisitedInsts;
-
-  while (!Queue.empty()) {
-    auto CurrentInst = Queue.front();
-    Queue.pop_front();
-    LLVM_DEBUG(llvm::dbgs() << "Processing "
-                            << LoopUtils::formatLLVMInst(CurrentInst) << '\n');
-    if (VisitedInsts.count(CurrentInst) != 0) {
-      // We have already processed this one.
-      LLVM_DEBUG(llvm::dbgs() << "Already processed\n");
-      continue;
-    }
-    if (!Loop->contains(CurrentInst)) {
-      // This instruction is out of our analysis level. ignore it.
-      LLVM_DEBUG(llvm::dbgs() << "Not in loop\n");
-      continue;
-    }
-    if (Utils::isCallOrInvokeInst(CurrentInst)) {
-      // So far I do not know how to process the call/invoke instruction.
-      LLVM_DEBUG(llvm::dbgs() << "Is call or invoke\n");
-      continue;
-    }
-
-    VisitedInsts.insert(CurrentInst);
-
-    if (DynStream::isStepInst(CurrentInst)) {
-      // Find a step instruction, do not go further.
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Found step inst " << LoopUtils::formatLLVMInst(CurrentInst)
-                 << '\n');
-      StepInsts.insert(CurrentInst);
-    } else if (llvm::isa<llvm::LoadInst>(CurrentInst)) {
-      // Base load instruction is also considered as StepInst.
-      StepInsts.insert(CurrentInst);
-    } else {
-      // BFS on the operands of non-step instructions.
-      for (unsigned OperandIdx = 0, NumOperands = CurrentInst->getNumOperands();
-           OperandIdx != NumOperands; ++OperandIdx) {
-        auto OperandValue = CurrentInst->getOperand(OperandIdx);
-        if (auto OperandInst =
-                llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
-          Queue.emplace_back(OperandInst);
-          LLVM_DEBUG(llvm::dbgs()
-                     << "Enqueue inst "
-                     << LoopUtils::formatLLVMInst(OperandInst) << '\n');
-        }
-      }
-    }
-  }
-  return StepInsts;
 }
 
 void DynIndVarStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
@@ -265,27 +183,4 @@ bool DynIndVarStream::isQualifySeed() const {
     return true;
   }
   return false;
-}
-
-DynStream::InputValueList DynIndVarStream::getReduceFuncInputValues() const {
-  assert(this->isChosen() && "Only consider chosen stream's input values.");
-  assert(this->SStream->ReduceDG && "No ReduceDG.");
-  return this->getExecFuncInputValues(*this->SStream->ReduceDG);
-}
-
-void DynIndVarStream::fillProtobufAddrFuncInfo(
-    ::llvm::DataLayout *DataLayout,
-    ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {
-
-  if (!this->isChosen()) {
-    return;
-  }
-
-  if (!this->SStream->ReduceDG) {
-    return;
-  }
-
-  this->fillProtobufExecFuncInfo(DataLayout, AddrFuncInfo,
-                                 this->SStream->FuncNameBase + "_reduce",
-                                 *this->SStream->ReduceDG);
 }

@@ -65,6 +65,7 @@ add_library(LLVMTDGPass SHARED
     stream/StaticIndVarStream.cpp
     stream/StaticMemStream.cpp
     stream/UserDefinedMemStream.cpp
+    stream/StreamConfigureLoopInfo.cpp
     stream/StaticStreamRegionAnalyzer.cpp
     stream/DynStream.cpp
     stream/DynIndVarStream.cpp

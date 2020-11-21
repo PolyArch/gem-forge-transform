@@ -94,7 +94,6 @@ message StaticStreamInfo {
   ExecFuncInfo pred_func_info = 21;
   bool no_core_user = 22; // This stream has not core user.
 
-
   // AliasedStreamInfo
   StreamId alias_base_stream = 32;
   uint32 alias_offset = 33;

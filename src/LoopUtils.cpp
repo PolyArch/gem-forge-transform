@@ -1,5 +1,4 @@
 #include "LoopUtils.h"
-#include "Utils.h"
 
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Support/Debug.h"
@@ -22,27 +21,11 @@
 // }
 
 const std::unordered_set<std::string> LoopUtils::LoopContinuityIgnoredFunctions{
-    "exp",
-    "sin",
-    "sqrt",
-    "sqrtf",
-    "acos",
-    "fabs",
-    "abs",
-    "rand",
-    "pow",
-    "log",
-    "lgamma",
-    "printf",
-    "omp_get_thread_num",
-    "feof",
-    "m5_work_mark",
+    "exp", "sin", "sqrt", "sqrtf", "acos", "fabs", "abs", "rand", "pow", "log",
+    "lgamma", "printf", "omp_get_thread_num", "feof", "m5_work_mark",
     "m5_switch_cpu",
     // SSP Library functions.
-    "ssp_config",
-    "ssp_load_i32",
-    "ssp_step",
-    "ssp_end",
+    "ssp_config", "ssp_load_i32", "ssp_step", "ssp_end",
     // Specific to spec2017 imagick_s
     // "ReadBlob", "ThrowMagickException", "CloseBlob", "DestroyImage",
 };
@@ -172,42 +155,6 @@ int LoopUtils::countPossiblePathFromBB(
   }
   OnPathBBs.erase(CurrentBB);
   return Count;
-}
-
-std::string LoopUtils::formatLLVMInst(const llvm::Instruction *Inst) {
-  if (Inst->getName() != "") {
-    return (llvm::Twine(Inst->getFunction()->getName()) +
-            "::" + Inst->getParent()->getName() + "::" + Inst->getName() + "(" +
-            Inst->getOpcodeName() + ")")
-        .str();
-  } else {
-    size_t Idx = LoopUtils::getLLVMInstPosInBB(Inst);
-    return (llvm::Twine(Inst->getFunction()->getName()) +
-            "::" + Inst->getParent()->getName() + "::" + llvm::Twine(Idx) +
-            "(" + Inst->getOpcodeName() + ")")
-        .str();
-  }
-}
-
-size_t LoopUtils::getLLVMInstPosInBB(const llvm::Instruction *Inst) {
-  size_t Idx = 0;
-  for (auto InstIter = Inst->getParent()->begin(),
-            InstEnd = Inst->getParent()->end();
-       InstIter != InstEnd; ++InstIter) {
-    if ((&*InstIter) == Inst) {
-      break;
-    }
-    Idx++;
-  }
-  return Idx;
-}
-
-std::string LoopUtils::formatLLVMValue(const llvm::Value *Value) {
-  if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-    return LoopUtils::formatLLVMInst(Inst);
-  } else {
-    return Value->getName();
-  }
 }
 
 llvm::Instruction *LoopUtils::getUnrollableTerminator(llvm::Loop *Loop) {

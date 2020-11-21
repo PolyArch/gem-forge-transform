@@ -91,10 +91,10 @@ void StreamDataGraph::constructDataGraph(
 
 void StreamDataGraph::format(std::ostream &OStream) const {
   OStream << "StreamDataGraph of Loop " << LoopUtils::getLoopId(this->Loop)
-          << " Value " << LoopUtils::formatLLVMValue(this->ResultValue) << '\n';
+          << " Value " << Utils::formatLLVMValue(this->ResultValue) << '\n';
   OStream << "-------------- Input Values ---------------\n";
   for (const auto &Input : this->Inputs) {
-    OStream << LoopUtils::formatLLVMValue(Input) << '\n';
+    OStream << Utils::formatLLVMValue(Input) << '\n';
   }
   OStream << "-------------- Compute Insts --------------\n";
   if (auto AddrInst = llvm::dyn_cast<llvm::Instruction>(this->ResultValue)) {
@@ -108,11 +108,11 @@ void StreamDataGraph::format(std::ostream &OStream) const {
       auto FormatTask =
           [&OStream, &FormattedInsts](const llvm::Instruction *Inst) -> void {
         if (FormattedInsts.count(Inst) == 0) {
-          OStream << LoopUtils::formatLLVMInst(Inst);
+          OStream << Utils::formatLLVMInst(Inst);
           for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
                OperandIdx != NumOperands; ++OperandIdx) {
             OStream << ' '
-                    << LoopUtils::formatLLVMValue(Inst->getOperand(OperandIdx));
+                    << Utils::formatLLVMValue(Inst->getOperand(OperandIdx));
           }
           OStream << '\n';
           FormattedInsts.insert(Inst);
@@ -139,7 +139,6 @@ void StreamDataGraph::format(std::ostream &OStream) const {
  * Two address datagraphs can be coalesce iff.
  * 1.
  */
-bool StreamDataGraph::isAbleToCoalesceWith(
-    const StreamDataGraph &Other) const {
+bool StreamDataGraph::isAbleToCoalesceWith(const StreamDataGraph &Other) const {
   return false;
 }

@@ -5,6 +5,9 @@
 #include "stream/StaticMemStream.h"
 #include "stream/UserDefinedMemStream.h"
 
+#include "stream/StreamConfigureLoopInfo.h"
+#include "stream/StreamTransformPlan.h"
+
 class StaticStreamRegionAnalyzer {
 public:
   using InstStaticStreamMapT =
@@ -13,16 +16,43 @@ public:
                              llvm::DataLayout *_DataLayout,
                              CachedLoopInfo *_CachedLI,
                              CachedPostDominanceFrontier *_CachedPDF,
-                             CachedBBPredicateDataGraph *_CachedBBPredDG);
+                             CachedBBPredicateDataGraph *_CachedBBPredDG,
+                             uint64_t _RegionIdx, const std::string &_RootPath);
   ~StaticStreamRegionAnalyzer();
 
   InstStaticStreamMapT &getInstStaticStreamMap() {
     return this->InstStaticStreamMap;
   }
 
+  /**
+   * This function finalizes the transformation plan.
+   * 1. Choose streams based on the ChooseStrategy, and build the chosen stream
+   * dependence graph.
+   * 2. Build the transform plan.
+   */
+  void finalizePlan();
+
   void insertPredicateFuncInModule(std::unique_ptr<llvm::Module> &Module);
 
-private:
+  /**
+   * Query for the analysis results.
+   */
+  using InstTransformPlanMapT =
+      std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
+
+  const InstTransformPlanMapT &getInstTransformPlanMap() const {
+    return this->InstPlanMap;
+  }
+
+  const StreamConfigureLoopInfo &
+  getConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
+
+  const std::string &getAnalyzePath() const { return this->AnalyzePath; }
+  const std::string &getAnalyzeRelativePath() const {
+    return this->AnalyzeRelativePath;
+  }
+
+protected:
   llvm::Loop *TopLoop;
   llvm::DataLayout *DataLayout;
   CachedLoopInfo *CachedLI;
@@ -31,11 +61,47 @@ private:
   llvm::ScalarEvolution *SE;
   const llvm::PostDominatorTree *PDT;
 
+  uint64_t RegionIdx;
+  std::string RootPath;
+  std::string AnalyzeRelativePath;
+  std::string AnalyzePath;
+
   /**
    * Key data structure, map from instruction to the list of streams.
    * Starting from the inner-most loop.
    */
   InstStaticStreamMapT InstStaticStreamMap;
+
+  /**
+   * Map from an instruction to its chosen stream.
+   */
+  std::unordered_map<const llvm::Instruction *, StaticStream *>
+      InstChosenStreamMap;
+
+  /**
+   * Map from a loop to all the streams with this loop as the inner most loop.
+   */
+  using LoopStreamMapT = std::unordered_map<const llvm::Loop *,
+                                            std::unordered_set<StaticStream *>>;
+  LoopStreamMapT InnerMostLoopStreamMap;
+
+  /**
+   * Map from a loop to all the streams configured at the entry point to this
+   * loop.
+   */
+  LoopStreamMapT ConfigureLoopStreamMap;
+
+  /**
+   * Map from a configure loop to the aggregated structure
+   * StreamConfigureLoopInfo.
+   */
+  std::unordered_map<const llvm::Loop *, StreamConfigureLoopInfo>
+      ConfigureLoopInfoMap;
+
+  /**
+   * Map the instruction to the transform plan.
+   */
+  InstTransformPlanMapT InstPlanMap;
 
   StaticStream *
   getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
@@ -56,6 +122,20 @@ private:
   void analyzeIsCandidate();
   void markQualifiedStreams();
   void enforceBackEdgeDependence();
+  void chooseStreams();
+  void chooseStreamAtInnerMost();
+  void chooseStreamAtStaticOuterMost();
+  void buildChosenStreamDependenceGraph();
+  void buildTransformPlan();
+
+  /**
+   * Finalize the StreamConfigureLoopInfoMap.
+   */
+  void buildStreamConfigureLoopInfoMap(const llvm::Loop *ConfigureLoop);
+  // Must be called after allocate the StreamConfigureLoopInfo.
+  void allocateRegionStreamId(const llvm::Loop *ConfigureLoop);
+  std::vector<StaticStream *>
+  sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
 };
 
 #endif

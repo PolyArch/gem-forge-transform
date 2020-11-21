@@ -8,13 +8,16 @@ public:
   StaticMemStream(const llvm::Instruction *_Inst,
                   const llvm::Loop *_ConfigureLoop,
                   const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
-                  const llvm::PostDominatorTree *_PDT, llvm::DataLayout *_DataLayout)
-      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE,
-                     _PDT, _DataLayout) {}
+                  const llvm::PostDominatorTree *_PDT,
+                  llvm::DataLayout *_DataLayout);
 
   bool checkIsQualifiedWithoutBackEdgeDep() const override;
   bool checkIsQualifiedWithBackEdgeDep() const override;
   void finalizePattern() override;
+  const InstSet &getComputeInsts() const override {
+    return this->AddrDG->getComputeInsts();
+  }
+  InputValueList getAddrFuncInputValues() const;
 
 private:
   /**

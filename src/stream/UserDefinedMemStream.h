@@ -25,6 +25,7 @@ public:
   bool checkIsQualifiedWithoutBackEdgeDep() const override { return true; }
   bool checkIsQualifiedWithBackEdgeDep() const override { return true; }
   void finalizePattern() override;
+  const InstSet &getComputeInsts() const { return this->ComputeInsts; }
 
   /**
    * Check if this is a user-defined memory stream.
@@ -33,6 +34,12 @@ public:
   static bool isUserDefinedMemStream(const llvm::Instruction *Inst);
 
 private:
+  /**
+   * UserDefinedStream actually has no ComputeInsts. This is to implement
+   * the getComputeInsts() interface.
+   */
+  InstSet ComputeInsts;
+
   /**
    * Initialize the DFSStack by pushing the first ComputeMetaGraph.
    */

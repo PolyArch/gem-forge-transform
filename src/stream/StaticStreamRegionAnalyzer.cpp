@@ -2,20 +2,45 @@
 
 #include "Utils.h"
 
+#include "llvm/Support/FileSystem.h"
+
+#include <sstream>
+#include <stack>
+
 #define DEBUG_TYPE "StaticStreamRegionAnalyzer"
 
 StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
     llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
     CachedLoopInfo *_CachedLI, CachedPostDominanceFrontier *_CachedPDF,
-    CachedBBPredicateDataGraph *_CachedBBPredDG)
+    CachedBBPredicateDataGraph *_CachedBBPredDG, uint64_t _RegionIdx,
+    const std::string &_RootPath)
     : TopLoop(_TopLoop), DataLayout(_DataLayout), CachedLI(_CachedLI),
       CachedBBPredDG(_CachedBBPredDG),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())),
-      PDT(_CachedPDF->getPostDominatorTree(
-          _TopLoop->getHeader()->getParent())) {
+      PDT(_CachedPDF->getPostDominatorTree(_TopLoop->getHeader()->getParent())),
+      RegionIdx(_RegionIdx), RootPath(_RootPath) {
   LLVM_DEBUG(llvm::dbgs() << "Constructing StaticStreamRegionAnalyzer for loop "
                           << LoopUtils::getLoopId(this->TopLoop) << '\n');
+
+  // Initialize the folder for this region.
+  std::stringstream ss;
+  ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
+  this->AnalyzeRelativePath = ss.str();
+  this->AnalyzePath = this->RootPath + "/" + this->AnalyzeRelativePath;
+
+  {
+    auto ErrCode = llvm::sys::fs::exists(this->AnalyzePath);
+    assert(!ErrCode && "AnalyzePath already exists.");
+  }
+
+  auto ErrCode = llvm::sys::fs::create_directory(this->AnalyzePath);
+  if (ErrCode) {
+    llvm::errs() << "Failed to create AnalyzePath: " << this->AnalyzePath
+                 << ". Reason: " << ErrCode.message() << '\n';
+  }
+  assert(!ErrCode && "Failed to create AnalyzePath.");
+
   this->initializeStreams();
   LLVM_DEBUG(llvm::dbgs() << "Initializing streams done.\n");
   this->markPredicateRelationship();
@@ -34,6 +59,7 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   this->markQualifiedStreams();
   LLVM_DEBUG(llvm::dbgs() << "Marking qualified streams done.\n");
   this->enforceBackEdgeDependence();
+  LLVM_DEBUG(llvm::dbgs() << "Enforce back-edge dependence done.\n");
   LLVM_DEBUG(llvm::dbgs()
              << "Constructing StaticStreamRegionAnalyzer for loop done!\n");
 }
@@ -685,4 +711,379 @@ void StaticStreamRegionAnalyzer::enforceBackEdgeDependence() {
       }
     }
   }
+}
+
+void StaticStreamRegionAnalyzer::finalizePlan() {
+  this->chooseStreams();
+  LLVM_DEBUG(llvm::dbgs() << "Choose streams done.\n");
+  this->buildChosenStreamDependenceGraph();
+  LLVM_DEBUG(llvm::dbgs() << "Build chosen stream graph done.\n");
+  this->buildTransformPlan();
+  LLVM_DEBUG(llvm::dbgs() << "Build transform plan done.\n");
+  this->buildStreamConfigureLoopInfoMap(this->TopLoop);
+  LLVM_DEBUG(llvm::dbgs() << "Build StreamConfigureLoopInfoMap done.\n");
+}
+
+void StaticStreamRegionAnalyzer::chooseStreams() {
+  assert(StreamPassChooseStrategy !=
+             StreamPassChooseStrategyE::DYNAMIC_OUTER_MOST &&
+         "Invalid StreamChooseStrategy DynamicOuterMost for "
+         "StaticStreamRegionAnalyzer");
+  if (StreamPassChooseStrategy ==
+      StreamPassChooseStrategyE::STATIC_OUTER_MOST) {
+    this->chooseStreamAtStaticOuterMost();
+  } else {
+    this->chooseStreamAtInnerMost();
+  }
+}
+
+void StaticStreamRegionAnalyzer::chooseStreamAtInnerMost() {
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    auto Inst = InstStream.first;
+    StaticStream *ChosenStream = nullptr;
+    for (auto &S : InstStream.second) {
+      if (S->isQualified()) {
+        ChosenStream = S;
+        break;
+      }
+    }
+    if (ChosenStream != nullptr) {
+      auto Inserted =
+          this->InstChosenStreamMap.emplace(Inst, ChosenStream).second;
+      assert(Inserted && "Multiple chosen streams for one instruction.");
+      ChosenStream->markChosen();
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    auto Inst = InstStream.first;
+    StaticStream *ChosenStream = nullptr;
+    int ChosenNumQualifiedDepStreams = -1;
+    for (auto &S : InstStream.second) {
+      if (S->isQualified()) {
+        LLVM_DEBUG(llvm::dbgs() << "==== Choose stream StaticOuterMost for "
+                                << S->formatName() << '\n');
+        /**
+         * Instead of just choose the out-most loop, we use
+         * a heuristic to select the level with most number
+         * of dependent streams qualified.
+         * TODO: Fully check all dependent streams.
+         */
+        int NumQualifiedDepStreams = 0;
+        for (auto DepSS : S->DependentStreams) {
+          if (DepSS->isQualified()) {
+            NumQualifiedDepStreams++;
+            LLVM_DEBUG(llvm::dbgs() << "====== Qualified DepS "
+                                    << DepSS->formatName() << '\n');
+          }
+        }
+        LLVM_DEBUG(llvm::dbgs()
+                   << "======= # Qualified DepS = " << NumQualifiedDepStreams
+                   << ", ChosenNumQualifiedDepStreams = "
+                   << ChosenNumQualifiedDepStreams << '\n');
+        if (NumQualifiedDepStreams >= ChosenNumQualifiedDepStreams) {
+          ChosenStream = S;
+          ChosenNumQualifiedDepStreams = NumQualifiedDepStreams;
+        }
+      }
+    }
+    if (ChosenStream != nullptr) {
+      this->InstChosenStreamMap.emplace(Inst, ChosenStream);
+      ChosenStream->markChosen();
+      LLVM_DEBUG(llvm::dbgs()
+                 << "== Choose " << ChosenStream->formatName() << '\n');
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::buildChosenStreamDependenceGraph() {
+  for (auto &InstStream : this->InstChosenStreamMap) {
+    auto &S = InstStream.second;
+    S->constructChosenGraph();
+  }
+}
+
+void StaticStreamRegionAnalyzer::buildTransformPlan() {
+  // First initialize the all the plans to nothing.
+  for (auto BBIter = this->TopLoop->block_begin(),
+            BBEnd = this->TopLoop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      this->InstPlanMap.emplace(std::piecewise_construct,
+                                std::forward_as_tuple(Inst),
+                                std::forward_as_tuple());
+    }
+  }
+
+  /**
+   * Slice the program and assign transformation plan for static instructions.
+   * 1. For every chosen stream S:
+   *  a. Mark the stream as
+   *    load -> delete, store -> stream-store, phi -> delete.
+   *  b. Find the user of the stream and add user information.
+   *  c. Find all the compute instructions and mark them as delete candidates.
+   *  d. Mark address/phi instruction as deleted.
+   *  e. Mark S as processed.
+   * 2. Use the deleted dependence edge as the seed, and mark the delete
+   * candidates as deleted iff. all the use edges of the candidate are already
+   * marked as deleted.
+   */
+  std::unordered_set<const llvm::Instruction *> DeleteCandidates;
+  std::unordered_set<const llvm::Instruction *> DeletedInsts;
+  std::list<const llvm::Use *> NewlyDeletingQueue;
+  std::unordered_set<const llvm::Use *> DeletedUses;
+
+  for (auto &InstChosenStream : this->InstChosenStreamMap) {
+    auto &SelfInst = InstChosenStream.first;
+    auto &S = InstChosenStream.second;
+
+    LLVM_DEBUG(llvm::dbgs()
+               << "make transform plan for stream " << S->formatName() << '\n');
+
+    // Handle all the step instructions.
+    for (const auto &StepInst : S->getStepInsts()) {
+      this->InstPlanMap.at(StepInst).planToStep(S);
+      LLVM_DEBUG(llvm::dbgs() << "Select transform plan for inst "
+                              << Utils::formatLLVMInst(StepInst) << " to "
+                              << StreamTransformPlan::formatPlanT(
+                                     StreamTransformPlan::PlanT::STEP)
+                              << '\n');
+      /**
+       * A hack here to make the user of step instruction also user of the
+       * stream. PURE EVIL!!
+       * TODO: Is there better way to do this?
+       */
+      for (auto U : StepInst->users()) {
+        if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+          if (!this->TopLoop->contains(I)) {
+            continue;
+          }
+          this->InstPlanMap.at(I).addUsedStream(S);
+        }
+      }
+    }
+
+    // Add all the compute instructions as delete candidates.
+    for (const auto &ComputeInst : S->getComputeInsts()) {
+      DeleteCandidates.insert(ComputeInst);
+    }
+
+    // Add uses for all the users to use myself.
+    for (auto U : SelfInst->users()) {
+      if (auto I = llvm::dyn_cast<llvm::Instruction>(U)) {
+        if (!this->TopLoop->contains(I)) {
+          continue;
+        }
+        this->InstPlanMap.at(I).addUsedStream(S);
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Add used stream for user " << Utils::formatLLVMInst(I)
+                   << " with stream " << S->formatName() << '\n');
+      }
+    }
+
+    // Mark myself as DELETE (load) or STORE (store).
+    auto &SelfPlan = this->InstPlanMap.at(SelfInst);
+    if (llvm::isa<llvm::StoreInst>(SelfInst)) {
+      assert(SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING &&
+             "Already have a plan for the store.");
+      SelfPlan.planToStore(S);
+      // For store, only the address use is deleted.
+      NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(1));
+    } else {
+      // For load or iv, delete if we have no other plan for it.
+      if (SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING) {
+        SelfPlan.planToDelete();
+      }
+      for (unsigned OperandIdx = 0, NumOperands = SelfInst->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(OperandIdx));
+      }
+    }
+
+    LLVM_DEBUG(llvm::dbgs()
+               << "Select transform plan for inst "
+               << Utils::formatLLVMInst(SelfInst) << " to "
+               << StreamTransformPlan::formatPlanT(SelfPlan.Plan) << '\n');
+  }
+
+  // Second step: find deletable instruction from the candidates.
+  while (!NewlyDeletingQueue.empty()) {
+    auto NewlyDeletingUse = NewlyDeletingQueue.front();
+    NewlyDeletingQueue.pop_front();
+
+    if (DeletedUses.count(NewlyDeletingUse) != 0) {
+      // We have already process this use.
+      continue;
+    }
+
+    DeletedUses.insert(NewlyDeletingUse);
+
+    auto NewlyDeletingValue = NewlyDeletingUse->get();
+    if (auto NewlyDeletingOperandInst =
+            llvm::dyn_cast<llvm::Instruction>(NewlyDeletingValue)) {
+      // The operand of the deleting use is an instruction.
+      if (!this->TopLoop->contains(NewlyDeletingOperandInst)) {
+        // This operand is not within our loop, ignore it.
+        continue;
+      }
+      if (DeleteCandidates.count(NewlyDeletingOperandInst) == 0) {
+        // The operand is not even a delete candidate.
+        continue;
+      }
+      if (DeletedInsts.count(NewlyDeletingOperandInst) != 0) {
+        // This inst is already deleted.
+        continue;
+      }
+      // Check if all the uses have been deleted.
+      bool AllUsesDeleted = true;
+      for (const auto &U : NewlyDeletingOperandInst->uses()) {
+        if (DeletedUses.count(&U) == 0) {
+          AllUsesDeleted = false;
+          break;
+        }
+      }
+      if (AllUsesDeleted) {
+        // We can safely delete this one now.
+        // Actually mark this one as delete if we have no other plan for it.
+        auto &Plan = this->InstPlanMap.at(NewlyDeletingOperandInst);
+        switch (Plan.Plan) {
+        case StreamTransformPlan::PlanT::NOTHING:
+        case StreamTransformPlan::PlanT::DELETE: {
+          Plan.planToDelete();
+          break;
+        }
+        }
+        // Add all the uses to NewlyDeletingQueue.
+        for (unsigned OperandIdx = 0,
+                      NumOperands = NewlyDeletingOperandInst->getNumOperands();
+             OperandIdx != NumOperands; ++OperandIdx) {
+          NewlyDeletingQueue.push_back(
+              &NewlyDeletingOperandInst->getOperandUse(OperandIdx));
+        }
+      }
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
+    const llvm::Loop *ConfigureLoop) {
+  assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) == 0 &&
+         "This StreamConfigureLoopInfo has already been built.");
+  auto SortedStreams = this->sortChosenStreamsByConfigureLoop(ConfigureLoop);
+  this->ConfigureLoopInfoMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(ConfigureLoop),
+      std::forward_as_tuple(this->AnalyzePath, this->AnalyzeRelativePath,
+                            ConfigureLoop, SortedStreams));
+  this->allocateRegionStreamId(ConfigureLoop);
+  for (auto &SubLoop : *ConfigureLoop) {
+    this->buildStreamConfigureLoopInfoMap(SubLoop);
+  }
+}
+
+void StaticStreamRegionAnalyzer::allocateRegionStreamId(
+    const llvm::Loop *ConfigureLoop) {
+  auto &ConfigureLoopInfo = this->getConfigureLoopInfo(ConfigureLoop);
+  int UsedRegionId = 0;
+  for (auto ParentLoop = ConfigureLoop->getParentLoop();
+       ParentLoop != nullptr && this->TopLoop->contains(ParentLoop);
+       ParentLoop = ParentLoop->getParentLoop()) {
+    const auto &ParentConfigureLoopInfo =
+        this->getConfigureLoopInfo(ParentLoop);
+    UsedRegionId += ParentConfigureLoopInfo.getSortedStreams().size();
+  }
+  for (auto S : ConfigureLoopInfo.getSortedStreams()) {
+    const int MaxRegionStreamId = 128;
+    assert(UsedRegionId < MaxRegionStreamId && "RegionStreamId overflow.");
+    S->setRegionStreamId(UsedRegionId++);
+  }
+}
+
+const StreamConfigureLoopInfo &StaticStreamRegionAnalyzer::getConfigureLoopInfo(
+    const llvm::Loop *ConfigureLoop) {
+  assert(this->TopLoop->contains(ConfigureLoop) &&
+         "ConfigureLoop should be within TopLoop.");
+  assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) != 0 &&
+         "Failed to find the loop info.");
+  return this->ConfigureLoopInfoMap.at(ConfigureLoop);
+}
+
+std::vector<StaticStream *>
+StaticStreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
+    const llvm::Loop *ConfigureLoop) {
+  /**
+   * Topological sort is not enough for this problem, as some streams may be
+   * coalesced. Instead, we define the dependenceDepth of a stream as:
+   * 1. A stream with no base stream in the same ConfigureLoop has
+   * dependenceDepth 0;
+   * 2. Otherwiese, a stream has dependenceDepth =
+   * max(BaseStreamWithSameConfigureLoop.dependenceDepth) + 1.
+   *
+   * With the same DepDepth, we break the tie with stream id, as we allocate
+   * them in order, we should be able to ensure new value dependence.
+   */
+  std::stack<std::pair<StaticStream *, int>> ChosenStreams;
+  std::vector<StaticStream *> SortedStreams;
+  for (auto &InstChosenStream : this->InstChosenStreamMap) {
+    auto &S = InstChosenStream.second;
+    if (S->ConfigureLoop == ConfigureLoop) {
+      ChosenStreams.emplace(S, 0);
+      SortedStreams.push_back(S);
+    }
+  }
+
+  std::unordered_map<StaticStream *, int> StreamDepDepthMap;
+  while (!ChosenStreams.empty()) {
+    auto &Entry = ChosenStreams.top();
+    auto &S = Entry.first;
+    if (Entry.second == 0) {
+      Entry.second = 1;
+      for (auto &ChosenBaseS : S->ChosenBaseStreams) {
+        if (ChosenBaseS->ConfigureLoop != ConfigureLoop) {
+          continue;
+        }
+        if (StreamDepDepthMap.count(ChosenBaseS) == 0) {
+          ChosenStreams.emplace(ChosenBaseS, 0);
+        }
+      }
+    } else {
+      if (StreamDepDepthMap.count(S) == 0) {
+        // Determine my dependenceDepth.
+        auto DependenceDepth = 0;
+        for (auto &ChosenBaseS : S->ChosenBaseStreams) {
+          if (ChosenBaseS->ConfigureLoop != ConfigureLoop) {
+            continue;
+          }
+          assert(
+              (StreamDepDepthMap.count(ChosenBaseS) != 0) &&
+              "ChosenBaseStream should already be assigned a dependenceDepth.");
+          auto ChosenBaseStreamDependenceDepth =
+              StreamDepDepthMap.at(ChosenBaseS);
+          if (ChosenBaseStreamDependenceDepth + 1 > DependenceDepth) {
+            DependenceDepth = ChosenBaseStreamDependenceDepth + 1;
+          }
+        }
+        StreamDepDepthMap.emplace(S, DependenceDepth);
+      }
+      ChosenStreams.pop();
+    }
+  }
+
+  // Finally we sort the streams.
+  std::sort(SortedStreams.begin(), SortedStreams.end(),
+            [&StreamDepDepthMap](StaticStream *A, StaticStream *B) -> bool {
+              auto DepthA = StreamDepDepthMap.at(A);
+              auto DepthB = StreamDepDepthMap.at(B);
+              if (DepthA != DepthB) {
+                return DepthA < DepthB;
+              } else {
+                return A->StreamId < B->StreamId;
+              }
+            });
+
+  return SortedStreams;
 }

@@ -6,6 +6,29 @@
 
 #define DEBUG_TYPE "StaticMemStream"
 
+StaticMemStream::StaticMemStream(const llvm::Instruction *_Inst,
+                                 const llvm::Loop *_ConfigureLoop,
+                                 const llvm::Loop *_InnerMostLoop,
+                                 llvm::ScalarEvolution *_SE,
+                                 const llvm::PostDominatorTree *_PDT,
+                                 llvm::DataLayout *_DataLayout)
+    : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE, _PDT,
+                   _DataLayout) {
+  // We initialize the AddrDG, assuming all PHI nodes in loop head are IV
+  // streams.
+  auto IsInductionVar = [this](const llvm::PHINode *PHINode) -> bool {
+    auto BB = PHINode->getParent();
+    for (auto Loop : this->ConfigureLoop->getLoopsInPreorder()) {
+      if (Loop->getHeader() == BB) {
+        return true;
+      }
+    }
+    return false;
+  };
+  this->AddrDG = std::make_unique<StreamDataGraph>(
+      this->ConfigureLoop, Utils::getMemAddrValue(this->Inst), IsInductionVar);
+}
+
 void StaticMemStream::initializeMetaGraphConstruction(
     std::list<DFSNode> &DFSStack,
     ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
@@ -269,6 +292,12 @@ LLVM::TDG::StreamStepPattern StaticMemStream::computeStepPattern() const {
                << " for " << this->formatName() << '\n');
     return StepRootStreamStpPattern;
   }
+}
+
+StaticMemStream::InputValueList
+StaticMemStream::getAddrFuncInputValues() const {
+  assert(this->isChosen() && "Only consider chosen stream's input values.");
+  return this->getExecFuncInputValues(*this->AddrDG);
 }
 
 void StaticMemStream::finalizePattern() {

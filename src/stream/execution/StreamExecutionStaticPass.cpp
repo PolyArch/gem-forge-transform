@@ -16,13 +16,6 @@ bool StreamExecutionStaticPass::runOnModule(llvm::Module &Module) {
                              SelectedStreamRegionAnalyzers);
 
   for (auto &Analyzer : SelectedStreamRegionAnalyzers) {
-    /**
-     * Normally we would call Analyzer->getFuncSE()->finalizeCoalesceInfo().
-     * However, there is no trace, so we identify coalesced streams in
-     * StreamExecutionTransformer.
-     */
-    // Analyzer->getFuncSE()->finalizeCoalesceInfo();
-
     // End transformation.
     // This will make sure the info are dumped.
     Analyzer->endTransform();
@@ -76,10 +69,9 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
             this->CachedBBPredDG, Loop, this->DataLayout,
             this->OutputExtraFolderPath);
 
-        // Directly call endRegion.
+        // Directly call finalizePlan.
         // This will select streams, and build transform plan.
-        Analyzer->endRegion(StreamPassQualifySeedStrategyE::STATIC,
-                            StreamPassChooseStrategy);
+        Analyzer->finalizePlan(StreamPassQualifySeedStrategyE::STATIC);
 
         Analyzers.push_back(Analyzer);
 

@@ -476,3 +476,137 @@ void StaticIndVarStream::finalizePattern() {
         LLVM::TDG::StreamValuePattern::POINTER_CHASE);
   }
 }
+
+void StaticIndVarStream::searchStepInsts() {
+  std::list<llvm::Instruction *> Queue;
+
+  LLVM_DEBUG(llvm::dbgs() << "Search step instructions for "
+                          << this->formatName() << '\n');
+
+  for (unsigned IncomingIdx = 0,
+                NumIncomingValues = PHINode->getNumIncomingValues();
+       IncomingIdx != NumIncomingValues; ++IncomingIdx) {
+    auto BB = PHINode->getIncomingBlock(IncomingIdx);
+    if (!this->ConfigureLoop->contains(BB)) {
+      continue;
+    }
+    auto IncomingValue = PHINode->getIncomingValue(IncomingIdx);
+    if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+      Queue.emplace_back(IncomingInst);
+      LLVM_DEBUG(llvm::dbgs() << "Enqueue inst "
+                              << Utils::formatLLVMInst(IncomingInst) << '\n');
+    }
+  }
+
+  InstSet VisitedInsts;
+  while (!Queue.empty()) {
+    auto CurrentInst = Queue.front();
+    Queue.pop_front();
+    LLVM_DEBUG(llvm::dbgs()
+               << "Processing " << Utils::formatLLVMInst(CurrentInst) << '\n');
+    if (VisitedInsts.count(CurrentInst) != 0) {
+      // We have already processed this one.
+      LLVM_DEBUG(llvm::dbgs() << "Already processed\n");
+      continue;
+    }
+    if (!this->ConfigureLoop->contains(CurrentInst)) {
+      // This instruction is out of our analysis level. ignore it.
+      LLVM_DEBUG(llvm::dbgs() << "Not in loop\n");
+      continue;
+    }
+    if (Utils::isCallOrInvokeInst(CurrentInst)) {
+      // So far I do not know how to process the call/invoke instruction.
+      LLVM_DEBUG(llvm::dbgs() << "Is call or invoke\n");
+      continue;
+    }
+
+    VisitedInsts.insert(CurrentInst);
+
+    if (StaticStream::isStepInst(CurrentInst)) {
+      // Find a step instruction, do not go further.
+      LLVM_DEBUG(llvm::dbgs() << "Found step inst "
+                              << Utils::formatLLVMInst(CurrentInst) << '\n');
+      this->StepInsts.insert(CurrentInst);
+    } else if (llvm::isa<llvm::LoadInst>(CurrentInst)) {
+      // Base load instruction is also considered as StepInst.
+      this->StepInsts.insert(CurrentInst);
+    } else {
+      // BFS on the operands of non-step instructions.
+      for (unsigned OperandIdx = 0, NumOperands = CurrentInst->getNumOperands();
+           OperandIdx != NumOperands; ++OperandIdx) {
+        auto OperandValue = CurrentInst->getOperand(OperandIdx);
+        if (auto OperandInst =
+                llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
+          Queue.emplace_back(OperandInst);
+          LLVM_DEBUG(llvm::dbgs()
+                     << "Enqueue inst " << Utils::formatLLVMInst(OperandInst)
+                     << '\n');
+        }
+      }
+    }
+  }
+}
+
+void StaticIndVarStream::searchComputeInsts() {
+  std::list<llvm::Instruction *> Queue;
+
+  LLVM_DEBUG(llvm::dbgs() << "Search compute instructions for "
+                          << this->formatName() << '\n');
+
+  for (unsigned IncomingIdx = 0,
+                NumIncomingValues = this->PHINode->getNumIncomingValues();
+       IncomingIdx != NumIncomingValues; ++IncomingIdx) {
+    auto BB = this->PHINode->getIncomingBlock(IncomingIdx);
+    if (!this->ConfigureLoop->contains(BB)) {
+      continue;
+    }
+    auto IncomingValue = this->PHINode->getIncomingValue(IncomingIdx);
+    if (auto IncomingInst = llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+      Queue.emplace_back(IncomingInst);
+      LLVM_DEBUG(llvm::dbgs() << "Enqueue inst "
+                              << Utils::formatLLVMInst(IncomingInst) << '\n');
+    }
+  }
+
+  while (!Queue.empty()) {
+    auto CurrentInst = Queue.front();
+    Queue.pop_front();
+    LLVM_DEBUG(llvm::dbgs()
+               << "Processing " << Utils::formatLLVMInst(CurrentInst) << '\n');
+    if (this->ComputeInsts.count(CurrentInst) != 0) {
+      // We have already processed this one.
+      LLVM_DEBUG(llvm::dbgs() << "Already processed\n");
+      continue;
+    }
+    if (!this->ConfigureLoop->contains(CurrentInst)) {
+      // This instruction is out of our analysis level. ignore it.
+      LLVM_DEBUG(llvm::dbgs() << "Not in loop\n");
+      continue;
+    }
+
+    LLVM_DEBUG(llvm::dbgs() << "Found compute inst "
+                            << Utils::formatLLVMInst(CurrentInst) << '\n');
+    this->ComputeInsts.insert(CurrentInst);
+
+    if (Utils::isCallOrInvokeInst(CurrentInst)) {
+      // So far I do not know how to process the call/invoke instruction.
+      continue;
+    }
+
+    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(CurrentInst)) {
+      // We found a base load. Do not go further.
+      continue;
+    }
+
+    // BFS on the operands.
+    for (unsigned OperandIdx = 0, NumOperands = CurrentInst->getNumOperands();
+         OperandIdx != NumOperands; ++OperandIdx) {
+      auto OperandValue = CurrentInst->getOperand(OperandIdx);
+      if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(OperandValue)) {
+        Queue.emplace_back(OperandInst);
+        LLVM_DEBUG(llvm::dbgs() << "Enqueue inst "
+                                << Utils::formatLLVMInst(OperandInst) << '\n');
+      }
+    }
+  }
+}
