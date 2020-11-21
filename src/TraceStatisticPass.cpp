@@ -144,7 +144,7 @@ public:
         if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
           // This is a stream.
           LLVM_DEBUG(llvm::dbgs()
-                     << "Stream " << LoopUtils::formatLLVMInst(Inst) << '\n');
+                     << "Stream " << Utils::formatLLVMInst(Inst) << '\n');
           if (IsLoad) {
             this->AddRecLoadCount.Val += BBCount;
           } else {

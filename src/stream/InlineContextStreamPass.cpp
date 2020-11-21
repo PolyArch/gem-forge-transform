@@ -451,12 +451,12 @@ void InlineContextStreamPass::transform() {
     for (auto &Stream : MemInstStreamEntry.second) {
       // if (!Stream.getPattern().computed()) {
       //   llvm::errs() << LoopUtils::getLoopId(Stream.getLoop()) << " "
-      //                << LoopUtils::formatLLVMInst(Stream.getMemInst())
+      //                << Utils::formatLLVMInst(Stream.getMemInst())
       //                << " is not computed.\n";
       // } else {
       //  LLVM_DEBUG(llvm::dbgs() << LoopUtils::getLoopId(Stream.getLoop()) << "
       //  "
-      //                      << LoopUtils::formatLLVMInst(Stream.getMemInst())
+      //                      << Utils::formatLLVMInst(Stream.getMemInst())
       //                      << " is computed.\n");
       // }
       Stream.finalizePattern();
@@ -652,7 +652,7 @@ void InlineContextStreamPass::transform() {
 //             //LLVM_DEBUG(llvm::dbgs()
 //             //       << "Ending stream at loop " <<
 //             LoopUtils::getLoopId(Loop)
-//             //       << " inst " << LoopUtils::formatLLVMInst(Inst) << '\n');
+//             //       << " inst " << Utils::formatLLVMInst(Inst) << '\n');
 //             //LLVM_DEBUG(llvm::dbgs()
 //             //       << "Inner most loop is "
 //             //       << LoopUtils::getLoopId(
@@ -891,7 +891,7 @@ void InlineContextStreamPass::pushLoopStack(
         //  LLVM_DEBUG(llvm::dbgs()
         //         << "Initialize memory accesses for loop VerticalFilter::bb268
         //         "
-        //         << LoopUtils::formatLLVMInst(StaticInst) << "\n");
+        //         << Utils::formatLLVMInst(StaticInst) << "\n");
         // }
         Iter->second.insert(StaticInst);
       }
@@ -901,7 +901,7 @@ void InlineContextStreamPass::pushLoopStack(
   for (auto StaticInst : Iter->second) {
     ContextInst CInst(CurrentContext, StaticInst);
 
-    // if (LoopUtils::formatLLVMInst(CInst.Inst) ==
+    // if (Utils::formatLLVMInst(CInst.Inst) ==
     //     "_ZN3povL31All_CSG_Intersect_IntersectionsEPNS_13Object_StructEPNS_"
     //     "10Ray_StructEPNS_13istack_structE::bb86::tmp89(load)") {
     //  LLVM_DEBUG(llvm::dbgs() << "push loop level for to our target
@@ -920,7 +920,7 @@ void InlineContextStreamPass::addAccess(const InlineContextPtr &CurrentContext,
   auto StaticInst = DynamicInst->getStaticInstruction();
   assert(StaticInst != nullptr && "Invalid llvm static instruction.");
   ContextInst CInst(CurrentContext, StaticInst);
-  // if (LoopUtils::formatLLVMInst(CInst.Inst) ==
+  // if (Utils::formatLLVMInst(CInst.Inst) ==
   //     "_ZN3povL31All_CSG_Intersect_IntersectionsEPNS_13Object_StructEPNS_"
   //     "10Ray_StructEPNS_13istack_structE::bb86::tmp89(load)") {
   //  LLVM_DEBUG(llvm::dbgs() << "add access to our target instruction\n");
@@ -1094,7 +1094,7 @@ void InlineContextStreamPass::analyzeStream() {
      * stack.
      */
     // LLVM_DEBUG(llvm::dbgs() << "Next inst is "
-    //                    << LoopUtils::formatLLVMInst(NewStaticInst) << '\n');
+    //                    << Utils::formatLLVMInst(NewStaticInst) << '\n');
     if (PrevCallInst != nullptr) {
 
       /**
@@ -1187,7 +1187,7 @@ void InlineContextStreamPass::analyzeStream() {
       if (LoopUtils::getLoopId(LoopStack.back().Loop) == DEBUG_TARGET_LOOP) {
         LLVM_DEBUG(llvm::dbgs()
                    << "pop our target loop at inst "
-                   << LoopUtils::formatLLVMInst(NewStaticInst) << ".\n");
+                   << Utils::formatLLVMInst(NewStaticInst) << ".\n");
       }
 #endif
       this->popLoopStack(LoopStack, ActiveStreams);

@@ -69,13 +69,13 @@ void DynMemStream::buildBasicDependenceGraph(GetStreamFuncT GetStream) {
 
 bool DynMemStream::isCandidate() const {
   // I have to contain no circle to be a candidate.
-  if (this->AddrDG.hasCircle()) {
+  if (this->getAddrDG().hasCircle()) {
     return false;
   }
-  if (this->AddrDG.hasPHINodeInComputeInsts()) {
+  if (this->getAddrDG().hasPHINodeInComputeInsts()) {
     return false;
   }
-  if (this->AddrDG.hasCallInstInComputeInsts()) {
+  if (this->getAddrDG().hasCallInstInComputeInsts()) {
     return false;
   }
   // So far ignore store stream.
@@ -235,51 +235,10 @@ bool DynMemStream::isQualifySeed() const {
 }
 
 void DynMemStream::formatAdditionalInfoText(std::ostream &OStream) const {
-  this->AddrDG.format(OStream);
-}
-
-DynMemStream::InputValueList DynMemStream::getAddrFuncInputValues() const {
-  assert(this->isChosen() && "Only consider chosen stream's input values.");
-  return this->getExecFuncInputValues(this->AddrDG);
-}
-
-DynMemStream::InputValueList DynMemStream::getPredFuncInputValues() const {
-  assert(this->isChosen() && "Only consider chosen stream's input values.");
-  auto BBPredDG = this->SStream->BBPredDG;
-  assert(BBPredDG && "No BBPredDG.");
-  assert(BBPredDG->isValid() && "Invalid BBPredDG.");
-  return this->getExecFuncInputValues(*BBPredDG);
-}
-
-void DynMemStream::fillProtobufAddrFuncInfo(
-    ::llvm::DataLayout *DataLayout,
-    ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {
-
-  if (!this->isChosen()) {
-    return;
-  }
-
-  this->fillProtobufExecFuncInfo(DataLayout, AddrFuncInfo,
-                                 this->getAddressFunctionName(), this->AddrDG);
-}
-
-void DynMemStream::fillProtobufPredFuncInfo(
-    ::llvm::DataLayout *DataLayout,
-    ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {
-
-  if (!this->isChosen()) {
-    return;
-  }
-  if (!this->SStream->BBPredDG) {
-    return;
-  }
-
-  auto BBPredDG = this->SStream->BBPredDG;
-  this->fillProtobufExecFuncInfo(DataLayout, PredFuncInfo,
-                                 BBPredDG->getFuncName(), *BBPredDG);
+  this->getAddrDG().format(OStream);
 }
 
 void DynMemStream::generateFunction(
     std::unique_ptr<llvm::Module> &Module) const {
-  this->AddrDG.generateFunction(this->getAddressFunctionName(), Module);
+  this->getAddrDG().generateFunction(this->getAddressFunctionName(), Module);
 }

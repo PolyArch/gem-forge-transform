@@ -7,12 +7,11 @@
 
 class DynMemStream : public DynStream {
 public:
+  using InstSet = StaticStream::InstSet;
   DynMemStream(const std::string &_Folder, const std::string &_RelativeFolder,
-               const StaticStream *_SStream, llvm::DataLayout *DataLayout,
+               StaticStream *_SStream, llvm::DataLayout *DataLayout,
                IsIndVarFunc IsInductionVar)
-      : DynStream(_Folder, _RelativeFolder, _SStream, DataLayout),
-        AddrDG(_SStream->ConfigureLoop, Utils::getMemAddrValue(_SStream->Inst),
-               IsInductionVar) {
+      : DynStream(_Folder, _RelativeFolder, _SStream, DataLayout) {
     assert(Utils::isMemAccessInst(this->getInst()) &&
            "Should be load/store instruction to build a stream.");
     this->searchAddressComputeInstructions(IsInductionVar);
@@ -44,10 +43,7 @@ public:
   bool isIndirect() const { return !this->BaseLoads.empty(); }
   size_t getNumBaseLoads() const { return this->BaseLoads.size(); }
   size_t getNumAddrInsts() const { return this->AddrInsts.size(); }
-  const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const override {
-    return this->AddrInsts;
-  }
+  const InstSet &getComputeInsts() const override { return this->AddrInsts; }
   const std::unordered_set<const llvm::LoadInst *> &
   getBaseLoads() const override {
     return this->BaseLoads;
@@ -55,9 +51,7 @@ public:
   const std::unordered_set<llvm::PHINode *> &getBaseInductionVars() const {
     return this->BaseInductionVars;
   }
-  const std::unordered_set<llvm::Instruction *> &getAliasInsts() const {
-    return this->AliasInsts;
-  }
+  const InstSet &getAliasInsts() const { return this->AliasInsts; }
   bool isAliased() const override {
     // Check if we have alias with *other* instructions.
     for (const auto &AliasInst : this->AliasInsts) {
@@ -75,30 +69,22 @@ public:
   bool isCandidate() const override;
   bool isQualifySeed() const override;
 
-  const StreamDataGraph &getAddrDG() const { return this->AddrDG; }
+  const StreamDataGraph &getAddrDG() const {
+    assert(this->SStream->AddrDG && "Missing AddrDG.");
+    return *this->SStream->AddrDG;
+  }
 
   void generateFunction(std::unique_ptr<llvm::Module> &Module) const;
 
-  InputValueList getAddrFuncInputValues() const override;
-  InputValueList getPredFuncInputValues() const override;
-
 protected:
   void formatAdditionalInfoText(std::ostream &OStream) const override;
-  void fillProtobufAddrFuncInfo(
-      ::llvm::DataLayout *DataLayout,
-      ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const override;
-  void fillProtobufPredFuncInfo(
-      ::llvm::DataLayout *DataLayout,
-      ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const override;
 
 private:
   MemoryFootprint Footprint;
   std::unordered_set<const llvm::LoadInst *> BaseLoads;
   std::unordered_set<llvm::PHINode *> BaseInductionVars;
-  std::unordered_set<const llvm::Instruction *> AddrInsts;
-  std::unordered_set<llvm::Instruction *> AliasInsts;
-
-  StreamDataGraph AddrDG;
+  InstSet AddrInsts;
+  InstSet AliasInsts;
 
   void searchAddressComputeInstructions(
       std::function<bool(const llvm::PHINode *)> IsInductionVar);

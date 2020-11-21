@@ -1,7 +1,5 @@
 #include "DynStreamRegionAnalyzer.h"
 
-#include "llvm/Support/FileSystem.h"
-
 #include <iomanip>
 #include <queue>
 #include <sstream>
@@ -11,67 +9,20 @@
 #define LLVM_DEBUG DEBUG
 #endif
 
-StreamConfigureLoopInfo::StreamConfigureLoopInfo(
-    const std::string &_Folder, const std::string &_RelativeFolder,
-    const llvm::Loop *_Loop, std::vector<DynStream *> _SortedStreams)
-    : TotalConfiguredStreams(-1), TotalConfiguredCoalescedStreams(-1),
-      TotalSubLoopStreams(-1), TotalSubLoopCoalescedStreams(-1),
-      TotalAliveStreams(-1), TotalAliveCoalescedStreams(-1),
-      Path(_Folder + "/" + LoopUtils::getLoopId(_Loop) + ".info"),
-      JsonPath(_Folder + "/" + LoopUtils::getLoopId(_Loop) + ".json"),
-      RelativePath(_RelativeFolder + "/" + LoopUtils::getLoopId(_Loop) +
-                   ".info"),
-      Loop(_Loop), SortedStreams(std::move(_SortedStreams)) {}
-
-void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
-  LLVM::TDG::StreamRegion ProtobufStreamRegion;
-  ProtobufStreamRegion.set_region(LoopUtils::getLoopId(this->Loop));
-  ProtobufStreamRegion.set_total_alive_streams(this->TotalAliveStreams);
-  ProtobufStreamRegion.set_total_alive_coalesced_streams(
-      this->TotalAliveCoalescedStreams);
-  for (auto &S : this->SortedStreams) {
-    auto Info = ProtobufStreamRegion.add_streams();
-    S->fillProtobufStreamInfo(DataLayout, Info);
-  }
-  for (auto &S : this->SortedCoalescedStreams) {
-    ProtobufStreamRegion.add_coalesced_stream_ids(S->getStreamId());
-  }
-  Gem5ProtobufSerializer Serializer(this->Path);
-  Serializer.serialize(ProtobufStreamRegion);
-  Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, this->JsonPath);
-}
-
 DynStreamRegionAnalyzer::DynStreamRegionAnalyzer(
     uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
     CachedPostDominanceFrontier *_CachedPDF,
     CachedBBPredicateDataGraph *_CachedBBPredDG, llvm::Loop *_TopLoop,
     llvm::DataLayout *_DataLayout, const std::string &_RootPath)
-    : RegionIdx(_RegionIdx), CachedLI(_CachedLI), CachedPDF(_CachedPDF),
+    : CachedLI(_CachedLI), CachedPDF(_CachedPDF),
       CachedBBPredDG(_CachedBBPredDG), TopLoop(_TopLoop),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
-      DataLayout(_DataLayout), RootPath(_RootPath) {
-  // Initialize the folder for this region.
-  std::stringstream ss;
-  ss << "R." << this->RegionIdx << ".A." << LoopUtils::getLoopId(this->TopLoop);
-  this->AnalyzeRelativePath = ss.str();
-  this->AnalyzePath = this->RootPath + "/" + this->AnalyzeRelativePath;
-
-  {
-    auto ErrCode = llvm::sys::fs::exists(this->AnalyzePath);
-    assert(!ErrCode && "AnalyzePath already exists.");
-  }
-
-  auto ErrCode = llvm::sys::fs::create_directory(this->AnalyzePath);
-  if (ErrCode) {
-    llvm::errs() << "Failed to create AnalyzePath: " << this->AnalyzePath
-                 << ". Reason: " << ErrCode.message() << '\n';
-  }
-  assert(!ErrCode && "Failed to create AnalyzePath.");
+      DataLayout(_DataLayout) {
 
   // Initialize the static analyzer.
   this->StaticAnalyzer = std::make_unique<StaticStreamRegionAnalyzer>(
       this->TopLoop, this->DataLayout, this->CachedLI, this->CachedPDF,
-      this->CachedBBPredDG);
+      this->CachedBBPredDG, _RegionIdx, _RootPath);
 
   this->initializeStreams();
   this->buildStreamAddrDepGraph();
@@ -105,6 +56,7 @@ void DynStreamRegionAnalyzer::initializeStreams() {
             .first->second;
     assert(Streams.empty() &&
            "There is already streams initialized for the stream instruction.");
+
     for (auto &StaticStream : InstStaticStream.second) {
       if (!this->TopLoop->contains(StaticStream->ConfigureLoop)) {
         break;
@@ -112,14 +64,17 @@ void DynStreamRegionAnalyzer::initializeStreams() {
       DynStream *NewStream = nullptr;
       if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
         NewStream =
-            new DynIndVarStream(this->AnalyzePath, this->AnalyzeRelativePath,
+            new DynIndVarStream(this->StaticAnalyzer->getAnalyzePath(),
+                                this->StaticAnalyzer->getAnalyzeRelativePath(),
                                 StaticStream, this->DataLayout);
       } else {
         NewStream =
-            new DynMemStream(this->AnalyzePath, this->AnalyzeRelativePath,
+            new DynMemStream(this->StaticAnalyzer->getAnalyzePath(),
+                             this->StaticAnalyzer->getAnalyzeRelativePath(),
                              StaticStream, this->DataLayout, IsIVStream);
       }
       Streams.emplace_back(NewStream);
+      this->StaticDynStreamMap.emplace(StaticStream, NewStream);
 
       // Update the ConfguredLoopStreamMap.
       this->ConfigureLoopStreamMap
@@ -256,9 +211,8 @@ void DynStreamRegionAnalyzer::endLoop(const llvm::Loop *Loop) {
   }
 }
 
-void DynStreamRegionAnalyzer::endRegion(
-    StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
-    StreamPassChooseStrategyE StreamPassChooseStrategy) {
+void DynStreamRegionAnalyzer::finalizePlan(
+    StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy) {
   // Finalize all patterns.
   // This will dump the pattern to file.
   for (auto &InstStream : this->InstStreamMap) {
@@ -379,6 +333,14 @@ DynStream *DynStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
     }
   }
   llvm_unreachable("Failed to find the stream at specified loop level.");
+}
+
+DynStream *
+DynStreamRegionAnalyzer::getDynStreamByStaticStream(StaticStream *SS) {
+  auto Iter = this->StaticDynStreamMap.find(SS);
+  assert(Iter != this->StaticDynStreamMap.end() &&
+         "Missing DynStream for StaticStream");
+  return Iter->second;
 }
 
 void DynStreamRegionAnalyzer::markQualifiedStreams(
@@ -603,10 +565,12 @@ void DynStreamRegionAnalyzer::dumpStreamInfos() {
       }
     }
 
-    auto InfoTextPath = this->AnalyzePath + "/streams.json";
+    auto InfoTextPath =
+        this->StaticAnalyzer->getAnalyzePath() + "/streams.json";
     Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, InfoTextPath);
 
-    std::ofstream InfoFStream(this->AnalyzePath + "/streams.info");
+    std::ofstream InfoFStream(this->StaticAnalyzer->getAnalyzePath() +
+                              "/streams.info");
     assert(InfoFStream.is_open() &&
            "Failed to open the output info protobuf file.");
     ProtobufStreamRegion.SerializeToOstream(&InfoFStream);
@@ -621,7 +585,8 @@ void DynStreamRegionAnalyzer::dumpStreamInfos() {
       S->fillProtobufStreamInfo(this->DataLayout, Info);
     }
 
-    auto InfoTextPath = this->AnalyzePath + "/chosen_streams.json";
+    auto InfoTextPath =
+        this->StaticAnalyzer->getAnalyzePath() + "/chosen_streams.json";
     Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, InfoTextPath);
   }
 }
@@ -644,7 +609,7 @@ void DynStreamRegionAnalyzer::insertAddrFuncInModule(
 }
 
 void DynStreamRegionAnalyzer::buildAddressModule() {
-  auto AddressModulePath = this->AnalyzePath + "/addr.ll";
+  auto AddressModulePath = this->StaticAnalyzer->getAnalyzePath() + "/addr.ll";
 
   auto &Context = this->TopLoop->getHeader()->getParent()->getContext();
   auto AddressModule =
@@ -716,9 +681,9 @@ void DynStreamRegionAnalyzer::buildTransformPlan() {
     // Handle all the step instructions.
     if (S->SStream->Type == StaticStream::TypeT::IV) {
       for (const auto &StepInst : S->getStepInsts()) {
-        this->InstPlanMap.at(StepInst).planToStep(S);
+        this->InstPlanMap.at(StepInst).planToStep(S->SStream);
         LLVM_DEBUG(llvm::dbgs() << "Select transform plan for inst "
-                                << LoopUtils::formatLLVMInst(StepInst) << " to "
+                                << Utils::formatLLVMInst(StepInst) << " to "
                                 << StreamTransformPlan::formatPlanT(
                                        StreamTransformPlan::PlanT::STEP)
                                 << '\n');
@@ -732,7 +697,7 @@ void DynStreamRegionAnalyzer::buildTransformPlan() {
             if (!this->TopLoop->contains(I)) {
               continue;
             }
-            this->InstPlanMap.at(I).addUsedStream(S);
+            this->InstPlanMap.at(I).addUsedStream(S->SStream);
           }
         }
       }
@@ -749,10 +714,10 @@ void DynStreamRegionAnalyzer::buildTransformPlan() {
         if (!this->TopLoop->contains(I)) {
           continue;
         }
-        this->InstPlanMap.at(I).addUsedStream(S);
-        LLVM_DEBUG(llvm::dbgs() << "Add used stream for user "
-                                << LoopUtils::formatLLVMInst(I)
-                                << " with stream " << S->formatName() << '\n');
+        this->InstPlanMap.at(I).addUsedStream(S->SStream);
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Add used stream for user " << Utils::formatLLVMInst(I)
+                   << " with stream " << S->formatName() << '\n');
       }
     }
 
@@ -761,7 +726,7 @@ void DynStreamRegionAnalyzer::buildTransformPlan() {
     if (llvm::isa<llvm::StoreInst>(SelfInst)) {
       assert(SelfPlan.Plan == StreamTransformPlan::PlanT::NOTHING &&
              "Already have a plan for the store.");
-      SelfPlan.planToStore(S);
+      SelfPlan.planToStore(S->SStream);
       // For store, only the address use is deleted.
       NewlyDeletingQueue.push_back(&SelfInst->getOperandUse(1));
     } else {
@@ -777,7 +742,7 @@ void DynStreamRegionAnalyzer::buildTransformPlan() {
 
     LLVM_DEBUG(llvm::dbgs()
                << "Select transform plan for inst "
-               << LoopUtils::formatLLVMInst(SelfInst) << " to "
+               << Utils::formatLLVMInst(SelfInst) << " to "
                << StreamTransformPlan::formatPlanT(SelfPlan.Plan) << '\n');
   }
 
@@ -853,13 +818,13 @@ void DynStreamRegionAnalyzer::dumpTransformPlan() {
          ++InstIter) {
       auto Inst = &*InstIter;
       std::string PlanStr = this->InstPlanMap.at(Inst).format();
-      ss << std::setw(50) << std::left << LoopUtils::formatLLVMInst(Inst)
-         << PlanStr << '\n';
+      ss << std::setw(50) << std::left << Utils::formatLLVMInst(Inst) << PlanStr
+         << '\n';
     }
   }
 
   // Also dump to file.
-  std::string PlanPath = this->AnalyzePath + "/plan.txt";
+  std::string PlanPath = this->StaticAnalyzer->getAnalyzePath() + "/plan.txt";
   std::ofstream PlanFStream(PlanPath);
   assert(PlanFStream.is_open() &&
          "Failed to open dump loop transform plan file.");
@@ -887,7 +852,8 @@ void DynStreamRegionAnalyzer::dumpConfigurePlan() {
       ss << S->formatName() << '\n';
     }
   }
-  std::string PlanPath = this->AnalyzePath + "/config.plan.txt";
+  std::string PlanPath =
+      this->StaticAnalyzer->getAnalyzePath() + "/config.plan.txt";
   std::ofstream PlanFStream(PlanPath);
   assert(PlanFStream.is_open() &&
          "Failed to open dump loop configure plan file.");
@@ -902,10 +868,15 @@ void DynStreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
   assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) == 0 &&
          "This StreamConfigureLoopInfo has already been built.");
   auto SortedStreams = this->sortChosenStreamsByConfigureLoop(ConfigureLoop);
+  std::vector<StaticStream *> SortedSS;
+  for (auto DynS : SortedStreams) {
+    SortedSS.push_back(DynS->SStream);
+  }
   this->ConfigureLoopInfoMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(ConfigureLoop),
-      std::forward_as_tuple(this->AnalyzePath, this->AnalyzeRelativePath,
-                            ConfigureLoop, SortedStreams));
+      std::forward_as_tuple(this->StaticAnalyzer->getAnalyzePath(),
+                            this->StaticAnalyzer->getAnalyzeRelativePath(),
+                            ConfigureLoop, SortedSS));
   this->allocateRegionStreamId(ConfigureLoop);
   for (auto &SubLoop : *ConfigureLoop) {
     this->buildStreamConfigureLoopInfoMap(SubLoop);
@@ -1121,17 +1092,16 @@ void DynStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
    * 2. They have scev.
    * 3. Their SCEV has a constant offset.
    */
-  std::list<std::vector<std::pair<DynStream *, int64_t>>> CoalescedGroup;
-  for (auto S : ConfigureInfo.getSortedStreams()) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "====== Try to coalesce stream: " << S->formatName() << '\n');
-    if (S->getBaseStepRootStreams().size() != 1 ||
-        S->SStream->Type == StaticStream::TypeT::IV) {
+  std::list<std::vector<std::pair<StaticStream *, int64_t>>> CoalescedGroup;
+  for (auto SS : ConfigureInfo.getSortedStreams()) {
+    LLVM_DEBUG(llvm::dbgs() << "====== Try to coalesce stream: "
+                            << SS->formatName() << '\n');
+    if (SS->BaseStepRootStreams.size() != 1 ||
+        SS->Type == StaticStream::TypeT::IV) {
       // These streams are not coalesced, set the coalesce group to itself.
-      S->setCoalesceGroup(S->getStreamId(), 0);
+      SS->setCoalesceGroup(SS->StreamId, 0);
       continue;
     }
-    auto SS = S->SStream;
     auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
     auto AddrSCEV = SS->SE->getSCEV(Addr);
 
@@ -1139,12 +1109,11 @@ void DynStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
     if (AddrSCEV) {
       LLVM_DEBUG(llvm::dbgs() << "AddrSCEV: "; AddrSCEV->dump());
       for (auto &Group : CoalescedGroup) {
-        auto TargetS = Group.front().first;
-        if (TargetS->getBaseStepRootStreams() != S->getBaseStepRootStreams()) {
+        auto TargetSS = Group.front().first;
+        if (TargetSS->BaseStepRootStreams != SS->BaseStepRootStreams) {
           // Do not share the same step root.
           continue;
         }
-        auto TargetSS = TargetS->SStream;
         // Check the load/store.
         if (TargetSS->Inst->getOpcode() != SS->Inst->getOpcode()) {
           continue;
@@ -1168,9 +1137,9 @@ void DynStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
         int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
         LLVM_DEBUG(llvm::dbgs()
                    << "Coalesced, offset: " << Offset
-                   << " with stream: " << TargetS->formatName() << '\n');
+                   << " with stream: " << TargetSS->formatName() << '\n');
         Coalesced = true;
-        Group.emplace_back(S, Offset);
+        Group.emplace_back(SS, Offset);
         break;
       }
     }
@@ -1178,15 +1147,15 @@ void DynStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
     if (!Coalesced) {
       LLVM_DEBUG(llvm::dbgs() << "New coalesce group\n");
       CoalescedGroup.emplace_back();
-      CoalescedGroup.back().emplace_back(S, 0);
+      CoalescedGroup.back().emplace_back(SS, 0);
     }
   }
 
   // Sort each group with increasing order of offset.
   for (auto &Group : CoalescedGroup) {
     std::sort(Group.begin(), Group.end(),
-              [](const std::pair<DynStream *, int64_t> &a,
-                 const std::pair<DynStream *, int64_t> &b) -> bool {
+              [](const std::pair<StaticStream *, int64_t> &a,
+                 const std::pair<StaticStream *, int64_t> &b) -> bool {
                 return a.second < b.second;
               });
     // Set the base/offset.
@@ -1195,13 +1164,14 @@ void DynStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
     for (auto &StreamOffset : Group) {
       auto S = StreamOffset.first;
       auto Offset = StreamOffset.second;
-      S->setCoalesceGroup(BaseS->getStreamId(), Offset - BaseOffset);
+      S->setCoalesceGroup(BaseS->StreamId, Offset - BaseOffset);
     }
   }
 }
 
 void DynStreamRegionAnalyzer::dumpStats() const {
-  std::string StatFilePath = this->AnalyzePath + "/stats.txt";
+  std::string StatFilePath =
+      this->StaticAnalyzer->getAnalyzePath() + "/stats.txt";
 
   std::ofstream O(StatFilePath);
   assert(O.is_open() && "Failed to open stats file.");
@@ -1235,7 +1205,7 @@ void DynStreamRegionAnalyzer::dumpStats() const {
     for (auto &S : InstStreamEntry.second) {
       auto &Stream = *reinterpret_cast<DynMemStream *>(S);
       O << LoopUtils::getLoopId(Stream.getLoop());
-      O << ' ' << LoopUtils::formatLLVMInst(Stream.getInst());
+      O << ' ' << Utils::formatLLVMInst(Stream.getInst());
 
       std::string AddrPattern = "NOT_COMPUTED";
       std::string AccPattern = "NOT_COMPUTED";
@@ -1295,7 +1265,7 @@ void DynStreamRegionAnalyzer::dumpStats() const {
     for (auto &S : InstStreamEntry.second) {
       auto &IVStream = *reinterpret_cast<DynIndVarStream *>(S);
       O << LoopUtils::getLoopId(IVStream.getLoop());
-      O << ' ' << LoopUtils::formatLLVMInst(IVStream.getPHIInst());
+      O << ' ' << Utils::formatLLVMInst(IVStream.getPHIInst());
 
       std::string AddrPattern = "NOT_COMPUTED";
       std::string AccPattern = "NOT_COMPUTED";

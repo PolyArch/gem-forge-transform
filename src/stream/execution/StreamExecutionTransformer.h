@@ -44,7 +44,7 @@ private:
   std::unique_ptr<llvm::DataLayout> ClonedDataLayout;
 
   // Map from Stream to StreamLoad instructions.
-  std::unordered_map<DynStream *, llvm::Instruction *>
+  std::unordered_map<StaticStream *, llvm::Instruction *>
       StreamToStreamLoadInstMap;
 
   // Instructions waiting to be removed at the end.
@@ -69,7 +69,7 @@ private:
   void insertStreamEndAtLoop(DynStreamRegionAnalyzer *Analyzer,
                              llvm::Loop *Loop, llvm::Constant *ConfigIdxValue);
   void insertStreamReduceAtLoop(DynStreamRegionAnalyzer *Analyzer,
-                                llvm::Loop *Loop, DynStream *ReduceStream);
+                                llvm::Loop *Loop, StaticStream *ReduceStream);
   void transformLoadInst(DynStreamRegionAnalyzer *Analyzer,
                          llvm::LoadInst *LoadInst);
   void transformStoreInst(DynStreamRegionAnalyzer *Analyzer,
@@ -81,14 +81,14 @@ private:
   void transformStepInst(DynStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
   void upgradeLoadToUpdateStream(DynStreamRegionAnalyzer *Analyzer,
-                                 DynStream *LoadStream);
+                                 StaticStream *LoadSS);
   void mergePredicatedStreams(DynStreamRegionAnalyzer *Analyzer,
-                              DynStream *LoadStream);
+                              StaticStream *LoadSS);
   void mergePredicatedStore(DynStreamRegionAnalyzer *Analyzer,
-                            DynStream *LoadStream, DynStream *PredStoreStream,
+                            StaticStream *LoadSS, StaticStream *StoreSS,
                             bool PredTrue);
-  void handleValueDG(DynStreamRegionAnalyzer *Analyzer, DynStream *S);
-  llvm::Instruction *findStepPosition(DynStream *StepStream,
+  void handleValueDG(DynStreamRegionAnalyzer *Analyzer, StaticStream *S);
+  llvm::Instruction *findStepPosition(StaticStream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
 
@@ -122,10 +122,10 @@ private:
   using InputValueVec = std::vector<llvm::Value *>;
   using ProtoStreamConfiguration = LLVM::TDG::IVPattern;
   using ProtoStreamParam = ::LLVM::TDG::StreamParam;
-  void generateIVStreamConfiguration(DynStream *S,
+  void generateIVStreamConfiguration(StaticStream *S,
                                      llvm::Instruction *InsertBefore,
                                      InputValueVec &ClonedInputValues);
-  void generateMemStreamConfiguration(DynStream *S,
+  void generateMemStreamConfiguration(StaticStream *S,
                                       llvm::Instruction *InsertBefore,
                                       InputValueVec &ClonedInputValues);
   void generateAddRecStreamConfiguration(
@@ -135,7 +135,7 @@ private:
       llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
       llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
       ProtoStreamConfiguration *ProtoConfiguration);
-  void handleExtraInputValue(DynStream *S, InputValueVec &ClonedInputValues);
+  void handleExtraInputValue(StaticStream *SS, InputValueVec &ClonedInputValues);
   void addStreamInputSCEV(const llvm::SCEV *ClonedSCEV, bool Signed,
                           llvm::Instruction *InsertBefore,
                           llvm::SCEVExpander *ClonedSEExpander,
@@ -144,7 +144,7 @@ private:
   void addStreamInputValue(const llvm::Value *ClonedValue, bool Signed,
                            InputValueVec &ClonedInputValues,
                            ProtoStreamParam *ProtoParam);
-  llvm::Value *addStreamLoad(DynStream *S, llvm::Type *LoadType,
+  llvm::Value *addStreamLoad(StaticStream *S, llvm::Type *LoadType,
                              llvm::Instruction *ClonedInsertBefore,
                              const llvm::DebugLoc *DebugLoc = nullptr);
 

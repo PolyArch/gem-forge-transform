@@ -8,59 +8,9 @@
 #include "stream/DynIndVarStream.h"
 #include "stream/DynMemStream.h"
 #include "stream/StaticStreamRegionAnalyzer.h"
-#include "stream/StreamTransformPlan.h"
 #include "stream/ae/FunctionalStreamEngine.h"
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
-
-/**
- * Aggreate all the information for a stream configure loop.
- */
-class StreamConfigureLoopInfo {
-public:
-  StreamConfigureLoopInfo(const std::string &_Folder,
-                          const std::string &_RelativeFolder,
-                          const llvm::Loop *_Loop,
-                          std::vector<DynStream *> _SortedStreams);
-
-  const std::string &getRelativePath() const { return this->RelativePath; }
-  const llvm::Loop *getLoop() const { return this->Loop; }
-  const std::vector<DynStream *> getSortedStreams() const {
-    return this->SortedStreams;
-  }
-
-  /**
-   * TotalConfiguredStreams: Sum of all configured streams in this loop and
-   * parent loops.
-   * TotalSubLoopStreams: Maximum number of possible streams configured in
-   * this loop and sub-loops.
-   * TotalPeerStreams: Maximum number of possible streams be alive the
-   * same time with streams configured in this loop.
-   *
-   * Formula:
-   * * TotalConfiguredStreams = Sum(ConfiguredStreams, ThisAndParentLoop)
-   * * TotalSubLoopStreams = \
-   * *   (Max(TotalSubLoopStreams, SubLoop) or 0) + ConfiguredStreams
-   * * TotalAliveStreams = TotalConfiguredStreams + \
-   * *   TotalSubLoopStreams - COnfiguredStreams
-   */
-  int TotalConfiguredStreams;
-  int TotalConfiguredCoalescedStreams;
-  int TotalSubLoopStreams;
-  int TotalSubLoopCoalescedStreams;
-  int TotalAliveStreams;
-  int TotalAliveCoalescedStreams;
-  std::vector<DynStream *> SortedCoalescedStreams;
-
-  void dump(llvm::DataLayout *DataLayout) const;
-
-private:
-  const std::string Path;
-  const std::string RelativePath;
-  const std::string JsonPath;
-  const llvm::Loop *Loop;
-  std::vector<DynStream *> SortedStreams;
-};
 
 class DynStreamRegionAnalyzer {
 public:
@@ -82,8 +32,8 @@ public:
   void addIVAccess(DynamicInstruction *DynamicInst);
   void endIter(const llvm::Loop *Loop);
   void endLoop(const llvm::Loop *Loop);
-  void endRegion(StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
-                 StreamPassChooseStrategyE StreamPassChooseStrategy);
+  void
+  finalizePlan(StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy);
   void endTransform();
   void finalizeCoalesceInfo();
   void coalesceStreamsAtLoop(llvm::Loop *Loop);
@@ -103,7 +53,7 @@ public:
    */
 
   using InstTransformPlanMapT =
-      std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
+      StaticStreamRegionAnalyzer::InstTransformPlanMapT;
 
   const InstTransformPlanMapT &getInstTransformPlanMap() const {
     return this->InstPlanMap;
@@ -113,6 +63,7 @@ public:
   getConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
 
   DynStream *getChosenStreamByInst(const llvm::Instruction *Inst);
+  DynStream *getDynStreamByStaticStream(StaticStream *SS);
 
   const StreamTransformPlan &
   getTransformPlanByInst(const llvm::Instruction *Inst);
@@ -126,22 +77,24 @@ public:
   void insertAddrFuncInModule(std::unique_ptr<llvm::Module> &Module);
 
 private:
-  uint64_t RegionIdx;
   CachedLoopInfo *CachedLI;
   CachedPostDominanceFrontier *CachedPDF;
   CachedBBPredicateDataGraph *CachedBBPredDG;
   llvm::Loop *TopLoop;
   llvm::LoopInfo *LI;
   llvm::DataLayout *DataLayout;
-  std::string RootPath;
-  std::string AnalyzeRelativePath;
-  std::string AnalyzePath;
   std::unique_ptr<StaticStreamRegionAnalyzer> StaticAnalyzer;
 
   /**
    * Remember the number of dynamic memory accesses happened in this region.
    */
   uint64_t numDynamicMemAccesses = 0;
+
+  /**
+   * We are switching to StaticStream and simplify DynStream.
+   * This remembers the map from StaticStream to DynStream.
+   */
+  std::unordered_map<StaticStream *, DynStream *> StaticDynStreamMap;
 
   /**
    * Key data structure, map from instruction to the list of streams.

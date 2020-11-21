@@ -226,7 +226,7 @@ FunctionalStream::computeAddress(DataGraph *DG) const {
       if (DynamicVal == nullptr) {
         this->DEBUG_DUMP(llvm::errs());
         llvm::errs() << " Missing dynamic value for "
-                     << LoopUtils::formatLLVMValue(Input) << '\n';
+                     << Utils::formatLLVMValue(Input) << '\n';
         return std::make_pair(false, 0);
       }
 

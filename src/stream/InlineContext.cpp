@@ -71,7 +71,7 @@ std::string InlineContext::format() const {
   std::stringstream ss;
   ss << "Main";
   for (auto Inst : this->Context) {
-    ss << "->" << LoopUtils::formatLLVMInst(Inst);
+    ss << "->" << Utils::formatLLVMInst(Inst);
   }
   return ss.str();
 }
@@ -80,7 +80,7 @@ std::string InlineContext::beautify() const {
   std::stringstream ss;
   ss << "Main\n";
   for (auto Inst : this->Context) {
-    ss << "->" << LoopUtils::formatLLVMInst(Inst) << '\n';
+    ss << "->" << Utils::formatLLVMInst(Inst) << '\n';
   }
   return ss.str();
 }
