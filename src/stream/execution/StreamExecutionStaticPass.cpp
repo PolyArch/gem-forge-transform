@@ -45,9 +45,9 @@ bool StreamExecutionStaticPass::finalize(llvm::Module &Module) {
   return true;
 }
 
-std::vector<DynStreamRegionAnalyzer *>
+std::vector<StaticStreamRegionAnalyzer *>
 StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
-  std::vector<DynStreamRegionAnalyzer *> Analyzers;
+  std::vector<StaticStreamRegionAnalyzer *> Analyzers;
 
   // Search through all ROI functions.
   for (auto Func : this->ROIFunctions) {
@@ -64,14 +64,14 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
       if (LoopUtils::isLoopContinuous(Loop) &&
           !LoopUtils::isLoopRemainderOrEpilogue(Loop)) {
         // Check if loop is continuous.
-        auto Analyzer = new DynStreamRegionAnalyzer(
-            Analyzers.size(), this->CachedLI, this->CachedPDF,
-            this->CachedBBPredDG, Loop, this->DataLayout,
+        auto Analyzer = new StaticStreamRegionAnalyzer(
+            Loop, this->DataLayout, this->CachedLI, this->CachedPDF,
+            this->CachedBBPredDG, Analyzers.size(),
             this->OutputExtraFolderPath);
 
         // Directly call finalizePlan.
         // This will select streams, and build transform plan.
-        Analyzer->finalizePlan(StreamPassQualifySeedStrategyE::STATIC);
+        Analyzer->finalizePlan();
 
         Analyzers.push_back(Analyzer);
 

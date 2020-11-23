@@ -491,6 +491,13 @@ void StaticStream::analyzeIsTripCountFixed() const {
   return;
 }
 
+void StaticStream::generateAddrFunction(
+    std::unique_ptr<llvm::Module> &Module) const {
+  if (this->AddrDG) {
+    this->AddrDG->generateFunction(this->FuncNameBase + "_addr", Module);
+  }
+}
+
 void StaticStream::generateReduceFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ReduceDG) {

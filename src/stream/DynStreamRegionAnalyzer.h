@@ -69,6 +69,9 @@ public:
   getTransformPlanByInst(const llvm::Instruction *Inst);
 
   FunctionalStreamEngine *getFuncSE();
+  StaticStreamRegionAnalyzer *getStaticAnalyzer() {
+    return this->StaticAnalyzer.get();
+  }
 
   /**
    * Insert address computation function in the module.

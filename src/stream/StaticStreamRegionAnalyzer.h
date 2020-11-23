@@ -32,21 +32,49 @@ public:
    */
   void finalizePlan();
 
+  void endTransform();
+
+  void coalesceStreamsAtLoop(llvm::Loop *Loop);
+
   void insertPredicateFuncInModule(std::unique_ptr<llvm::Module> &Module);
+  /**
+   * Insert address computation function in the module.
+   * Used by StreamExeuctionPass.
+   */
+  void insertAddrFuncInModule(std::unique_ptr<llvm::Module> &Module);
 
   /**
    * Query for the analysis results.
    */
+  StaticStream *getChosenStreamByInst(const llvm::Instruction *Inst) {
+    if (!this->TopLoop->contains(Inst)) {
+      return nullptr;
+    }
+    auto Iter = this->InstChosenStreamMap.find(Inst);
+    if (Iter == this->InstChosenStreamMap.end()) {
+      return nullptr;
+    } else {
+      return Iter->second;
+    }
+  }
+
   using InstTransformPlanMapT =
       std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
 
   const InstTransformPlanMapT &getInstTransformPlanMap() const {
     return this->InstPlanMap;
   }
+  const StreamTransformPlan &
+  getTransformPlanByInst(const llvm::Instruction *Inst) {
+    assert(this->TopLoop->contains(Inst) &&
+           "Inst should be within the TopLoop.");
+    return this->InstPlanMap.at(Inst);
+  }
 
   const StreamConfigureLoopInfo &
   getConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
 
+  llvm::Loop *getTopLoop() { return this->TopLoop; }
   const std::string &getAnalyzePath() const { return this->AnalyzePath; }
   const std::string &getAnalyzeRelativePath() const {
     return this->AnalyzeRelativePath;
@@ -136,6 +164,14 @@ protected:
   void allocateRegionStreamId(const llvm::Loop *ConfigureLoop);
   std::vector<StaticStream *>
   sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
+
+  /**
+   * Finalize the StreamConfigureLoopInfo after the transformation.
+   * Mainly compute the number of peer streams and peer coalesced streams.
+   * Coalesce information is only available after transformation.
+   */
+  void finalizeStreamConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
+  void dumpStreamInfos();
 };
 
 #endif

@@ -20,7 +20,7 @@ protected:
   bool initialize(llvm::Module &Module) override;
   bool finalize(llvm::Module &Module) override;
 
-  std::vector<DynStreamRegionAnalyzer *> selectStreamRegionAnalyzers();
+  std::vector<StaticStreamRegionAnalyzer *> selectStreamRegionAnalyzers();
 };
 
 #endif
