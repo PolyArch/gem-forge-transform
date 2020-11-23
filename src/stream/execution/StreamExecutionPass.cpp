@@ -20,7 +20,7 @@ void StreamExecutionPass::transformStream() {
   StreamPass::transformStream();
 }
 
-std::vector<DynStreamRegionAnalyzer *>
+std::vector<StaticStreamRegionAnalyzer *>
 StreamExecutionPass::selectStreamRegionAnalyzers() {
   std::vector<DynStreamRegionAnalyzer *> AllRegions;
 
@@ -38,7 +38,7 @@ StreamExecutionPass::selectStreamRegionAnalyzers() {
             });
 
   // Remove overlapped regions.
-  std::vector<DynStreamRegionAnalyzer *> NonOverlapRegions;
+  std::vector<StaticStreamRegionAnalyzer *> NonOverlapRegions;
   for (auto Region : AllRegions) {
     bool Overlapped = false;
     auto TopLoop = Region->getTopLoop();
@@ -53,7 +53,7 @@ StreamExecutionPass::selectStreamRegionAnalyzers() {
     if (!Overlapped) {
       LLVM_DEBUG(llvm::dbgs() << "Select DynStreamRegionAnalyzer "
                               << LoopUtils::getLoopId(TopLoop) << ".\n");
-      NonOverlapRegions.push_back(Region);
+      NonOverlapRegions.push_back(Region->getStaticAnalyzer());
     }
   }
   return NonOverlapRegions;

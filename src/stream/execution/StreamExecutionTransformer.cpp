@@ -31,7 +31,7 @@ StreamExecutionTransformer::StreamExecutionTransformer(
     const std::unordered_set<llvm::Function *> &_ROIFunctions,
     CachedLoopInfo *_CachedLI, std::string _OutputExtraFolderPath,
     bool _TransformTextMode,
-    const std::vector<DynStreamRegionAnalyzer *> &Analyzers)
+    const std::vector<StaticStreamRegionAnalyzer *> &Analyzers)
     : Module(_Module), ROIFunctions(_ROIFunctions), CachedLI(_CachedLI),
       OutputExtraFolderPath(_OutputExtraFolderPath),
       TransformTextMode(_TransformTextMode) {
@@ -134,7 +134,7 @@ void StreamExecutionTransformer::writeAllTransformedFunctions() {
 }
 
 void StreamExecutionTransformer::transformStreamRegion(
-    DynStreamRegionAnalyzer *Analyzer) {
+    StaticStreamRegionAnalyzer *Analyzer) {
   auto TopLoop = Analyzer->getTopLoop();
   LLVM_DEBUG(llvm::dbgs() << "Transform stream region "
                           << LoopUtils::getLoopId(TopLoop) << '\n');
@@ -215,10 +215,11 @@ void StreamExecutionTransformer::transformStreamRegion(
 
   // Insert address computation function in the cloned module.
   Analyzer->insertAddrFuncInModule(this->ClonedModule);
+  Analyzer->insertPredicateFuncInModule(this->ClonedModule);
 }
 
 void StreamExecutionTransformer::configureStreamsAtLoop(
-    DynStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop) {
+    StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop) {
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   if (ConfigureInfo.getSortedStreams().empty()) {
     // No stream configured at this loop.
@@ -244,7 +245,7 @@ void StreamExecutionTransformer::configureStreamsAtLoop(
 }
 
 void StreamExecutionTransformer::insertStreamConfigAtLoop(
-    DynStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
+    StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
     llvm::Constant *ConfigIdxValue) {
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   /**
@@ -344,7 +345,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
 }
 
 void StreamExecutionTransformer::insertStreamEndAtLoop(
-    DynStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
+    StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
     llvm::Constant *ConfigIdxValue) {
   /**
    * 1. Format dedicated exit block.
@@ -386,7 +387,7 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
 }
 
 void StreamExecutionTransformer::insertStreamReduceAtLoop(
-    DynStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
+    StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
     StaticStream *ReduceStream) {
 
   const auto &SSInfo = ReduceStream->StaticStreamInfo;
@@ -520,14 +521,12 @@ StreamExecutionTransformer::getOrCreateLoopPreheaderInClonedModule(
 }
 
 void StreamExecutionTransformer::transformLoadInst(
-    DynStreamRegionAnalyzer *Analyzer, llvm::LoadInst *LoadInst) {
-  auto DynS = Analyzer->getChosenStreamByInst(LoadInst);
-  if (DynS == nullptr) {
+    StaticStreamRegionAnalyzer *Analyzer, llvm::LoadInst *LoadInst) {
+  auto S = Analyzer->getChosenStreamByInst(LoadInst);
+  if (S == nullptr) {
     // This is not a chosen stream.
     return;
   }
-
-  auto S = DynS->SStream;
 
   /**
    * 1. Insert a StreamLoad.
@@ -651,13 +650,12 @@ StreamExecutionTransformer::addStreamLoad(StaticStream *S, llvm::Type *LoadType,
 }
 
 void StreamExecutionTransformer::transformStoreInst(
-    DynStreamRegionAnalyzer *Analyzer, llvm::StoreInst *StoreInst) {
-  auto DynS = Analyzer->getChosenStreamByInst(StoreInst);
-  if (DynS == nullptr) {
+    StaticStreamRegionAnalyzer *Analyzer, llvm::StoreInst *StoreInst) {
+  auto S = Analyzer->getChosenStreamByInst(StoreInst);
+  if (S == nullptr) {
     // This is not a chosen stream.
     return;
   }
-  auto S = DynS->SStream;
 
   /**
    * For execution-driven simulation, to aovid complicated interaction
@@ -670,14 +668,12 @@ void StreamExecutionTransformer::transformStoreInst(
 }
 
 void StreamExecutionTransformer::transformAtomicRMWInst(
-    DynStreamRegionAnalyzer *Analyzer, llvm::AtomicRMWInst *AtomicRMWInst) {
-  auto DynS = Analyzer->getChosenStreamByInst(AtomicRMWInst);
-  if (DynS == nullptr) {
+    StaticStreamRegionAnalyzer *Analyzer, llvm::AtomicRMWInst *AtomicRMWInst) {
+  auto S = Analyzer->getChosenStreamByInst(AtomicRMWInst);
+  if (S == nullptr) {
     // This is not a chosen stream.
     return;
   }
-
-  auto S = DynS->SStream;
 
   /**
    * AtomicRMW stream is treated similar to store stream.
@@ -688,14 +684,12 @@ void StreamExecutionTransformer::transformAtomicRMWInst(
 }
 
 void StreamExecutionTransformer::transformAtomicCmpXchgInst(
-    DynStreamRegionAnalyzer *Analyzer, llvm::AtomicCmpXchgInst *CmpXchg) {
-  auto DynS = Analyzer->getChosenStreamByInst(CmpXchg);
-  if (DynS == nullptr) {
+    StaticStreamRegionAnalyzer *Analyzer, llvm::AtomicCmpXchgInst *CmpXchg) {
+  auto S = Analyzer->getChosenStreamByInst(CmpXchg);
+  if (S == nullptr) {
     // This is not a chosen stream.
     return;
   }
-
-  auto S = DynS->SStream;
 
   /**
    * AtomicRMW stream is treated similar to store stream.
@@ -706,7 +700,7 @@ void StreamExecutionTransformer::transformAtomicCmpXchgInst(
 }
 
 void StreamExecutionTransformer::transformStepInst(
-    DynStreamRegionAnalyzer *Analyzer, llvm::Instruction *StepInst) {
+    StaticStreamRegionAnalyzer *Analyzer, llvm::Instruction *StepInst) {
   const auto &TransformPlan = Analyzer->getTransformPlanByInst(StepInst);
   for (auto StepStream : TransformPlan.getStepStreams()) {
 
@@ -729,7 +723,7 @@ void StreamExecutionTransformer::transformStepInst(
 }
 
 void StreamExecutionTransformer::upgradeLoadToUpdateStream(
-    DynStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
+    StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
   /**
    * The idea is to update a load to update stream.
    */
@@ -784,18 +778,17 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
 }
 
 void StreamExecutionTransformer::mergePredicatedStreams(
-    DynStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
+    StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
   auto ProcessPredSS = [this, Analyzer, LoadSS](StaticStream *PredSS,
                                                 bool PredTrue) -> void {
     auto PredInst = PredSS->Inst;
     auto PredStream = Analyzer->getChosenStreamByInst(PredInst);
-    if (!PredStream || PredStream->SStream != PredSS) {
+    if (!PredStream || PredStream != PredSS) {
       // Somehow this predicated stream is not chosen. Ignore it.
       return;
     }
     if (llvm::isa<llvm::StoreInst>(PredInst)) {
-      this->mergePredicatedStore(Analyzer, LoadSS, PredStream->SStream,
-                                 PredTrue);
+      this->mergePredicatedStore(Analyzer, LoadSS, PredStream, PredTrue);
     }
   };
   for (auto PredSS : LoadSS->PredicatedTrueStreams) {
@@ -807,7 +800,7 @@ void StreamExecutionTransformer::mergePredicatedStreams(
 }
 
 void StreamExecutionTransformer::mergePredicatedStore(
-    DynStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS,
+    StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS,
     StaticStream *StoreSS, bool PredTrue) {
   if (!StreamPassMergePredicatedStore) {
     // This feature is disabled.
@@ -856,7 +849,7 @@ void StreamExecutionTransformer::mergePredicatedStore(
 }
 
 void StreamExecutionTransformer::handleValueDG(
-    DynStreamRegionAnalyzer *Analyzer, StaticStream *SS) {
+    StaticStreamRegionAnalyzer *Analyzer, StaticStream *SS) {
   if (!SS->ValueDG) {
     // No ValueDG to be merged.
     return;
@@ -869,7 +862,7 @@ void StreamExecutionTransformer::handleValueDG(
    */
   for (auto LoadSS : SS->LoadStoreBaseStreams) {
     auto ChosenLoadS = Analyzer->getChosenStreamByInst(LoadSS->Inst);
-    if (!ChosenLoadS || ChosenLoadS->SStream != LoadSS) {
+    if (!ChosenLoadS || ChosenLoadS != LoadSS) {
       // Not chosen or chosen at different configure loop level.
       return;
     }

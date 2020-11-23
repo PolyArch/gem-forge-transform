@@ -6,7 +6,7 @@
  * StreamRegionAnalyzer.
  */
 
-#include "stream/DynStreamRegionAnalyzer.h"
+#include "stream/StaticStreamRegionAnalyzer.h"
 
 #include "llvm/Analysis/ScalarEvolutionExpander.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -21,7 +21,7 @@ public:
       const std::unordered_set<llvm::Function *> &_ROIFunctions,
       CachedLoopInfo *_CachedLI, std::string _OutputExtraFolderPath,
       bool _TransformTextMode,
-      const std::vector<DynStreamRegionAnalyzer *> &Analyzers);
+      const std::vector<StaticStreamRegionAnalyzer *> &Analyzers);
 
 private:
   llvm::Module *Module;
@@ -60,34 +60,34 @@ private:
    */
   std::vector<const StreamConfigureLoopInfo *> AllConfiguredLoopInfos;
 
-  void transformStreamRegion(DynStreamRegionAnalyzer *Analyzer);
-  void configureStreamsAtLoop(DynStreamRegionAnalyzer *Analyzer,
+  void transformStreamRegion(StaticStreamRegionAnalyzer *Analyzer);
+  void configureStreamsAtLoop(StaticStreamRegionAnalyzer *Analyzer,
                               llvm::Loop *Loop);
-  void insertStreamConfigAtLoop(DynStreamRegionAnalyzer *Analyzer,
+  void insertStreamConfigAtLoop(StaticStreamRegionAnalyzer *Analyzer,
                                 llvm::Loop *Loop,
                                 llvm::Constant *ConfigIdxValue);
-  void insertStreamEndAtLoop(DynStreamRegionAnalyzer *Analyzer,
+  void insertStreamEndAtLoop(StaticStreamRegionAnalyzer *Analyzer,
                              llvm::Loop *Loop, llvm::Constant *ConfigIdxValue);
-  void insertStreamReduceAtLoop(DynStreamRegionAnalyzer *Analyzer,
+  void insertStreamReduceAtLoop(StaticStreamRegionAnalyzer *Analyzer,
                                 llvm::Loop *Loop, StaticStream *ReduceStream);
-  void transformLoadInst(DynStreamRegionAnalyzer *Analyzer,
+  void transformLoadInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::LoadInst *LoadInst);
-  void transformStoreInst(DynStreamRegionAnalyzer *Analyzer,
+  void transformStoreInst(StaticStreamRegionAnalyzer *Analyzer,
                           llvm::StoreInst *StoreInst);
-  void transformAtomicRMWInst(DynStreamRegionAnalyzer *Analyzer,
+  void transformAtomicRMWInst(StaticStreamRegionAnalyzer *Analyzer,
                               llvm::AtomicRMWInst *AtomicRMW);
-  void transformAtomicCmpXchgInst(DynStreamRegionAnalyzer *Analyzer,
+  void transformAtomicCmpXchgInst(StaticStreamRegionAnalyzer *Analyzer,
                                   llvm::AtomicCmpXchgInst *AtomicCmpXchg);
-  void transformStepInst(DynStreamRegionAnalyzer *Analyzer,
+  void transformStepInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
-  void upgradeLoadToUpdateStream(DynStreamRegionAnalyzer *Analyzer,
+  void upgradeLoadToUpdateStream(StaticStreamRegionAnalyzer *Analyzer,
                                  StaticStream *LoadSS);
-  void mergePredicatedStreams(DynStreamRegionAnalyzer *Analyzer,
+  void mergePredicatedStreams(StaticStreamRegionAnalyzer *Analyzer,
                               StaticStream *LoadSS);
-  void mergePredicatedStore(DynStreamRegionAnalyzer *Analyzer,
+  void mergePredicatedStore(StaticStreamRegionAnalyzer *Analyzer,
                             StaticStream *LoadSS, StaticStream *StoreSS,
                             bool PredTrue);
-  void handleValueDG(DynStreamRegionAnalyzer *Analyzer, StaticStream *S);
+  void handleValueDG(StaticStreamRegionAnalyzer *Analyzer, StaticStream *S);
   llvm::Instruction *findStepPosition(StaticStream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
@@ -135,7 +135,8 @@ private:
       llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
       llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
       ProtoStreamConfiguration *ProtoConfiguration);
-  void handleExtraInputValue(StaticStream *SS, InputValueVec &ClonedInputValues);
+  void handleExtraInputValue(StaticStream *SS,
+                             InputValueVec &ClonedInputValues);
   void addStreamInputSCEV(const llvm::SCEV *ClonedSCEV, bool Signed,
                           llvm::Instruction *InsertBefore,
                           llvm::SCEVExpander *ClonedSEExpander,

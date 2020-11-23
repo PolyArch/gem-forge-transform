@@ -250,6 +250,7 @@ public:
 
   // Reduction stream.
   std::unique_ptr<StreamDataGraph> ReduceDG = nullptr;
+  void generateAddrFunction(std::unique_ptr<llvm::Module> &Module) const;
   void generateReduceFunction(std::unique_ptr<llvm::Module> &Module) const;
   void generateValueFunction(std::unique_ptr<llvm::Module> &Module) const;
 

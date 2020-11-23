@@ -327,6 +327,17 @@ void StaticStreamRegionAnalyzer::insertPredicateFuncInModule(
   }
 }
 
+void StaticStreamRegionAnalyzer::insertAddrFuncInModule(
+    std::unique_ptr<llvm::Module> &Module) {
+  for (auto &InstStream : this->InstChosenStreamMap) {
+    auto Inst = InstStream.first;
+    auto S = InstStream.second;
+    S->generateReduceFunction(Module);
+    S->generateValueFunction(Module);
+    S->generateAddrFunction(Module);
+  }
+}
+
 void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
   auto GetStream = [this](const llvm::Instruction *Inst,
                           const llvm::Loop *ConfigureLoop) -> StaticStream * {
@@ -1086,4 +1097,198 @@ StaticStreamRegionAnalyzer::sortChosenStreamsByConfigureLoop(
             });
 
   return SortedStreams;
+}
+
+void StaticStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
+  const auto &ConfigureInfo = this->getConfigureLoopInfo(Loop);
+  if (ConfigureInfo.TotalConfiguredStreams == 0) {
+    // No streams here.
+    return;
+  }
+  /**
+   * We coalesce memory streams if:
+   * 1. They share the same step root.
+   * 2. They have scev.
+   * 3. Their SCEV has a constant offset.
+   */
+  std::list<std::vector<std::pair<StaticStream *, int64_t>>> CoalescedGroup;
+  for (auto SS : ConfigureInfo.getSortedStreams()) {
+    LLVM_DEBUG(llvm::dbgs() << "====== Try to coalesce stream: "
+                            << SS->formatName() << '\n');
+    if (SS->BaseStepRootStreams.size() != 1 ||
+        SS->Type == StaticStream::TypeT::IV) {
+      // These streams are not coalesced, set the coalesce group to itself.
+      SS->setCoalesceGroup(SS->StreamId, 0);
+      continue;
+    }
+    auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
+    auto AddrSCEV = SS->SE->getSCEV(Addr);
+
+    bool Coalesced = false;
+    if (AddrSCEV) {
+      LLVM_DEBUG(llvm::dbgs() << "AddrSCEV: "; AddrSCEV->dump());
+      for (auto &Group : CoalescedGroup) {
+        auto TargetSS = Group.front().first;
+        if (TargetSS->BaseStepRootStreams != SS->BaseStepRootStreams) {
+          // Do not share the same step root.
+          continue;
+        }
+        // Check the load/store.
+        if (TargetSS->Inst->getOpcode() != SS->Inst->getOpcode()) {
+          continue;
+        }
+        auto TargetAddr =
+            const_cast<llvm::Value *>(Utils::getMemAddrValue(TargetSS->Inst));
+        auto TargetAddrSCEV = TargetSS->SE->getSCEV(TargetAddr);
+        if (!TargetAddrSCEV) {
+          continue;
+        }
+        // Check the scev.
+        LLVM_DEBUG(llvm::dbgs() << "TargetAddrSCEV: "; TargetAddrSCEV->dump());
+        auto MinusSCEV = SS->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
+        LLVM_DEBUG(llvm::dbgs() << "MinusSCEV: "; MinusSCEV->dump());
+        auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(MinusSCEV);
+        if (!OffsetSCEV) {
+          // Not constant offset.
+          continue;
+        }
+        LLVM_DEBUG(llvm::dbgs() << "OffsetSCEV: "; OffsetSCEV->dump());
+        int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Coalesced, offset: " << Offset
+                   << " with stream: " << TargetSS->formatName() << '\n');
+        Coalesced = true;
+        Group.emplace_back(SS, Offset);
+        break;
+      }
+    }
+
+    if (!Coalesced) {
+      LLVM_DEBUG(llvm::dbgs() << "New coalesce group\n");
+      CoalescedGroup.emplace_back();
+      CoalescedGroup.back().emplace_back(SS, 0);
+    }
+  }
+
+  // Sort each group with increasing order of offset.
+  for (auto &Group : CoalescedGroup) {
+    std::sort(Group.begin(), Group.end(),
+              [](const std::pair<StaticStream *, int64_t> &a,
+                 const std::pair<StaticStream *, int64_t> &b) -> bool {
+                return a.second < b.second;
+              });
+    // Set the base/offset.
+    auto BaseS = Group.front().first;
+    int64_t BaseOffset = Group.front().second;
+    for (auto &StreamOffset : Group) {
+      auto S = StreamOffset.first;
+      auto Offset = StreamOffset.second;
+      S->setCoalesceGroup(BaseS->StreamId, Offset - BaseOffset);
+    }
+  }
+}
+
+void StaticStreamRegionAnalyzer::endTransform() {
+  // Finalize the StreamConfigureLoopInfo.
+  this->finalizeStreamConfigureLoopInfo(this->TopLoop);
+  // Only after this point can we know the CoalesceGroup in the info.
+  this->dumpStreamInfos();
+  // Dump all the StreamConfigureLoopInfo.
+  for (const auto &StreamConfigureLoop : this->ConfigureLoopInfoMap) {
+    StreamConfigureLoop.second.dump(this->DataLayout);
+  }
+}
+
+/**
+ * This function recursively compute the information for this configure loop.
+ * 1. Compute TotalConfiguredStreams.
+ * 2. Recursively compute TotalSubLoopStreams.
+ * 3. Compute TotalAliveStreams.
+ */
+void StaticStreamRegionAnalyzer::finalizeStreamConfigureLoopInfo(
+    const llvm::Loop *ConfigureLoop) {
+  assert(this->TopLoop->contains(ConfigureLoop) &&
+         "Should only finalize loops within TopLoop.");
+  auto &Info = this->ConfigureLoopInfoMap.at(ConfigureLoop);
+  // 1.
+  auto &SortedStreams = Info.getSortedStreams();
+
+  // Compute the coalesced streams.
+  std::unordered_set<int> CoalescedGroupSet;
+  for (auto &S : SortedStreams) {
+    auto CoalesceGroup = S->getCoalesceGroup();
+    if (CoalescedGroupSet.count(CoalesceGroup) == 0) {
+      // First time we see this.
+      Info.SortedCoalescedStreams.push_back(S);
+      CoalescedGroupSet.insert(CoalesceGroup);
+    }
+  }
+
+  int ConfiguredStreams = SortedStreams.size();
+  int ConfiguredCoalescedStreams = Info.SortedCoalescedStreams.size();
+  Info.TotalConfiguredStreams = ConfiguredStreams;
+  Info.TotalConfiguredCoalescedStreams = ConfiguredCoalescedStreams;
+  auto ParentLoop = ConfigureLoop->getParentLoop();
+  if (this->TopLoop->contains(ParentLoop)) {
+    const auto &ParentInfo = this->ConfigureLoopInfoMap.at(ParentLoop);
+    Info.TotalConfiguredStreams += ParentInfo.TotalConfiguredStreams;
+    Info.TotalConfiguredCoalescedStreams +=
+        ParentInfo.TotalConfiguredCoalescedStreams;
+  }
+  // 2.
+  int MaxSubLoopStreams = 0;
+  int MaxSubLoopCoalescedStreams = 0;
+  for (auto &SubLoop : *ConfigureLoop) {
+    this->finalizeStreamConfigureLoopInfo(SubLoop);
+    const auto &SubInfo = this->ConfigureLoopInfoMap.at(SubLoop);
+    if (SubInfo.TotalSubLoopStreams > MaxSubLoopStreams) {
+      MaxSubLoopStreams = SubInfo.TotalSubLoopStreams;
+    }
+    if (SubInfo.TotalSubLoopCoalescedStreams > MaxSubLoopCoalescedStreams) {
+      MaxSubLoopCoalescedStreams = SubInfo.TotalSubLoopCoalescedStreams;
+    }
+  }
+  Info.TotalSubLoopStreams = MaxSubLoopStreams + ConfiguredStreams;
+  Info.TotalSubLoopCoalescedStreams =
+      MaxSubLoopCoalescedStreams + ConfiguredCoalescedStreams;
+
+  // 3.
+  Info.TotalAliveStreams = Info.TotalConfiguredStreams +
+                           Info.TotalSubLoopStreams - ConfiguredStreams;
+  Info.TotalAliveCoalescedStreams = Info.TotalConfiguredCoalescedStreams +
+                                    Info.TotalSubLoopCoalescedStreams -
+                                    ConfiguredCoalescedStreams;
+}
+
+void StaticStreamRegionAnalyzer::dumpStreamInfos() {
+  {
+    LLVM::TDG::StreamRegion ProtobufStreamRegion;
+    for (auto &InstStream : this->InstStaticStreamMap) {
+      for (auto &S : InstStream.second) {
+        auto Info = ProtobufStreamRegion.add_streams();
+        S->fillProtobufStreamInfo(Info);
+      }
+    }
+
+    auto InfoTextPath = this->getAnalyzePath() + "/streams.json";
+    Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, InfoTextPath);
+
+    std::ofstream InfoFStream(this->getAnalyzePath() + "/streams.info");
+    assert(InfoFStream.is_open() &&
+           "Failed to open the output info protobuf file.");
+    ProtobufStreamRegion.SerializeToOstream(&InfoFStream);
+    InfoFStream.close();
+  }
+
+  {
+    LLVM::TDG::StreamRegion ProtobufStreamRegion;
+    for (auto &InstStream : this->InstChosenStreamMap) {
+      auto &S = InstStream.second;
+      auto Info = ProtobufStreamRegion.add_streams();
+      S->fillProtobufStreamInfo(Info);
+    }
+
+    auto InfoTextPath = this->getAnalyzePath() + "/chosen_streams.json";
+    Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, InfoTextPath);
+  }
 }
