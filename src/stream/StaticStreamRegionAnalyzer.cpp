@@ -4,6 +4,7 @@
 
 #include "llvm/Support/FileSystem.h"
 
+#include <iomanip>
 #include <sstream>
 #include <stack>
 
@@ -408,10 +409,8 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
       if (!S) {
         continue;
       }
-      if (S->Type == StaticStream::TypeT::IV) {
-        continue;
-      }
-      if (S->BaseStepRootStreams.size() != 1) {
+      if (S->Type == StaticStream::TypeT::IV ||
+          S->BaseStepRootStreams.size() != 1) {
         continue;
       }
       LLVM_DEBUG(llvm::dbgs() << "====== Try to coalesce stream: "
@@ -733,6 +732,9 @@ void StaticStreamRegionAnalyzer::finalizePlan() {
   LLVM_DEBUG(llvm::dbgs() << "Build transform plan done.\n");
   this->buildStreamConfigureLoopInfoMap(this->TopLoop);
   LLVM_DEBUG(llvm::dbgs() << "Build StreamConfigureLoopInfoMap done.\n");
+
+  this->dumpTransformPlan();
+  this->dumpConfigurePlan();
 }
 
 void StaticStreamRegionAnalyzer::chooseStreams() {
@@ -1291,4 +1293,59 @@ void StaticStreamRegionAnalyzer::dumpStreamInfos() {
     auto InfoTextPath = this->getAnalyzePath() + "/chosen_streams.json";
     Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, InfoTextPath);
   }
+}
+
+void StaticStreamRegionAnalyzer::dumpTransformPlan() {
+  std::stringstream ss;
+  ss << "DEBUG PLAN FOR LOOP " << LoopUtils::getLoopId(this->TopLoop)
+     << "----------------\n";
+  for (auto BBIter = this->TopLoop->block_begin(),
+            BBEnd = this->TopLoop->block_end();
+       BBIter != BBEnd; ++BBIter) {
+    auto BB = *BBIter;
+    ss << BB->getName().str() << "---------------------------\n";
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      std::string PlanStr = this->InstPlanMap.at(Inst).format();
+      ss << std::setw(50) << std::left << Utils::formatLLVMInst(Inst) << PlanStr
+         << '\n';
+    }
+  }
+
+  // Also dump to file.
+  std::string PlanPath = this->getAnalyzePath() + "/plan.txt";
+  std::ofstream PlanFStream(PlanPath);
+  assert(PlanFStream.is_open() &&
+         "Failed to open dump loop transform plan file.");
+  PlanFStream << ss.str() << '\n';
+  PlanFStream.close();
+}
+
+void StaticStreamRegionAnalyzer::dumpConfigurePlan() {
+  std::list<const llvm::Loop *> Stack;
+  Stack.emplace_back(this->TopLoop);
+  std::stringstream ss;
+  while (!Stack.empty()) {
+    auto Loop = Stack.back();
+    Stack.pop_back();
+    for (auto &Sub : Loop->getSubLoops()) {
+      Stack.emplace_back(Sub);
+    }
+    ss << LoopUtils::getLoopId(Loop) << '\n';
+    const auto &Info = this->getConfigureLoopInfo(Loop);
+    for (auto S : Info.getSortedStreams()) {
+      for (auto Level = this->TopLoop->getLoopDepth();
+           Level < Loop->getLoopDepth(); ++Level) {
+        ss << "  ";
+      }
+      ss << S->formatName() << '\n';
+    }
+  }
+  std::string PlanPath = this->getAnalyzePath() + "/config.plan.txt";
+  std::ofstream PlanFStream(PlanPath);
+  assert(PlanFStream.is_open() &&
+         "Failed to open dump loop configure plan file.");
+  PlanFStream << ss.str() << '\n';
+  PlanFStream.close();
 }

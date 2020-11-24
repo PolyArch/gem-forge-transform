@@ -300,6 +300,28 @@ StaticMemStream::getAddrFuncInputValues() const {
   return this->getExecFuncInputValues(*this->AddrDG);
 }
 
+void StaticMemStream::constructChosenGraph() {
+  StaticStream::constructChosenGraph();
+  // We have some sanity checks here.
+  if (this->ChosenBaseStepRootStreams.size() != 1) {
+    llvm::errs() << "Invalid " << this->ChosenBaseStepRootStreams.size()
+                 << " chosen StepRoot, " << this->BaseStepRootStreams.size()
+                 << " StepRoot for " << this->formatName() << ":\n";
+    for (auto StepRootS : this->ChosenBaseStepRootStreams) {
+      llvm::errs() << "  " << StepRootS->formatName() << '\n';
+    }
+    assert(false);
+  }
+  for (auto StepRootS : this->ChosenBaseStepRootStreams) {
+    if (StepRootS->ConfigureLoop != this->ConfigureLoop) {
+      llvm::errs() << "StepRootStream is not configured at the same loop: "
+                   << this->formatName() << " root " << StepRootS->formatName()
+                   << '\n';
+      assert(false);
+    }
+  }
+}
+
 void StaticMemStream::finalizePattern() {
   this->StaticStreamInfo.set_stp_pattern(this->computeStepPattern());
   // Compute the value pattern.

@@ -15,9 +15,7 @@ public:
                        const llvm::Loop *_InnerMostLoop,
                        llvm::ScalarEvolution *_SE,
                        const llvm::PostDominatorTree *_PDT,
-                       llvm::DataLayout *_DataLayout)
-      : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE,
-                     _PDT, _DataLayout) {}
+                       llvm::DataLayout *_DataLayout);
 
   /**
    * Of course we are always qualified.
@@ -33,7 +31,18 @@ public:
    */
   static bool isUserDefinedMemStream(const llvm::Instruction *Inst);
 
+  const llvm::CallInst *getConfigInst() const { return this->ConfigInst; }
+  const llvm::CallInst *getEndInst() const { return this->EndInst; }
+
 private:
+  /**
+   * So far we allow one user defined config/end instructions, and multiple
+   * step instructions.
+   */
+  const llvm::CallInst *UserInst;
+  const llvm::CallInst *ConfigInst;
+  const llvm::CallInst *EndInst;
+
   /**
    * UserDefinedStream actually has no ComputeInsts. This is to implement
    * the getComputeInsts() interface.
@@ -49,9 +58,14 @@ private:
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) override;
 
   /**
-   * Of course I am always a candidate.
+   * Search for config/end/step instructions for this stream.
    */
-  void analyzeIsCandidate() override { this->IsCandidate = true; }
+  void searchUserDefinedControlInstructions();
+
+  /**
+   * Check if I am a candidate.
+   */
+  void analyzeIsCandidate() override;
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override;
 

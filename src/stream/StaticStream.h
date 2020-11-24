@@ -33,6 +33,7 @@ public:
   enum TypeT {
     IV,
     MEM,
+    USER,
   };
   const TypeT Type;
   const llvm::Instruction *const Inst;
@@ -202,7 +203,7 @@ public:
    * After mark chosen streams, we want to build the graph of chosen
    * streams.
    */
-  void constructChosenGraph();
+  virtual void constructChosenGraph();
 
   bool IsCandidate;
   bool IsQualified;
@@ -267,7 +268,8 @@ public:
 
   // Load fused ops.
   // So far only used for AtomicCmpXchg.
-  std::vector<const llvm::Instruction *> FusedLoadOps;
+  using InstVec = std::vector<const llvm::Instruction *>;
+  InstVec FusedLoadOps;
   void fuseLoadOps();
 
   /**

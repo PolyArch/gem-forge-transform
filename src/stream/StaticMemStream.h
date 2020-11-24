@@ -19,6 +19,8 @@ public:
   }
   InputValueList getAddrFuncInputValues() const;
 
+  void constructChosenGraph() override;
+
 private:
   /**
    * Initialize the DFSStack by pushing the first ComputeMetaGraph.
