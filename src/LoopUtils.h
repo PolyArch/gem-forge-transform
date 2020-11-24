@@ -8,6 +8,8 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/Dominators.h"
 
+#include "Utils.h"
+
 #include <functional>
 #include <list>
 #include <string>

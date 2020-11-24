@@ -6,7 +6,7 @@
  * StreamRegionAnalyzer.
  */
 
-#include "stream/StreamRegionAnalyzer.h"
+#include "stream/StaticStreamRegionAnalyzer.h"
 
 #include "llvm/Analysis/ScalarEvolutionExpander.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -21,7 +21,7 @@ public:
       const std::unordered_set<llvm::Function *> &_ROIFunctions,
       CachedLoopInfo *_CachedLI, std::string _OutputExtraFolderPath,
       bool _TransformTextMode,
-      const std::vector<StreamRegionAnalyzer *> &Analyzers);
+      const std::vector<StaticStreamRegionAnalyzer *> &Analyzers);
 
 private:
   llvm::Module *Module;
@@ -44,7 +44,8 @@ private:
   std::unique_ptr<llvm::DataLayout> ClonedDataLayout;
 
   // Map from Stream to StreamLoad instructions.
-  std::unordered_map<Stream *, llvm::Instruction *> StreamToStreamLoadInstMap;
+  std::unordered_map<StaticStream *, llvm::Instruction *>
+      StreamToStreamLoadInstMap;
 
   // Instructions waiting to be removed at the end.
   std::unordered_set<llvm::Instruction *> PendingRemovedInsts;
@@ -59,35 +60,40 @@ private:
    */
   std::vector<const StreamConfigureLoopInfo *> AllConfiguredLoopInfos;
 
-  void transformStreamRegion(StreamRegionAnalyzer *Analyzer);
-  void configureStreamsAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop);
-  void insertStreamConfigAtLoop(StreamRegionAnalyzer *Analyzer,
+  void transformStreamRegion(StaticStreamRegionAnalyzer *Analyzer);
+  void configureStreamsAtLoop(StaticStreamRegionAnalyzer *Analyzer,
+                              llvm::Loop *Loop);
+  void insertStreamConfigAtLoop(StaticStreamRegionAnalyzer *Analyzer,
                                 llvm::Loop *Loop,
                                 llvm::Constant *ConfigIdxValue);
-  void insertStreamEndAtLoop(StreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
-                             llvm::Constant *ConfigIdxValue);
-  void insertStreamReduceAtLoop(StreamRegionAnalyzer *Analyzer,
-                                llvm::Loop *Loop, Stream *ReduceStream);
-  void transformLoadInst(StreamRegionAnalyzer *Analyzer,
-                         llvm::LoadInst *LoadInst);
-  void transformStoreInst(StreamRegionAnalyzer *Analyzer,
+  void insertStreamEndAtLoop(StaticStreamRegionAnalyzer *Analyzer,
+                             llvm::Loop *Loop, llvm::Constant *ConfigIdxValue);
+  void insertStreamReduceAtLoop(StaticStreamRegionAnalyzer *Analyzer,
+                                llvm::Loop *Loop, StaticStream *ReduceStream);
+  void transformLoadInst(StaticStreamRegionAnalyzer *Analyzer,
+                         llvm::Instruction *LoadInst);
+  void transformStoreInst(StaticStreamRegionAnalyzer *Analyzer,
                           llvm::StoreInst *StoreInst);
-  void transformAtomicRMWInst(StreamRegionAnalyzer *Analyzer,
+  void transformAtomicRMWInst(StaticStreamRegionAnalyzer *Analyzer,
                               llvm::AtomicRMWInst *AtomicRMW);
-  void transformAtomicCmpXchgInst(StreamRegionAnalyzer *Analyzer,
+  void transformAtomicCmpXchgInst(StaticStreamRegionAnalyzer *Analyzer,
                                   llvm::AtomicCmpXchgInst *AtomicCmpXchg);
-  void transformStepInst(StreamRegionAnalyzer *Analyzer,
+  void transformStepInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
-  void upgradeLoadToUpdateStream(StreamRegionAnalyzer *Analyzer,
-                                 Stream *LoadStream);
-  void mergePredicatedStreams(StreamRegionAnalyzer *Analyzer,
-                              Stream *LoadStream);
-  void mergePredicatedStore(StreamRegionAnalyzer *Analyzer, Stream *LoadStream,
-                            Stream *PredStoreStream, bool PredTrue);
-  void handleValueDG(StreamRegionAnalyzer *Analyzer, Stream *S);
-  llvm::Instruction *findStepPosition(Stream *StepStream,
+  void upgradeLoadToUpdateStream(StaticStreamRegionAnalyzer *Analyzer,
+                                 StaticStream *LoadSS);
+  void mergePredicatedStreams(StaticStreamRegionAnalyzer *Analyzer,
+                              StaticStream *LoadSS);
+  void mergePredicatedStore(StaticStreamRegionAnalyzer *Analyzer,
+                            StaticStream *LoadSS, StaticStream *StoreSS,
+                            bool PredTrue);
+  void handleValueDG(StaticStreamRegionAnalyzer *Analyzer, StaticStream *S);
+  llvm::Instruction *findStepPosition(StaticStream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
+  void removePendingRemovedInstsInFunc(
+      llvm::Function &ClonedFunc,
+      std::list<llvm::Instruction *> &PendingRemovedInsts);
 
   void replaceWithStreamMemIntrinsic();
 
@@ -119,11 +125,15 @@ private:
   using InputValueVec = std::vector<llvm::Value *>;
   using ProtoStreamConfiguration = LLVM::TDG::IVPattern;
   using ProtoStreamParam = ::LLVM::TDG::StreamParam;
-  void generateIVStreamConfiguration(Stream *S, llvm::Instruction *InsertBefore,
+  void generateIVStreamConfiguration(StaticStream *S,
+                                     llvm::Instruction *InsertBefore,
                                      InputValueVec &ClonedInputValues);
-  void generateMemStreamConfiguration(Stream *S,
+  void generateMemStreamConfiguration(StaticStream *S,
                                       llvm::Instruction *InsertBefore,
                                       InputValueVec &ClonedInputValues);
+  void generateUserMemStreamConfiguration(StaticStream *S,
+                                          llvm::Instruction *InsertBefore,
+                                          InputValueVec &ClonedInputValues);
   void generateAddRecStreamConfiguration(
       const llvm::Loop *ClonedConfigureLoop,
       const llvm::Loop *ClonedInnerMostLoop,
@@ -131,7 +141,8 @@ private:
       llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
       llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
       ProtoStreamConfiguration *ProtoConfiguration);
-  void handleExtraInputValue(Stream *S, InputValueVec &ClonedInputValues);
+  void handleExtraInputValue(StaticStream *SS,
+                             InputValueVec &ClonedInputValues);
   void addStreamInputSCEV(const llvm::SCEV *ClonedSCEV, bool Signed,
                           llvm::Instruction *InsertBefore,
                           llvm::SCEVExpander *ClonedSEExpander,
@@ -140,7 +151,7 @@ private:
   void addStreamInputValue(const llvm::Value *ClonedValue, bool Signed,
                            InputValueVec &ClonedInputValues,
                            ProtoStreamParam *ProtoParam);
-  llvm::Value *addStreamLoad(Stream *S, llvm::Type *LoadType,
+  llvm::Value *addStreamLoad(StaticStream *S, llvm::Type *LoadType,
                              llvm::Instruction *ClonedInsertBefore,
                              const llvm::DebugLoc *DebugLoc = nullptr);
 

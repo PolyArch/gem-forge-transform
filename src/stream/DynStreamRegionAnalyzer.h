@@ -5,84 +5,35 @@
 #include "LoopUtils.h"
 #include "Utils.h"
 
-#include "stream/IndVarStream.h"
-#include "stream/MemStream.h"
+#include "stream/DynIndVarStream.h"
+#include "stream/DynMemStream.h"
 #include "stream/StaticStreamRegionAnalyzer.h"
-#include "stream/StreamTransformPlan.h"
 #include "stream/ae/FunctionalStreamEngine.h"
 
 #include "ExecutionEngine/Interpreter/Interpreter.h"
 
-/**
- * Aggreate all the information for a stream configure loop.
- */
-class StreamConfigureLoopInfo {
+class DynStreamRegionAnalyzer {
 public:
-  StreamConfigureLoopInfo(const std::string &_Folder,
-                          const std::string &_RelativeFolder,
-                          const llvm::Loop *_Loop,
-                          std::vector<Stream *> _SortedStreams);
+  DynStreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
+                          CachedPostDominanceFrontier *_CachedPDF,
+                          CachedBBPredicateDataGraph *_CachedBBPredDG,
+                          llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
+                          const std::string &_RootPath);
 
-  const std::string &getRelativePath() const { return this->RelativePath; }
-  const llvm::Loop *getLoop() const { return this->Loop; }
-  const std::vector<Stream *> getSortedStreams() const {
-    return this->SortedStreams;
-  }
+  DynStreamRegionAnalyzer(const DynStreamRegionAnalyzer &Other) = delete;
+  DynStreamRegionAnalyzer(DynStreamRegionAnalyzer &&Other) = delete;
+  DynStreamRegionAnalyzer &
+  operator=(const DynStreamRegionAnalyzer &Other) = delete;
+  DynStreamRegionAnalyzer &operator=(DynStreamRegionAnalyzer &&Other) = delete;
 
-  /**
-   * TotalConfiguredStreams: Sum of all configured streams in this loop and
-   * parent loops.
-   * TotalSubLoopStreams: Maximum number of possible streams configured in
-   * this loop and sub-loops.
-   * TotalPeerStreams: Maximum number of possible streams be alive the
-   * same time with streams configured in this loop.
-   *
-   * Formula:
-   * * TotalConfiguredStreams = Sum(ConfiguredStreams, ThisAndParentLoop)
-   * * TotalSubLoopStreams = \
-   * *   (Max(TotalSubLoopStreams, SubLoop) or 0) + ConfiguredStreams
-   * * TotalAliveStreams = TotalConfiguredStreams + \
-   * *   TotalSubLoopStreams - COnfiguredStreams
-   */
-  int TotalConfiguredStreams;
-  int TotalConfiguredCoalescedStreams;
-  int TotalSubLoopStreams;
-  int TotalSubLoopCoalescedStreams;
-  int TotalAliveStreams;
-  int TotalAliveCoalescedStreams;
-  std::vector<Stream *> SortedCoalescedStreams;
-
-  void dump(llvm::DataLayout *DataLayout) const;
-
-private:
-  const std::string Path;
-  const std::string RelativePath;
-  const std::string JsonPath;
-  const llvm::Loop *Loop;
-  std::vector<Stream *> SortedStreams;
-};
-
-class StreamRegionAnalyzer {
-public:
-  StreamRegionAnalyzer(uint64_t _RegionIdx, CachedLoopInfo *_CachedLI,
-                       CachedPostDominanceFrontier *_CachedPDF,
-                       CachedBBPredicateDataGraph *_CachedBBPredDG,
-                       llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
-                       const std::string &_RootPath);
-
-  StreamRegionAnalyzer(const StreamRegionAnalyzer &Other) = delete;
-  StreamRegionAnalyzer(StreamRegionAnalyzer &&Other) = delete;
-  StreamRegionAnalyzer &operator=(const StreamRegionAnalyzer &Other) = delete;
-  StreamRegionAnalyzer &operator=(StreamRegionAnalyzer &&Other) = delete;
-
-  ~StreamRegionAnalyzer();
+  ~DynStreamRegionAnalyzer();
 
   void addMemAccess(DynamicInstruction *DynamicInst, DataGraph *DG);
   void addIVAccess(DynamicInstruction *DynamicInst);
   void endIter(const llvm::Loop *Loop);
   void endLoop(const llvm::Loop *Loop);
-  void endRegion(StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy,
-                 StreamPassChooseStrategyE StreamPassChooseStrategy);
+  void
+  finalizePlan(StreamPassQualifySeedStrategyE StreamPassQualifySeedStrategy);
   void endTransform();
   void finalizeCoalesceInfo();
   void coalesceStreamsAtLoop(llvm::Loop *Loop);
@@ -102,7 +53,7 @@ public:
    */
 
   using InstTransformPlanMapT =
-      std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
+      StaticStreamRegionAnalyzer::InstTransformPlanMapT;
 
   const InstTransformPlanMapT &getInstTransformPlanMap() const {
     return this->InstPlanMap;
@@ -111,12 +62,16 @@ public:
   const StreamConfigureLoopInfo &
   getConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
 
-  Stream *getChosenStreamByInst(const llvm::Instruction *Inst);
+  DynStream *getChosenStreamByInst(const llvm::Instruction *Inst);
+  DynStream *getDynStreamByStaticStream(StaticStream *SS);
 
   const StreamTransformPlan &
   getTransformPlanByInst(const llvm::Instruction *Inst);
 
   FunctionalStreamEngine *getFuncSE();
+  StaticStreamRegionAnalyzer *getStaticAnalyzer() {
+    return this->StaticAnalyzer.get();
+  }
 
   /**
    * Insert address computation function in the module.
@@ -125,16 +80,12 @@ public:
   void insertAddrFuncInModule(std::unique_ptr<llvm::Module> &Module);
 
 private:
-  uint64_t RegionIdx;
   CachedLoopInfo *CachedLI;
   CachedPostDominanceFrontier *CachedPDF;
   CachedBBPredicateDataGraph *CachedBBPredDG;
   llvm::Loop *TopLoop;
   llvm::LoopInfo *LI;
   llvm::DataLayout *DataLayout;
-  std::string RootPath;
-  std::string AnalyzeRelativePath;
-  std::string AnalyzePath;
   std::unique_ptr<StaticStreamRegionAnalyzer> StaticAnalyzer;
 
   /**
@@ -143,28 +94,35 @@ private:
   uint64_t numDynamicMemAccesses = 0;
 
   /**
+   * We are switching to StaticStream and simplify DynStream.
+   * This remembers the map from StaticStream to DynStream.
+   */
+  std::unordered_map<StaticStream *, DynStream *> StaticDynStreamMap;
+
+  /**
    * Key data structure, map from instruction to the list of streams.
    * Starting from the inner-most loop streams.
    */
-  std::unordered_map<const llvm::Instruction *, std::list<Stream *>>
+  std::unordered_map<const llvm::Instruction *, std::list<DynStream *>>
       InstStreamMap;
 
   /**
    * Map from an instruction to its chosen stream.
    */
-  std::unordered_map<const llvm::Instruction *, Stream *> InstChosenStreamMap;
+  std::unordered_map<const llvm::Instruction *, DynStream *>
+      InstChosenStreamMap;
 
   /**
    * Map from a loop to all the streams with this loop as the inner most loop.
    */
-  std::unordered_map<const llvm::Loop *, std::unordered_set<Stream *>>
+  std::unordered_map<const llvm::Loop *, std::unordered_set<DynStream *>>
       InnerMostLoopStreamMap;
 
   /**
    * Map from a loop to all the streams configured at the entry point to this
    * loop.
    */
-  std::unordered_map<const llvm::Loop *, std::unordered_set<Stream *>>
+  std::unordered_map<const llvm::Loop *, std::unordered_set<DynStream *>>
       ConfigureLoopStreamMap;
 
   /**
@@ -184,7 +142,7 @@ private:
 
   void initializeStreams();
 
-  Stream *
+  DynStream *
   getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
                                   const llvm::Loop *ConfigureLoop) const;
   void buildStreamAddrDepGraph();
@@ -208,7 +166,7 @@ private:
   // Must be called after allocate the StreamConfigureLoopInfo.
   void allocateRegionStreamId(const llvm::Loop *ConfigureLoop);
 
-  std::vector<Stream *>
+  std::vector<DynStream *>
   sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
 
   /**
@@ -221,7 +179,7 @@ private:
   void dumpTransformPlan();
   void dumpConfigurePlan();
   void dumpStreamInfos();
-  std::string classifyStream(const MemStream &S) const;
+  std::string classifyStream(const DynMemStream &S) const;
 };
 
 #endif

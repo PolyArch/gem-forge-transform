@@ -6,7 +6,7 @@
 
 bool StreamExecutionStaticPass::runOnModule(llvm::Module &Module) {
   this->initialize(Module);
-  LLVM_DEBUG(llvm::errs() << "Select StreamRegionAnalyzer.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Select DynStreamRegionAnalyzer.\n");
   auto SelectedStreamRegionAnalyzers = this->selectStreamRegionAnalyzers();
 
   // Use the transformer to transform the regions.
@@ -16,13 +16,6 @@ bool StreamExecutionStaticPass::runOnModule(llvm::Module &Module) {
                              SelectedStreamRegionAnalyzers);
 
   for (auto &Analyzer : SelectedStreamRegionAnalyzers) {
-    /**
-     * Normally we would call Analyzer->getFuncSE()->finalizeCoalesceInfo().
-     * However, there is no trace, so we identify coalesced streams in
-     * StreamExecutionTransformer.
-     */
-    // Analyzer->getFuncSE()->finalizeCoalesceInfo();
-
     // End transformation.
     // This will make sure the info are dumped.
     Analyzer->endTransform();
@@ -52,13 +45,13 @@ bool StreamExecutionStaticPass::finalize(llvm::Module &Module) {
   return true;
 }
 
-std::vector<StreamRegionAnalyzer *>
+std::vector<StaticStreamRegionAnalyzer *>
 StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
-  std::vector<StreamRegionAnalyzer *> Analyzers;
+  std::vector<StaticStreamRegionAnalyzer *> Analyzers;
 
   // Search through all ROI functions.
   for (auto Func : this->ROIFunctions) {
-    LLVM_DEBUG(llvm::errs() << "Searching " << Func->getName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Searching " << Func->getName() << '\n');
     auto LI = this->CachedLI->getLoopInfo(Func);
     llvm::Loop *PrevAnalyzedLoop = nullptr;
     for (auto Loop : LI->getLoopsInPreorder()) {
@@ -66,26 +59,25 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
         // Skip this as it's already contained by other analyzer.
         continue;
       }
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Processing loop " << LoopUtils::getLoopId(Loop) << '\n');
       if (LoopUtils::isLoopContinuous(Loop) &&
           !LoopUtils::isLoopRemainderOrEpilogue(Loop)) {
         // Check if loop is continuous.
-        auto Analyzer = new StreamRegionAnalyzer(
-            Analyzers.size(), this->CachedLI, this->CachedPDF,
-            this->CachedBBPredDG, Loop, this->DataLayout,
+        auto Analyzer = new StaticStreamRegionAnalyzer(
+            Loop, this->DataLayout, this->CachedLI, this->CachedPDF,
+            this->CachedBBPredDG, Analyzers.size(),
             this->OutputExtraFolderPath);
 
-        // Directly call endRegion.
+        // Directly call finalizePlan.
         // This will select streams, and build transform plan.
-        Analyzer->endRegion(StreamPassQualifySeedStrategyE::STATIC,
-                            StreamPassChooseStrategy);
+        Analyzer->finalizePlan();
 
         Analyzers.push_back(Analyzer);
 
         PrevAnalyzedLoop = Loop;
       } else {
-        LLVM_DEBUG(llvm::errs() << "Loop not continuous "
+        LLVM_DEBUG(llvm::dbgs() << "Loop not continuous "
                                 << LoopUtils::getLoopId(Loop) << '\n');
       }
     }

@@ -1,32 +1,30 @@
 #ifndef LLVM_TDG_STREAM_INDUCTION_VAR_STREAM_H
 #define LLVM_TDG_STREAM_INDUCTION_VAR_STREAM_H
 
-#include "stream/Stream.h"
+#include "stream/DynStream.h"
 
 #include <sstream>
-class IndVarStream : public Stream {
+class DynIndVarStream : public DynStream {
 public:
-  IndVarStream(const std::string &_Folder, const std::string &_RelativeFolder,
-               const StaticStream *_SStream, llvm::DataLayout *DataLayout);
-  IndVarStream(const IndVarStream &Other) = delete;
-  IndVarStream(IndVarStream &&Other) = delete;
-  IndVarStream &operator=(const IndVarStream &Other) = delete;
-  IndVarStream &operator=(IndVarStream &&Other) = delete;
+  using InstSet = StaticStream::InstSet;
+  DynIndVarStream(const std::string &_Folder,
+                  const std::string &_RelativeFolder, StaticStream *_SStream,
+                  llvm::DataLayout *DataLayout);
+  DynIndVarStream(const DynIndVarStream &Other) = delete;
+  DynIndVarStream(DynIndVarStream &&Other) = delete;
+  DynIndVarStream &operator=(const DynIndVarStream &Other) = delete;
+  DynIndVarStream &operator=(DynIndVarStream &&Other) = delete;
 
   void buildBasicDependenceGraph(GetStreamFuncT GetStream) override;
 
   const llvm::PHINode *getPHIInst() const { return this->PHIInst; }
-  const std::unordered_set<const llvm::Instruction *> &
-  getComputeInsts() const override {
-    return this->ComputeInsts;
-  }
+  const InstSet &getComputeInsts() const override { return this->ComputeInsts; }
   const std::unordered_set<const llvm::LoadInst *> &
   getBaseLoads() const override {
     return this->BaseLoadInsts;
   }
-  const std::unordered_set<const llvm::Instruction *> &
-  getStepInsts() const override {
-    return this->StepInsts;
+  const InstSet &getStepInsts() const override {
+    return this->SStream->getStepInsts();
   }
 
   bool isCandidate() const override;
@@ -49,28 +47,21 @@ public:
 
   std::string format() const {
     std::stringstream ss;
-    ss << "IndVarStream " << LoopUtils::formatLLVMInst(this->PHIInst) << '\n';
+    ss << "DynIndVarStream " << Utils::formatLLVMInst(this->PHIInst) << '\n';
 
     ss << "ComputeInsts: ------\n";
     for (const auto &ComputeInst : this->ComputeInsts) {
-      ss << LoopUtils::formatLLVMInst(ComputeInst) << '\n';
+      ss << Utils::formatLLVMInst(ComputeInst) << '\n';
     }
     ss << "ComputeInsts: end---\n";
 
     return ss.str();
   }
 
-  InputValueList getReduceFuncInputValues() const override;
-
-  void fillProtobufAddrFuncInfo(
-      ::llvm::DataLayout *DataLayout,
-      ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const override;
-
 private:
   const llvm::PHINode *PHIInst;
   std::unordered_set<const llvm::Instruction *> ComputeInsts;
   std::unordered_set<const llvm::LoadInst *> BaseLoadInsts;
-  std::unordered_set<const llvm::Instruction *> StepInsts;
   bool IsCandidateStatic;
 
   void addAccess(uint64_t Value) {
@@ -85,15 +76,6 @@ private:
    * Do a BFS on the PHINode and extract all the compute instructions.
    */
   void searchComputeInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
-
-  /**
-   * Do a BFS on the PHINode and extract all the step instructions.
-   */
-  static std::unordered_set<const llvm::Instruction *>
-  searchStepInsts(const llvm::PHINode *PHINode, const llvm::Loop *Loop);
-
-  /**
-   * Find the step instructions by looking at the possible in
 
   /**
    * A phi node is an static candidate induction variable stream if:

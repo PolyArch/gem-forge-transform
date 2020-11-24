@@ -7,18 +7,18 @@
 #include <unordered_map>
 
 class FunctionalStreamEngine {
- public:
+public:
   FunctionalStreamEngine(std::unique_ptr<llvm::Interpreter> &_Interpreter,
-                         const std::unordered_set<Stream *> &_ChosenStreams);
+                         const std::unordered_set<DynStream *> &_ChosenStreams);
 
-  void configure(Stream *S, DataGraph *DG);
-  void step(Stream *S, DataGraph *DG);
+  void configure(DynStream *S, DataGraph *DG);
+  void step(DynStream *S, DataGraph *DG);
 
-  void updateWithValue(Stream *S, DataGraph *DG,
+  void updateWithValue(DynStream *S, DataGraph *DG,
                        const DynamicValue &DynamicVal);
 
-  void endStream(Stream *S);
-  void access(Stream *S);
+  void endStream(DynStream *S);
+  void access(DynStream *S);
 
   void endAll();
 
@@ -28,9 +28,9 @@ class FunctionalStreamEngine {
     return this->Interpreter;
   }
 
- private:
+private:
   std::unique_ptr<llvm::Interpreter> &Interpreter;
-  std::unordered_map<const Stream *, FunctionalStream> StreamMap;
+  std::unordered_map<const DynStream *, FunctionalStream> StreamMap;
   std::unordered_map<const FunctionalStream *,
                      std::list<DynamicStreamCoalescer>>
       DynamicStreamCoalescerMap;

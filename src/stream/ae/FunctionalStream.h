@@ -3,8 +3,7 @@
 
 #include "FunctionalStreamPattern.h"
 
-#include "stream/MemStream.h"
-#include "stream/Stream.h"
+#include "stream/DynMemStream.h"
 #include "stream/StreamMessage.pb.h"
 
 #include "Gem5ProtobufSerializer.h"
@@ -16,15 +15,15 @@
 class FunctionalStreamEngine;
 class FunctionalStream {
 public:
-  FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE);
+  FunctionalStream(DynStream *_S, FunctionalStreamEngine *_SE);
 
   FunctionalStream(const FunctionalStream &Other) = delete;
   FunctionalStream(FunctionalStream &&Other) = delete;
   FunctionalStream &operator=(const FunctionalStream &Other) = delete;
   FunctionalStream &operator=(FunctionalStream &&Other) = delete;
 
-  Stream *getStream() { return this->S; }
-  const Stream *getStream() const { return this->S; }
+  DynStream *getStream() { return this->S; }
+  const DynStream *getStream() const { return this->S; }
 
   void addBaseStream(FunctionalStream *BaseStream);
 
@@ -53,7 +52,7 @@ public:
   void endAll();
 
 private:
-  Stream *S;
+  DynStream *S;
   FunctionalStreamEngine *SE;
   MemoryFootprint MemFootprint;
 

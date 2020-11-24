@@ -1,10 +1,11 @@
 #ifndef LLVM_TDG_STREAM_STREAM_TRANSFORM_PLAN_H
 #define LLVM_TDG_STREAM_STREAM_TRANSFORM_PLAN_H
 
-#include "stream/Stream.h"
+#include "stream/StaticStream.h"
 
 struct StreamTransformPlan {
 public:
+  using StreamSet = StaticStream::StreamSet;
   enum PlanT {
     NOTHING,
     DELETE,
@@ -31,25 +32,21 @@ public:
 
   StreamTransformPlan() : Plan(NOTHING) {}
 
-  const std::unordered_set<Stream *> &getUsedStreams() const {
-    return this->UsedStreams;
-  }
-  const std::unordered_set<Stream *> &getStepStreams() const {
-    return this->StepStreams;
-  }
-  Stream *getParamStream() const { return this->ParamStream; }
+  const StreamSet &getUsedStreams() const { return this->UsedStreams; }
+  const StreamSet &getStepStreams() const { return this->StepStreams; }
+  StaticStream *getParamStream() const { return this->ParamStream; }
 
-  void addUsedStream(Stream *UsedStream) {
+  void addUsedStream(StaticStream *UsedStream) {
     this->UsedStreams.insert(UsedStream);
   }
 
   void planToDelete() { this->Plan = DELETE; }
-  void planToStep(Stream *S) {
+  void planToStep(StaticStream *S) {
     this->StepStreams.insert(S);
     this->ParamStream = S;
     this->Plan = STEP;
   }
-  void planToStore(Stream *S) {
+  void planToStore(StaticStream *S) {
     this->ParamStream = S;
     this->Plan = STORE;
     // Store is also considered as use.
@@ -59,9 +56,9 @@ public:
   std::string format() const;
 
 private:
-  std::unordered_set<Stream *> UsedStreams;
-  std::unordered_set<Stream *> StepStreams;
-  Stream *ParamStream;
+  std::unordered_set<StaticStream *> UsedStreams;
+  std::unordered_set<StaticStream *> StepStreams;
+  StaticStream *ParamStream;
 };
 
 #endif

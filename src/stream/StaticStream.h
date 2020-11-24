@@ -33,6 +33,7 @@ public:
   enum TypeT {
     IV,
     MEM,
+    USER,
   };
   const TypeT Type;
   const llvm::Instruction *const Inst;
@@ -56,18 +57,20 @@ public:
                llvm::DataLayout *_DataLayout)
       : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
         ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop),
-        FuncNameBase(
-            llvm::Twine(_Inst->getFunction()->getName() + "_" +
-                        _Inst->getParent()->getName() + "_" + _Inst->getName() +
-                        "_" + _Inst->getOpcodeName() + "_" +
-                        llvm::Twine(LoopUtils::getLLVMInstPosInBB(_Inst)))
-                .str()),
+        FuncNameBase(llvm::Twine(_Inst->getFunction()->getName() + "_" +
+                                 _Inst->getParent()->getName() + "_" +
+                                 _Inst->getName() + "_" +
+                                 _Inst->getOpcodeName() + "_" +
+                                 llvm::Twine(Utils::getLLVMInstPosInBB(_Inst)))
+                         .str()),
         SE(_SE), PDT(_PDT), DataLayout(_DataLayout), IsCandidate(false),
-        IsQualified(false), IsStream(false) {
+        IsQualified(false), IsChosen(false), CoalesceGroup(StreamId),
+        CoalesceOffset(0) {
     this->fuseLoadOps();
   }
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
+  void fillProtobufStreamInfo(LLVM::TDG::StreamInfo *ProtobufInfo) const;
   int getCoreElementSize() const;
   int getMemElementSize() const;
   llvm::Type *getCoreElementType() const;
@@ -105,6 +108,14 @@ public:
   // Simple Load-Store dependence.
   StreamSet LoadStoreDepStreams;
   StreamSet LoadStoreBaseStreams;
+
+  // Chosen graphs.
+  StreamSet ChosenBaseStreams;
+  StreamSet ChosenDependentStreams;
+  StreamSet ChosenBackMemBaseStreams;
+  StreamSet ChosenBackIVDependentStreams;
+  StreamSet ChosenBaseStepStreams;
+  StreamSet ChosenBaseStepRootStreams;
 
   using GetStreamFuncT = std::function<StaticStream *(const llvm::Instruction *,
                                                       const llvm::Loop *)>;
@@ -169,10 +180,46 @@ public:
       this->finalizePattern();
     }
   }
+  bool isChosen() const { return this->IsChosen; }
+  void markChosen() { this->IsChosen = true; }
+
+  void setRegionStreamId(int Id) {
+    assert(this->isChosen() && "Only chosen stream has RegionStreamId.");
+    assert(this->RegionStreamId == -1 && "RegionStreamId set multiple times.");
+    assert(Id >= 0 && "Illegal RegionStreamId set.");
+    this->RegionStreamId = Id;
+  }
+  int getRegionStreamId() const { return this->RegionStreamId; }
+
+  void setCoalesceGroup(uint64_t CoalesceGroup, int32_t CoalesceOffset = -1) {
+    assert(this->CoalesceGroup == this->StreamId &&
+           "Coalesce group is already set.");
+    this->CoalesceGroup = CoalesceGroup;
+    this->CoalesceOffset = CoalesceOffset;
+  }
+  int getCoalesceGroup() const { return this->CoalesceGroup; }
+
+  /**
+   * After mark chosen streams, we want to build the graph of chosen
+   * streams.
+   */
+  virtual void constructChosenGraph();
 
   bool IsCandidate;
   bool IsQualified;
-  bool IsStream;
+  bool IsChosen;
+  /**
+   * The unique id for streams configured at the same time.
+   * Mainly for execution. Only chosen stream has this.
+   */
+  int RegionStreamId = -1;
+
+  /**
+   * CoalesceGroup. Default to myself with Offset 0.
+   */
+  uint64_t CoalesceGroup;
+  int32_t CoalesceOffset;
+
   // Some bookkeeping information.
   mutable LLVM::TDG::StaticStreamInfo StaticStreamInfo;
 
@@ -199,25 +246,30 @@ public:
   StreamSet PredicatedTrueStreams;
   StreamSet PredicatedFalseStreams;
 
+  // AddrDG for MemStream.
+  std::unique_ptr<StreamDataGraph> AddrDG = nullptr;
+
   // Reduction stream.
   std::unique_ptr<StreamDataGraph> ReduceDG = nullptr;
+  void generateAddrFunction(std::unique_ptr<llvm::Module> &Module) const;
   void generateReduceFunction(std::unique_ptr<llvm::Module> &Module) const;
   void generateValueFunction(std::unique_ptr<llvm::Module> &Module) const;
 
   // Store stream.
   std::unique_ptr<StreamDataGraph> ValueDG = nullptr;
-  void fillProtobufStoreFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
-  void fillProtobufStoreFuncInfoImpl(::LLVM::TDG::ExecFuncInfo *ExInfo,
-                                     bool IsLoad) const;
   std::string getStoreFuncName(bool IsLoad) const {
     return this->FuncNameBase + (IsLoad ? "_load" : "_store");
   }
   using InputValueList = std::list<const llvm::Value *>;
   InputValueList getStoreFuncInputValues() const;
+  InputValueList getReduceFuncInputValues() const;
+  InputValueList getPredFuncInputValues() const;
+  InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
 
   // Load fused ops.
   // So far only used for AtomicCmpXchg.
-  std::vector<const llvm::Instruction *> FusedLoadOps;
+  using InstVec = std::vector<const llvm::Instruction *>;
+  InstVec FusedLoadOps;
   void fuseLoadOps();
 
   /**
@@ -226,6 +278,13 @@ public:
    */
   bool InputValuesValid = false;
   std::list<const llvm::Value *> InputValues;
+
+  using InstSet = std::unordered_set<const llvm::Instruction *>;
+  const InstSet &getStepInsts() const { return this->StepInsts; }
+  virtual const InstSet &getComputeInsts() const = 0;
+
+  void fillProtobufStoreFuncInfoImpl(::LLVM::TDG::ExecFuncInfo *ExInfo,
+                                     bool IsLoad) const;
 
 protected:
   static uint64_t AllocatedStreamId;
@@ -302,6 +361,11 @@ protected:
   ConstructedComputeMetaNodeMapT ConstructedComputeMetaNodeMap;
 
   /**
+   * Remember the StepInsts.
+   */
+  InstSet StepInsts;
+
+  /**
    * Handle the newly created PHIMetaNode.
    * Notice: this may modify DFSStack!
    */
@@ -367,5 +431,31 @@ protected:
    * Analyze if this has known trip count.
    */
   void analyzeIsTripCountFixed() const;
+
+  /**
+   * This is a hack function to judge if this is a StepInst.
+   * So far we just rely on the operation.
+   */
+  static bool isStepInst(const llvm::Instruction *Inst) {
+    auto Opcode = Inst->getOpcode();
+    switch (Opcode) {
+    case llvm::Instruction::Add:
+    case llvm::Instruction::GetElementPtr:
+    case llvm::Instruction::Select: {
+      return true;
+    }
+    default: {
+      return false;
+    }
+    }
+  }
+
+  const StaticStream *getExecFuncInputStream(const llvm::Value *Value) const;
+  void fillProtobufExecFuncInfo(::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
+                                const std::string &FuncName,
+                                const ExecutionDataGraph &ExecDG) const;
+  void fillProtobufAddrFuncInfo(::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const;
+  void fillProtobufPredFuncInfo(::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
+  void fillProtobufStoreFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
 };
 #endif

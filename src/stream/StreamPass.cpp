@@ -38,7 +38,7 @@ void StreamPass::dumpStats(std::ostream &O) {
   }
 }
 
-StreamRegionAnalyzer *
+DynStreamRegionAnalyzer *
 StreamPass::getAnalyzerByLoop(const llvm::Loop *Loop) const {
   if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
     return nullptr;
@@ -66,7 +66,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
   if (LoopStack.empty()) {
     // Get or create the region analyzer.
     if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
-      auto StreamAnalyzer = std::make_unique<StreamRegionAnalyzer>(
+      auto StreamAnalyzer = std::make_unique<DynStreamRegionAnalyzer>(
           this->RegionIdx, this->CachedLI, this->CachedPDF,
           this->CachedBBPredDG, Loop, this->Trace->DataLayout,
           this->OutputExtraFolderPath);
@@ -111,7 +111,7 @@ bool StreamPass::isLoopCandidate(const llvm::Loop *Loop) {
 }
 
 void StreamPass::analyzeStream() {
-  LLVM_DEBUG(llvm::errs() << "Stream: Start analysis.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Stream: Start analysis.\n");
 
   LoopStackT LoopStack;
 
@@ -163,8 +163,8 @@ void StreamPass::analyzeStream() {
        */
       for (auto &LoopStreamAnalyzer : this->LoopStreamAnalyzerMap) {
         // By default we use dynamic information.
-        LoopStreamAnalyzer.second->endRegion(
-            StreamPassQualifySeedStrategyE::DYNAMIC, StreamPassChooseStrategy);
+        LoopStreamAnalyzer.second->finalizePlan(
+            StreamPassQualifySeedStrategyE::DYNAMIC);
       }
 
       break;
@@ -219,7 +219,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     assert(this->LoopStreamAnalyzerMap.count(NewLoop) != 0 &&
            "Missing analyzer for transforming loops.");
     this->CurrentStreamAnalyzer = this->LoopStreamAnalyzerMap.at(NewLoop).get();
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Enter Region " << LoopUtils::getLoopId(NewLoop) << '\n');
   }
 
@@ -241,9 +241,10 @@ void StreamPass::pushLoopStackAndConfigureStreams(
   std::unordered_set<const llvm::Instruction *> LoopInvariantInputs;
 
   const auto &SortedStreams = Info.getSortedStreams();
-  for (auto &S : SortedStreams) {
+  for (auto &SS : SortedStreams) {
+    auto S = this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
     // Inform the stream engine.
-    LLVM_DEBUG(llvm::errs() << "Configure stream " << S->formatName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Configure stream " << S->formatName() << '\n');
     this->CurrentStreamAnalyzer->getFuncSE()->configure(S, this->Trace);
 
     auto Inst = S->getInst();
@@ -264,8 +265,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     /**
      * Collect all the loop invariant values.
      */
-    auto SStream = S->SStream;
-    for (const auto &LoopInvariantValue : SStream->LoopInvariantInputs) {
+    for (const auto &LoopInvariantValue : SS->LoopInvariantInputs) {
       if (auto Inst = llvm::dyn_cast<llvm::Instruction>(LoopInvariantValue)) {
         // This is an loop invariant instruction input.
         LoopInvariantInputs.insert(Inst);
@@ -332,8 +332,9 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
   for (auto StreamIter = SortedStreams.rbegin(),
             StreamEnd = SortedStreams.rend();
        StreamIter != StreamEnd; ++StreamIter) {
-    auto S = *StreamIter;
-    auto Inst = S->getInst();
+    auto SS = *StreamIter;
+    auto S = this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
+    auto Inst = SS->Inst;
 
     /**
      * Also be dependent on previous step/config inst of myself.
@@ -364,20 +365,20 @@ void StreamPass::popLoopStackAndUnconfigureStreams(
 }
 
 void StreamPass::DEBUG_TRANSFORMED_STREAM(DynamicInstruction *DynamicInst) {
-  LLVM_DEBUG(llvm::errs() << DynamicInst->getId() << ' '
+  LLVM_DEBUG(llvm::dbgs() << DynamicInst->getId() << ' '
                           << DynamicInst->getOpName() << ' ');
   if (auto StaticInst = DynamicInst->getStaticInstruction()) {
-    LLVM_DEBUG(llvm::errs() << LoopUtils::formatLLVMInst(StaticInst));
+    LLVM_DEBUG(llvm::dbgs() << Utils::formatLLVMInst(StaticInst));
   }
-  LLVM_DEBUG(llvm::errs() << " reg-deps ");
+  LLVM_DEBUG(llvm::dbgs() << " reg-deps ");
   for (const auto &RegDep : this->Trace->RegDeps.at(DynamicInst->getId())) {
-    LLVM_DEBUG(llvm::errs() << RegDep.second << ' ');
+    LLVM_DEBUG(llvm::dbgs() << RegDep.second << ' ');
   }
-  LLVM_DEBUG(llvm::errs() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << '\n');
 }
 
 void StreamPass::transformStream() {
-  LLVM_DEBUG(llvm::errs() << "Stream: Start transform.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Stream: Start transform.\n");
 
   LoopStackT LoopStack;
   ActiveStreamInstMapT ActiveStreamInstMap;
@@ -509,13 +510,14 @@ void StreamPass::transformStream() {
          */
 
         // Insert all the step instructions.
-        for (auto StepStream : TransformPlan.getStepStreams()) {
+        for (auto StepSS : TransformPlan.getStepStreams()) {
+          auto StepDynS =
+              this->CurrentStreamAnalyzer->getDynStreamByStaticStream(StepSS);
           // Inform the functional stream engine that this stream stepped.
-          this->CurrentStreamAnalyzer->getFuncSE()->step(StepStream,
-                                                         this->Trace);
+          this->CurrentStreamAnalyzer->getFuncSE()->step(StepDynS, this->Trace);
 
           // Create the new StepInst.
-          auto StepInst = new StreamStepInst(StepStream);
+          auto StepInst = new StreamStepInst(StepDynS);
           auto StepInstId = StepInst->getId();
 
           this->Trace->insertDynamicInst(NewInstIter, StepInst);
@@ -526,7 +528,7 @@ void StreamPass::transformStream() {
            */
           auto &RegDeps = this->Trace->RegDeps.at(StepInstId);
           // Add dependence to the previous me and register myself.
-          auto StreamInst = StepStream->getInst();
+          auto StreamInst = StepDynS->getInst();
           auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
           if (StreamInstIter == ActiveStreamInstMap.end()) {
             ActiveStreamInstMap.emplace(StreamInst, StepInstId);
@@ -563,13 +565,16 @@ void StreamPass::transformStream() {
             .updateRegisterDependenceLookUpMap(NewStaticInst,
                                                std::list<DynamicId>());
 
+        auto StoreSS = TransformPlan.getParamStream();
+        auto StoreDynS =
+            this->CurrentStreamAnalyzer->getDynStreamByStaticStream(StoreSS);
+
         /**
          * REPLACE the original store instruction with our special stream
          * store.
          */
         auto NewDynamicId = NewDynamicInst->getId();
-        auto StoreInst =
-            new StreamStoreInst(TransformPlan.getParamStream(), NewDynamicId);
+        auto StoreInst = new StreamStoreInst(StoreDynS, NewDynamicId);
         /**
          * Copy the additional dependence information within the instruction
          * itself.
@@ -606,21 +611,22 @@ void StreamPass::transformStream() {
          * If the store stream has not step instruction, we have to explicitly
          * serialize between these stream-store instructions.
          */
-        auto StoreStream = TransformPlan.getParamStream();
         auto StoreInstId = NewDynamicId;
-        if (StoreStream->getBaseStepRootStreams().empty()) {
+        if (StoreDynS->getBaseStepRootStreams().empty()) {
           // There is no step stream for me.
 
           /**
            * Handle the use information.
            */
           auto &RegDeps = this->Trace->RegDeps.at(NewDynamicInst->getId());
-          for (auto &UsedStream : TransformPlan.getUsedStreams()) {
+          for (auto &UsedSS : TransformPlan.getUsedStreams()) {
+            auto UsedDynS =
+                this->CurrentStreamAnalyzer->getDynStreamByStaticStream(UsedSS);
             // Add the used stream id to the dynamic instruction.
-            NewDynamicInst->addUsedStreamId(UsedStream->getStreamId());
-            auto UsedStreamInst = UsedStream->getInst();
+            NewDynamicInst->addUsedStreamId(UsedSS->StreamId);
+            auto UsedStreamInst = UsedSS->Inst;
             // Inform the used stream that the current entry is used.
-            this->CurrentStreamAnalyzer->getFuncSE()->access(UsedStream);
+            this->CurrentStreamAnalyzer->getFuncSE()->access(UsedDynS);
             auto UsedStreamInstIter = ActiveStreamInstMap.find(UsedStreamInst);
             if (UsedStreamInstIter != ActiveStreamInstMap.end()) {
               RegDeps.emplace_back(nullptr, UsedStreamInstIter->second);
@@ -631,7 +637,7 @@ void StreamPass::transformStream() {
           NeedToHandleUseInformation = false;
 
           // Add dependence to the previous me and register myself.
-          auto StreamInst = StoreStream->getInst();
+          auto StreamInst = StoreSS->Inst;
           auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
           if (StreamInstIter == ActiveStreamInstMap.end()) {
             ActiveStreamInstMap.emplace(StreamInst, NewDynamicId);
@@ -647,12 +653,14 @@ void StreamPass::transformStream() {
          * Handle the use information.
          */
         auto &RegDeps = this->Trace->RegDeps.at(NewDynamicInst->getId());
-        for (auto &UsedStream : TransformPlan.getUsedStreams()) {
+        for (auto &UsedSS : TransformPlan.getUsedStreams()) {
+          auto UsedDynS =
+              this->CurrentStreamAnalyzer->getDynStreamByStaticStream(UsedSS);
           // Add the used stream id to the dynamic instruction.
-          NewDynamicInst->addUsedStreamId(UsedStream->getStreamId());
-          auto UsedStreamInst = UsedStream->getInst();
+          NewDynamicInst->addUsedStreamId(UsedSS->StreamId);
+          auto UsedStreamInst = UsedSS->Inst;
           // Inform the used stream that the current entry is used.
-          this->CurrentStreamAnalyzer->getFuncSE()->access(UsedStream);
+          this->CurrentStreamAnalyzer->getFuncSE()->access(UsedDynS);
         }
       }
     }
@@ -669,7 +677,7 @@ void StreamPass::transformStream() {
 #undef DEBUG_LOOP_TRANSFORMED
   }
 
-  LLVM_DEBUG(llvm::errs() << "Stream: Transform done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Stream: Transform done.\n");
 }
 
 #undef DEBUG_TYPE

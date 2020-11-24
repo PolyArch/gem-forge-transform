@@ -246,7 +246,7 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
           // We found the function directly.
           // After this point we use mangled name everywhere.
           MatchedFunctions.insert(Function);
-          LLVM_DEBUG(llvm::errs()
+          LLVM_DEBUG(llvm::dbgs()
                      << "Add function " << Function->getName() << '\n');
         } else {
           UnmatchedNames.insert(Name);

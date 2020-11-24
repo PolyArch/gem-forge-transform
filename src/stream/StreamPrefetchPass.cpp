@@ -23,7 +23,7 @@ protected:
 };
 
 void StreamPrefetchPass::transformStream() {
-  LLVM_DEBUG(llvm::errs() << "StreamPrefetch: Start transform.\n");
+  LLVM_DEBUG(llvm::dbgs() << "StreamPrefetch: Start transform.\n");
 
   LoopStackT LoopStack;
   ActiveStreamInstMapT ActiveStreamInstMap;
@@ -128,12 +128,13 @@ void StreamPrefetchPass::transformStream() {
         // Ignore delete instructions.
       } else if (TransformPlan.Plan == StreamTransformPlan::PlanT::STEP) {
         // Insert the step instructions.
-        for (auto StepStream : TransformPlan.getStepStreams()) {
-          this->CurrentStreamAnalyzer->getFuncSE()->step(StepStream,
-                                                         this->Trace);
+        for (auto StepSS : TransformPlan.getStepStreams()) {
+          auto StepDynS =
+              this->CurrentStreamAnalyzer->getDynStreamByStaticStream(StepSS);
+          this->CurrentStreamAnalyzer->getFuncSE()->step(StepDynS, this->Trace);
 
           // Create the new StepInst.
-          auto StepInst = new StreamStepInst(StepStream);
+          auto StepInst = new StreamStepInst(StepDynS);
           auto StepInstId = StepInst->getId();
 
           this->Trace->insertDynamicInst(NewInstIter, StepInst);
@@ -144,7 +145,7 @@ void StreamPrefetchPass::transformStream() {
            */
           auto &RegDeps = this->Trace->RegDeps.at(StepInstId);
           // Add dependence to the previous me and register myself.
-          auto StreamInst = StepStream->getInst();
+          auto StreamInst = StepSS->Inst;
           auto StreamInstIter = ActiveStreamInstMap.find(StreamInst);
           if (StreamInstIter == ActiveStreamInstMap.end()) {
             ActiveStreamInstMap.emplace(StreamInst, StepInstId);
@@ -167,7 +168,7 @@ void StreamPrefetchPass::transformStream() {
     }
   }
 
-  LLVM_DEBUG(llvm::errs() << "StreamPrefetch: Transform done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "StreamPrefetch: Transform done.\n");
 }
 } // namespace
 

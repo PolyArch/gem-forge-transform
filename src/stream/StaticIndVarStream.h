@@ -8,14 +8,18 @@ public:
   StaticIndVarStream(llvm::PHINode *_PHINode, const llvm::Loop *_ConfigureLoop,
                      const llvm::Loop *_InnerMostLoop,
                      llvm::ScalarEvolution *_SE,
-                     const llvm::PostDominatorTree *_PDT, llvm::DataLayout *_DataLayout)
+                     const llvm::PostDominatorTree *_PDT,
+                     llvm::DataLayout *_DataLayout)
       : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop, _SE,
                      _PDT, _DataLayout),
-        PHINode(_PHINode), NonEmptyComputePath(nullptr) {}
+        PHINode(_PHINode), NonEmptyComputePath(nullptr) {
+    this->searchStepInsts();
+  }
 
   bool checkIsQualifiedWithoutBackEdgeDep() const override;
   bool checkIsQualifiedWithBackEdgeDep() const override;
   void finalizePattern() override;
+  const InstSet &getComputeInsts() const override { return this->ComputeInsts; }
 
   llvm::PHINode *PHINode;
 
@@ -66,6 +70,8 @@ private:
   std::list<ComputePath> AllComputePaths;
   const ComputePath *NonEmptyComputePath;
 
+  InstSet ComputeInsts;
+
   std::list<ComputePath> constructComputePath() const;
 
   void
@@ -90,5 +96,18 @@ private:
     // No computation required.
     return this->StaticStreamInfo.stp_pattern();
   }
+
+  /**
+   * Do a BFS on the PHINode and extract all the step instructions.
+   * This is actually legacy code from trace simulation, but I kept
+   * it here.
+   */
+  void searchStepInsts();
+
+  /**
+   * Do a BFS on the PHINode and extract all the compute instructions.
+   * This is actually legacy code from trace simulation, but
+   */
+  void searchComputeInsts();
 };
 #endif

@@ -10,10 +10,10 @@
 #define LLVM_DEBUG DEBUG
 #endif
 
-FunctionalStream::FunctionalStream(Stream *_S, FunctionalStreamEngine *_SE)
+FunctionalStream::FunctionalStream(DynStream *_S, FunctionalStreamEngine *_SE)
     : S(_S), SE(_SE), Pattern(_S->getProtobufPatterns()),
       CurrentIdx(InvalidIdx), IsAddressValid(false), IsValueValid(false) {
-  LLVM_DEBUG(llvm::errs() << "Initialized FunctionalStream of "
+  LLVM_DEBUG(llvm::dbgs() << "Initialized FunctionalStream of "
                           << S->formatName() << '\n');
 }
 
@@ -40,9 +40,9 @@ void FunctionalStream::configure(DataGraph *DG) {
   this->CurrentIdx++;
   this->CurrentEntryUsed = false;
   this->update(DG);
-  LLVM_DEBUG(llvm::errs() << "Configured ");
+  LLVM_DEBUG(llvm::dbgs() << "Configured ");
   LLVM_DEBUG(this->DEBUG_DUMP(llvm::errs()));
-  LLVM_DEBUG(llvm::errs() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << '\n');
 }
 
 void FunctionalStream::updateHistory() {
@@ -182,7 +182,7 @@ void FunctionalStream::update(DataGraph *DG) {
 
 std::pair<bool, uint64_t>
 FunctionalStream::computeAddress(DataGraph *DG) const {
-  auto MS = static_cast<MemStream *>(this->S);
+  auto MS = static_cast<DynMemStream *>(this->S);
   const auto FuncName = MS->getAddressFunctionName();
   const auto &AddrDG = MS->getAddrDG();
 
@@ -226,7 +226,7 @@ FunctionalStream::computeAddress(DataGraph *DG) const {
       if (DynamicVal == nullptr) {
         this->DEBUG_DUMP(llvm::errs());
         llvm::errs() << " Missing dynamic value for "
-                     << LoopUtils::formatLLVMValue(Input) << '\n';
+                     << Utils::formatLLVMValue(Input) << '\n';
         return std::make_pair(false, 0);
       }
 

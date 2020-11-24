@@ -67,7 +67,7 @@ void LoopUnroller::updateIVToStartDynamicIdMap(
   assert(this->IVToStartDynamicIdMap.find(IV) !=
              this->IVToStartDynamicIdMap.end() &&
          "This is not an in-loop instruction.");
-  LLVM_DEBUG(llvm::errs() << "updateDepsDynamicIdMap for inst " << IV->getName()
+  LLVM_DEBUG(llvm::dbgs() << "updateDepsDynamicIdMap for inst " << IV->getName()
                           << " " << IV->getOpcodeName() << " at iter "
                           << this->CurrentIter << '\n');
   if (this->CurrentIter != 0) {
@@ -96,7 +96,7 @@ bool LoopUnroller::isReductionVariable(llvm::Instruction *Inst) const {
 
 void LoopUnroller::fixAndUpdateIVRegDeps(DynamicInstruction *DynamicInst,
                                          DataGraph *DG) {
-  LLVM_DEBUG(llvm::errs() << "fixAndUpdateIVRegDeps for inst "
+  LLVM_DEBUG(llvm::dbgs() << "fixAndUpdateIVRegDeps for inst "
                           << DynamicInst->getOpName() << " at iter "
                           << this->CurrentIter << '\n');
   auto &RegDeps = DG->RegDeps.at(DynamicInst->getId());
@@ -108,7 +108,7 @@ void LoopUnroller::fixAndUpdateIVRegDeps(DynamicInstruction *DynamicInst,
       ++RegDepIter;
       continue;
     }
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Reg dependent on inst " << StaticOperand->getName() << '\n');
     if (this->InductionVars.find(StaticOperand) != this->InductionVars.end()) {
       // This is an induction variable.
@@ -118,14 +118,14 @@ void LoopUnroller::fixAndUpdateIVRegDeps(DynamicInstruction *DynamicInst,
       this->updateIVToStartDynamicIdMap(StaticOperand, RegDepIter->second);
       // Update the dependence to the same as first iteration.
       auto StartId = this->IVToStartDynamicIdMap.at(StaticOperand);
-      LLVM_DEBUG(llvm::errs() << "IV " << StaticOperand->getName()
+      LLVM_DEBUG(llvm::dbgs() << "IV " << StaticOperand->getName()
                               << " start id " << StartId << '\n');
       if (StartId != DynamicInstruction::InvalidId) {
         RegDepIter->second = StartId;
       } else {
         // The initial value of the induction variable does not come from an
         // instruction, there is no dependence.
-        LLVM_DEBUG(llvm::errs() << "Erase dependence on IV "
+        LLVM_DEBUG(llvm::dbgs() << "Erase dependence on IV "
                                 << StaticOperand->getName() << '\n');
         RegDepIter = RegDeps.erase(RegDepIter);
         continue;

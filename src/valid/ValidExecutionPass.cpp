@@ -33,7 +33,7 @@ public:
     this->initialize(Module);
     // Generate the module.
     this->transformModule();
-    LLVM_DEBUG(llvm::errs() << "Write the module.\n");
+    LLVM_DEBUG(llvm::dbgs() << "Write the module.\n");
     this->writeModule();
     this->finalize(Module);
     return false;
@@ -74,10 +74,10 @@ protected:
 bool ValidExecutionPass::initialize(llvm::Module &Module) {
   // We need the CachedLI.
   GemForgeBasePass::initialize(Module);
-  LLVM_DEBUG(llvm::errs() << "My Module " << this->Module << " " << &Module
+  LLVM_DEBUG(llvm::dbgs() << "My Module " << this->Module << " " << &Module
                           << "\n");
   // Copy the module.
-  LLVM_DEBUG(llvm::errs() << "Clone the module.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Clone the module.\n");
   this->ClonedModule = llvm::CloneModule(Module, this->ClonedValueMap);
   this->ClonedDataLayout =
       std::make_unique<llvm::DataLayout>(this->ClonedModule.get());
@@ -105,7 +105,7 @@ void ValidExecutionPass::transformModule() {
   std::string RegionBBName;
   RegionFile >> RegionFuncName >> RegionBBName;
   RegionFile.close();
-  LLVM_DEBUG(llvm::errs() << "Select region " << RegionFuncName << ' '
+  LLVM_DEBUG(llvm::dbgs() << "Select region " << RegionFuncName << ' '
                           << RegionBBName << '\n');
   // Identify the region within the cloned module.
   auto ClonedFunc = this->ClonedModule->getFunction(RegionFuncName);
@@ -123,7 +123,7 @@ void ValidExecutionPass::transformModule() {
     }
   }
   assert(ClonedLoop && "Failed to find the loop in cloned module.");
-  LLVM_DEBUG(llvm::errs() << "Find the region in cloned module.");
+  LLVM_DEBUG(llvm::dbgs() << "Find the region in cloned module.");
   // Insert the function prototype.
   auto &Context = this->ClonedModule->getContext();
   auto VoidTy = llvm::Type::getVoidTy(Context);
@@ -135,12 +135,12 @@ void ValidExecutionPass::transformModule() {
           ->getOrInsertFunction("m5_gem_forge_region_simpoint",
                                 GemForgeRegionSimpointTy)
           .getCallee();
-  LLVM_DEBUG(llvm::errs() << "Insert m5_gem_forge_region_simpoint().\n");
+  LLVM_DEBUG(llvm::dbgs() << "Insert m5_gem_forge_region_simpoint().\n");
 
   // Insert this to the preheader of the loop.
   auto ClonedPreheader = ClonedLoop->getLoopPredecessor();
   if (!ClonedPreheader) {
-    LLVM_DEBUG(llvm::errs() << "Create preheader for loop " << RegionFuncName
+    LLVM_DEBUG(llvm::dbgs() << "Create preheader for loop " << RegionFuncName
                             << ' ' << RegionBBName << '\n');
     auto ClonedDT = this->ClonedCachedLI->getDominatorTree(ClonedFunc);
     // We pass LI and DT so that they are updated.

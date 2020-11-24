@@ -30,7 +30,7 @@ PostDominanceFrontier::calculate(const llvm::PostDominatorTree &Tree,
   auto Iter = this->BBFrontierMap.find(BB);
   if (Iter == this->BBFrontierMap.end()) {
     // Create the frontier set.
-    LLVM_DEBUG(llvm::errs() << "Calculate for BB " << BB->getName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Calculate for BB " << BB->getName() << '\n');
     auto &Frontier =
         this->BBFrontierMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(BB),
@@ -73,7 +73,7 @@ const PostDominanceFrontier::SetT &
 PostDominanceFrontier::getFrontier(llvm::BasicBlock *BB) const {
   auto Iter = this->BBFrontierMap.find(BB);
   if (Iter == this->BBFrontierMap.end()) {
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Missing frontier set for basic block "
                << BB->getParent()->getName() << "::" << BB->getName() << '\n');
   }

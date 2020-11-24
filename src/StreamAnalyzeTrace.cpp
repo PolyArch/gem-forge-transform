@@ -146,7 +146,7 @@ public:
   }
   void dump() const {
     for (auto Inst : this->StaticInstructions) {
-      LLVM_DEBUG(llvm::errs() << "Subgraph " << Inst->getName() << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "Subgraph " << Inst->getName() << '\n');
     }
   }
 };
@@ -256,10 +256,10 @@ public:
       //     std::string SCEVFormat;
       //     llvm::raw_string_ostream rs(SCEVFormat);
       //     SCEV->print(rs);
-      //     //LLVM_DEBUG(llvm::errs() << rs.str() << '\n');
+      //     //LLVM_DEBUG(llvm::dbgs() << rs.str() << '\n');
 
       //     //LLVM_DEBUG(SCEV->print(llvm::errs()));
-      //     //LLVM_DEBUG(llvm::errs() << '\n');
+      //     //LLVM_DEBUG(llvm::dbgs() << '\n');
       //     if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(SCEV)) {
       //       // This is a stream.
       //       this->StaticStreamCount++;
@@ -291,26 +291,26 @@ public:
   }
 
   bool doFinalization(llvm::Module &Module) override {
-    LLVM_DEBUG(llvm::errs() << "StaticMemAccessCount: "
+    LLVM_DEBUG(llvm::dbgs() << "StaticMemAccessCount: "
                             << this->StaticMemAccessCount << '\n');
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "StaticStreamCount: " << this->StaticStreamCount << '\n');
-    LLVM_DEBUG(llvm::errs() << "StaticAffineStreamCount: "
+    LLVM_DEBUG(llvm::dbgs() << "StaticAffineStreamCount: "
                             << this->StaticAffineStreamCount << '\n');
-    LLVM_DEBUG(llvm::errs() << "StaticQuadricStreamCount: "
+    LLVM_DEBUG(llvm::dbgs() << "StaticQuadricStreamCount: "
                             << this->StaticQuadricStreamCount << '\n');
-    LLVM_DEBUG(llvm::errs() << "DynamicInstructionCount: "
+    LLVM_DEBUG(llvm::dbgs() << "DynamicInstructionCount: "
                             << this->DynamicInstructionCount << '\n');
-    LLVM_DEBUG(llvm::errs() << "DynamicMemAccessCount: "
+    LLVM_DEBUG(llvm::dbgs() << "DynamicMemAccessCount: "
                             << this->DynamicMemAccessCount << '\n');
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "DynamicStreamCount: " << this->DynamicStreamCount << '\n');
-    LLVM_DEBUG(llvm::errs() << "DynamicMemAccessBytes: "
+    LLVM_DEBUG(llvm::dbgs() << "DynamicMemAccessBytes: "
                             << this->DynamicMemAccessBytes << '\n');
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "DynamicStreamBytes: " << this->DynamicStreamBytes << '\n');
     for (size_t i = 0; i < CCA_SUBGRAPH_DEPTH_MAX; ++i) {
-      LLVM_DEBUG(llvm::errs() << "CCASubGraphDepth:" << i + 1 << ':'
+      LLVM_DEBUG(llvm::dbgs() << "CCASubGraphDepth:" << i + 1 << ':'
                               << this->SubGraphDepthHistograpm[i] << '\n');
     }
     // Try to sort out top 10.
@@ -334,7 +334,7 @@ public:
     // // Print out the top memory access.
     // for (auto& Entry : TopMemAccess) {
     //   llvm::Instruction* Inst = Entry.second;
-    //  LLVM_DEBUG(llvm::errs() << Entry.first << ' ' <<
+    //  LLVM_DEBUG(llvm::dbgs() << Entry.first << ' ' <<
     //   Inst->getFunction()->getName()
     //                      << ' ' << Inst->getParent()->getName() << ' '
     //                      << Inst->getName() << ' '
@@ -454,7 +454,7 @@ protected:
       // We have a new subgraph.
       // First we finalize it.
       CurrentSubGraph.finalize();
-      LLVM_DEBUG(llvm::errs() << "Detect subgraph:\n");
+      LLVM_DEBUG(llvm::dbgs() << "Detect subgraph:\n");
       CurrentSubGraph.dump();
       auto Depth = CurrentSubGraph.getDepth();
       if (Depth > 0) {
