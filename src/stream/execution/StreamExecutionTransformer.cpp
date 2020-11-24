@@ -171,6 +171,13 @@ void StreamExecutionTransformer::transformStreamRegion(
       }
 
       /**
+       * So far UserDefinedMemStream is treated as a special load.
+       */
+      if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
+        this->transformLoadInst(Analyzer, CallInst);
+      }
+
+      /**
        * Replace use of store with StreamStore.
        */
       else if (auto StoreInst = llvm::dyn_cast<llvm::StoreInst>(Inst)) {
@@ -278,12 +285,21 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
     });
 
     InputValueVec ClonedInputValues;
-    if (S->Type == StaticStream::TypeT::IV) {
+    switch (S->Type) {
+    case StaticStream::TypeT::IV:
       this->generateIVStreamConfiguration(S, ClonedPreheaderTerminator,
                                           ClonedInputValues);
-    } else {
+      break;
+    case StaticStream::TypeT::MEM:
       this->generateMemStreamConfiguration(S, ClonedPreheaderTerminator,
                                            ClonedInputValues);
+      break;
+    case StaticStream::TypeT::USER:
+      this->generateUserMemStreamConfiguration(S, ClonedPreheaderTerminator,
+                                               ClonedInputValues);
+      break;
+    default:
+      llvm_unreachable("Invalid StaticStream Type.");
     }
     for (auto ClonedInput : ClonedInputValues) {
       // This is a live in?
@@ -383,6 +399,19 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   for (auto S : ConfigureInfo.getSortedStreams()) {
     this->insertStreamReduceAtLoop(Analyzer, Loop, S);
+  }
+
+  /**
+   * Handle UserDefinedMemStream's EndInst.
+   * So far I just remove it as streams are still bound to a ConfigureLoop.
+   */
+  for (auto S : ConfigureInfo.getSortedStreams()) {
+    if (S->Type == StaticStream::TypeT::USER) {
+      auto UserS = static_cast<UserDefinedMemStream *>(S);
+      auto EndInst = UserS->getEndInst();
+      auto ClonedEndInst = this->getClonedValue(EndInst);
+      this->PendingRemovedInsts.insert(ClonedEndInst);
+    }
   }
 }
 
@@ -521,8 +550,8 @@ StreamExecutionTransformer::getOrCreateLoopPreheaderInClonedModule(
 }
 
 void StreamExecutionTransformer::transformLoadInst(
-    StaticStreamRegionAnalyzer *Analyzer, llvm::LoadInst *LoadInst) {
-  auto S = Analyzer->getChosenStreamByInst(LoadInst);
+    StaticStreamRegionAnalyzer *Analyzer, llvm::Instruction *Inst) {
+  auto S = Analyzer->getChosenStreamByInst(Inst);
   if (S == nullptr) {
     // This is not a chosen stream.
     return;
@@ -533,14 +562,13 @@ void StreamExecutionTransformer::transformLoadInst(
    * 2. Replace the use of original load to StreamLoad.
    * 3. Leave the original load there (not deleted).
    */
-  auto ClonedLoadInst = this->getClonedValue(LoadInst);
-  auto StreamLoadInst =
-      this->addStreamLoad(S, ClonedLoadInst->getType(), ClonedLoadInst,
-                          &ClonedLoadInst->getDebugLoc());
-  ClonedLoadInst->replaceAllUsesWith(StreamLoadInst);
+  auto ClonedInst = this->getClonedValue(Inst);
+  auto StreamLoadInst = this->addStreamLoad(
+      S, ClonedInst->getType(), ClonedInst, &ClonedInst->getDebugLoc());
+  ClonedInst->replaceAllUsesWith(StreamLoadInst);
 
   // Insert the load into the pending removed set.
-  this->PendingRemovedInsts.insert(ClonedLoadInst);
+  this->PendingRemovedInsts.insert(ClonedInst);
 
   this->upgradeLoadToUpdateStream(Analyzer, S);
   this->mergePredicatedStreams(Analyzer, S);
@@ -719,6 +747,16 @@ void StreamExecutionTransformer::transformStepInst(
         llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                         llvm::Intrinsic::ID::ssp_stream_step),
         StreamStepArgs);
+  }
+  /**
+   * If this is a CallInst to ssp_step, we can mark it pending removed.
+   */
+  if (Utils::isCallOrInvokeInst(StepInst)) {
+    auto Callee = Utils::getCalledValue(StepInst);
+    if (Callee->getName() == "ssp_step") {
+      auto ClonedStepInst = this->getClonedValue(StepInst);
+      this->PendingRemovedInsts.insert(ClonedStepInst);
+    }
   }
 }
 
@@ -1013,47 +1051,12 @@ void StreamExecutionTransformer::cleanClonedModule() {
     if (ClonedFunc.isDeclaration()) {
       continue;
     }
-
     auto PendingRemovedInstIter = FuncPendingRemovedInstMap.find(&ClonedFunc);
-    if (PendingRemovedInstIter != FuncPendingRemovedInstMap.end()) {
-      LLVM_DEBUG(if (ClonedFunc.getName() == DEBUG_FUNC) {
-        llvm::dbgs() << "------------------- Before Removing "
-                        "PendingInst ---------------\n";
-        ClonedFunc.print(llvm::dbgs());
-      });
-
-      for (auto *Inst : PendingRemovedInstIter->second) {
-        /**
-         * There are some instructions that may not be eliminated by the DCE,
-         * e.g. the replaced store instruction.
-         * So we delete them here.
-         */
-        assert(Inst->use_empty() && "PendingRemoveInst has use.");
-        auto Func = Inst->getFunction();
-        LLVM_DEBUG(llvm::dbgs()
-                   << "Remove inst " << Func->getName() << " "
-                   << Utils::formatLLVMInstWithoutFunc(Inst) << "\n");
-        Inst->eraseFromParent();
-        if (llvm::verifyFunction(*Func, &llvm::dbgs())) {
-          llvm::errs() << "Function broken after removing PendingRemovedInsts.";
-          Func->print(llvm::dbgs());
-          assert(false && "Function broken.");
-        }
-      }
-
-      bool Changed = false;
-      auto TTI = this->ClonedCachedLI->getTargetTransformInfo(&ClonedFunc);
-      do {
-        LLVM_DEBUG(llvm::dbgs()
-                       << "------------------- Before DCE and Simplify CFG "
-                          "PendingInst ---------------\n";
-                   ClonedFunc.print(llvm::dbgs()));
-        Changed = TransformUtils::eliminateDeadCode(
-            ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
-        Changed |= TransformUtils::simplifyCFG(
-            ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo(), TTI);
-      } while (Changed);
+    if (PendingRemovedInstIter == FuncPendingRemovedInstMap.end()) {
+      continue;
     }
+    this->removePendingRemovedInstsInFunc(ClonedFunc,
+                                          PendingRemovedInstIter->second);
   }
   /**
    * The last thing is to remove any StreamLoad that has no user instruction.
@@ -1132,6 +1135,76 @@ void StreamExecutionTransformer::cleanClonedModule() {
   this->StreamToStreamLoadInstMap.clear();
   assert(!llvm::verifyModule(*this->ClonedModule) &&
          "Module broken after clean up.");
+}
+
+void StreamExecutionTransformer::removePendingRemovedInstsInFunc(
+    llvm::Function &ClonedFunc,
+    std::list<llvm::Instruction *> &PendingRemovedInsts) {
+  LLVM_DEBUG(if (ClonedFunc.getName() == DEBUG_FUNC) {
+    llvm::dbgs() << "------------------- Before Removing "
+                    "PendingInst ---------------\n";
+    ClonedFunc.print(llvm::dbgs());
+  });
+
+  /**
+   * It is possible that some pending removed instructions still have
+   * users, as long as the user is also pending removed. Therefore, we
+   * clean it one by one.
+   */
+  while (true) {
+    bool RemovedSomeInsts = false;
+    for (auto InstIter = PendingRemovedInsts.begin(),
+              InstEnd = PendingRemovedInsts.end();
+         InstIter != InstEnd;) {
+      auto *Inst = *InstIter;
+      /**
+       * There are some instructions that may not be eliminated by the DCE,
+       * e.g. the replaced store instruction.
+       * So we delete them here.
+       */
+      if (!Inst->use_empty()) {
+        ++InstIter;
+        continue;
+      }
+      auto Func = Inst->getFunction();
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Remove inst " << Func->getName() << " "
+                 << Utils::formatLLVMInstWithoutFunc(Inst) << "\n");
+      Inst->eraseFromParent();
+      if (llvm::verifyFunction(*Func, &llvm::dbgs())) {
+        llvm::errs() << "Function broken after removing PendingRemovedInsts.";
+        Func->print(llvm::dbgs());
+        assert(false && "Function broken.");
+      }
+      InstIter = PendingRemovedInsts.erase(InstIter);
+      RemovedSomeInsts = true;
+    }
+    if (!RemovedSomeInsts) {
+      if (!PendingRemovedInsts.empty()) {
+        llvm::errs() << "Some PendingRemovedInsts has use:.\n";
+        for (auto *Inst : PendingRemovedInsts) {
+          auto Func = Inst->getFunction();
+          llvm::errs() << "Cannot remove inst " << Func->getName() << " "
+                       << Utils::formatLLVMInstWithoutFunc(Inst) << "\n";
+        }
+        assert(false && "Can not fully remove PendingRemovedInsts.");
+      }
+      break;
+    }
+  }
+
+  bool Changed = false;
+  auto TTI = this->ClonedCachedLI->getTargetTransformInfo(&ClonedFunc);
+  do {
+    LLVM_DEBUG(llvm::dbgs()
+                   << "------------------- Before DCE and Simplify CFG "
+                      "PendingInst ---------------\n";
+               ClonedFunc.print(llvm::dbgs()));
+    Changed = TransformUtils::eliminateDeadCode(
+        ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
+    Changed |= TransformUtils::simplifyCFG(
+        ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo(), TTI);
+  } while (Changed);
 }
 
 void StreamExecutionTransformer::generateIVStreamConfiguration(
@@ -1220,28 +1293,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   LLVM_DEBUG(llvm::dbgs() << "===== Generate MemStreamConfiguration "
                           << S->formatName() << '\n');
 
-  /**
-   * Some sanity check here.
-   */
-  if (S->ChosenBaseStepRootStreams.size() != 1) {
-    llvm::errs() << "Invalid " << S->ChosenBaseStepRootStreams.size()
-                 << " chosen StepRoot, " << S->BaseStepRootStreams.size()
-                 << " StepRoot for " << S->formatName() << ":\n";
-    for (auto StepRootS : S->ChosenBaseStepRootStreams) {
-      llvm::errs() << "  " << StepRootS->formatName() << '\n';
-    }
-    assert(false);
-  }
-  for (auto StepRootS : S->ChosenBaseStepRootStreams) {
-    if (StepRootS->ConfigureLoop != S->ConfigureLoop) {
-      llvm::errs() << "StepRootStream is not configured at the same loop: "
-                   << S->formatName() << " root " << StepRootS->formatName()
-                   << '\n';
-      assert(false);
-    }
-  }
-
-  assert(S->Type == StaticStream::TypeT::MEM && "Must be MEM stream.");
+  assert(S->Type == StaticStream::TypeT::MEM && "Must be Mem stream.");
   auto SS = static_cast<const StaticMemStream *>(S);
 
   this->handleExtraInputValue(S, ClonedInputValues);
@@ -1326,6 +1378,64 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   llvm::errs() << "AddrSCEV: ";
   AddrSCEV->print(llvm::errs());
   assert(false && "Can't handle this Addr.");
+}
+
+void StreamExecutionTransformer::generateUserMemStreamConfiguration(
+    StaticStream *S, llvm::Instruction *InsertBefore,
+    InputValueVec &ClonedInputValues) {
+
+  LLVM_DEBUG(llvm::dbgs() << "===== Generate UserMemStreamConfiguration "
+                          << S->formatName() << '\n');
+
+  assert(S->Type == StaticStream::TypeT::USER && "Must be UserMem stream.");
+  auto SS = static_cast<const UserDefinedMemStream *>(S);
+
+  this->handleExtraInputValue(S, ClonedInputValues);
+
+  auto ProtoConfiguration = SS->StaticStreamInfo.mutable_iv_pattern();
+
+  auto ClonedFunction = this->getClonedValue(SS->Inst->getFunction());
+  auto ClonedSE = this->ClonedCachedLI->getScalarEvolution(ClonedFunction);
+  auto ClonedSEExpander = this->ClonedCachedLI->getSCEVExpander(ClonedFunction);
+
+  if (S->StaticStreamInfo.val_pattern() !=
+      ::LLVM::TDG::StreamValuePattern::LINEAR) {
+    llvm::errs() << "Non linear UserMemStream " << S->formatName() << '\n';
+    assert(false);
+  }
+  if (S->StaticStreamInfo.stp_pattern() !=
+      ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
+    llvm::errs() << "Conditional step UserMemStream " << S->formatName()
+                 << '\n';
+    assert(false);
+  }
+
+  auto ClonedConfigureLoop =
+      this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
+  auto ClonedInnerMostLoop =
+      this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
+
+  auto ConfigInst = SS->getConfigInst();
+  auto ClonedConfigInst = this->getClonedValue(ConfigInst);
+  ProtoConfiguration->set_val_pattern(::LLVM::TDG::StreamValuePattern::LINEAR);
+  /**
+   * Although not a good design, we assume the params are
+   * stride, trip_count, stride, ..., start_addr.
+   * With signed stride and unsigned trip_count.
+   */
+  for (auto ArgIdx = 0u, NumArgs = ClonedConfigInst->arg_size();
+       ArgIdx < NumArgs; ArgIdx++) {
+    auto ClonedInputValue = ClonedConfigInst->getArgOperand(ArgIdx);
+    bool Signed = true;
+    if (((ArgIdx % 2) == 1) || (ArgIdx + 1 == NumArgs)) {
+      Signed = false;
+    }
+    auto ProtoInput = ProtoConfiguration->add_params();
+    this->addStreamInputValue(ClonedInputValue, Signed, ClonedInputValues,
+                              ProtoInput);
+  }
+  // Add the ConfigInst to PendingRemoved instructions.
+  this->PendingRemovedInsts.insert(ClonedConfigInst);
 }
 
 void StreamExecutionTransformer::generateAddRecStreamConfiguration(

@@ -171,6 +171,9 @@ protected:
    * Coalesce information is only available after transformation.
    */
   void finalizeStreamConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
+
+  void dumpTransformPlan();
+  void dumpConfigurePlan();
   void dumpStreamInfos();
 };
 

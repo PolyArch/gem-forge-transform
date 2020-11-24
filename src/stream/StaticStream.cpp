@@ -67,6 +67,7 @@ llvm::Type *StaticStream::getMemElementType() const {
   switch (this->Inst->getOpcode()) {
   case llvm::Instruction::PHI:
   case llvm::Instruction::Load:
+  case llvm::Instruction::Call:
   case llvm::Instruction::AtomicRMW:
     return this->Inst->getType();
   case llvm::Instruction::AtomicCmpXchg:
@@ -430,6 +431,7 @@ void StaticStream::constructChosenGraph() {
       ChosenSet.insert(BaseS);
     }
   };
+  assert(this->isChosen() && "Must be chosen to have ChosenGraph.");
   // Also for the other types.
   TranslateToChosen(this->BaseStreams, this->ChosenBaseStreams);
   // DependentStream may not be chosen
@@ -614,6 +616,7 @@ void StaticStream::fillProtobufStreamInfo(
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
     break;
   case llvm::Instruction::Load:
+  case llvm::Instruction::Call:
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
     break;
   case llvm::Instruction::Store:

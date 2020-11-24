@@ -71,7 +71,7 @@ private:
   void insertStreamReduceAtLoop(StaticStreamRegionAnalyzer *Analyzer,
                                 llvm::Loop *Loop, StaticStream *ReduceStream);
   void transformLoadInst(StaticStreamRegionAnalyzer *Analyzer,
-                         llvm::LoadInst *LoadInst);
+                         llvm::Instruction *LoadInst);
   void transformStoreInst(StaticStreamRegionAnalyzer *Analyzer,
                           llvm::StoreInst *StoreInst);
   void transformAtomicRMWInst(StaticStreamRegionAnalyzer *Analyzer,
@@ -91,6 +91,9 @@ private:
   llvm::Instruction *findStepPosition(StaticStream *StepStream,
                                       llvm::Instruction *StepInst);
   void cleanClonedModule();
+  void removePendingRemovedInstsInFunc(
+      llvm::Function &ClonedFunc,
+      std::list<llvm::Instruction *> &PendingRemovedInsts);
 
   void replaceWithStreamMemIntrinsic();
 
@@ -128,6 +131,9 @@ private:
   void generateMemStreamConfiguration(StaticStream *S,
                                       llvm::Instruction *InsertBefore,
                                       InputValueVec &ClonedInputValues);
+  void generateUserMemStreamConfiguration(StaticStream *S,
+                                          llvm::Instruction *InsertBefore,
+                                          InputValueVec &ClonedInputValues);
   void generateAddRecStreamConfiguration(
       const llvm::Loop *ClonedConfigureLoop,
       const llvm::Loop *ClonedInnerMostLoop,
