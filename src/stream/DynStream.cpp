@@ -1,16 +1,16 @@
-#include "stream/Stream.h"
+#include "stream/DynStream.h"
 
 #include "llvm/Support/FileSystem.h"
 
 #include "google/protobuf/util/json_util.h"
 
-Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
-               const StaticStream *_SStream, llvm::DataLayout *DataLayout)
+DynStream::DynStream(const std::string &_Folder,
+                     const std::string &_RelativeFolder, StaticStream *_SStream,
+                     llvm::DataLayout *DataLayout)
     : SStream(_SStream), Folder(_Folder), RelativeFolder(_RelativeFolder),
-      HasMissingBaseStream(false), Qualified(false), Chosen(false),
-      RegionStreamId(-1), CoalesceGroup(_SStream->StreamId), CoalesceOffset(0),
-      TotalIters(0), TotalAccesses(0), TotalStreams(0), Iters(1),
-      LastAccessIters(0), StartId(DynamicInstruction::InvalidId), Pattern() {
+      HasMissingBaseStream(false), Qualified(false), TotalIters(0),
+      TotalAccesses(0), TotalStreams(0), Iters(1), LastAccessIters(0),
+      StartId(DynamicInstruction::InvalidId), Pattern() {
   auto PatternFolder = this->Folder + "/pattern";
   auto ErrCode = llvm::sys::fs::create_directory(PatternFolder);
   assert(!ErrCode && "Failed to create pattern folder.");
@@ -27,10 +27,10 @@ Stream::Stream(const std::string &_Folder, const std::string &_RelativeFolder,
   this->InfoFileName = "info/" + this->formatName() + ".info";
   this->HistoryFileName = "history/" + this->formatName() + ".history";
 
-  auto PosInBB = LoopUtils::getLLVMInstPosInBB(this->getInst());
+  auto PosInBB = Utils::getLLVMInstPosInBB(this->getInst());
 }
 
-void Stream::addBaseStream(Stream *Other) {
+void DynStream::addBaseStream(DynStream *Other) {
   // assert(Other != this && "Self dependent streams is not allowed.");
   this->BaseStreams.insert(Other);
   if (Other != nullptr) {
@@ -46,7 +46,7 @@ void Stream::addBaseStream(Stream *Other) {
   }
 }
 
-void Stream::addBackEdgeBaseStream(Stream *Other) {
+void DynStream::addBackEdgeBaseStream(DynStream *Other) {
   this->BackMemBaseStreams.insert(Other);
   Other->BackIVDependentStreams.insert(this);
 }
@@ -54,7 +54,7 @@ void Stream::addBackEdgeBaseStream(Stream *Other) {
 /**
  * This must happen after all the calls to addBaseStream.
  */
-void Stream::computeBaseStepRootStreams() {
+void DynStream::computeBaseStepRootStreams() {
   for (auto &BaseStepStream : this->BaseStepStreams) {
     if (BaseStepStream->SStream->Type == StaticStream::TypeT::IV) {
       // Induction variable is always a root stream.
@@ -72,10 +72,12 @@ void Stream::computeBaseStepRootStreams() {
   }
 }
 
-void Stream::buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) {
+void DynStream::buildChosenDependenceGraph(
+    GetChosenStreamFuncT GetChosenStream) {
   auto TranslateBasicToChosen =
-      [this, &GetChosenStream](const StreamSet &BasicSet,
-                               StreamSet &ChosenSet) -> void {
+      [this,
+       &GetChosenStream](const StreamSet &BasicSet, StreamSet &ChosenSet,
+                         StaticStream::StreamSet &StaticChosenSet) -> void {
     for (const auto &BaseS : BasicSet) {
       const auto &BaseInst = BaseS->SStream->Inst;
       auto ChosenBaseS = GetChosenStream(BaseInst);
@@ -85,11 +87,13 @@ void Stream::buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) {
       }
       assert(ChosenBaseS && "Missing chosen base stream.");
       ChosenSet.insert(ChosenBaseS);
+      StaticChosenSet.insert(ChosenBaseS->SStream);
     }
   };
   auto TranslateBasicToChosenNullable =
-      [this, &GetChosenStream](const StreamSet &BasicSet,
-                               StreamSet &ChosenSet) -> void {
+      [this,
+       &GetChosenStream](const StreamSet &BasicSet, StreamSet &ChosenSet,
+                         StaticStream::StreamSet &StaticChosenSet) -> void {
     for (const auto &BaseS : BasicSet) {
       const auto &BaseInst = BaseS->SStream->Inst;
       auto ChosenBaseS = GetChosenStream(BaseInst);
@@ -97,24 +101,31 @@ void Stream::buildChosenDependenceGraph(GetChosenStreamFuncT GetChosenStream) {
         continue;
       }
       ChosenSet.insert(ChosenBaseS);
+      StaticChosenSet.insert(ChosenBaseS->SStream);
     }
   };
   // Also for the other types.
-  TranslateBasicToChosen(this->BaseStreams, this->ChosenBaseStreams);
+  TranslateBasicToChosen(this->BaseStreams, this->ChosenBaseStreams,
+                         this->SStream->ChosenBaseStreams);
   // DependentStream may not be chosen
   TranslateBasicToChosenNullable(this->DependentStreams,
-                                 this->ChosenDependentStreams);
+                                 this->ChosenDependentStreams,
+                                 this->SStream->ChosenDependentStreams);
   TranslateBasicToChosen(this->BackMemBaseStreams,
-                         this->ChosenBackMemBaseStreams);
+                         this->ChosenBackMemBaseStreams,
+                         this->SStream->ChosenBackMemBaseStreams);
   // BackIVDependentStream may not be chosen
   TranslateBasicToChosenNullable(this->BackIVDependentStreams,
-                                 this->ChosenBackIVDependentStreams);
-  TranslateBasicToChosen(this->BaseStepStreams, this->ChosenBaseStepStreams);
+                                 this->ChosenBackIVDependentStreams,
+                                 this->SStream->ChosenBackIVDependentStreams);
+  TranslateBasicToChosen(this->BaseStepStreams, this->ChosenBaseStepStreams,
+                         this->SStream->ChosenBaseStepStreams);
   TranslateBasicToChosen(this->BaseStepRootStreams,
-                         this->ChosenBaseStepRootStreams);
+                         this->ChosenBaseStepRootStreams,
+                         this->SStream->ChosenBaseStepRootStreams);
 }
 
-void Stream::endStream() {
+void DynStream::endStream() {
   const auto ComputedPattern = this->Pattern.endStream();
   this->Iters = 1;
   this->LastAccessIters = 0;
@@ -145,7 +156,7 @@ void Stream::endStream() {
   }
 }
 
-void Stream::finalizePattern() {
+void DynStream::finalizePattern() {
   this->Pattern.finalizePattern();
 
   Gem5ProtobufSerializer PatternSerializer(this->getPatternFullPath());
@@ -168,7 +179,7 @@ void Stream::finalizePattern() {
   PatternTextFStream.close();
 }
 
-void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
+void DynStream::finalizeInfo(llvm::DataLayout *DataLayout) {
   // Also serialize with protobuf.
   Gem5ProtobufSerializer InfoSerializer(this->getInfoFullPath());
   LLVM::TDG::StreamInfo ProtobufInfo;
@@ -183,75 +194,21 @@ void Stream::finalizeInfo(llvm::DataLayout *DataLayout) {
   InfoTextFStream.close();
 }
 
-void Stream::fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
-                                    LLVM::TDG::StreamInfo *ProtobufInfo) const {
-  auto ProtobufStaticInfo = ProtobufInfo->mutable_static_info();
-  this->SStream->setStaticStreamInfo(*ProtobufStaticInfo);
-  ProtobufInfo->set_name(this->formatName());
-  ProtobufInfo->set_id(this->getStreamId());
-  ProtobufInfo->set_region_stream_id(this->getRegionStreamId());
-  switch (this->getInst()->getOpcode()) {
-  case llvm::Instruction::PHI:
-    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
-    break;
-  case llvm::Instruction::Load:
-    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
-    break;
-  case llvm::Instruction::Store:
-    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_ST);
-    break;
-  case llvm::Instruction::AtomicRMW:
-  case llvm::Instruction::AtomicCmpXchg:
-    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
-    break;
-  default:
-    llvm::errs() << "Invalid stream type " << this->formatName() << '\n';
-    break;
-  }
-  ProtobufInfo->set_loop_level(this->getInnerMostLoop()->getLoopDepth());
-  ProtobufInfo->set_config_loop_level(this->getLoop()->getLoopDepth());
+void DynStream::fillProtobufStreamInfo(
+    llvm::DataLayout *DataLayout, LLVM::TDG::StreamInfo *ProtobufInfo) const {
+  this->SStream->fillProtobufStreamInfo(ProtobufInfo);
   ProtobufInfo->set_pattern_path(this->getPatternRelativePath());
   ProtobufInfo->set_history_path(this->getHistoryRelativePath());
 
-  // Dump the address function.
-  auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
-  this->fillProtobufAddrFuncInfo(DataLayout, AddrFuncInfo);
-  // Dump the predication function.
-  auto PredFuncInfo = ProtobufStaticInfo->mutable_pred_func_info();
-  this->fillProtobufPredFuncInfo(DataLayout, PredFuncInfo);
-  // Dump the store function.
-  this->fillProtobufStoreFuncInfo(ProtobufStaticInfo);
-
-  auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
-  ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);
-  ProtobufCoalesceInfo->set_offset(this->CoalesceOffset);
-
   auto DynamicStreamInfo = ProtobufInfo->mutable_dynamic_info();
-  DynamicStreamInfo->set_is_candidate(this->isCandidate());
-  DynamicStreamInfo->set_is_qualified(this->isQualified());
-  DynamicStreamInfo->set_is_chosen(this->isChosen());
   DynamicStreamInfo->set_is_aliased(this->isAliased());
   DynamicStreamInfo->set_total_iters(this->TotalIters);
   DynamicStreamInfo->set_total_accesses(this->TotalAccesses);
   DynamicStreamInfo->set_total_configures(this->TotalStreams);
-
-#define ADD_STREAM(SET, FIELD)                                                 \
-  {                                                                            \
-    for (const auto &S : SET) {                                                \
-      auto Entry = ProtobufInfo->add_##FIELD();                                \
-      Entry->set_name(S->formatName());                                        \
-      Entry->set_id(S->getStreamId());                                         \
-    }                                                                          \
-  }
-  ADD_STREAM(this->BaseStreams, base_streams);
-  ADD_STREAM(this->BackMemBaseStreams, back_base_streams);
-  ADD_STREAM(this->ChosenBaseStreams, chosen_base_streams);
-  ADD_STREAM(this->ChosenBackMemBaseStreams, chosen_back_base_streams);
-
-#undef ADD_STREAM
 }
 
-const Stream *Stream::getExecFuncInputStream(const llvm::Value *Value) const {
+const DynStream *
+DynStream::getExecFuncInputStream(const llvm::Value *Value) const {
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
     if (Inst == this->SStream->Inst) {
       // The input is myself. Only for PredFunc.
@@ -281,8 +238,8 @@ const Stream *Stream::getExecFuncInputStream(const llvm::Value *Value) const {
   return nullptr;
 }
 
-Stream::InputValueList
-Stream::getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const {
+DynStream::InputValueList
+DynStream::getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const {
   InputValueList InputValues;
   for (const auto &Input : ExecDG.getInputs()) {
     if (auto InputStream = this->getExecFuncInputStream(Input)) {
@@ -293,32 +250,4 @@ Stream::getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const {
     }
   }
   return InputValues;
-}
-
-void Stream::fillProtobufExecFuncInfo(::llvm::DataLayout *DataLayout,
-                                      ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
-                                      const std::string &FuncName,
-                                      const ExecutionDataGraph &ExecDG) const {
-
-  ProtoFuncInfo->set_name(FuncName);
-  for (const auto &Input : ExecDG.getInputs()) {
-    auto ProtobufArg = ProtoFuncInfo->add_args();
-    auto Type = Input->getType();
-    // if (!Type->isIntOrPtrTy()) {
-    //   llvm::errs() << "Invalid type, Value: " <<
-    //   Utils::formatLLVMValue(Input)
-    //                << '\n';
-    //   assert(false && "Invalid type for input.");
-    // }
-    if (auto InputStream = this->getExecFuncInputStream(Input)) {
-      // This comes from the base stream.
-      ProtobufArg->set_is_stream(true);
-      ProtobufArg->set_stream_id(InputStream->getStreamId());
-    } else {
-      // This is an input value.
-      ProtobufArg->set_is_stream(false);
-    }
-    ProtobufArg->set_is_float(false);
-  }
-  ProtoFuncInfo->set_is_float(false);
 }

@@ -340,7 +340,7 @@ void SIMDPass::transform() {
   StaticInnerMostLoop *CurrentStaticLoop;
   uint8_t LoopIter;
 
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass start.\n");
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass start.\n");
 
   while (true) {
 
@@ -382,7 +382,7 @@ void SIMDPass::transform() {
       }
 
       if (IsAtHeaderOfVectorizable) {
-        LLVM_DEBUG(llvm::errs() << "Hitting header of new candidate loop "
+        LLVM_DEBUG(llvm::dbgs() << "Hitting header of new candidate loop "
                                 << printLoop(NewLoop) << "\n");
       }
 
@@ -449,7 +449,7 @@ void SIMDPass::transform() {
        * This will commit the buffer EXCEPT THE LAST INSTRUCTION.
        */
       if (LoopIter == this->VectorizeWidth) {
-        // LLVM_DEBUG(llvm::errs() << "SIMD Pass: Vectorizing.\n");
+        // LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Vectorizing.\n");
         this->processBuffer(CurrentStaticLoop, LoopIter);
         // Clear the loop iter.
         LoopIter = 0;
@@ -481,7 +481,7 @@ void SIMDPass::transform() {
           CurrentStaticLoop = NewStaticLoop;
         } else {
           // Case 2.2.
-          // LLVM_DEBUG(llvm::errs() << "SIMD Pass: Go back to searching
+          // LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Go back to searching
           // state.\n");
           this->State = SEARCHING;
         }
@@ -495,7 +495,7 @@ void SIMDPass::transform() {
     }
   }
 
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass end.\n");
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass end.\n");
 }
 
 bool SIMDPass::isLoopStaticVectorizable(llvm::Loop *Loop) {
@@ -504,7 +504,7 @@ bool SIMDPass::isLoopStaticVectorizable(llvm::Loop *Loop) {
 
   if (!Loop->empty()) {
     // This is not the inner most loop.
-    LLVM_DEBUG(llvm::errs() << "SIMDPass: Loop " << printLoop(Loop)
+    LLVM_DEBUG(llvm::dbgs() << "SIMDPass: Loop " << printLoop(Loop)
                             << " is statically not vectorizable as it is not "
                                "inner most loop.\n");
     return false;
@@ -512,7 +512,7 @@ bool SIMDPass::isLoopStaticVectorizable(llvm::Loop *Loop) {
 
   // Check if the loop is continuous.
   if (!LoopUtils::isLoopContinuous(Loop)) {
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Loop " << printLoop(Loop)
                << " is statically not vectorizable as it is not continuous.\n");
     return false;
@@ -611,7 +611,7 @@ bool SIMDPass::isLoopInterIterMemDependent(DynamicInnerMostLoop &DynamicLoop) {
             continue;
           }
 
-          LLVM_DEBUG(llvm::errs()
+          LLVM_DEBUG(llvm::dbgs()
                      << "Iter mem dependence for iter " << CurrentIter
                      << " inst " << StaticInst->getName() << '\n');
 
@@ -681,19 +681,19 @@ bool SIMDPass::isLoopDynamicVectorizable(DynamicInnerMostLoop &DynamicLoop) {
 
   float Efficiency = this->computeLoopEfficiency(DynamicLoop);
   if (Efficiency < this->VectorizeEfficiencyThreshold) {
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Failed due to inefficiency, " << Efficiency << " < "
                << this->VectorizeEfficiencyThreshold << '\n');
     return false;
   }
 
   if (this->isLoopInterIterMemDependent(DynamicLoop)) {
-    LLVM_DEBUG(llvm::errs() << "Failed due to inter-iter memory dependent\n");
+    LLVM_DEBUG(llvm::dbgs() << "Failed due to inter-iter memory dependent\n");
     return false;
   }
 
   if (this->isLoopInterIterDataDependent(DynamicLoop)) {
-    LLVM_DEBUG(llvm::errs() << "Failed due to inter-iter data dependent\n");
+    LLVM_DEBUG(llvm::dbgs() << "Failed due to inter-iter data dependent\n");
     return false;
   }
 
@@ -714,10 +714,10 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
    * First we need to topological sort the basic blocks if we want to
    * handle internal control flow in the future.
    */
-  LLVM_DEBUG(llvm::errs() << DynamicLoop.StaticLoop->print() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << DynamicLoop.StaticLoop->print() << '\n');
   const auto &Schedule = DynamicLoop.StaticLoop->BBList;
 
-  LLVM_DEBUG(llvm::errs() << "Creating new simd instructions.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Creating new simd instructions.\n");
 
   for (auto BB : Schedule) {
     for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
@@ -743,7 +743,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         if (auto StaticLoad = llvm::dyn_cast<llvm::LoadInst>(StaticInst)) {
           this->createDynamicInstsForScatterLoad(StaticLoad, DynamicLoop);
         } else {
-          LLVM_DEBUG(llvm::errs()
+          LLVM_DEBUG(llvm::dbgs()
                      << "Store stride "
                      << DynamicLoop.StaticToStrideMap.at(StaticInst)
                      << " type size "
@@ -766,7 +766,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
    */
   {
 
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Fixing the dependence for the last outside instruction.\n");
     // Lambda does not support capture const reference directly.
     const auto &ConstDynamicLoop = DynamicLoop;
@@ -780,7 +780,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         if (DepDynamicInstIter == this->Trace->AliveDynamicInstsMap.end()) {
           // This is outside loop dependence, keep it.
           ++DepIter;
-          LLVM_DEBUG(llvm::errs() << "Keep dependence " << DepId
+          LLVM_DEBUG(llvm::dbgs() << "Keep dependence " << DepId
                                   << " for last outside instruction.\n");
           continue;
         }
@@ -792,7 +792,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         assert(DepNewDynamicInstIter !=
                    ConstDynamicLoop.StaticToNewDynamicMap.end() &&
                "Missing simd transformed dependent instruction.");
-        LLVM_DEBUG(llvm::errs() << "Replacing dependence " << DepId << " with "
+        LLVM_DEBUG(llvm::dbgs() << "Replacing dependence " << DepId << " with "
                                 << DepNewDynamicInstIter->second << '\n');
         NewDeps.insert(DepNewDynamicInstIter->second);
         DepIter = Deps.erase(DepIter);
@@ -807,7 +807,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         auto DepDynamicInstIter = this->Trace->AliveDynamicInstsMap.find(DepId);
         if (DepDynamicInstIter == this->Trace->AliveDynamicInstsMap.end()) {
           // This is outside loop dependence, keep it.
-          LLVM_DEBUG(llvm::errs() << "Keep dependence " << DepId
+          LLVM_DEBUG(llvm::dbgs() << "Keep dependence " << DepId
                                   << " for last outside instruction.\n");
           continue;
         }
@@ -819,7 +819,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
         assert(DepNewDynamicInstIter !=
                    ConstDynamicLoop.StaticToNewDynamicMap.end() &&
                "Missing simd transformed dependent instruction.");
-        LLVM_DEBUG(llvm::errs() << "Replacing dependence " << DepId << " with "
+        LLVM_DEBUG(llvm::dbgs() << "Replacing dependence " << DepId << " with "
                                 << DepNewDynamicInstIter->second << '\n');
         RegDep.second = DepNewDynamicInstIter->second;
       }
@@ -834,13 +834,13 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
 
   // Commit (without serialize to output) all the buffered instructions
   // (except the last one).
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass: Original trace.===========\n");
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Original trace.===========\n");
   while (this->Trace->DynamicInstructionList.size() > 1) {
     LLVM_DEBUG(this->Trace->DynamicInstructionList.front()->format(
         llvm::errs(), this->Trace));
     this->Trace->commitOneDynamicInst();
   }
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass: Original trace: End.======\n");
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Original trace: End.======\n");
 
   /**
    * Officially add the new dynamic instruction into the datagraph.
@@ -885,7 +885,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
 
   // Commit all the newly added instructions (except the last one from next
   // iter).
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass: Serializing.===============\n");
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Serializing.===============\n");
   while (this->Trace->DynamicInstructionList.size() > 1) {
     LLVM_DEBUG(this->Trace->DynamicInstructionList.front()->format(
         llvm::errs(), this->Trace));
@@ -893,7 +893,7 @@ void SIMDPass::simdTransform(DynamicInnerMostLoop &DynamicLoop) {
                                 this->Trace);
     this->Trace->commitOneDynamicInst();
   }
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass: Serializing: Done.=========\n");
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Serializing: Done.=========\n");
 }
 
 /**
@@ -945,7 +945,7 @@ public:
     assert(ProtobufEntry->has_load() && "LoadExtra not set.");
     // Set the actual load size.
     auto LoadExtra = ProtobufEntry->mutable_load();
-    LLVM_DEBUG(llvm::errs() << "Load addr " << LoadExtra->addr() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Load addr " << LoadExtra->addr() << '\n');
     LoadExtra->set_size(this->VecSize * LoadExtra->size());
   }
 
@@ -1352,13 +1352,13 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
                                                 std::move(DynamicOperands));
   }
 
-  // LLVM_DEBUG(llvm::errs() << "Created simd instruction for " <<
+  // LLVM_DEBUG(llvm::dbgs() << "Created simd instruction for " <<
   // StaticInst->getName()
   //                    << "=" << StaticInst->getOpcodeName() << " id "
   //                    << NewDynamicInst->getId() << '\n');
 
   // Time to fix the dependence.
-  // LLVM_DEBUG(llvm::errs() << "Fixing dependence for new simd
+  // LLVM_DEBUG(llvm::dbgs() << "Fixing dependence for new simd
   // instruction.\n");
   auto &NewRegDeps =
       this->Trace->RegDeps
@@ -1383,7 +1383,7 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
     if (DynamicId == DynamicInstruction::InvalidId) {
       continue;
     }
-    // LLVM_DEBUG(llvm::errs() << "Transferring outside loop dependence.\n");
+    // LLVM_DEBUG(llvm::dbgs() << "Transferring outside loop dependence.\n");
     this->transferOutsideRegDeps(DynamicLoop, NewRegDeps,
                                  this->Trace->RegDeps.at(DynamicId));
     this->transferOutsideNonRegDeps(DynamicLoop, NewMemDeps,
@@ -1393,7 +1393,7 @@ size_t SIMDPass::createDynamicInsts(llvm::Instruction *StaticInst,
   }
 
   // We fix the register dependence within the loop.
-  // LLVM_DEBUG(llvm::errs() << "Fixing the register dependence within the
+  // LLVM_DEBUG(llvm::dbgs() << "Fixing the register dependence within the
   // loop.\n");
   this->transferInsideRegDeps(DynamicLoop, NewRegDeps, StaticInst);
 
@@ -1433,11 +1433,11 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
   DynamicInnerMostLoop DynamicLoop(StaticLoop, LoopIter, this->Trace, Begin,
                                    End);
 
-  LLVM_DEBUG(llvm::errs() << DynamicLoop.StaticLoop->print() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << DynamicLoop.StaticLoop->print() << '\n');
 
   if (!this->isLoopDynamicVectorizable(DynamicLoop)) {
     // This loop is not dynamically vectorizable, simply commit it.
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "SIMD Pass: Loop is not dynamically vectorizable.\n");
     LLVM_DEBUG(DynamicLoop.print(llvm::errs()));
     while (this->Trace->DynamicInstructionList.size() > 1) {
@@ -1453,10 +1453,10 @@ void SIMDPass::processBuffer(StaticInnerMostLoop *StaticLoop,
     Stat.VectorizedDynamicInsts += VectorizedDynamicInsts;
   }
 
-  LLVM_DEBUG(llvm::errs() << DynamicLoop.StaticLoop->print() << '\n');
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass: Transforming Loop.===========\n");
+  LLVM_DEBUG(llvm::dbgs() << DynamicLoop.StaticLoop->print() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Transforming Loop.===========\n");
   this->simdTransform(DynamicLoop);
-  LLVM_DEBUG(llvm::errs() << "SIMD Pass: Transforming Loop: Done.=====\n");
+  LLVM_DEBUG(llvm::dbgs() << "SIMD Pass: Transforming Loop: Done.=====\n");
 }
 
 void SIMDPass::dumpStats(std::ostream &O) {

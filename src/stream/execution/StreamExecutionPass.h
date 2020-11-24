@@ -17,10 +17,10 @@ protected:
   void transformStream() override;
   /**
    * Since we are purely static trasnformation, we have to first select
-   * StreamRegionAnalyzer as our candidate. Here I sort them by the number of
-   * dynamic memory accesses and exclude overlapped regions.
+   * StaticStreamRegionAnalyzer as our candidate. Here I sort them by the number
+   * of dynamic memory accesses and exclude overlapped regions.
    */
-  std::vector<StreamRegionAnalyzer *> selectStreamRegionAnalyzers();
+  std::vector<StaticStreamRegionAnalyzer *> selectStreamRegionAnalyzers();
 };
 
 #endif

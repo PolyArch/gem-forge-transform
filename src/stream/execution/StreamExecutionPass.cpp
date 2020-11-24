@@ -5,8 +5,8 @@
 #define DEBUG_TYPE "StreamExecutionPass"
 
 void StreamExecutionPass::transformStream() {
-  // First we select the StreamRegionAnalyzer we want to use.
-  LLVM_DEBUG(llvm::errs() << "Select StreamRegionAnalyzer.\n");
+  // First we select the DynStreamRegionAnalyzer we want to use.
+  LLVM_DEBUG(llvm::dbgs() << "Select DynStreamRegionAnalyzer.\n");
   auto SelectedStreamRegionAnalyzers = this->selectStreamRegionAnalyzers();
 
   // Use the transformer to transform the regions.
@@ -20,9 +20,9 @@ void StreamExecutionPass::transformStream() {
   StreamPass::transformStream();
 }
 
-std::vector<StreamRegionAnalyzer *>
+std::vector<StaticStreamRegionAnalyzer *>
 StreamExecutionPass::selectStreamRegionAnalyzers() {
-  std::vector<StreamRegionAnalyzer *> AllRegions;
+  std::vector<DynStreamRegionAnalyzer *> AllRegions;
 
   AllRegions.reserve(this->LoopStreamAnalyzerMap.size());
   for (auto &LoopStreamAnalyzerPair : this->LoopStreamAnalyzerMap) {
@@ -30,14 +30,15 @@ StreamExecutionPass::selectStreamRegionAnalyzers() {
   }
 
   // Sort them by the number of dynamic memory accesses.
-  std::sort(
-      AllRegions.begin(), AllRegions.end(),
-      [](const StreamRegionAnalyzer *A, const StreamRegionAnalyzer *B) -> bool {
-        return A->getNumDynamicMemAccesses() > B->getNumDynamicMemAccesses();
-      });
+  std::sort(AllRegions.begin(), AllRegions.end(),
+            [](const DynStreamRegionAnalyzer *A,
+               const DynStreamRegionAnalyzer *B) -> bool {
+              return A->getNumDynamicMemAccesses() >
+                     B->getNumDynamicMemAccesses();
+            });
 
   // Remove overlapped regions.
-  std::vector<StreamRegionAnalyzer *> NonOverlapRegions;
+  std::vector<StaticStreamRegionAnalyzer *> NonOverlapRegions;
   for (auto Region : AllRegions) {
     bool Overlapped = false;
     auto TopLoop = Region->getTopLoop();
@@ -50,9 +51,9 @@ StreamExecutionPass::selectStreamRegionAnalyzers() {
       }
     }
     if (!Overlapped) {
-      LLVM_DEBUG(llvm::errs() << "Select StreamRegionAnalyzer "
+      LLVM_DEBUG(llvm::dbgs() << "Select DynStreamRegionAnalyzer "
                               << LoopUtils::getLoopId(TopLoop) << ".\n");
-      NonOverlapRegions.push_back(Region);
+      NonOverlapRegions.push_back(Region->getStaticAnalyzer());
     }
   }
   return NonOverlapRegions;

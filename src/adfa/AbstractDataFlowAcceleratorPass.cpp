@@ -96,7 +96,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
   llvm::Loop *CurrentLoop;
   uint32_t LoopIter;
 
-  LLVM_DEBUG(llvm::errs() << "ADFA: start.\n");
+  LLVM_DEBUG(llvm::dbgs() << "ADFA: start.\n");
 
   while (true) {
     auto NewDynamicInst = this->Trace->loadOneDynamicInst();
@@ -109,7 +109,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
 
     if (NewDynamicInst != this->Trace->DynamicInstructionList.end()) {
       // This is a new instruction.
-      // LLVM_DEBUG(llvm::errs() << "Loaded new instruction.\n");
+      // LLVM_DEBUG(llvm::dbgs() << "Loaded new instruction.\n");
       NewStaticInst = (*NewDynamicInst)->getStaticInstruction();
       assert(NewStaticInst != nullptr && "Invalid static llvm instructions.");
 
@@ -172,11 +172,11 @@ void AbstractDataFlowAcceleratorPass::transform() {
 
       if (this->Trace->DynamicInstructionList.size() == 2) {
         // We can commit the previous one.
-        // LLVM_DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize.\n");
+        // LLVM_DEBUG(llvm::dbgs() << "ADFA: SEARCHING Serialize.\n");
         this->serializeInstStream(this->Trace->DynamicInstructionList.front());
         this->Trace->commitOneDynamicInst();
 
-        // LLVM_DEBUG(llvm::errs() << "ADFA: SEARCHING Serialize: Done.\n");
+        // LLVM_DEBUG(llvm::dbgs() << "ADFA: SEARCHING Serialize: Done.\n");
       }
 
       // If we are at the head of some candidate loop, switch to BUFFERING.
@@ -184,7 +184,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
         this->State = BUFFERING;
         LoopIter = 0;
         CurrentLoop = NewLoop;
-        // LLVM_DEBUG(llvm::errs() << "ADFA: SEARCHING -> BUFFERING.\n");
+        // LLVM_DEBUG(llvm::dbgs() << "ADFA: SEARCHING -> BUFFERING.\n");
       }
 
       break;
@@ -212,11 +212,11 @@ void AbstractDataFlowAcceleratorPass::transform() {
           LoopIter = 0;
           CurrentLoop = NewLoop;
           this->State = BUFFERING;
-          // LLVM_DEBUG(llvm::errs() << "ADFA: DATAFLOW -> BUFFERING.\n");
+          // LLVM_DEBUG(llvm::dbgs() << "ADFA: DATAFLOW -> BUFFERING.\n");
         } else {
           // We are back to search state.
           this->State = SEARCHING;
-          // LLVM_DEBUG(llvm::errs() << "ADFA: DATAFLOW -> SEARCHING.\n");
+          // LLVM_DEBUG(llvm::dbgs() << "ADFA: DATAFLOW -> SEARCHING.\n");
         }
       }
 
@@ -255,7 +255,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
        */
       bool DataFlowStarted = false;
       if (this->Trace->DynamicInstructionList.size() > this->BufferThreshold) {
-        // LLVM_DEBUG(llvm::errs() << "ADFA: Processing buffer.\n");
+        // LLVM_DEBUG(llvm::dbgs() << "ADFA: Processing buffer.\n");
         DataFlowStarted = this->processBuffer(CurrentLoop, LoopIter);
         // Clear the loop iter.
         LoopIter = 0;
@@ -281,7 +281,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
           CurrentLoop = NewLoop;
         } else {
           // Case 2.2.
-          // LLVM_DEBUG(llvm::errs() << "ADFA: BUFFERING -> SEARCHING.\n");
+          // LLVM_DEBUG(llvm::dbgs() << "ADFA: BUFFERING -> SEARCHING.\n");
           this->State = SEARCHING;
         }
 
@@ -302,7 +302,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
       } else {
         // Case 1.
         if (DataFlowStarted) {
-          // LLVM_DEBUG(llvm::errs() << "ADFA: BUFFERING -> DATAFLOW.\n");
+          // LLVM_DEBUG(llvm::dbgs() << "ADFA: BUFFERING -> DATAFLOW.\n");
           this->State = DATAFLOW;
         }
       }
@@ -316,7 +316,7 @@ void AbstractDataFlowAcceleratorPass::transform() {
     }
   }
 
-  LLVM_DEBUG(llvm::errs() << "ADFA end.\n");
+  LLVM_DEBUG(llvm::dbgs() << "ADFA end.\n");
 }
 
 void AbstractDataFlowAcceleratorPass::serializeInstStream(
@@ -436,7 +436,7 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
                                        reinterpret_cast<uint64_t>(StartInst),
                                        LoopUtils::getLoopId(Loop));
       this->serializeInstStream(&ConfigInst);
-      LLVM_DEBUG(llvm::errs() << "ADFA: configure the accelerator to loop "
+      LLVM_DEBUG(llvm::dbgs() << "ADFA: configure the accelerator to loop "
                               << printLoop(Loop) << '\n');
       auto Func = Loop->getHeader()->getParent();
       // Configure the dynamic data flow.
@@ -450,7 +450,7 @@ bool AbstractDataFlowAcceleratorPass::processBuffer(llvm::Loop *Loop,
 
     // Serialize the start inst.
     {
-      LLVM_DEBUG(llvm::errs() << "ADFA: start the accelerator to loop "
+      LLVM_DEBUG(llvm::dbgs() << "ADFA: start the accelerator to loop "
                               << printLoop(Loop) << '\n');
       AbsDataFlowStartInst StartInst;
       this->serializeInstStream(&StartInst);
@@ -492,14 +492,14 @@ bool AbstractDataFlowAcceleratorPass::isLoopDataFlow(llvm::Loop *Loop) {
   // We allow nested loops.
   bool IsDataFlow = true;
   if (!LoopUtils::isLoopContinuous(Loop)) {
-    // LLVM_DEBUG(llvm::errs() << "Loop " << printLoop(Loop)
+    // LLVM_DEBUG(llvm::dbgs() << "Loop " << printLoop(Loop)
     //                    << " is not dataflow as it is not continuous.\n");
 
     IsDataFlow = false;
   }
 
   // Done: this loop can be represented as data flow.
-  // LLVM_DEBUG(llvm::errs() << "isLoopDataFlow returned true.\n");
+  // LLVM_DEBUG(llvm::dbgs() << "isLoopDataFlow returned true.\n");
   this->MemorizedLoopDataflow.emplace(Loop, IsDataFlow);
   return IsDataFlow;
 }
@@ -534,9 +534,9 @@ void DynamicDataFlow::configure(llvm::Loop *_Loop, llvm::LoopInfo *_LI,
   this->CachedLU = _CachedLU;
   this->SE = _SE;
   this->CurrentAge = 0;
-  LLVM_DEBUG(llvm::errs() << "Config the dynamic data flow for loop "
+  LLVM_DEBUG(llvm::dbgs() << "Config the dynamic data flow for loop "
                           << this->Loop->getName() << '\n');
-  LLVM_DEBUG(llvm::errs() << "Post Dominance Frontier:\n");
+  LLVM_DEBUG(llvm::dbgs() << "Post Dominance Frontier:\n");
   LLVM_DEBUG(this->PDF->print(llvm::errs()));
 }
 
@@ -603,11 +603,11 @@ void DynamicDataFlow::fixRegDependence(AbsDataFlowLLVMInst *AbsDFInst) {
       ++RegDepIter;
       continue;
     }
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Reg dependent on inst " << StaticOperand->getName() << '\n');
     if (LU->isInductionVariable(StaticOperand)) {
       // This is an induction variable.
-      LLVM_DEBUG(llvm::errs() << "Find IV dependence on IV "
+      LLVM_DEBUG(llvm::dbgs() << "Find IV dependence on IV "
                               << StaticOperand->getName() << '\n');
       AbsDFInst->IVDeps.insert(RegDepIter->second);
       RegDepIter = RegDeps.erase(RegDepIter);
@@ -654,7 +654,7 @@ AbsDataFlowLLVMInst *DynamicDataFlow::wrapWithAbsDataFlowLLVMInst(
 
 void DynamicDataFlow::addDynamicInst(DataGraph::DynamicInstIter DynInstIter) {
   auto AbsDFInst = this->wrapWithAbsDataFlowLLVMInst(DynInstIter);
-  LLVM_DEBUG(llvm::errs() << "ADFA: Add dynamic instruction to the data flow "
+  LLVM_DEBUG(llvm::dbgs() << "ADFA: Add dynamic instruction to the data flow "
                           << AbsDFInst->getOpName() << '\n');
 
   // First fix the control dependence.
@@ -679,8 +679,8 @@ void DynamicDataFlow::start() {
 
 void DynamicDataFlow::end() {
   // We need to end the dataflow.
-  LLVM_DEBUG(llvm::errs() << "ADFA: End the data flow.\n");
-  LLVM_DEBUG(llvm::errs() << "ADFA::DF: Serialize end token to data flow.");
+  LLVM_DEBUG(llvm::dbgs() << "ADFA: End the data flow.\n");
+  LLVM_DEBUG(llvm::dbgs() << "ADFA::DF: Serialize end token to data flow.");
   AbsDataFlowEndToken EndToken;
   this->Serializer->serialize(&EndToken, this->DG);
 }

@@ -6,6 +6,29 @@
 
 #define DEBUG_TYPE "StaticMemStream"
 
+StaticMemStream::StaticMemStream(const llvm::Instruction *_Inst,
+                                 const llvm::Loop *_ConfigureLoop,
+                                 const llvm::Loop *_InnerMostLoop,
+                                 llvm::ScalarEvolution *_SE,
+                                 const llvm::PostDominatorTree *_PDT,
+                                 llvm::DataLayout *_DataLayout)
+    : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE, _PDT,
+                   _DataLayout) {
+  // We initialize the AddrDG, assuming all PHI nodes in loop head are IV
+  // streams.
+  auto IsInductionVar = [this](const llvm::PHINode *PHINode) -> bool {
+    auto BB = PHINode->getParent();
+    for (auto Loop : this->ConfigureLoop->getLoopsInPreorder()) {
+      if (Loop->getHeader() == BB) {
+        return true;
+      }
+    }
+    return false;
+  };
+  this->AddrDG = std::make_unique<StreamDataGraph>(
+      this->ConfigureLoop, Utils::getMemAddrValue(this->Inst), IsInductionVar);
+}
+
 void StaticMemStream::initializeMetaGraphConstruction(
     std::list<DFSNode> &DFSStack,
     ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
@@ -240,7 +263,7 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "[UnQualify]: NoStaticMap " << this->formatName() << '\n');
     return false;
   }
@@ -264,10 +287,38 @@ LLVM::TDG::StreamStepPattern StaticMemStream::computeStepPattern() const {
     auto StepRootStream = *(this->BaseStepRootStreams.begin());
     auto StepRootStreamStpPattern =
         StepRootStream->StaticStreamInfo.stp_pattern();
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Computed step pattern " << StepRootStreamStpPattern
                << " for " << this->formatName() << '\n');
     return StepRootStreamStpPattern;
+  }
+}
+
+StaticMemStream::InputValueList
+StaticMemStream::getAddrFuncInputValues() const {
+  assert(this->isChosen() && "Only consider chosen stream's input values.");
+  return this->getExecFuncInputValues(*this->AddrDG);
+}
+
+void StaticMemStream::constructChosenGraph() {
+  StaticStream::constructChosenGraph();
+  // We have some sanity checks here.
+  if (this->ChosenBaseStepRootStreams.size() != 1) {
+    llvm::errs() << "Invalid " << this->ChosenBaseStepRootStreams.size()
+                 << " chosen StepRoot, " << this->BaseStepRootStreams.size()
+                 << " StepRoot for " << this->formatName() << ":\n";
+    for (auto StepRootS : this->ChosenBaseStepRootStreams) {
+      llvm::errs() << "  " << StepRootS->formatName() << '\n';
+    }
+    assert(false);
+  }
+  for (auto StepRootS : this->ChosenBaseStepRootStreams) {
+    if (StepRootS->ConfigureLoop != this->ConfigureLoop) {
+      llvm::errs() << "StepRootStream is not configured at the same loop: "
+                   << this->formatName() << " root " << StepRootS->formatName()
+                   << '\n';
+      assert(false);
+    }
   }
 }
 

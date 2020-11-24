@@ -128,7 +128,7 @@ bool ReplayTrace::runOnModule(llvm::Module &Module) {
   this->transform();
 
   std::string Stats = this->OutTraceName + ".stats.txt";
-  LLVM_DEBUG(llvm::errs() << "Dump stats to " << Stats << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "Dump stats to " << Stats << '\n');
   std::ofstream OStats(Stats);
   this->dumpStats(OStats);
   OStats.close();
@@ -151,7 +151,7 @@ bool ReplayTrace::runOnModule(llvm::Module &Module) {
 }
 
 bool ReplayTrace::initialize(llvm::Module &Module) {
-  LLVM_DEBUG(llvm::errs() << "ReplayTrace::doInitialization.\n");
+  LLVM_DEBUG(llvm::dbgs() << "ReplayTrace::doInitialization.\n");
   GemForgeBasePass::initialize(Module);
 
   // Register the external ioctl function.
@@ -171,7 +171,7 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
            "User specified detail level is lower than standalone.");
     this->DGDetailLevel = DataGraphDetailLevel;
   }
-  LLVM_DEBUG(llvm::errs() << "Initialize the datagraph with detail level "
+  LLVM_DEBUG(llvm::dbgs() << "Initialize the datagraph with detail level "
                           << this->DGDetailLevel << ".\n");
 
   if (GemForgeOutputDataGraphFileName.getNumOccurrences() == 1) {
@@ -196,18 +196,18 @@ bool ReplayTrace::initialize(llvm::Module &Module) {
 }
 
 bool ReplayTrace::finalize(llvm::Module &Module) {
-  LLVM_DEBUG(llvm::errs() << "Releasing serializer at " << this->Serializer
+  LLVM_DEBUG(llvm::dbgs() << "Releasing serializer at " << this->Serializer
                           << '\n');
   delete this->Serializer;
   this->Serializer = nullptr;
 
-  LLVM_DEBUG(llvm::errs() << "Releasing cache warmer at "
+  LLVM_DEBUG(llvm::dbgs() << "Releasing cache warmer at "
                           << this->CacheWarmerPtr << '\n');
   delete this->CacheWarmerPtr;
   this->CacheWarmerPtr = nullptr;
   delete this->RegionStatRecorderPtr;
   this->RegionStatRecorderPtr = nullptr;
-  LLVM_DEBUG(llvm::errs() << "Releasing datagraph at " << this->Trace << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "Releasing datagraph at " << this->Trace << '\n');
   delete this->Trace;
   this->Trace = nullptr;
   GemForgeBasePass::finalize(Module);
@@ -259,17 +259,17 @@ void ReplayTrace::computeStaticInfo() {
         }
         // Add all the basic blocks to the regions.
         // Use the memory address as the block id.
-        LLVM_DEBUG(llvm::errs() << "Found region " << RegionId << " parent "
+        LLVM_DEBUG(llvm::dbgs() << "Found region " << RegionId << " parent "
                                 << Region->parent() << ": ");
         for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
              BBIter != BBEnd; ++BBIter) {
           llvm::BasicBlock *BB = *BBIter;
           Region->add_bbs(reinterpret_cast<uint64_t>(BB));
-          LLVM_DEBUG(llvm::errs() << BB->getName() << '(' << BB << "), ");
+          LLVM_DEBUG(llvm::dbgs() << BB->getName() << '(' << BB << "), ");
         }
         // Set the continuous flag.
         Region->set_continuous(LoopUtils::isLoopContinuous(Loop));
-        LLVM_DEBUG(llvm::errs() << '\n');
+        LLVM_DEBUG(llvm::dbgs() << '\n');
         RegionsFound.insert(Loop);
       }
     }
@@ -278,7 +278,7 @@ void ReplayTrace::computeStaticInfo() {
 
 bool ReplayTrace::processFunction(llvm::Function &Function) {
   auto FunctionName = Function.getName().str();
-  LLVM_DEBUG(llvm::errs() << "FunctionName: " << FunctionName << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "FunctionName: " << FunctionName << '\n');
 
   if (Function.isIntrinsic()) {
     return false;
@@ -304,7 +304,7 @@ bool ReplayTrace::processFunction(llvm::Function &Function) {
     return false;
   }
 
-  LLVM_DEBUG(llvm::errs() << "Found accelerable function: " << FunctionName
+  LLVM_DEBUG(llvm::dbgs() << "Found accelerable function: " << FunctionName
                           << '\n');
 
   // Change the function body to call ioctl
@@ -453,7 +453,7 @@ void ReplayTrace::fakeRegisterAllocation() {
   //   }
   //   Iter = IterPrev;
   // }
-  // LLVM_DEBUG(llvm::errs() << "Inserted fake spills " << FakeSpillCount <<
+  // LLVM_DEBUG(llvm::dbgs() << "Inserted fake spills " << FakeSpillCount <<
   // '\n');
 }
 
@@ -529,7 +529,7 @@ void ReplayTrace::fakeMicroOps() {
   //         }
   //       }
 
-  //       //LLVM_DEBUG(llvm::errs() << StaticInstruction->getName() << ' '
+  //       //LLVM_DEBUG(llvm::dbgs() << StaticInstruction->getName() << ' '
   //       //                    << StaticInstruction->getOpcodeName() << '\n');
 
   //       switch (StaticInstruction->getOpcode()) {
@@ -735,7 +735,7 @@ void ReplayTrace::registerFunction(llvm::Module &Module) {
       Builder.CreateLoad(FakeRegisterAllocationAddr, "FakeRegisterFill64");
   this->FakeRegisterSpill = Builder.CreateStore(FakeRegisterAllocationValue,
                                                 FakeRegisterAllocationAddr);
-  LLVM_DEBUG(llvm::errs() << this->FakeRegisterFill->getName() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << this->FakeRegisterFill->getName() << '\n');
   Builder.CreateRetVoid();
 }
 

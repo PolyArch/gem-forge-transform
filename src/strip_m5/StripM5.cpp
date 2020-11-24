@@ -39,7 +39,7 @@ public:
 
   bool runOnFunction(llvm::Function &Function) override {
     auto FunctionName = Function.getName().str();
-    LLVM_DEBUG(llvm::errs() << "Processing Function: " << FunctionName << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Processing Function: " << FunctionName << '\n');
 
     if (isM5FunctionName(FunctionName)) {
       llvm::errs() << "Found " << FunctionName << ".\n";

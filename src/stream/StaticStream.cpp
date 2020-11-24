@@ -67,6 +67,7 @@ llvm::Type *StaticStream::getMemElementType() const {
   switch (this->Inst->getOpcode()) {
   case llvm::Instruction::PHI:
   case llvm::Instruction::Load:
+  case llvm::Instruction::Call:
   case llvm::Instruction::AtomicRMW:
     return this->Inst->getType();
   case llvm::Instruction::AtomicCmpXchg:
@@ -162,7 +163,7 @@ void StaticStream::handleFirstTimeComputeNode(
           for (unsigned OperandIdx = 0, NumOperands = Inst->getNumOperands();
                OperandIdx != NumOperands; ++OperandIdx) {
             DFSStack.emplace_back(ComputeMNode, Inst->getOperand(OperandIdx));
-            LLVM_DEBUG(llvm::errs()
+            LLVM_DEBUG(llvm::dbgs()
                        << "Pushing DFSNode "
                        << Utils::formatLLVMValue(ComputeMNode->RootValue)
                        << Utils::formatLLVMValue(Inst->getOperand(OperandIdx))
@@ -205,7 +206,7 @@ void StaticStream::handleFirstTimePHIMetaNode(
                                             &this->ComputeMetaNodes.back());
       // Push to the stack.
       DFSStack.emplace_back(&this->ComputeMetaNodes.back(), IncomingValue);
-      LLVM_DEBUG(llvm::errs() << "Pushing DFSNode "
+      LLVM_DEBUG(llvm::dbgs() << "Pushing DFSNode "
                               << Utils::formatLLVMValue(
                                      this->ComputeMetaNodes.back().RootValue)
                               << Utils::formatLLVMValue(IncomingValue) << '\n');
@@ -224,7 +225,7 @@ void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
                                         this->ConstructedComputeMetaNodeMap);
   while (!DFSStack.empty()) {
     auto &DNode = DFSStack.back();
-    LLVM_DEBUG(llvm::errs()
+    LLVM_DEBUG(llvm::dbgs()
                << "Processing DFSNode "
                << Utils::formatLLVMValue(DNode.ComputeMNode->RootValue)
                << Utils::formatLLVMValue(DNode.Value) << " Visit time "
@@ -370,7 +371,7 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     if (BaseStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
         BaseStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
       // Illegal base stream step pattern.
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Illegal BaseStream StepPattern " << BaseStpPattern
                  << " from " << BaseStream->formatName() << '\n');
       return false;
@@ -383,20 +384,20 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     // Most difficult part, check step count ratio is static.
     auto CurrentLoop = this->InnerMostLoop;
     while (CurrentLoop != BaseStream->InnerMostLoop) {
-      LLVM_DEBUG(llvm::errs()
+      LLVM_DEBUG(llvm::dbgs()
                  << "Checking " << LoopUtils::getLoopId(CurrentLoop) << '\n');
       if (!this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
-        LLVM_DEBUG(llvm::errs() << "No loop invariant backedge count.\n");
+        LLVM_DEBUG(llvm::dbgs() << "No loop invariant backedge count.\n");
         return false;
       }
       auto BackEdgeTakenSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
       if (llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV)) {
-        LLVM_DEBUG(llvm::errs() << "No computable backedge count.\n");
+        LLVM_DEBUG(llvm::dbgs() << "No computable backedge count.\n");
         return false;
       }
       // The back edge should be invariant at ConfigureLoop.
       if (!this->SE->isLoopInvariant(BackEdgeTakenSCEV, this->ConfigureLoop)) {
-        LLVM_DEBUG(llvm::errs() << "No computable at configure loop.\n");
+        LLVM_DEBUG(llvm::dbgs() << "No computable at configure loop.\n");
         return false;
       }
       /**
@@ -407,6 +408,41 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
     }
   }
   return true;
+}
+
+void StaticStream::constructChosenGraph() {
+  auto TranslateToChosen = [this](const StreamSet &BasicSet,
+                                  StreamSet &ChosenSet) -> void {
+    for (const auto &BaseS : BasicSet) {
+      if (!BaseS->isChosen()) {
+        llvm::errs() << "Miss chosen stream " << BaseS->formatName() << " for "
+                     << this->formatName() << ".\n";
+        assert(false && "Missing chosen base stream.");
+      }
+      ChosenSet.insert(BaseS);
+    }
+  };
+  auto TranslateToChosenNullable = [this](const StreamSet &BasicSet,
+                                          StreamSet &ChosenSet) -> void {
+    for (const auto &BaseS : BasicSet) {
+      if (!BaseS->isChosen()) {
+        continue;
+      }
+      ChosenSet.insert(BaseS);
+    }
+  };
+  assert(this->isChosen() && "Must be chosen to have ChosenGraph.");
+  // Also for the other types.
+  TranslateToChosen(this->BaseStreams, this->ChosenBaseStreams);
+  // DependentStream may not be chosen
+  TranslateToChosenNullable(this->DependentStreams,
+                            this->ChosenDependentStreams);
+  TranslateToChosen(this->BackMemBaseStreams, this->ChosenBackMemBaseStreams);
+  // BackIVDependentStream may not be chosen
+  TranslateToChosenNullable(this->BackIVDependentStreams,
+                            this->ChosenBackIVDependentStreams);
+  TranslateToChosen(this->BaseStepStreams, this->ChosenBaseStepStreams);
+  TranslateToChosen(this->BaseStepRootStreams, this->ChosenBaseStepRootStreams);
 }
 
 std::string StaticStream::formatName() const {
@@ -457,6 +493,13 @@ void StaticStream::analyzeIsTripCountFixed() const {
   return;
 }
 
+void StaticStream::generateAddrFunction(
+    std::unique_ptr<llvm::Module> &Module) const {
+  if (this->AddrDG) {
+    this->AddrDG->generateFunction(this->FuncNameBase + "_addr", Module);
+  }
+}
+
 void StaticStream::generateReduceFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ReduceDG) {
@@ -482,6 +525,223 @@ void StaticStream::generateValueFunction(
       this->StaticStreamInfo.compute_info().enabled_store_func()) {
     assert(this->UpdateStream->ValueDG && "Missing ValueDG for UpdateStream.");
     this->UpdateStream->generateValueFunction(Module);
+  }
+}
+
+bool StaticStream::ComputeMetaNode::isEmpty() const {
+  /**
+   * Check if this ComputeMNode does nothing.
+   * So far we just check that there is no compute insts.
+   * Further we can allow something like binary extension.
+   */
+  if (!this->ComputeInsts.empty()) {
+    return false;
+  }
+  // If this is a constant value, this is not empty.
+  if (llvm::isa<llvm::ConstantData>(this->RootValue)) {
+    return false;
+  }
+  return true;
+}
+
+bool StaticStream::ComputeMetaNode::isIdenticalTo(
+    const ComputeMetaNode *Other) const {
+  /**
+   * Check if I am the same as the other compute node.
+   */
+  if (Other == this) {
+    return true;
+  }
+  if (Other->ComputeInsts.size() != this->ComputeInsts.size()) {
+    return false;
+  }
+  for (size_t ComputeInstIdx = 0, NumComputeInsts = this->ComputeInsts.size();
+       ComputeInstIdx != NumComputeInsts; ++ComputeInstIdx) {
+    const auto &ThisComputeInst = this->ComputeInsts.at(ComputeInstIdx);
+    const auto &OtherComputeInst = Other->ComputeInsts.at(ComputeInstIdx);
+    if (ThisComputeInst->getOpcode() != OtherComputeInst->getOpcode()) {
+      return false;
+    }
+  }
+  // We need to be more careful to check the inputs.
+  if (this->LoadBaseStreams != Other->LoadBaseStreams) {
+    return false;
+  }
+  if (this->CallInputs != Other->CallInputs) {
+    return false;
+  }
+  if (this->LoopInvariantInputs != Other->LoopInvariantInputs) {
+    return false;
+  }
+  if (this->IndVarBaseStreams != Other->IndVarBaseStreams) {
+    return false;
+  }
+
+  return true;
+}
+
+void StaticStream::fuseLoadOps() {
+  // So far only use this for the AtomicCmpXchg stream.
+  if (this->Inst->getOpcode() != llvm::Instruction::AtomicCmpXchg) {
+    return;
+  }
+  LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOps for " << this->formatName()
+                          << '\n');
+  auto CurInst = this->Inst;
+  while (CurInst->hasOneUse()) {
+    auto User = *CurInst->user_begin();
+    if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
+      if (UserInst->getParent() == this->Inst->getParent()) {
+        // We are in the same BB.
+        // Todo: Make sure this is a single user chain.
+        LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOp "
+                                << Utils::formatLLVMInst(UserInst) << '\n');
+        this->FusedLoadOps.push_back(UserInst);
+        CurInst = UserInst;
+        break;
+      }
+    }
+  }
+}
+
+void StaticStream::fillProtobufStreamInfo(
+    LLVM::TDG::StreamInfo *ProtobufInfo) const {
+  auto ProtobufStaticInfo = ProtobufInfo->mutable_static_info();
+  this->setStaticStreamInfo(*ProtobufStaticInfo);
+  ProtobufInfo->set_name(this->formatName());
+  ProtobufInfo->set_id(this->StreamId);
+  ProtobufInfo->set_region_stream_id(this->RegionStreamId);
+  switch (this->Inst->getOpcode()) {
+  case llvm::Instruction::PHI:
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
+    break;
+  case llvm::Instruction::Load:
+  case llvm::Instruction::Call:
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
+    break;
+  case llvm::Instruction::Store:
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_ST);
+    break;
+  case llvm::Instruction::AtomicRMW:
+  case llvm::Instruction::AtomicCmpXchg:
+    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
+    break;
+  default:
+    llvm::errs() << "Invalid stream type " << this->formatName() << '\n';
+    break;
+  }
+  ProtobufInfo->set_loop_level(this->InnerMostLoop->getLoopDepth());
+  ProtobufInfo->set_config_loop_level(this->ConfigureLoop->getLoopDepth());
+
+  // Dump the address function.
+  if (this->isChosen()) {
+    auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
+    this->fillProtobufAddrFuncInfo(AddrFuncInfo);
+    // Dump the predication function.
+    auto PredFuncInfo = ProtobufStaticInfo->mutable_pred_func_info();
+    this->fillProtobufPredFuncInfo(PredFuncInfo);
+    // Dump the store function.
+    this->fillProtobufStoreFuncInfo(ProtobufStaticInfo);
+  }
+
+  auto ProtobufCoalesceInfo = ProtobufInfo->mutable_coalesce_info();
+  ProtobufCoalesceInfo->set_base_stream(this->CoalesceGroup);
+  ProtobufCoalesceInfo->set_offset(this->CoalesceOffset);
+
+  auto DynamicStreamInfo = ProtobufInfo->mutable_dynamic_info();
+  DynamicStreamInfo->set_is_candidate(this->isCandidate());
+  DynamicStreamInfo->set_is_qualified(this->isQualified());
+  DynamicStreamInfo->set_is_chosen(this->isChosen());
+
+#define ADD_STREAM(SET, FIELD)                                                 \
+  {                                                                            \
+    for (const auto &S : SET) {                                                \
+      auto Entry = ProtobufInfo->add_##FIELD();                                \
+      Entry->set_name(S->formatName());                                        \
+      Entry->set_id(S->StreamId);                                              \
+    }                                                                          \
+  }
+  ADD_STREAM(this->BaseStreams, base_streams);
+  ADD_STREAM(this->BackMemBaseStreams, back_base_streams);
+  ADD_STREAM(this->ChosenBaseStreams, chosen_base_streams);
+  ADD_STREAM(this->ChosenBackMemBaseStreams, chosen_back_base_streams);
+
+#undef ADD_STREAM
+}
+
+const StaticStream *
+StaticStream::getExecFuncInputStream(const llvm::Value *Value) const {
+  if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+    if (Inst == this->Inst) {
+      // The input is myself. Only for PredFunc.
+      return this;
+    }
+    for (auto BaseStream : this->ChosenBaseStreams) {
+      if (BaseStream->Inst == Inst) {
+        return BaseStream;
+      }
+    }
+    if (this->ReduceDG) {
+      for (auto BackBaseStream : this->ChosenBackMemBaseStreams) {
+        if (BackBaseStream->Inst == Inst) {
+          // The input is back base stream. Only for ReduceFunc.
+          return BackBaseStream;
+        }
+        // Search for the induction variable of the BackBaseStream.
+        for (auto BackBaseStepRootStream :
+             BackBaseStream->ChosenBaseStepRootStreams) {
+          if (BackBaseStepRootStream->Inst == Inst) {
+            return BackBaseStepRootStream;
+          }
+        }
+      }
+    }
+  }
+  return nullptr;
+}
+
+void StaticStream::fillProtobufExecFuncInfo(
+    ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo, const std::string &FuncName,
+    const ExecutionDataGraph &ExecDG) const {
+
+  ProtoFuncInfo->set_name(FuncName);
+  for (const auto &Input : ExecDG.getInputs()) {
+    auto ProtobufArg = ProtoFuncInfo->add_args();
+    auto Type = Input->getType();
+    if (auto InputStream = this->getExecFuncInputStream(Input)) {
+      // This comes from the base stream.
+      ProtobufArg->set_is_stream(true);
+      ProtobufArg->set_stream_id(InputStream->StreamId);
+    } else {
+      // This is an input value.
+      ProtobufArg->set_is_stream(false);
+    }
+    ProtobufArg->set_is_float(false);
+  }
+  ProtoFuncInfo->set_is_float(false);
+}
+
+void StaticStream::fillProtobufAddrFuncInfo(
+    ::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const {
+
+  assert(!(this->AddrDG && this->ReduceDG) &&
+         "Can not have ReduceDG and AddrDG at the same time.");
+  if (this->ReduceDG) {
+    this->fillProtobufExecFuncInfo(AddrFuncInfo, this->FuncNameBase + "_reduce",
+                                   *this->ReduceDG);
+  }
+
+  if (this->AddrDG) {
+    this->fillProtobufExecFuncInfo(AddrFuncInfo, this->FuncNameBase + "_addr",
+                                   *this->AddrDG);
+  }
+}
+
+void StaticStream::fillProtobufPredFuncInfo(
+    ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {
+  if (this->BBPredDG) {
+    this->fillProtobufExecFuncInfo(PredFuncInfo, this->BBPredDG->getFuncName(),
+                                   *BBPredDG);
   }
 }
 
@@ -593,78 +853,29 @@ StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {
   return InputValues;
 }
 
-bool StaticStream::ComputeMetaNode::isEmpty() const {
-  /**
-   * Check if this ComputeMNode does nothing.
-   * So far we just check that there is no compute insts.
-   * Further we can allow something like binary extension.
-   */
-  if (!this->ComputeInsts.empty()) {
-    return false;
-  }
-  // If this is a constant value, this is not empty.
-  if (llvm::isa<llvm::ConstantData>(this->RootValue)) {
-    return false;
-  }
-  return true;
-}
-
-bool StaticStream::ComputeMetaNode::isIdenticalTo(
-    const ComputeMetaNode *Other) const {
-  /**
-   * Check if I am the same as the other compute node.
-   */
-  if (Other == this) {
-    return true;
-  }
-  if (Other->ComputeInsts.size() != this->ComputeInsts.size()) {
-    return false;
-  }
-  for (size_t ComputeInstIdx = 0, NumComputeInsts = this->ComputeInsts.size();
-       ComputeInstIdx != NumComputeInsts; ++ComputeInstIdx) {
-    const auto &ThisComputeInst = this->ComputeInsts.at(ComputeInstIdx);
-    const auto &OtherComputeInst = Other->ComputeInsts.at(ComputeInstIdx);
-    if (ThisComputeInst->getOpcode() != OtherComputeInst->getOpcode()) {
-      return false;
+StaticStream::InputValueList
+StaticStream::getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const {
+  InputValueList InputValues;
+  for (const auto &Input : ExecDG.getInputs()) {
+    if (auto InputStream = this->getExecFuncInputStream(Input)) {
+      // This comes from the base stream.
+    } else {
+      // This is an input value.
+      InputValues.push_back(Input);
     }
   }
-  // We need to be more careful to check the inputs.
-  if (this->LoadBaseStreams != Other->LoadBaseStreams) {
-    return false;
-  }
-  if (this->CallInputs != Other->CallInputs) {
-    return false;
-  }
-  if (this->LoopInvariantInputs != Other->LoopInvariantInputs) {
-    return false;
-  }
-  if (this->IndVarBaseStreams != Other->IndVarBaseStreams) {
-    return false;
-  }
-
-  return true;
+  return InputValues;
 }
 
-void StaticStream::fuseLoadOps() {
-  // So far only use this for the AtomicCmpXchg stream.
-  if (this->Inst->getOpcode() != llvm::Instruction::AtomicCmpXchg) {
-    return;
-  }
-  LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOps for " << this->formatName()
-                          << '\n');
-  auto CurInst = this->Inst;
-  while (CurInst->hasOneUse()) {
-    auto User = *CurInst->user_begin();
-    if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
-      if (UserInst->getParent() == this->Inst->getParent()) {
-        // We are in the same BB.
-        // Todo: Make sure this is a single user chain.
-        LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOp "
-                                << Utils::formatLLVMInst(UserInst) << '\n');
-        this->FusedLoadOps.push_back(UserInst);
-        CurInst = UserInst;
-        break;
-      }
-    }
-  }
+StaticStream::InputValueList StaticStream::getReduceFuncInputValues() const {
+  assert(this->isChosen() && "Only consider chosen stream's input values.");
+  assert(this->ReduceDG && "No ReduceDG.");
+  return this->getExecFuncInputValues(*this->ReduceDG);
+}
+
+StaticStream::InputValueList StaticStream::getPredFuncInputValues() const {
+  assert(this->isChosen() && "Only consider chosen stream's input values.");
+  assert(this->BBPredDG && "No BBPredDG.");
+  assert(this->BBPredDG->isValid() && "Invalid BBPredDG.");
+  return this->getExecFuncInputValues(*this->BBPredDG);
 }

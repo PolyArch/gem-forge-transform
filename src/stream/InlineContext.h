@@ -97,12 +97,12 @@ public:
     assert(this->Inst != nullptr &&
            "Inst is nullptr when formating ContextInst.");
     return this->Context->format() + "->" +
-           LoopUtils::formatLLVMInst(this->Inst);
+           Utils::formatLLVMInst(this->Inst);
   }
 
   std::string beautify() const {
     return this->Context->beautify() + "->" +
-           LoopUtils::formatLLVMInst(this->Inst);
+           Utils::formatLLVMInst(this->Inst);
   }
 
   const InlineContextPtr Context;
