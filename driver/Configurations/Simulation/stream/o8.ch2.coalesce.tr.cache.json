@@ -14,7 +14,7 @@
         "--mem-channels=2",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2",
-        "--gem-forge-stream-engine-max-run-ahead-length=10",
+        "--gem-forge-stream-engine-default-run-ahead-length=10",
         "--gem-forge-stream-engine-throttling=dynamic",
         "--gem-forge-stream-engine-enable-coalesce",
         "--gem-forge-stream-engine-placement=placement-expr#imm.sub.rst"

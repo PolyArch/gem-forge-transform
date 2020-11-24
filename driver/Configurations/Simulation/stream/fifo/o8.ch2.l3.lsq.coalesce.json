@@ -18,8 +18,8 @@
         "--mem-channels=2",
         "--gem-forge-cache-load-ports=2",
         "--gem-forge-cache-store-ports=2",
-        "--gem-forge-stream-engine-max-run-ahead-length={init_size}",
-        "--gem-forge-stream-engine-max-total-run-ahead-length={init_size*24}",
+        "--gem-forge-stream-engine-default-run-ahead-length={init_size}",
+        "--gem-forge-stream-engine-total-run-ahead-length={init_size*24}",
         "--gem-forge-stream-engine-enable-lsq",
         "--gem-forge-stream-engine-enable-coalesce"
     ],
