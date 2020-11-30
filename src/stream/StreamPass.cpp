@@ -67,9 +67,8 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
     // Get or create the region analyzer.
     if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
       auto StreamAnalyzer = std::make_unique<DynStreamRegionAnalyzer>(
-          this->RegionIdx, this->CachedLI, this->CachedPDF,
-          this->CachedBBPredDG, Loop, this->Trace->DataLayout,
-          this->OutputExtraFolderPath);
+          Loop, this->Trace->DataLayout, this->CachedLI, this->CachedPDF,
+          this->CachedBBPredDG, this->RegionIdx, this->OutputExtraFolderPath);
       this->RegionIdx++;
       this->LoopStreamAnalyzerMap.insert(
           std::make_pair(Loop, std::move(StreamAnalyzer)));
@@ -280,7 +279,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
     if (auto LoopInvariantStream =
             this->CurrentStreamAnalyzer->getChosenStreamByInst(Inst)) {
       // This is a stream input. Add dependence to the stream Id.
-      ConfigInst->addUsedStreamId(LoopInvariantStream->getStreamId());
+      ConfigInst->addUsedStreamId(LoopInvariantStream->StreamId);
     } else {
       // This is a normal inst input.
       for (auto DepId :
@@ -459,11 +458,13 @@ void StreamPass::transformStream() {
     // Update the loaded value for functional stream engine.
     if (!LoopStack.empty()) {
       if (llvm::isa<llvm::LoadInst>(NewStaticInst)) {
-        auto S =
+        auto SS =
             this->CurrentStreamAnalyzer->getChosenStreamByInst(NewStaticInst);
-        if (S != nullptr) {
+        if (SS != nullptr) {
+          auto DynS =
+              this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
           this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
-              S, this->Trace, *(NewDynamicInst->DynamicResult));
+              DynS, this->Trace, *(NewDynamicInst->DynamicResult));
         }
       }
 
@@ -473,10 +474,13 @@ void StreamPass::transformStream() {
            OperandIdx != NumOperands; ++OperandIdx) {
         auto OperandValue = NewStaticInst->getOperand(OperandIdx);
         if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
-          auto S = this->CurrentStreamAnalyzer->getChosenStreamByInst(PHINode);
-          if (S != nullptr) {
+          auto SS = this->CurrentStreamAnalyzer->getChosenStreamByInst(PHINode);
+          if (SS != nullptr) {
+            auto DynS =
+                this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
             this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
-                S, this->Trace, *(NewDynamicInst->DynamicOperands[OperandIdx]));
+                DynS, this->Trace,
+                *(NewDynamicInst->DynamicOperands[OperandIdx]));
           }
         }
       }

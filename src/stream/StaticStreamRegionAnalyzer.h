@@ -32,7 +32,7 @@ public:
    */
   void finalizePlan();
 
-  void endTransform();
+  virtual void endTransform();
 
   void coalesceStreamsAtLoop(llvm::Loop *Loop);
 

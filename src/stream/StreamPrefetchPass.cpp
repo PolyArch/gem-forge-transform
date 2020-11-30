@@ -99,11 +99,13 @@ void StreamPrefetchPass::transformStream() {
     // Update the loaded value for functional stream engine.
     if (!LoopStack.empty()) {
       if (llvm::isa<llvm::LoadInst>(NewStaticInst)) {
-        auto S =
+        auto SS =
             this->CurrentStreamAnalyzer->getChosenStreamByInst(NewStaticInst);
-        if (S != nullptr) {
+        if (SS != nullptr) {
+          auto DynS =
+              this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
           this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
-              S, this->Trace, *(NewDynamicInst->DynamicResult));
+              DynS, this->Trace, *(NewDynamicInst->DynamicResult));
         }
       }
 
@@ -113,10 +115,13 @@ void StreamPrefetchPass::transformStream() {
            OperandIdx != NumOperands; ++OperandIdx) {
         auto OperandValue = NewStaticInst->getOperand(OperandIdx);
         if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(OperandValue)) {
-          auto S = this->CurrentStreamAnalyzer->getChosenStreamByInst(PHINode);
-          if (S != nullptr) {
+          auto SS = this->CurrentStreamAnalyzer->getChosenStreamByInst(PHINode);
+          if (SS != nullptr) {
+            auto DynS =
+                this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
             this->CurrentStreamAnalyzer->getFuncSE()->updateWithValue(
-                S, this->Trace, *(NewDynamicInst->DynamicOperands[OperandIdx]));
+                DynS, this->Trace,
+                *(NewDynamicInst->DynamicOperands[OperandIdx]));
           }
         }
       }

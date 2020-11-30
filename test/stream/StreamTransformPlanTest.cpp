@@ -52,7 +52,7 @@ protected:
         if (ActualPlan.Plan == PlanT::STEP) {
           std::unordered_set<std::string> ActualStepStreams;
           for (const auto &StepStream : ActualPlan.getStepStreams()) {
-            ActualStepStreams.insert(StepStream->getInst()->getName());
+            ActualStepStreams.insert(StepStream->Inst->getName());
           }
           this->testTwoSets<std::string>(ExpectedStepStreams.at(InstName),
                                          ActualStepStreams);

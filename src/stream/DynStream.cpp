@@ -24,7 +24,6 @@ DynStream::DynStream(const std::string &_Folder,
   assert(!ErrCode && "Failed to create info folder.");
 
   this->PatternFileName = "pattern/" + this->formatName() + ".pattern";
-  this->InfoFileName = "info/" + this->formatName() + ".info";
   this->HistoryFileName = "history/" + this->formatName() + ".history";
 
   auto PosInBB = Utils::getLLVMInstPosInBB(this->getInst());
@@ -177,21 +176,6 @@ void DynStream::finalizePattern() {
   }
 
   PatternTextFStream.close();
-}
-
-void DynStream::finalizeInfo(llvm::DataLayout *DataLayout) {
-  // Also serialize with protobuf.
-  Gem5ProtobufSerializer InfoSerializer(this->getInfoFullPath());
-  LLVM::TDG::StreamInfo ProtobufInfo;
-  this->fillProtobufStreamInfo(DataLayout, &ProtobufInfo);
-  InfoSerializer.serialize(ProtobufInfo);
-
-  std::ofstream InfoTextFStream(this->getTextPath(this->getInfoFullPath()));
-  assert(InfoTextFStream.is_open() && "Failed to open the output info file.");
-  std::string InfoJsonString;
-  google::protobuf::util::MessageToJsonString(ProtobufInfo, &InfoJsonString);
-  InfoTextFStream << InfoJsonString << '\n';
-  InfoTextFStream.close();
 }
 
 void DynStream::fillProtobufStreamInfo(

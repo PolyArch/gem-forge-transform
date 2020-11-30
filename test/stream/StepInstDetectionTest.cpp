@@ -24,8 +24,8 @@ protected:
       }
       StaticIndVarStream StaticIVStream(PHIInst, Loop, Loop, SE, PDT,
                                         &DataLayout);
-      IndVarStream IVStream(this->OutputExtraFolder, "", &StaticIVStream,
-                            &DataLayout);
+      DynIndVarStream IVStream(this->OutputExtraFolder, "", &StaticIVStream,
+                               &DataLayout);
       const auto &ExpectedStepInstNames = ExpectedStepInstsIter->second;
       std::unordered_set<std::string> ActualStepInstNames;
       for (auto StepInst : IVStream.getStepInsts()) {
