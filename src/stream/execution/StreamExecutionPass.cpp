@@ -53,7 +53,7 @@ StreamExecutionPass::selectStreamRegionAnalyzers() {
     if (!Overlapped) {
       LLVM_DEBUG(llvm::dbgs() << "Select DynStreamRegionAnalyzer "
                               << LoopUtils::getLoopId(TopLoop) << ".\n");
-      NonOverlapRegions.push_back(Region->getStaticAnalyzer());
+      NonOverlapRegions.push_back(Region);
     }
   }
   return NonOverlapRegions;

@@ -57,9 +57,7 @@ public:
   }
   void markUnqualified() { this->Qualified = false; }
   bool isQualified() const { return this->Qualified; }
-  void markChosen() {
-    this->SStream->markChosen();
-  }
+  void markChosen() { this->SStream->markChosen(); }
   bool isChosen() const { return this->SStream->isChosen(); }
   void setRegionStreamId(int Id) { this->SStream->setRegionStreamId(Id); }
   int getRegionStreamId() const { return this->SStream->getRegionStreamId(); }
@@ -78,17 +76,11 @@ public:
   std::string getPatternFullPath() const {
     return this->Folder + "/" + this->PatternFileName;
   }
-  std::string getInfoFullPath() const {
-    return this->Folder + "/" + this->InfoFileName;
-  }
   std::string getHistoryFullPath() const {
     return this->Folder + "/" + this->HistoryFileName;
   }
   std::string getPatternRelativePath() const {
     return this->RelativeFolder + "/" + this->PatternFileName;
-  }
-  std::string getInfoRelativePath() const {
-    return this->RelativeFolder + "/" + this->InfoFileName;
   }
   std::string getHistoryRelativePath() const {
     return this->RelativeFolder + "/" + this->HistoryFileName;
@@ -129,7 +121,6 @@ public:
   void endStream();
 
   void finalizePattern();
-  void finalizeInfo(llvm::DataLayout *DataLayout);
 
   void fillProtobufStreamInfo(llvm::DataLayout *DataLayout,
                               LLVM::TDG::StreamInfo *ProtobufInfo) const;
@@ -226,7 +217,6 @@ protected:
   std::string Folder;
   std::string RelativeFolder;
   std::string PatternFileName;
-  std::string InfoFileName;
   std::string HistoryFileName;
   std::list<LLVM::TDG::StreamPattern> ProtobufPatterns;
 

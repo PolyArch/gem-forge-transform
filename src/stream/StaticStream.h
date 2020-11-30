@@ -7,7 +7,6 @@
 #include "BasicBlockPredicate.h"
 #include "LoopUtils.h"
 #include "PostDominanceFrontier.h"
-#include "Utils.h"
 #include "stream/ae/StreamDataGraph.h"
 
 #include "stream/StreamMessage.pb.h"
