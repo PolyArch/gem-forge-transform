@@ -128,6 +128,9 @@ class RodiniaBenchmark(Benchmark):
             # 'large': ['2048', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '2'],
             'large': ['512', '2048', '0', '127', '0', '127', '$NTHREADS', '0.5', '10'],
         },
+        'streamcluster': {
+            'large': ['10', '20', '128', '0', '1024', '1000', '128_65536.data', 'output.txt', '$NTHREADS'],
+        },
     }
 
     ROI_FUNCS = {
@@ -182,7 +185,7 @@ class RodiniaBenchmark(Benchmark):
         ],
         'nw': [
             '.omp_outlined.',
-            '.omp_outlined..7',
+            '.omp_outlined..8',
         ],
         'nw-blk32': [
             '.omp_outlined.',
@@ -225,6 +228,10 @@ class RodiniaBenchmark(Benchmark):
             '.omp_outlined..14',
             '.omp_outlined..15',
         ],
+        'streamcluster': [
+            '.omp_outlined.',
+            '.omp_outlined..1',
+        ],
     }
 
     """
@@ -257,6 +264,7 @@ class RodiniaBenchmark(Benchmark):
         'srad_v2-avx512': 2 * 1, # One iteration is enough.
         'srad_v2-avx512-fix': 2 * 1, # One iteration is enough.
         'srad_v2-fix': 2 * 1, # One iteration is enough.
+        'streamcluster': 1, # Try one iteration?
     }
 
     def __init__(self, benchmark_args, benchmark_path):

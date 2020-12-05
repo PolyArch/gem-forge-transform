@@ -12,19 +12,20 @@ class CortexBenchmark(Benchmark):
     O2 = ['O2']
     O2_NO_VECTORIZE = ['O3', 'fno-vectorize',
                        'fno-slp-vectorize', 'fno-unroll-loops']
+    O3 = ['O3']
 
     FLAGS_STREAM = {
         # Advanced stream experiments.
         # RBM has vectorized loop with extra iterations.
         # So far we can not handle it.
-        'rbm': O2_NO_VECTORIZE,
-        'sphinx': O2_NO_VECTORIZE,
-        'srr': O2_NO_VECTORIZE,
-        'lda': O2_NO_VECTORIZE,
-        'svd3': O2_NO_VECTORIZE,
-        'pca': O2_NO_VECTORIZE,
-        'motion-estimation': O2_NO_VECTORIZE,
-        'liblinear': O2_NO_VECTORIZE,
+        'rbm': O3,
+        'sphinx': O3,
+        'srr': O3,
+        'lda': O3,
+        'svd3': O3,
+        'pca': O3,
+        'motion-estimation': O3,
+        'liblinear': O3,
     }
 
     FLAGS_FRACTAL = {
@@ -110,14 +111,14 @@ class CortexBenchmark(Benchmark):
     }
 
     TRACE_FUNC = {
-        'rbm': ['train'],
-        'sphinx': ['fsg_search_hyp', 'ngram_search_hyp', 'phone_loop_search_hyp'],
-        'srr': ['CalculateA', 'SRREngine123'],
-        'lda': ['lda_mle', 'lda_inference'],
-        'svd3': ['svd'],
+        'lda': ['compute_likelihood', 'lda_inference'],
+        'liblinear': ['solve_l2r_l1l2_svc'],
+        'motion-estimation': ['Motion_Est', 'FullSearch'],
         'pca': ['corcol'],
-        'motion-estimation': ['Motion_Est'],
-        'liblinear': ['train_one'],
+        'rbm': ['train'],
+        'sphinx': ['lm3g_tg_score.1975', 'hmm_vit_eval', 'ngram_search_hyp'],
+        'srr': ['get_b', 'solve_pixel', 'get_g'],
+        'svd3': ['svd'],
     }
 
     ARGS = {
@@ -221,10 +222,9 @@ class CortexBenchmark(Benchmark):
         self.flags.append('gline-tables-only')
 
         self.defines = CortexBenchmark.DEFINES[self.benchmark_name][self.input_name]
-        assert(len(self.defines) == 0)
 
         self.includes = ['includes']
-        self.trace_functions = '|'.join(
+        self.trace_functions = Benchmark.ROI_FUNC_SEPARATOR.join(
             CortexBenchmark.TRACE_FUNC[self.benchmark_name])
 
         self.trace_ids = CortexBenchmark.TRACE_IDS[self.benchmark_name]
@@ -325,7 +325,7 @@ class CortexBenchmark(Benchmark):
         self.debug('Linking to raw bitcode {raw_bc}'.format(raw_bc=raw_bc))
         Util.call_helper(link_cmd)
 
-        self.post_build_raw_bc()
+        self.post_build_raw_bc(raw_bc)
 
         os.chdir(self.cwd)
 

@@ -66,8 +66,19 @@ tracking.fullhd
 class SDVBSBenchmark(Benchmark):
 
     O2 = ['O2']
-    O2_NO_VECTORIZE = ['O3', 'fno-vectorize',
-                       'fno-slp-vectorize', 'fno-unroll-loops']
+    O2_NO_VECTORIZE = [
+        'O2', 'fno-vectorize',
+        'fno-slp-vectorize', 'fno-unroll-loops',
+        # Disable loop unswitch.
+        'mllvm', 'loop-unswitch-threshold=1'
+    ]
+    O3 = [
+        'O3',
+    ]
+    NO_LOOP_UNSWITCH = [
+        # Disable loop unswitch.
+        'mllvm', 'loop-unswitch-threshold=1',
+    ]
 
     # Fractal experiments.
     FLAGS_FRACTAL = {
@@ -84,15 +95,15 @@ class SDVBSBenchmark(Benchmark):
 
     # Stream experiments.
     FLAGS_STREAM = {
-        'disparity': O2_NO_VECTORIZE,
-        'localization': O2_NO_VECTORIZE,
-        'mser': O2_NO_VECTORIZE,
-        'multi_ncut': O2_NO_VECTORIZE,
-        'sift': O2_NO_VECTORIZE,
-        'stitch': O2_NO_VECTORIZE,
-        'svm': O2_NO_VECTORIZE,
-        'texture_synthesis': O2_NO_VECTORIZE,
-        'tracking': O2_NO_VECTORIZE,
+        'disparity': O3,
+        'localization': O3,
+        'mser': O3,
+        'multi_ncut': O3,
+        'sift': O3,
+        'stitch': O3 + NO_LOOP_UNSWITCH,
+        'svm': O3,
+        'texture_synthesis': O3,
+        'tracking': O3,
     }
 
     DEFINES = {
@@ -135,45 +146,45 @@ class SDVBSBenchmark(Benchmark):
         'disparity': [
             'computeSAD',
             'integralImage2D2D',
-            'finalSAD2',
-            'finalSAD4',
             'finalSAD8',
-            'finalSAD',
             'findDisparity',
+            'padarray4',
             'correlateSAD_2D',
         ],
         'localization': ['weightedSample'],
         'mser': ['mser'],
         'multi_ncut': [
-            'fSetArray',
             'imageBlur',
-            'segment_image',
             'fSortIndices',
         ],
         'sift': [
             'imsmooth',
-            'normalizeImage',
             'gaussianss',
             'doubleSize',
         ],
-        'stitch': ['getANMS', 'harris', 'extractFeatures'],
-        'svm': [
-            'polynomial',
-            'cal_learned_func',
-            'ffVertcat',
+        'stitch': [
+            'getANMS',
+            'harris',
+            'ffConv2',
+            'fFind3',
+            'fTimes',
+            'fSetArray',
         ],
-        'texture_synthesis': ['create_all_candidates', 'create_candidates', 'compare_neighb', 'compare_rest', 'compare_full_neighb'],
+        'svm': [
+            'cal_learned_func',
+        ],
+        'texture_synthesis': [
+            'create_candidates',
+            'compare_neighb',
+            'compare_rest',
+        ],
         'tracking': [
             'calcAreaSum',
-            # 'imageBlur',
-            # 'imageResize',
-            # 'calcSobel_dX',
-            # 'calcSobel_dY',
-            # 'calcGoodFeature',
-            # 'fReshape',
-            # 'fillFeatures',
-            # 'fTranspose',
-            # 'getANMS',
+            'imageBlur',
+            'imageResize',
+            'calcSobel_dX',
+            'calcSobel_dY',
+            'fillFeatures',
         ],
     }
 

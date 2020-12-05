@@ -985,7 +985,6 @@ class Benchmark(object):
             '--caches',
             '--l2cache',
         ]
-        print('hhh')
         if self.options.simpoint_mode == 'region' and self.options.fake_trace:
             # We are doing region simpoint with execution simulation.
             gem5_args.append(
@@ -1028,29 +1027,12 @@ class Benchmark(object):
             if not reset:
                 gem5_args.append('--mem-size={s}'.format(s=mem_size))
 
-        # ! AdHoc here to scale up prefetch distance.
-        adhoc_scaleup_benchmarks = [
-            'rodinia.b+tree',
-            'rodinia.particlefilter',
-            'gfm.omp_dense_mv',
-        ]
-        if self.get_name() in adhoc_scaleup_benchmarks:
-            for i in range(len(gem5_args)):
-                if gem5_args[i] == '--gem-forge-stream-engine-default-run-ahead-length=4':
-                    gem5_args[i] = '--gem-forge-stream-engine-default-run-ahead-length=8'
-                if gem5_args[i] == '--gem-forge-stream-engine-total-run-ahead-length=48':
-                    gem5_args[i] = '--gem-forge-stream-engine-total-run-ahead-length=96'
         if self.get_name() == 'rodinia.srad_v2-avx512-fix':
             for i in range(len(gem5_args)):
                 if gem5_args[i].startswith('--gem-forge-stream-engine'):
                     gem5_args.insert(
                         i, '--gem-forge-stream-engine-enable-float-cancel')
                     break
-
-        if self.get_name() == 'gfm.omp_conv3d':
-            for i in range(len(gem5_args)):
-                if gem5_args[i] == '--gem-forge-stream-engine-total-run-ahead-length=48':
-                    gem5_args[i] = '--gem-forge-stream-engine-total-run-ahead-length=96'
 
         adhoc_mc0_benchmarks = [
             'rodinia.hotspot3D-avx512-fix',

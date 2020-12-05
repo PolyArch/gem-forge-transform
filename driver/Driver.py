@@ -7,6 +7,7 @@ from BenchmarkDrivers import MachSuite
 from BenchmarkDrivers import TestHelloWorld
 from BenchmarkDrivers import SPU
 from BenchmarkDrivers import Graph500
+from BenchmarkDrivers import GAPGraphSuite
 from BenchmarkDrivers import Parboil
 from BenchmarkDrivers import CortexSuite
 from BenchmarkDrivers import CortexSuiteValid
@@ -142,14 +143,15 @@ class Driver:
         if self.options.suite:
             suites += self.options.suite
         
-        for b in self.options.benchmark:
-            # Benchmark has name suite.benchmark.
-            idx = b.find('.')
-            if idx == -1:
-                print('Illegal suite for benchmark {b}'.format(b=b))
-            suite = b[:idx]
-            if suite not in suites:
-                suites.append(suite)
+        if self.options.benchmark:
+            for b in self.options.benchmark:
+                # Benchmark has name suite.benchmark.
+                idx = b.find('.')
+                if idx == -1:
+                    print('Illegal suite for benchmark {b}'.format(b=b))
+                suite = b[:idx]
+                if suite not in suites:
+                    suites.append(suite)
         suites.sort()
         return suites
 
@@ -174,6 +176,8 @@ class Driver:
                 suite = TestHelloWorld.TestHelloWorldBenchmarks(benchmark_args)
             elif suite_name == 'graph':
                 suite = Graph500.Graph500Benchmarks(benchmark_args)
+            elif suite_name == 'gap':
+                suite = GAPGraphSuite.GAPGraphSuite(benchmark_args)
             elif suite_name == 'parboil':
                 suite = Parboil.ParboilBenchmarks(benchmark_args)
             elif suite_name == 'cortex':
