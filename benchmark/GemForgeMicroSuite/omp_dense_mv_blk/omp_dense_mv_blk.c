@@ -1,6 +1,3 @@
-/**
- * Simple array sum.
- */
 #ifdef GEM_FORGE
 #include "gem5/m5ops.h"
 #endif

@@ -23,6 +23,7 @@ class TileStats(object):
         self.control_hops = 0
         self.data_hops = 0
         self.stream_hops = 0
+        self.l3_transitions = dict()
         pass
 
 
@@ -124,6 +125,7 @@ class TileStatsParser(object):
             'stream_wait_cycles': self.format_re(
                 'system.cpu{tile_id}.accelManager.se.numLoadElementWaitCycles'),
         }
+        self.l2_transition_re = re.compile('system\.ruby\.L2Cache_Controller\.[A-Z_]+\.[A-Z0-9_]+::total')
 
     def format_re(self, expression):
         # Return two possible cases.
@@ -150,6 +152,7 @@ class TileStatsParser(object):
             self.tile_stats.control_hops += ctrl
             self.tile_stats.data_hops += data
             self.tile_stats.stream_hops += strm
+        self.parse_l2_stream_transition(fields)
 
     def parse_flit_type_breakdown(self, fields):
         # ! Keep this sync with CoherenceRequestType/CoherenceResponseType
@@ -196,6 +199,16 @@ class TileStatsParser(object):
             elif msg_type == 'strm':
                 stream_flits += flits[i]
         return (control_flits, data_flits, stream_flits)
+
+    def parse_l2_stream_transition(self, fields):
+        match_obj = self.l2_transition_re.match(fields[0])
+        if match_obj:
+            vs = fields[0].split('.')
+            state = vs[3]
+            event = vs[4][:-7]
+            if state not in self.tile_stats.l3_transitions:
+                self.tile_stats.l3_transitions[state] = dict()
+            self.tile_stats.l3_transitions[state][event] = float(fields[1])
 
 def findTileIdForPrefix(x, prefix):
     if x.startswith(prefix):
@@ -245,6 +258,8 @@ def print_stats(tile_stats):
         return x.__dict__[v] if hasattr(x, v) else float('NaN')
 
     def value_or_zero(x, v):
+        if isinstance(x, dict):
+            return x[v] if v in x else 0.0
         return x.__dict__[v] if hasattr(x, v) else 0.0
 
     print('total l3 accesses       {v}'.format(
@@ -385,6 +400,12 @@ def print_stats(tile_stats):
     ))
     print('num l2 noreuse data pkt {v}'.format(
         v=sum(value_or_zero(ts, 'l2_evicts_noreuse_data_pkts') for ts in tile_stats)
+    ))
+    print('num llc llc multi req   {v}'.format(
+        v=sum(value_or_zero(ts, 'llc_llc_multicast_stream_requests') for ts in tile_stats)
+    ))
+    print('num llc GETV event      {v}'.format(
+        v=sum([value_or_zero(main_ts.l3_transitions[s], 'L1_GETV') for s in main_ts.l3_transitions])
     ))
 
 

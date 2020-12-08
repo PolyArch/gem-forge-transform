@@ -1,8 +1,8 @@
-import lldb
 import subprocess
 
 def symbolicateWithLLDB(binary, pcLatFn):
     # ! LLDB somehow failed to get LineEntry.
+    import lldb
     triple = 'x86_64-unknown-linux'
     platform_name = 'gnu'
     add_dependents = False
@@ -25,12 +25,12 @@ def symbolicateWithLLDB(binary, pcLatFn):
     w.close()
 
 def processLine(line, w, target):
+    import lldb
     fields = line.split()
     if int(fields[1]) < 100:
         # We ignore these pcs.
         w.write(line)
         return
-    print fields
     pc = int(fields[0], 16)
     so_addr = target.ResolveFileAddress(pc)
     # Get a symbol context for the section offset address which includes
@@ -39,9 +39,9 @@ def processLine(line, w, target):
         lldb.eSymbolContextEverything
         # lldb.eSymbolContextSymbol | lldb.eSymbolContextLineEntry
         )
-    print sym_ctx
+    print(sym_ctx)
     symbol = sym_ctx.GetSymbol()
-    print sym_ctx.GetCompileUnit()
+    print(sym_ctx.GetCompileUnit())
     if not symbol:
         w.write(line)
         return
@@ -63,7 +63,7 @@ def processLineWithLLVMDwarf(line, w, binary):
         # We ignore these pcs.
         w.write(line)
         return
-    print fields
+    print(fields)
     pc = int(fields[0], 16)
     command = [
         'llvm-dwarfdump',
@@ -76,6 +76,14 @@ def processLineWithLLVMDwarf(line, w, binary):
             idx = output_line.find('start')
             w.write(line[:-1] + ' ' + output_line[:idx] + '\n')
             return
+        call_file = 'DW_AT_call_file'
+        call_file_idx = output_line.find(call_file)
+        if call_file_idx != -1:
+            w.write('    ' + output_line[call_file_idx + len(call_file):])
+        call_line = 'DW_AT_call_line'
+        call_line_idx = output_line.find(call_line)
+        if call_line_idx != -1:
+            w.write('    ' + output_line[call_line_idx + len(call_line):] + '\n')
     w.write(line)
 
 if __name__ == '__main__':

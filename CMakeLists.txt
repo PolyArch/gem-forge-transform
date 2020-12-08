@@ -6,6 +6,8 @@ set(ELLCC_LLVM_PATH /home/zhengrong/Documents/ellcc/build/build-ecc/llvm/x86_64-
 option(USE_ELLCC "Use ellcc to trace stdlib" OFF)
 
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH}
+    $ENV{PROTOBUF_INSTALL_PATH})
 
 set(LLVM_PATH "$ENV{LLVM_DEBUG_INSTALL_PATH}")
 if (${LLVM_PATH} STREQUAL "")

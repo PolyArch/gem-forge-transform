@@ -32,4 +32,15 @@
 #define gf_panic() assert(0 && "gf_panic")
 #endif
 
+
+/****************************************************************
+ * These are used as temporary StreamISA API for programmer.
+ ****************************************************************/
+
+typedef int32_t StreamIdT;
+StreamIdT ssp_stream_config(void *start, int elementSize, int step);
+void ssp_stream_end(StreamIdT stream);
+int32_t ssp_stream_load_i32(StreamIdT stream);
+void ssp_stream_step(StreamIdT stream, int step);
+
 #endif

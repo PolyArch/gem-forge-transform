@@ -2,6 +2,9 @@ import Constants as C
 import ProcessingScripts.SSPExRubyExperiments as ssp
 import Utils.Gem5McPAT.Gem5McPAT as Gem5McPAT
 import Utils.McPAT as McPAT
+import Utils.SimPoint as SimPoint
+import Util
+import BenchmarkDrivers.Benchmark as Benchmark
 import multiprocessing
 
 import json
@@ -12,69 +15,51 @@ fix_transforms = [
     {
         'transform': 'valid.ex',
         'simulations': [
-            # 'replay.ruby.single.i4.tlb.8x8c-l256-s64B',
-            # 'replay.ruby.single.i4.tlb.8x8c-l256-s64B.pf8-l2pf16',
-            # 'replay.ruby.single.i4.tlb.8x8c-l256-s64B.bingo-l2pf16',
-            # 'replay.ruby.single.o4.tlb.8x8c-l256-s64B',
-            # 'replay.ruby.single.o4.tlb.8x8c-l256-s64B.pf8-l2pf16',
-            # 'replay.ruby.single.o4.tlb.8x8c-l256-s64B.bingo-l2pf16',
+            'replay.ruby.single.i4.tlb.8x8c-l256-s64B',
+            'replay.ruby.single.i4.tlb.8x8c-l256-s64B.pf8-l2pf16',
+            'replay.ruby.single.i4.tlb.8x8c-l256-s64B.bingo-l2pf16',
+            'replay.ruby.single.o4.tlb.8x8c-l256-s64B',
+            'replay.ruby.single.o4.tlb.8x8c-l256-s64B.pf8-l2pf16',
+            'replay.ruby.single.o4.tlb.8x8c-l256-s64B.bingo-l2pf16',
             'replay.ruby.single.o8.tlb.8x8c-l256-s64B',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf8-l2pf16',
+            'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf8-l2pf16',
             'replay.ruby.single.o8.tlb.8x8c-l256-s64B.bingo-l2pf16',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s1kB.pf8-l2pf16-blk4',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s1kB.bingo-l2pf16-blk4',
-            # # i4 o8 L1 IMP distance 4 8
-            # 'replay.ruby.single.i4.tlb.8x8c-l256-s64B.imp4',
-            # 'replay.ruby.single.i4.tlb.8x8c-l256-s64B.imp8',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.imp4',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.imp8',
-            # # Prefetch distance 4 8
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf4',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf4-l2pf4',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf4-l2pf8',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf4-l2pf16',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf8',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf8-l2pf4',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.pf8-l2pf8',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.bingo-l2pf4',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s64B.bingo-l2pf8',
+            'replay.ruby.single.o8.tlb.8x8c-l256-s1kB.pf8-l2pf16-blk4',
+            'replay.ruby.single.o8.tlb.8x8c-l256-s1kB.bingo-l2pf16-blk4',
             # # Link 128b 512b
-            # 'replay.ruby.single.o8.tlb.8x8c-l128-s64B.bingo-l2pf16',
-            # 'replay.ruby.single.o8.tlb.8x8c-l512-s64B.bingo-l2pf16',
+            'replay.ruby.single.o8.tlb.8x8c-l128-s64B.bingo-l2pf16',
+            'replay.ruby.single.o8.tlb.8x8c-l512-s64B.bingo-l2pf16',
             # # SNUCA 64B 256B 4kB
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s256B.bingo-l2pf16',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s1kB.bingo-l2pf16',
-            # 'replay.ruby.single.o8.tlb.8x8c-l256-s4kB.bingo-l2pf16',
+            'replay.ruby.single.o8.tlb.8x8c-l256-s256B.bingo-l2pf16',
+            'replay.ruby.single.o8.tlb.8x8c-l256-s1kB.bingo-l2pf16',
+            'replay.ruby.single.o8.tlb.8x8c-l256-s4kB.bingo-l2pf16',
         ]
     },
 ]
 
 hpca21_submission_stream_simulations = [
-    # 'stream.ruby.single.i4.tlb.8x8c-l256-s64B.f48-c',
-    # 'stream.ruby.single.i4.tlb.8x8c-l256-s1kB.f48-c.flts-mc2',
-    # 'stream.ruby.single.o4.tlb.8x8c-l256-s64B.f96-a16-c-gb',
-    # 'stream.ruby.single.o4.tlb.8x8c-l256-s1kB.f96-a16-c-gb.flts-mc2',
-    'stream.ruby.single.o8.tlb.8x8c-l256-s64B.f192-a16-c-gb',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s1kB.f192-a16-c-gb.flts',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s1kB.f192-a16-c-gb.flts-direct',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s1kB.f192-a16-c-gb.flts-mc2',
+    'stream.ruby.single.i4.tlb.8x8c-l256-s64B.f256-c',
+    'stream.ruby.single.i4.tlb.8x8c-l256-s1kB.f256-c.flts-mc2',
+    'stream.ruby.single.i4.tlb.8x8c-l256-s64B.f512-c',
+    'stream.ruby.single.i4.tlb.8x8c-l256-s1kB.f512-c.flts-mc2',
+    'stream.ruby.single.o4.tlb.8x8c-l256-s64B.f1024-c-gb',
+    'stream.ruby.single.o4.tlb.8x8c-l256-s1kB.f1024-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.8x8c-l256-s64B.f2048-c-gb',
+    'stream.ruby.single.o8.tlb.8x8c-l256-s1kB.f2048-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.8x8c-l256-s1kB.f2048-c-gb.flts',
+    'stream.ruby.single.o8.tlb.8x8c-l256-s1kB.f2048-c-gb.flts-direct',
     # # Link 128b 512b
-    # 'stream.ruby.single.o8.tlb.8x8c-l128-s64B.f192-a16-c-gb',
-    # 'stream.ruby.single.o8.tlb.8x8c-l128-s1kB.f192-a16-c-gb.flts-mc2',
-    # 'stream.ruby.single.o8.tlb.8x8c-l512-s64B.f192-a16-c-gb',
-    # 'stream.ruby.single.o8.tlb.8x8c-l512-s1kB.f192-a16-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.8x8c-l128-s1kB.f2048-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.8x8c-l512-s1kB.f2048-c-gb.flts-mc2',
     # # SNUCA 64B 256B 4kB
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s64B.f192-a16-c-gb.flts-mc2',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s256B.f192-a16-c-gb.flts-mc2',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s4kB.f192-a16-c-gb.flts-mc2',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s256B.f192-a16-c-gb',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s1kB.f192-a16-c-gb',
-    # 'stream.ruby.single.o8.tlb.8x8c-l256-s4kB.f192-a16-c-gb',
+    'stream.ruby.single.o8.tlb.8x8c-l256-s64B.f2048-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.8x8c-l256-s256B.f2048-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.8x8c-l256-s4kB.f2048-c-gb.flts-mc2',
     # # Core 4x4 and 4x8
-    # 'stream.ruby.single.o8.tlb.4x4c-l256-s64B.f192-a16-c-gb',
-    # 'stream.ruby.single.o8.tlb.4x4c-l256-s1kB.f192-a16-c-gb.flts-mc2',
-    # 'stream.ruby.single.o8.tlb.4x8c-l256-s64B.f192-a16-c-gb',
-    # 'stream.ruby.single.o8.tlb.4x8c-l256-s1kB.f192-a16-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.4x4c-l256-s64B.f2048-c-gb',
+    'stream.ruby.single.o8.tlb.4x4c-l256-s1kB.f2048-c-gb.flts-mc2',
+    'stream.ruby.single.o8.tlb.4x8c-l256-s64B.f2048-c-gb',
+    'stream.ruby.single.o8.tlb.4x8c-l256-s1kB.f2048-c-gb.flts-mc2',
 ]
 
 stream_simulations = hpca21_submission_stream_simulations
@@ -111,18 +96,10 @@ configurations = [
     #         ssp_so_cmp_transform,
     #     ],
     # },
-    # {
-    #     'suite': 'gfm',
-    #     'benchmark': 'omp_conv3d2',
-    #     'tdg_folder': '0.tdg',
-    #     'transforms': [
-    #         ssp_so_transform,
-    #     ],
-    # },
     {
         'suite': 'gfm',
         'benchmark': 'omp_conv3d2_unroll',
-        'tdg_folder': '0.tdg',
+        'tdg_folder': 'fake.0.tdg',
         'transforms': [
             ssp_so_transform,
         ],
@@ -130,87 +107,7 @@ configurations = [
     {
         'suite': 'gfm',
         'benchmark': 'omp_dense_mv_blk',
-        'tdg_folder': '0.tdg',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'bfs',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'b+tree',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'cfd',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'hotspot-avx512-fix',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'hotspot3D-avx512-fix',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'nn',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'nw',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'particlefilter',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'pathfinder-avx512',
-        'tdg_folder': '0.tdg.large',
-        'transforms': [
-            ssp_so_transform,
-        ],
-    },
-    {
-        'suite': 'rodinia',
-        'benchmark': 'srad_v2-avx512-fix',
-        'tdg_folder': '0.tdg.large',
+        'tdg_folder': 'fake.0.tdg',
         'transforms': [
             ssp_so_transform,
         ],
@@ -242,17 +139,64 @@ configurations = [
 ]
 
 for b in [
+    'bfs',
+    'b+tree',
+    'cfd',
+    'hotspot-avx512-fix',
+    'hotspot3D-avx512-fix',
+    'nn',
+    'nw',
+    'particlefilter',
+    'pathfinder-avx512',
+    'srad_v2-avx512-fix',
+]:
+    configurations.append({
+        'suite': 'rodinia',
+        'benchmark': b,
+        'tdg_folder': 'fake.0.tdg.large',
+        'transforms': [
+            ssp_so_transform,
+        ],
+    })
+
+for b in [
     'disparity',
     'localization',
+    'mser',
     'multi_ncut',
     'sift',
+    'stitch',
     'svm',
+    'texture_synthesis',
     'tracking',
 ]:
     configurations.append({
         'suite': 'sdvbs',
         'benchmark': b,
-        'tdg_folder': 'fullhd.0.tdg.fullhd',
+        'input': 'fullhd',
+        'sim_input': 'fullhd',
+        'tdg_folder': 'region.fake',
+        'transforms': [
+            ssp_so_transform,
+        ],
+    })
+
+for b in [
+    'lda',
+    'liblinear',
+    'motion-estimation',
+    'pca',
+    'rbm',
+    'sphinx',
+    'srr',
+    'svd3',
+]:
+    configurations.append({
+        'suite': 'cortex',
+        'benchmark': b,
+        'input': 'large',
+        'sim_input': 'large',
+        'tdg_folder': 'region.fake',
         'transforms': [
             ssp_so_transform,
         ],
@@ -308,6 +252,9 @@ def addLLCReqStats(result, tile_stats):
     addSumDefaultZeroResult(result, tile_stats, 'llc_llc_stream_requests')
     addSumDefaultZeroResult(result, tile_stats, 'llc_llc_ind_stream_requests')
     addSumDefaultZeroResult(result, tile_stats, 'llc_llc_multicast_stream_requests')
+    # Add LLC Transitions.
+    main_tile = tile_stats[0]
+    result['llc_transitions'] = main_tile.l3_transitions
 
 def addHitResult(result, tile_stats):
     addSumDefaultZeroResult(result, tile_stats, 'l2_access')
@@ -359,14 +306,15 @@ def collectEnergy(result, stats_fn):
     result['system_dyn_power']    = mcpat_parsed.get_system_dynamic_power()
     result['system_static_power'] = mcpat_parsed.get_system_static_power()
 
-def collect(suite, benchmark, transform_name, simulation, tdg_folder):
+def collect(suite, benchmark, transform_name, simulation, tdg_folder, weight):
     result_path = os.path.join(C.LLVM_TDG_RESULT_DIR, suite, benchmark, transform_name, simulation, tdg_folder)
     stats_fn = os.path.join(result_path, 'stats.txt')
     result = None
     try:
         with open(stats_fn) as f:
             tile_stats = ssp.process(f)
-            result = initResult(suite=suite, benchmark=benchmark, transform=transform_name, simulation=simulation)
+            result = initResult(
+                suite=suite, benchmark=benchmark, transform=transform_name, simulation=simulation, weight=weight)
             addCycleResult(result, tile_stats)
             addDynInstOpStats(result, tile_stats)
             addHitResult(result, tile_stats)
@@ -379,7 +327,8 @@ def collect(suite, benchmark, transform_name, simulation, tdg_folder):
             collectEnergy(result, stats_fn)
     except Exception as e:
         print(e)
-        print('Failed {s} {b} {t} {sim}'.format(s=suite, b=benchmark, t=transform_name, sim=simulation))
+        print('Failed {s} {b} {t} {sim} {tdg_folder}'.format(
+            s=suite, b=benchmark, t=transform_name, sim=simulation, tdg_folder=tdg_folder))
         result = None
     return result
 
@@ -405,15 +354,47 @@ def getSubset(subset):
         return ('gfm', lambda suite, _: suite == 'gfm')
     elif subset == 'rodinia':
         return ('rodinia', lambda suite, _: suite == 'rodinia')
+    elif subset == 'hpca21':
+        return ('hpca21', lambda suite, _: suite in ['gfm', 'rodinia'])
     elif subset == 'spec':
         return ('spec', lambda suite, _: suite == 'spec2017')
     elif subset == 'no-spec':
         return ('no-spec', lambda suite, _: suite != 'spec2017')
     elif subset == 'sdvbs':
         return ('sdvbs', lambda suite, _: suite == 'sdvbs')
+    elif subset == 'cortex':
+        return ('cortex', lambda suite, _: suite == 'cortex')
     elif subset == 'cmp':
         return ('cmp', lambda _, benchmark: benchmark in ('omp_page_rank', 'omp_bfs_queue'))
     return ('all', isInSubsetAll)
+
+def generate_tdg_weights(config):
+    suite = config['suite']
+    benchmark = config['benchmark']
+    tdg_folder = config['tdg_folder']
+    tdg_weights = list()
+    if tdg_folder == 'region.fake':
+        profile = 'profile'
+        if 'input' in config:
+            profile += '.' + config['input']
+        simpoint_fn = os.path.join(
+            C.LLVM_TDG_RESULT_DIR, suite, benchmark, profile, 'region.simpoints.new.txt')
+        simpoints = SimPoint.parse_simpoint_from_file(simpoint_fn)
+        filtered_simpoints, total_weight = Util.filter_tail(
+            simpoints, Benchmark.Benchmark.TRACE_WEIGHT_SUM_THRESHOLD)
+        for simpoint in filtered_simpoints:
+            tdg_weights.append((
+                '{input}region.fake.{id}.tdg{sim_input}'.format(
+                    input=config['input'] + '.' if 'input' in config else '',
+                    id=simpoint.get_id(),
+                    sim_input='.' + config['sim_input'] if 'sim_input' in config else '',
+                ),
+                # We normalize here so that we don't have to normalize again in results.
+                simpoint.get_weight() / total_weight))
+    else:
+        tdg_weights.append((tdg_folder, 1.0))
+    return tdg_weights
+
 
 def main(subset):
     pool = multiprocessing.Pool(processes=32)
@@ -424,14 +405,18 @@ def main(subset):
     for config in configurations:
         suite = config['suite']
         benchmark = config['benchmark']
-        tdg_folder = config['tdg_folder']
+
         if not isInSubset(suite, benchmark):
             continue
+        tdg_weights = generate_tdg_weights(config)
         for transform in fix_transforms + config['transforms']:
         # for transform in config['transforms']:
             transform_name = transform['transform']
             for simulation in transform['simulations']:
-                jobs.append(pool.apply_async(collect, (suite, benchmark, transform_name, simulation, tdg_folder)))
+                for tdg_folder, weight in tdg_weights:
+                    jobs.append(pool.apply_async(
+                        collect,
+                        (suite, benchmark, transform_name, simulation, tdg_folder, weight)))
 
     results = []
     failed = False
