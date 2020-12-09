@@ -1,8 +1,8 @@
 
-set(LLVM_SRC_LIB_DIR "$ENV{LLVM_SRC_LIB_PATH}")
-if (${LLVM_SRC_LIB_DIR} STREQUAL "")
-  message(fatal_error "Please specify where is source tree of llvm")
+if (NOT DEFINED ENV{LLVM_SRC_LIB_PATH})
+    message(FATAL_ERROR "Please specify llvm source lib path in LLVM_SRC_LIB_PATH")
 endif()
+set(LLVM_SRC_LIB_DIR "$ENV{LLVM_SRC_LIB_PATH}")
 
 # First dive into trace, as it will give us PROTOBUF variables.
 add_subdirectory(trace)
@@ -112,7 +112,6 @@ llvm_expand_dependencies(LLVM_DEP_LIBS ${LLVM_LIBS})
 # Inorder to use the actual header of interpreter, which is not part of the installed llvm headers.
 target_include_directories(LLVMTDGPass PUBLIC ${LLVM_SRC_LIB_DIR})
 
-message(STATUS ${PROTOBUF_LIBRARY})
 target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY} ${LLVM_DEP_LIBS})
 
 # Copy the generated python protobuf file to benchmark/Utils/.

@@ -2,6 +2,7 @@
 #ifndef LLVM_TDG_MEMORY_FOOTPRINT_H
 #define LLVM_TDG_MEMORY_FOOTPRINT_H
 
+#include <cstdint>
 #include <list>
 #include <unordered_map>
 

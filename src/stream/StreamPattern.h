@@ -1,7 +1,9 @@
 #ifndef LLVM_TDG_MEMORY_ACCESS_PATTERN_H
 #define LLVM_TDG_MEMORY_ACCESS_PATTERN_H
 
+#include <cstdint>
 #include <list>
+#include <string>
 #include <unordered_map>
 #include <vector>
 

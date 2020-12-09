@@ -24,10 +24,10 @@ set_target_properties(ProtobufTraceMessage PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fPIC -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
 
-set(LIBUNWIND_INC_PATH "$ENV{LIBUNWIND_INC_PATH}")
-if (${LIBUNWIND_INC_PATH} STREQUAL "")
-  message(fatal_error "Please specify where to find libunwind include path")
+if (NOT DEFINED ENV{LIBUNWIND_INC_PATH})
+	message(FATAL_ERROR "Please specify libunwind include path in LIBUNWIND_INC_PATH")
 endif()
+set(LIBUNWIND_INC_PATH "$ENV{LIBUNWIND_INC_PATH}")
 
 add_library(TracerProtobuf STATIC 
     Tracer.cpp
