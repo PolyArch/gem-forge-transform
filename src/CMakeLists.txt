@@ -114,8 +114,8 @@ target_include_directories(LLVMTDGPass PUBLIC ${LLVM_SRC_LIB_DIR})
 
 target_link_libraries(LLVMTDGPass -lz ${PROTOBUF_LIBRARY} ${LLVM_DEP_LIBS})
 
-# Copy the generated python protobuf file to benchmark/Utils/.
+# Copy the generated python protobuf file.
 add_custom_target(PyTDGProtobufSrc ALL
-    cp ${TDG_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/driver/Utils/
+    cp ${TDG_PROTOBUF_PY} ${PROJECT_BINARY_DIR}/${PYTHON_PROTO_MSG}/
     DEPENDS ${TDG_PROTOBUF_PY})
 

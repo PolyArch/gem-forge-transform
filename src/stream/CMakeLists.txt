@@ -12,9 +12,9 @@ set_target_properties(ProtobufStreamMessage PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fPIC -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
 
-# Copy the generated python protobuf file to benchmark/Utils/.
+# Copy the generated python protobuf file.
 add_custom_target(PyStreamProtobufSrc ALL
-    cp ${STREAM_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/driver/Utils/
+    cp ${STREAM_PROTOBUF_PY} ${PROJECT_BINARY_DIR}/${PYTHON_PROTO_MSG}/
     DEPENDS ${STREAM_PROTOBUF_PY})
 
 add_subdirectory(ae)

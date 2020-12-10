@@ -49,8 +49,8 @@ set_target_properties(TracerProtobuf PROPERTIES
     COMPILE_FLAGS "-std=c++14 -O3 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI"
 )
 
-# Copy the generated python protobuf file to benchmark/Utils/.
+# Copy the generated python protobuf file.
 add_custom_target(PyProtobufSrc ALL
-    cp ${UID_MAP_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/driver/Utils/
-    COMMAND cp ${PROFILE_PROTOBUF_PY} ${PROJECT_SOURCE_DIR}/driver/Utils/
+    cp ${UID_MAP_PROTOBUF_PY} ${PROJECT_BINARY_DIR}/${PYTHON_PROTO_MSG}/
+    COMMAND cp ${PROFILE_PROTOBUF_PY} ${PROJECT_BINARY_DIR}/${PYTHON_PROTO_MSG}/
     DEPENDS ${UID_MAP_PROTOBUF_PY} ${PROFILE_PROTOBUF_PY})

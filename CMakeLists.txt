@@ -34,6 +34,10 @@ include_directories(
     )
 link_directories(${LLVM_LIBRARY_DIRS})
 
+# Make a python protobuf folder
+set(PYTHON_PROTO_MSG "py-proto-msg")
+file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/${PYTHON_PROTO_MSG})
+
 # Generate the compile commands.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_subdirectory(src)
