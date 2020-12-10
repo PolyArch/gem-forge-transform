@@ -194,7 +194,7 @@ def getLatencyOfSubgraph(func, bb, staticInsts):
     # Reversely processing the sorted insts.
     layerMap = dict()
     minLayer = 0
-    for idx in xrange(len(topologicalSorted) - 1, -1, -1):
+    for idx in range(len(topologicalSorted) - 1, -1, -1):
         staticInst = topologicalSorted[idx]
         if staticInst not in layerMap:
             # A new thread.
@@ -319,7 +319,7 @@ def CCATransform(dg, funcName, bbName, threshold):
     graph= DotGraphExporter.extractGraph(func, bb.insts.values())
     matchedStaticInsts= set()
     subgraphs= list()
-    for idx in reversed(xrange(len(bb.insts))):
+    for idx in reversed(range(len(bb.insts))):
         staticInst= bb.insts[idx]
         if staticInst in matchedStaticInsts:
             continue
@@ -347,14 +347,14 @@ def CCATransform(dg, funcName, bbName, threshold):
             for inst in currentSubgraph:
                 matchedStaticInsts.remove(inst)
     # Print all the matched subgraph.
-    for idx in xrange(len(subgraphs)):
+    for idx in range(len(subgraphs)):
         subgraph = DotGraphExporter.extractGraph(func, subgraphs[idx])
         latency = getLatencyOfSubgraph(func, bb, subgraphs[idx])
         subgraphName= 'subgraph_{idx}_{latency}'.format(idx=idx, latency=latency)
         DotGraphExporter.toDot(subgraphName + '.dot', subgraphName, subgraph)
     # Replace all the subgraph and print out the replaced BB.
-    for idx in xrange(len(subgraphs)):
-        # for idx in xrange(1):
+    for idx in range(len(subgraphs)):
+        # for idx in range(1):
         warn('Replacing {idx}/{all}'.format(idx=idx, all=len(subgraphs)))
         replaceSubgraph(dg, func, bb, subgraphs[idx])
         # Get the new BB.

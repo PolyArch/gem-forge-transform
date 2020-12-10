@@ -391,7 +391,7 @@ class DataGraph:
                 # Check the number of formal/actual arguments match.
                 assert (len(dynamic_inst.dynamic_values) -
                         1) == len(next_inst_environment)
-                for arg_id in xrange(len(dynamic_inst.dynamic_values) - 1):
+                for arg_id in range(len(dynamic_inst.dynamic_values) - 1):
                     arg_dynamic_value = dynamic_inst.dynamic_values[arg_id]
                     # Ignore the last dynamic value as it is the callee address.
                     if arg_dynamic_value.type_id != 15:

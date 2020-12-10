@@ -96,7 +96,7 @@ export LLVM_SRC_LIB_PATH=/where/llvm/source/tree/lib/is
 export LIBUNWIND_INC_PATH=/where/libunwind/include/dir/is
 export LIBUNWIND_LIB_PATH=/where/is/libunwind.a
 export LLVM_TDG_PATH=/where/this/project/is
-export LLVM_TDG_RESULT_PATH=/where/the/result/is
+export GEM_FORGE_RESULT_PATH=/where/the/result/is
 ```
 
 ### Example
@@ -104,6 +104,6 @@ export LLVM_TDG_RESULT_PATH=/where/the/result/is
 We provide a script as an example of end-to-end workflow. Suppose you have [CortexSuite](http://cseweb.ucsd.edu/groups/bsg/) installed. With these additional environment variable.
 
 ```bash
-export LLVM_TRACE_CPU_PATH=/where/llvm/trace/cpu/simulator/is
+export GEM_FORGE_GEM5_PATH=/where/llvm/trace/cpu/simulator/is
 export SDVBS_SUITE_PATH=/where/SD-VBS/suite/is
 ```
