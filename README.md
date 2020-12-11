@@ -8,7 +8,7 @@ Z. Wang and T. Nowatzki
 2019 ACM/IEEE 46th Annual International Symposium on Computer Architecture (ISCA)
 
 Z. Wang, J. Weng, J. Lowe-Power, J. Gaur and T. Nowatzki
-"Stream-based Memory Access Specialization for General Purpose Processors,"
+"Stream Floating: Enabling Proactive and Decentralized Cache Optimizations,"
 2021 IEEE 27th International Symposium on High-Performance Computer Architecture (HPCA)
 ```
 
