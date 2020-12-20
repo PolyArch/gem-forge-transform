@@ -144,6 +144,7 @@ protected:
   void markAliasRelationshipForLoopBB(const llvm::Loop *Loop);
   void buildStreamValueDepGraph();
   void buildValueDepForStoreOrAtomic(StaticStream *StoreS);
+  bool isLegalValueDepInput(const llvm::Value *Value) const;
   void markPredicateRelationship();
   void markPredicateRelationshipForLoopBB(const llvm::Loop *Loop,
                                           const llvm::BasicBlock *BB);
