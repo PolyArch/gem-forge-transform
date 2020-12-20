@@ -57,7 +57,7 @@ target_include_directories(GemForgeTest
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 )
 set_target_properties(GemForgeTest PROPERTIES
-  COMPILE_FLAGS "-std=c++14 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI -DGTEST_HAS_RTTI=0"
+  COMPILE_FLAGS "-std=c++14 -fno-rtti -DGOOGLE_PROTOBUF_NO_RTTI -DGTEST_HAS_RTTI=0 -Wno-init-list-lifetime"
 )
 
 llvm_map_components_to_libnames(LLVM_LIBS demangle irreader)
