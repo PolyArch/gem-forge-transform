@@ -37,8 +37,7 @@ __attribute__((noinline)) Value foo(Value *A) {
       sum += A[i];
     }
     // Value sum = _mm512_reduce_add_ps(valS);
-#pragma omp critical
-    ret += sum;
+    __atomic_fetch_fadd(&ret, sum, __ATOMIC_RELAXED);
   }
   return ret;
 }
