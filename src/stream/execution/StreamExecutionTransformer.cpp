@@ -306,35 +306,57 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
       LLVM_DEBUG(llvm::dbgs()
                  << "Insert StreamInput for Stream " << S->formatName()
                  << " Input " << ClonedInput->getName() << '\n');
-      // Extend the input value to 64 bit using zero extension.
       auto ClonedInputValue = ClonedInput;
       auto ClonedInputType = ClonedInput->getType();
 
-      if (ClonedInputType->isFloatTy()) {
-        // Float -> Int32
-        ClonedInputType =
-            llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext());
-        ClonedInputValue =
-            Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
-                                  "ssp.input.bitcast." + S->Inst->getName());
-      } else if (ClonedInputType->isDoubleTy()) {
-        // Double -> Int64
-        ClonedInputType =
-            llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
-        ClonedInputValue =
-            Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
-                                  "ssp.input.bitcast." + S->Inst->getName());
-      }
-
-      // Final extension: Int8/Int16/Int32 -> Int64.
-      if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(ClonedInputType)) {
-        if (IntType->getBitWidth() < 64) {
+      /**
+       * Since StreamInput instruction does not care about data type,
+       * For scalar type, we always cast to int64.
+       * For vector type, we always cast to v8f64/v4f64/v2f64;
+       */
+      if (auto VecType = llvm::dyn_cast<llvm::VectorType>(ClonedInputType)) {
+        auto StoreBits =
+            this->ClonedDataLayout->getTypeStoreSizeInBits(VecType);
+        if (StoreBits == 512 || StoreBits == 256 || StoreBits == 128) {
+          auto NumElements = StoreBits / sizeof(double) / 8;
+          ClonedInputType = llvm::VectorType::get(
+              llvm::Type::getDoubleTy(this->ClonedModule->getContext()),
+              NumElements);
+          ClonedInputValue =
+              Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
+                                    "ssp.input.bitcast." + S->Inst->getName());
+        } else {
+          llvm::errs() << "Unsupported vector input type: ";
+          VecType->print(llvm::errs());
+          llvm_unreachable("Illegal vector stream input.");
+        }
+      } else {
+        if (ClonedInputType->isFloatTy()) {
+          // Float -> Int32
+          ClonedInputType =
+              llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext());
+          ClonedInputValue =
+              Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
+                                    "ssp.input.bitcast." + S->Inst->getName());
+        } else if (ClonedInputType->isDoubleTy()) {
+          // Double -> Int64
           ClonedInputType =
               llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
           ClonedInputValue =
-              Builder.CreateZExt(ClonedInputValue, ClonedInputType);
-        } else if (IntType->getBitWidth() > 64) {
-          assert(false && "Cannot handle input type larger than 64 bit.");
+              Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
+                                    "ssp.input.bitcast." + S->Inst->getName());
+        }
+
+        // Final extension: Int8/Int16/Int32 -> Int64.
+        if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(ClonedInputType)) {
+          if (IntType->getBitWidth() < 64) {
+            ClonedInputType =
+                llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
+            ClonedInputValue =
+                Builder.CreateZExt(ClonedInputValue, ClonedInputType);
+          } else if (IntType->getBitWidth() > 64) {
+            assert(false && "Cannot handle input type larger than 64 bit.");
+          }
         }
       }
 
@@ -617,32 +639,21 @@ StreamExecutionTransformer::addStreamLoad(StaticStream *S, llvm::Type *LoadType,
     auto ElementType = VecType->getVectorElementType();
     if (ElementType->isIntegerTy() || ElementType->isFloatingPointTy()) {
       // Make sure these are correct type.
-      auto CastedNumInt64 = 0;
-      switch (NumBits) {
-      case 64:
-        CastedNumInt64 = 1;
-        break;
-      case 128:
-        CastedNumInt64 = 2;
-        break;
-      case 256:
-        CastedNumInt64 = 4;
-        break;
-      case 512:
-        CastedNumInt64 = 8;
-        break;
-      default:
+      auto CastedNumFP64 = 0;
+      if (NumBits == 64 || NumBits == 128 || NumBits == 256 || NumBits == 512) {
+        CastedNumFP64 = NumBits / 64;
+      } else {
         llvm::errs() << "Invalid vector type bits " << NumBits << " Type:\n";
         LoadType->print(llvm::errs());
         llvm_unreachable("Invalid number of bits for vector.");
       }
-      if (CastedNumInt64 == 1) {
+      if (CastedNumFP64 == 1) {
         StreamLoadType =
-            llvm::IntegerType::get(this->ClonedModule->getContext(), 64);
+            llvm::Type::getDoubleTy(this->ClonedModule->getContext());
       } else {
         StreamLoadType = llvm::VectorType::get(
-            llvm::IntegerType::get(this->ClonedModule->getContext(), 64),
-            CastedNumInt64);
+            llvm::Type::getDoubleTy(this->ClonedModule->getContext()),
+            CastedNumFP64);
       }
       NeedBitcast = true;
     } else {
