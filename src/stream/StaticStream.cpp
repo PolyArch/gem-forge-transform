@@ -10,6 +10,38 @@
 
 uint64_t StaticStream::AllocatedStreamId = 0;
 
+/**
+ * The constructor just creates the object and does not perform any analysis.
+ *
+ * After creating all the streams, the manager should call constructGraph() to
+ * initialize the MetaGraph and StreamGraph.
+ */
+StaticStream::StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
+                           const llvm::Loop *_ConfigureLoop,
+                           const llvm::Loop *_InnerMostLoop,
+                           llvm::ScalarEvolution *_SE,
+                           const llvm::PostDominatorTree *_PDT,
+                           llvm::DataLayout *_DataLayout)
+    : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
+      ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop),
+      FuncNameBase(llvm::Twine(_Inst->getFunction()->getName() + "_" +
+                               _Inst->getParent()->getName() + "_" +
+                               _Inst->getName() + "_" + _Inst->getOpcodeName() +
+                               "_" +
+                               llvm::Twine(Utils::getLLVMInstPosInBB(_Inst)))
+                       .str()),
+      SE(_SE), PDT(_PDT), DataLayout(_DataLayout), IsCandidate(false),
+      IsQualified(false), IsChosen(false), CoalesceGroup(StreamId),
+      CoalesceOffset(0) {
+  this->StaticStreamInfo.set_loop_level(this->InnerMostLoop->getLoopDepth());
+  this->StaticStreamInfo.set_config_loop_level(
+      this->ConfigureLoop->getLoopDepth());
+  this->StaticStreamInfo.set_is_inner_most_loop(
+      this->InnerMostLoop->getSubLoops().empty());
+
+  this->fuseLoadOps();
+}
+
 void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   SSI.CopyFrom(this->StaticStreamInfo);
   SSI.set_is_candidate(this->IsCandidate);
@@ -630,8 +662,6 @@ void StaticStream::fillProtobufStreamInfo(
     llvm::errs() << "Invalid stream type " << this->formatName() << '\n';
     break;
   }
-  ProtobufInfo->set_loop_level(this->InnerMostLoop->getLoopDepth());
-  ProtobufInfo->set_config_loop_level(this->ConfigureLoop->getLoopDepth());
 
   // Dump the address function.
   if (this->isChosen()) {

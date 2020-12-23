@@ -94,6 +94,13 @@ message StaticStreamInfo {
   ExecFuncInfo pred_func_info = 21;
   bool no_core_user = 22; // This stream has not core user.
 
+  /**
+   * Top loop has level 0.
+   */
+  uint32 loop_level = 23; 
+  uint32 config_loop_level = 24;
+  bool is_inner_most_loop = 25;
+
   // AliasedStreamInfo
   StreamId alias_base_stream = 32;
   uint32 alias_offset = 33;
@@ -144,8 +151,6 @@ message StreamInfo {
   string name = 1;
   uint64 id = 2;
   Type type = 3;
-  uint32 loop_level = 4;
-  uint32 config_loop_level = 5;
   string pattern_path = 7;
   string history_path = 8;
   StaticCoalesceInfo coalesce_info = 9;

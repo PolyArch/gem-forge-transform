@@ -53,20 +53,7 @@ public:
                const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
                const llvm::PostDominatorTree *_PDT,
-               llvm::DataLayout *_DataLayout)
-      : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
-        ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop),
-        FuncNameBase(llvm::Twine(_Inst->getFunction()->getName() + "_" +
-                                 _Inst->getParent()->getName() + "_" +
-                                 _Inst->getName() + "_" +
-                                 _Inst->getOpcodeName() + "_" +
-                                 llvm::Twine(Utils::getLLVMInstPosInBB(_Inst)))
-                         .str()),
-        SE(_SE), PDT(_PDT), DataLayout(_DataLayout), IsCandidate(false),
-        IsQualified(false), IsChosen(false), CoalesceGroup(StreamId),
-        CoalesceOffset(0) {
-    this->fuseLoadOps();
-  }
+               llvm::DataLayout *_DataLayout);
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
   void fillProtobufStreamInfo(LLVM::TDG::StreamInfo *ProtobufInfo) const;
