@@ -439,9 +439,13 @@ protected:
   const StaticStream *getExecFuncInputStream(const llvm::Value *Value) const;
   void fillProtobufExecFuncInfo(::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo,
                                 const std::string &FuncName,
-                                const ExecutionDataGraph &ExecDG) const;
+                                const ExecutionDataGraph &ExecDG,
+                                llvm::Type *RetType) const;
   void fillProtobufAddrFuncInfo(::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const;
   void fillProtobufPredFuncInfo(::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
   void fillProtobufStoreFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
+
+  ::LLVM::TDG::DataType
+  translateToProtobufDataType(llvm::Type *Type) const;
 };
 #endif

@@ -42,6 +42,34 @@ StaticStream::StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
   this->fuseLoadOps();
 }
 
+::LLVM::TDG::DataType
+StaticStream::translateToProtobufDataType(llvm::Type *Type) const {
+  if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(Type)) {
+    assert(IntType->getBitWidth() <= 64 && "IntType overflow.");
+    return ::LLVM::TDG::DataType::INTEGER;
+  } else if (Type->isPointerTy()) {
+    return ::LLVM::TDG::DataType::INTEGER;
+  } else if (Type->isFloatTy()) {
+    return ::LLVM::TDG::DataType::FLOAT;
+  } else if (Type->isDoubleTy()) {
+    return ::LLVM::TDG::DataType::DOUBLE;
+  } else if (Type->isVectorTy()) {
+    auto NumBits = this->DataLayout->getTypeStoreSizeInBits(Type);
+    switch (NumBits) {
+    case 128:
+      return ::LLVM::TDG::DataType::VECTOR_128;
+    case 256:
+      return ::LLVM::TDG::DataType::VECTOR_256;
+    case 512:
+      return ::LLVM::TDG::DataType::VECTOR_512;
+    default:
+      llvm::errs() << "Invalid Vector BitWidth " << NumBits << '\n';
+      llvm_unreachable("Invalid Vector BitWidth.\n");
+    }
+  }
+  llvm_unreachable("Invalid DataType.\n");
+}
+
 void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   SSI.CopyFrom(this->StaticStreamInfo);
   SSI.set_is_candidate(this->IsCandidate);
@@ -81,18 +109,10 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   SSI.set_core_element_size(this->getCoreElementSize());
 
   // Set data type if we can support it.
-  auto CoreElementType = this->getCoreElementType();
-  if (CoreElementType->isFloatTy()) {
-    SSI.set_core_element_type(::LLVM::TDG::StreamDataType::FLOAT);
-  } else if (CoreElementType->isDoubleTy()) {
-    SSI.set_core_element_type(::LLVM::TDG::StreamDataType::DOUBLE);
-  }
-  auto MemElementType = this->getMemElementType();
-  if (MemElementType->isFloatTy()) {
-    SSI.set_mem_element_type(::LLVM::TDG::StreamDataType::FLOAT);
-  } else if (MemElementType->isDoubleTy()) {
-    SSI.set_mem_element_type(::LLVM::TDG::StreamDataType::DOUBLE);
-  }
+  SSI.set_core_element_type(
+      this->translateToProtobufDataType(this->getCoreElementType()));
+  SSI.set_mem_element_type(
+      this->translateToProtobufDataType(this->getMemElementType()));
 }
 
 llvm::Type *StaticStream::getMemElementType() const {
@@ -732,7 +752,7 @@ StaticStream::getExecFuncInputStream(const llvm::Value *Value) const {
 
 void StaticStream::fillProtobufExecFuncInfo(
     ::LLVM::TDG::ExecFuncInfo *ProtoFuncInfo, const std::string &FuncName,
-    const ExecutionDataGraph &ExecDG) const {
+    const ExecutionDataGraph &ExecDG, llvm::Type *RetType) const {
 
   ProtoFuncInfo->set_name(FuncName);
   for (const auto &Input : ExecDG.getInputs()) {
@@ -746,9 +766,9 @@ void StaticStream::fillProtobufExecFuncInfo(
       // This is an input value.
       ProtobufArg->set_is_stream(false);
     }
-    ProtobufArg->set_is_float(false);
+    ProtobufArg->set_type(this->translateToProtobufDataType(Type));
   }
-  ProtoFuncInfo->set_is_float(false);
+  ProtoFuncInfo->set_type(this->translateToProtobufDataType(RetType));
 }
 
 void StaticStream::fillProtobufAddrFuncInfo(
@@ -758,12 +778,14 @@ void StaticStream::fillProtobufAddrFuncInfo(
          "Can not have ReduceDG and AddrDG at the same time.");
   if (this->ReduceDG) {
     this->fillProtobufExecFuncInfo(AddrFuncInfo, this->FuncNameBase + "_reduce",
-                                   *this->ReduceDG);
+                                   *this->ReduceDG,
+                                   this->ReduceDG->getReturnType(true));
   }
 
   if (this->AddrDG) {
     this->fillProtobufExecFuncInfo(AddrFuncInfo, this->FuncNameBase + "_addr",
-                                   *this->AddrDG);
+                                   *this->AddrDG,
+                                   this->AddrDG->getReturnType(true));
   }
 }
 
@@ -771,7 +793,8 @@ void StaticStream::fillProtobufPredFuncInfo(
     ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {
   if (this->BBPredDG) {
     this->fillProtobufExecFuncInfo(PredFuncInfo, this->BBPredDG->getFuncName(),
-                                   *BBPredDG);
+                                   *this->BBPredDG,
+                                   this->BBPredDG->getReturnType(true));
   }
 }
 
@@ -799,21 +822,23 @@ void StaticStream::fillProtobufStoreFuncInfoImpl(
   auto CheckArg = [this](const llvm::Value *Input) -> void {
     auto Type = Input->getType();
     auto TypeSize = this->DataLayout->getTypeStoreSize(Type);
-    if (TypeSize > 8) {
-      llvm::errs() << "Invalid input type, Value: "
-                   << Utils::formatLLVMValue(Input) << " TypeSize " << TypeSize
-                   << '\n';
-      assert(false && "Invalid type for input.");
-    }
-    if (!(Type->isIntOrPtrTy() || Type->isFloatTy() || Type->isDoubleTy())) {
-      llvm::errs() << "Invalid input type, Value: "
-                   << Utils::formatLLVMValue(Input) << " TypeSize " << TypeSize
-                   << '\n';
-      assert(false && "Invalid type for input.");
-    }
+    // if (TypeSize > 8) {
+    //   llvm::errs() << "Invalid input type, Value: "
+    //                << Utils::formatLLVMValue(Input) << " TypeSize " <<
+    //                TypeSize
+    //                << '\n';
+    //   assert(false && "Invalid type for input.");
+    // }
+    // if (!(Type->isIntOrPtrTy() || Type->isFloatTy() || Type->isDoubleTy())) {
+    //   llvm::errs() << "Invalid input type, Value: "
+    //                << Utils::formatLLVMValue(Input) << " TypeSize " <<
+    //                TypeSize
+    //                << '\n';
+    //   assert(false && "Invalid type for input.");
+    // }
   };
-  auto AddArg = [ExInfo](const llvm::Type *Type,
-                         const StaticStream *InputStream) -> void {
+  auto AddArg = [ExInfo, this](llvm::Type *Type,
+                               const StaticStream *InputStream) -> void {
     auto ProtobufArg = ExInfo->add_args();
     if (InputStream) {
       // This comes from the base stream.
@@ -823,7 +848,7 @@ void StaticStream::fillProtobufStoreFuncInfoImpl(
       // This is an input value.
       ProtobufArg->set_is_stream(false);
     }
-    ProtobufArg->set_is_float(Type->isFloatTy() || Type->isDoubleTy());
+    ProtobufArg->set_type(this->translateToProtobufDataType(Type));
   };
   for (const auto &Input : this->ValueDG->getInputs()) {
     StaticStream *InputStream = nullptr;
@@ -849,12 +874,12 @@ void StaticStream::fillProtobufStoreFuncInfoImpl(
 
   auto StoreType = this->ValueDG->getReturnType(false /* IsLoad */);
   auto StoreTypeBits = DataLayout->getTypeStoreSizeInBits(StoreType);
-  if (StoreTypeBits > 64) {
-    llvm::errs() << "Invalid result type, Stream: " << this->formatName()
-                 << " Bits " << StoreTypeBits << '\n';
-    assert(false && "Invalid type for result.");
-  }
-  ExInfo->set_is_float(StoreType->isFloatTy() || StoreType->isDoubleTy());
+  // if (StoreTypeBits > 64) {
+  //   llvm::errs() << "Invalid result type, Stream: " << this->formatName()
+  //                << " Bits " << StoreTypeBits << '\n';
+  //   assert(false && "Invalid type for result.");
+  // }
+  ExInfo->set_type(this->translateToProtobufDataType(StoreType));
 }
 
 StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {

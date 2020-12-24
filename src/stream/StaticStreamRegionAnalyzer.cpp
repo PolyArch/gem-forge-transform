@@ -135,8 +135,6 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
 
   auto ConfigureLoop = InnerMostLoop;
   do {
-    auto LoopLevel =
-        ConfigureLoop->getLoopDepth() - this->TopLoop->getLoopDepth();
     StaticStream *NewStream = nullptr;
     LLVM_DEBUG(llvm::dbgs()
                << "Initializing stream " << Utils::formatLLVMInst(StreamInst)

@@ -20,10 +20,14 @@ enum StreamValuePattern {
   REDUCTION = 7;
 }
 
-enum StreamDataType {
+enum DataType {
   UNKNOWN_TYPE = 0;
-  FLOAT = 1;
-  DOUBLE = 2;
+  INTEGER = 1;
+  FLOAT = 2;
+  DOUBLE = 3;
+  VECTOR_128 = 4;
+  VECTOR_256 = 5;
+  VECTOR_512 = 6;
 }
 
 message StreamParam {
@@ -58,10 +62,10 @@ message ExecFuncInfo {
   message FuncArg {
     bool is_stream = 1;
     uint64 stream_id = 2;
-    bool is_float = 3;
+    DataType type = 3;
   }
   repeated FuncArg args = 2;
-  bool is_float = 3;
+  DataType type = 3;
 }
 
 message StaticStreamComputeInfo {
@@ -112,8 +116,8 @@ message StaticStreamInfo {
   int32 core_element_size = 60;
   int32 mem_element_size = 61;
   // Optional data type for debug purpose.
-  StreamDataType core_element_type = 62;
-  StreamDataType mem_element_type = 63;
+  DataType core_element_type = 62;
+  DataType mem_element_type = 63;
 
   enum StaticNotStreamReason {
     UNKNOWN = 0;
