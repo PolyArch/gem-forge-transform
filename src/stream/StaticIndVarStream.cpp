@@ -117,8 +117,13 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
 
   /**
    * We consider it a reduction stream iff.
-   * 1. All the NonEmptyComputeMetaNode has at most one same LoadStream
-   *    and myself as the input, or the StepRootStream of the LoadStream.
+   * 1. No EmptyComputePath.
+   * 2. Myself as one of the input.
+   * 3. Have single or multiple LoadStream input:
+   *    a. All the LoadStreams are controlled by the same StepRoot.
+   *    b. All the LoadStreams are from the same BB.
+   *    c. All the LoadStreams are from the same BB as my computation.
+   * 4. Can have the StepRoot as an optional input, not no other IVBaseStream.
    */
   if (!StreamPassEnableReduce) {
     return false;
@@ -130,8 +135,8 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
     // Multiple compute path.
     return false;
   }
-  if (this->LoadBaseStreams.size() != 1) {
-    // No load stream to reduce on.
+  if (this->LoadBaseStreams.empty()) {
+    // No LoadStream input to reduce one.
     return false;
   }
   if (!this->IndVarBaseStreams.count(const_cast<StaticIndVarStream *>(this))) {
@@ -142,7 +147,23 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
     // Only consider inner most loop.
     return false;
   }
-  auto LoadBaseS = *(this->LoadBaseStreams.begin());
+  auto FinalInst =
+      llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
+  if (!FinalInst) {
+    // Final value should be an instruction.
+    return false;
+  }
+  auto FirstLoadBaseS = *(this->LoadBaseStreams.begin());
+  for (auto LoadBaseS : this->LoadBaseStreams) {
+    if (LoadBaseS->BaseStepRootStreams != FirstLoadBaseS->BaseStepRootStreams) {
+      // Not same StepRoot.
+      return false;
+    }
+    if (LoadBaseS->Inst->getParent() != FinalInst->getParent()) {
+      // We are not from the same BB.
+      return false;
+    }
+  }
   // Search for any other possible IVBaseS.
   for (auto IVBaseS : this->IndVarBaseStreams) {
     if (IVBaseS == this) {
@@ -151,19 +172,9 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
     }
     // We only allow additional step root of the LoadStream,
     // as it's likely this is the IV of the loop.
-    if (LoadBaseS->BaseStepRootStreams.count(IVBaseS) == 0) {
+    if (!FirstLoadBaseS->BaseStepRootStreams.count(IVBaseS)) {
       return false;
     }
-  }
-  auto FinalInst =
-      llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
-  if (!FinalInst) {
-    // Final value should be an instruction.
-    return false;
-  }
-  if (LoadBaseS->Inst->getParent() != FinalInst->getParent()) {
-    // We only handle them in the same BB.
-    return false;
   }
 
   return true;
@@ -425,10 +436,17 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   }
   LLVM_DEBUG(llvm::dbgs() << "Check IsQualifed Without BackEdgeDep for "
                           << this->formatName() << '\n');
-  // Make sure we only has one back edge.
+  // Make sure all the BackMemBaseStreams have same StepRoot.
   if (this->BackMemBaseStreams.size() > 1) {
-    LLVM_DEBUG(llvm::dbgs() << "[Unqualified] Multiple BackMemBaseStreams.\n");
-    return false;
+    auto FirstBackMemBaseStream = *(this->BackMemBaseStreams.begin());
+    for (auto BackMemBaseS : this->BackMemBaseStreams) {
+      if (BackMemBaseS->BaseStepRootStreams !=
+          FirstBackMemBaseStream->BaseStepRootStreams) {
+        LLVM_DEBUG(llvm::dbgs() << "[Unqualified] Multiple BackMemBaseStreams "
+                                   "with Different StepRoot.\n");
+        return false;
+      }
+    }
   }
   // Check all the base streams are qualified.
   for (auto &BaseStream : this->BaseStreams) {
@@ -440,8 +458,8 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
       return false;
     }
   }
-  // All the base streams are qualified, and thus know their StepPattern. We can
-  // check the constraints on static mapping.
+  // All the base streams are qualified, and thus know their StepPattern. We
+  // can check the constraints on static mapping.
   if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
@@ -461,27 +479,28 @@ bool StaticIndVarStream::checkIsQualifiedWithBackEdgeDep() const {
 }
 
 void StaticIndVarStream::finalizePattern() {
-  assert(this->BackMemBaseStreams.size() <= 1 &&
-         "More than 1 back edge dependencies.");
-  if (this->BackMemBaseStreams.empty()) {
-    // Without back edge dependency, the pattern is already computed.
-    return;
-  }
-  auto BackMemBaseStream = *(this->BackMemBaseStreams.begin());
-  // Check if I am its step root.
-  if (BackMemBaseStream->BaseStepRootStreams.count(this) == 0) {
-    // I am not its step root, which means this is not a pointer chase.
-    if (this->StaticStreamInfo.val_pattern() ==
-        LLVM::TDG::StreamValuePattern::REDUCTION) {
-      // Do not reset the reduction pattern?
+  if (!this->BackMemBaseStreams.empty()) {
+    /**
+     * We already make sure that all BackMemBaseStreams have same StepRoot.
+     */
+    auto BackMemBaseStream = *(this->BackMemBaseStreams.begin());
+    // Check if I am its step root.
+    if (BackMemBaseStream->BaseStepRootStreams.count(this) == 0) {
+      // I am not its step root, which means this is not a pointer chase.
+      if (this->StaticStreamInfo.val_pattern() ==
+          LLVM::TDG::StreamValuePattern::REDUCTION) {
+        // Do not reset the reduction pattern?
+      } else {
+        this->StaticStreamInfo.set_val_pattern(
+            LLVM::TDG::StreamValuePattern::PREV_LOAD);
+      }
     } else {
       this->StaticStreamInfo.set_val_pattern(
-          LLVM::TDG::StreamValuePattern::PREV_LOAD);
+          LLVM::TDG::StreamValuePattern::POINTER_CHASE);
     }
-  } else {
-    this->StaticStreamInfo.set_val_pattern(
-        LLVM::TDG::StreamValuePattern::POINTER_CHASE);
   }
+  // Only now we compute the StepInst.
+  this->searchStepInsts();
 }
 
 void StaticIndVarStream::searchStepInsts() {
@@ -489,6 +508,23 @@ void StaticIndVarStream::searchStepInsts() {
 
   LLVM_DEBUG(llvm::dbgs() << "Search step instructions for "
                           << this->formatName() << '\n');
+
+  /**
+   * Special case for reduction stream, which always just use the final compute
+   * instruction as the step instruction.
+   */
+  if (this->StaticStreamInfo.val_pattern() ==
+      ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+    assert(this->StaticStreamInfo.stp_pattern() ==
+           ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL);
+    assert(this->NonEmptyComputePath);
+    auto FinalInst = llvm::dyn_cast<llvm::Instruction>(
+        this->NonEmptyComputePath->ComputeMetaNodes.front()->RootValue);
+    LLVM_DEBUG(llvm::dbgs() << "Found step inst "
+                            << Utils::formatLLVMInst(FinalInst) << '\n');
+    this->StepInsts.insert(FinalInst);
+    return;
+  }
 
   for (unsigned IncomingIdx = 0,
                 NumIncomingValues = PHINode->getNumIncomingValues();

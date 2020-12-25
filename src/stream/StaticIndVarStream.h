@@ -12,9 +12,7 @@ public:
                      llvm::DataLayout *_DataLayout)
       : StaticStream(TypeT::IV, _PHINode, _ConfigureLoop, _InnerMostLoop, _SE,
                      _PDT, _DataLayout),
-        PHINode(_PHINode), NonEmptyComputePath(nullptr) {
-    this->searchStepInsts();
-  }
+        PHINode(_PHINode), NonEmptyComputePath(nullptr) {}
 
   bool checkIsQualifiedWithoutBackEdgeDep() const override;
   bool checkIsQualifiedWithBackEdgeDep() const override;
