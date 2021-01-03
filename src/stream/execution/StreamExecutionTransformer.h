@@ -154,6 +154,8 @@ private:
   llvm::Value *addStreamLoad(StaticStream *S, llvm::Type *LoadType,
                              llvm::Instruction *ClonedInsertBefore,
                              const llvm::DebugLoc *DebugLoc = nullptr);
+  void addStreamStore(StaticStream *S, llvm::Instruction *ClonedInsertBefore,
+                      const llvm::DebugLoc *DebugLoc = nullptr);
 
   void writeModule();
   void writeAllConfiguredRegions();

@@ -688,6 +688,25 @@ StreamExecutionTransformer::addStreamLoad(StaticStream *S, llvm::Type *LoadType,
   }
 }
 
+void StreamExecutionTransformer::addStreamStore(
+    StaticStream *S, llvm::Instruction *ClonedInsertBefore,
+    const llvm::DebugLoc *DebugLoc) {
+  auto StreamId = S->getRegionStreamId();
+  auto StreamIdValue = llvm::ConstantInt::get(
+      llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()), StreamId,
+      false);
+  std::array<llvm::Value *, 1> Args{StreamIdValue};
+
+  llvm::IRBuilder<> Builder(ClonedInsertBefore);
+  auto StreamStoreInst = Builder.CreateCall(
+      llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
+                                      llvm::Intrinsic::ID::ssp_stream_store),
+      Args);
+  if (DebugLoc) {
+    StreamStoreInst->setDebugLoc(llvm::DebugLoc(DebugLoc->get()));
+  }
+}
+
 void StreamExecutionTransformer::transformStoreInst(
     StaticStreamRegionAnalyzer *Analyzer, llvm::StoreInst *StoreInst) {
   auto S = Analyzer->getChosenStreamByInst(StoreInst);
@@ -927,9 +946,11 @@ void StreamExecutionTransformer::handleValueDG(
     SSProto->set_id(LoadSS->StreamId);
     SSProto->set_name(LoadSS->formatName());
   }
-  // Finally, remove the inst (store/atomicrmw).
+  // Finally, replace the inst (store/atomicrmw) with a placeholder StreamStore.
   SSProtoComputeInfo->set_enabled_store_func(true);
   auto ClonedSSInst = this->getClonedValue(SS->Inst);
+  this->addStreamStore(SS, ClonedSSInst, &ClonedSSInst->getDebugLoc());
+
   this->PendingRemovedInsts.insert(ClonedSSInst);
   // Consider FusedLoadOps.
   for (auto FusedOp : SS->FusedLoadOps) {
