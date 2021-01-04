@@ -541,7 +541,6 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
    * Enforce all the constraints.
    * 1. ValueDG should have no circle.
    * 2. ValueDG should only have Load/LoopInvariant inputs, at most 4 inputs.
-   *    All inputs should have scalar type.
    * 3. All the load inputs should be within the same BB of this store.
    * 4. All the load and the store should have the same step root stream.
    * 5. If multiple loads, they must be coalesced and continuous.
@@ -642,13 +641,21 @@ bool StaticStreamRegionAnalyzer::isLegalValueDepInput(
     const llvm::Value *Value) const {
   auto Type = Value->getType();
   auto TypeSize = this->DataLayout->getTypeStoreSize(Type);
-  if (TypeSize > 8) {
+  if (TypeSize > 64) {
     return false;
   }
-  if (!(Type->isIntOrPtrTy() || Type->isFloatTy() || Type->isDoubleTy())) {
-    return false;
+  if (Type->isIntOrPtrTy() || Type->isFloatTy() || Type->isDoubleTy()) {
+    return true;
   }
-  return true;
+  // We also allow vector type.
+  if (auto VecType = llvm::dyn_cast<llvm::VectorType>(Type)) {
+    auto ElementType = VecType->getElementType();
+    if (ElementType->isIntOrPtrTy() || ElementType->isFloatTy() ||
+        ElementType->isDoubleTy()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void StaticStreamRegionAnalyzer::markQualifiedStreams() {
