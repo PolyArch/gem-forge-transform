@@ -511,8 +511,12 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   bool IsAtomic = (StreamOpcode == llvm::Instruction::AtomicRMW) ||
                   (StreamOpcode == llvm::Instruction::AtomicCmpXchg);
 
+  LLVM_DEBUG(llvm::dbgs() << "Build ValueDG for " << StoreS->formatName()
+                          << '\n');
+
   if (StoreS->BaseStepRootStreams.size() != 1) {
     // Wierd stream has no step root stream. We do not try to analyze it.
+    LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Multiple StepRoot.\n");
     return;
   }
   /**
@@ -540,25 +544,35 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   /**
    * Enforce all the constraints.
    * 1. ValueDG should have no circle.
-   * 2. ValueDG should only have Load/LoopInvariant inputs, at most 4 inputs.
+   * 2. ValueDG should only have Load/LoopInvariant inputs, at most 8 
+   * inputs. Notice that 3D stencil takes 8 inputs. This is to avoid
+   * using stack to pass in parameters for the ValueDG.
    * 3. All the load inputs should be within the same BB of this store.
    * 4. All the load and the store should have the same step root stream.
-   * 5. If multiple loads, they must be coalesced and continuous.
    */
   if (ValueDG->hasCircle()) {
+    LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Has Circle.\n");
     return;
   }
   if (ValueDG->hasPHINodeInComputeInsts() ||
       ValueDG->hasCallInstInComputeInsts()) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[NoValueDG] Has PHINode "
+               << ValueDG->hasPHINodeInComputeInsts() << " CallInst "
+               << ValueDG->hasCallInstInComputeInsts() << '\n');
     return;
   }
-  if (ValueDG->getInputs().size() > 4) {
+  if (ValueDG->getInputs().size() > 8) {
+    LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Too many Input "
+                            << ValueDG->getInputs().size() << '\n');
     return;
   }
   std::unordered_set<const llvm::LoadInst *> LoadInputs;
   for (auto Input : ValueDG->getInputs()) {
     if (!this->isLegalValueDepInput(Input)) {
       // This is not a supported input type.
+      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Illegal Input Type ";
+                 Input->getType()->print(llvm::dbgs()); llvm::dbgs() << '\n');
       return;
     }
     if (auto InputInst = llvm::dyn_cast<llvm::Instruction>(Input)) {
@@ -567,6 +581,8 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
         LoadInputs.insert(LoadInput);
       } else if (StoreS->ConfigureLoop->contains(InputInst)) {
         // Found LoopVariant input.
+        LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] LoopVariant Input: "
+                                << Utils::formatLLVMInst(InputInst) << '\n');
         return;
       }
     }
@@ -575,42 +591,19 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   for (auto LoadInput : LoadInputs) {
     if (LoadInput->getParent() != StoreS->Inst->getParent()) {
       // Not same BB.
+      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Not same BB: "
+                              << Utils::formatLLVMInst(LoadInput) << '\n');
       return;
     }
     auto LoadS =
         this->getStreamByInstAndConfigureLoop(LoadInput, StoreS->ConfigureLoop);
     if (LoadS->BaseStepRootStreams != StoreS->BaseStepRootStreams) {
       // They are not stepped by the same stream.
+      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Not same StepRoot: "
+                              << LoadS->formatName() << '\n');
       return;
     }
     LoadInputStreams.push_back(LoadS);
-  }
-  // Check that all load inputs are continuously coalesced.
-  if (!LoadInputStreams.empty()) {
-    auto LoadInputAliasBaseStream = LoadInputStreams.front()->AliasBaseStream;
-    assert(LoadInputAliasBaseStream && "Missing AliasBaseStream.");
-    for (auto LoadS : LoadInputStreams) {
-      if (LoadS->AliasBaseStream != LoadInputAliasBaseStream) {
-        // Mismatch in the AliasBaseStream.
-        return;
-      }
-    }
-    // Sort the LoadInputStreams with AliasOffset.
-    std::sort(LoadInputStreams.begin(), LoadInputStreams.end(),
-              [](const StaticStream *SA, const StaticStream *SB) -> bool {
-                return SA->AliasOffset < SB->AliasOffset;
-              });
-    // Check that these input streams are continuous.
-    for (int Idx = 1, End = LoadInputStreams.size(); Idx < End; ++Idx) {
-      auto PrevS = LoadInputStreams.at(Idx - 1);
-      auto PrevOffset = PrevS->AliasOffset;
-      auto PrevMemElementSize = PrevS->getMemElementSize();
-      auto CurOffset = LoadInputStreams.at(Idx)->AliasOffset;
-      if (PrevOffset + PrevMemElementSize < CurOffset) {
-        // These are not continuous.
-        return;
-      }
-    }
   }
   /**
    * We passed all checks, we remember this relationship.

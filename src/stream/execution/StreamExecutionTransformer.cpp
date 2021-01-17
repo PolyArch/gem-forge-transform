@@ -464,7 +464,7 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
     return;
   }
   auto ClonedExitInst = this->getClonedValue(ExitInst);
-  auto ClonedReducedValue = this->addStreamLoad(
+  auto ClonedReducedValue = this->addStreamLoadOrAtomic(
       ReduceStream, ClonedExitInst->getType(), ClonedExitBB->getFirstNonPHI());
   /**
    * Find out-of-loop ExitValue user instructions.
@@ -585,7 +585,7 @@ void StreamExecutionTransformer::transformLoadInst(
    * 3. Leave the original load there (not deleted).
    */
   auto ClonedInst = this->getClonedValue(Inst);
-  auto StreamLoadInst = this->addStreamLoad(
+  auto StreamLoadInst = this->addStreamLoadOrAtomic(
       S, ClonedInst->getType(), ClonedInst, &ClonedInst->getDebugLoc());
   ClonedInst->replaceAllUsesWith(StreamLoadInst);
 
@@ -596,14 +596,13 @@ void StreamExecutionTransformer::transformLoadInst(
   this->mergePredicatedStreams(Analyzer, S);
 }
 
-llvm::Value *
-StreamExecutionTransformer::addStreamLoad(StaticStream *S, llvm::Type *LoadType,
-                                          llvm::Instruction *ClonedInsertBefore,
-                                          const llvm::DebugLoc *DebugLoc) {
+llvm::Value *StreamExecutionTransformer::addStreamLoadOrAtomic(
+    StaticStream *S, llvm::Type *LoadType,
+    llvm::Instruction *ClonedInsertBefore, const llvm::DebugLoc *DebugLoc,
+    bool isAtomic) {
   /**
    * Insert a StreamLoad for S.
    */
-  auto Inst = S->Inst;
 
   // Here we should RegionStreamId to fit in immediate field.
   auto StreamId = S->getRegionStreamId();
@@ -664,15 +663,20 @@ StreamExecutionTransformer::addStreamLoad(StaticStream *S, llvm::Type *LoadType,
 
   std::array<llvm::Type *, 1> StreamLoadTypes{StreamLoadType};
   llvm::IRBuilder<> Builder(ClonedInsertBefore);
+
+  auto IntrinsicID = isAtomic ? llvm::Intrinsic::ID::ssp_stream_atomic
+                              : llvm::Intrinsic::ID::ssp_stream_load;
+
   auto StreamLoadInst = Builder.CreateCall(
-      llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                      llvm::Intrinsic::ID::ssp_stream_load,
+      llvm::Intrinsic::getDeclaration(this->ClonedModule.get(), IntrinsicID,
                                       StreamLoadTypes),
       StreamLoadArgs);
   if (DebugLoc) {
     StreamLoadInst->setDebugLoc(llvm::DebugLoc(DebugLoc->get()));
   }
-  this->StreamToStreamLoadInstMap.emplace(S, StreamLoadInst);
+  if (!isAtomic) {
+    this->StreamToStreamLoadInstMap.emplace(S, StreamLoadInst);
+  }
   if (NeedTruncate) {
     auto TruncateInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
     return TruncateInst;
@@ -935,7 +939,7 @@ void StreamExecutionTransformer::handleValueDG(
       return;
     }
   }
-  // We can merge these two.
+  // Remember the value dependence.
   auto SSProtoComputeInfo = SS->StaticStreamInfo.mutable_compute_info();
   for (auto LoadSS : SS->LoadStoreBaseStreams) {
     auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
@@ -946,28 +950,40 @@ void StreamExecutionTransformer::handleValueDG(
     SSProto->set_id(LoadSS->StreamId);
     SSProto->set_name(LoadSS->formatName());
   }
-  // Finally, replace the inst (store/atomicrmw) with a placeholder StreamStore.
+  // Enable the store func.
   SSProtoComputeInfo->set_enabled_store_func(true);
-  auto ClonedSSInst = this->getClonedValue(SS->Inst);
-  this->addStreamStore(SS, ClonedSSInst, &ClonedSSInst->getDebugLoc());
 
+  /**
+   * Finally, we transform the program.
+   * 1. For store stream, replace the inst with a placeholder StreamStore.
+   * 2. For atomic stream, replace the inst with a placehodler StreamAtomic.
+   * We cannot use StreamLoad + StreamStore to represent an atomic stream,
+   * as that breaks atomicity. However, a StreamAtomic can be broken into
+   * a load and a store in microops.
+   */
+  auto ClonedSSInst = this->getClonedValue(SS->Inst);
   this->PendingRemovedInsts.insert(ClonedSSInst);
+
   // Consider FusedLoadOps.
+  auto ClonedFinalValueInst = ClonedSSInst;
   for (auto FusedOp : SS->FusedLoadOps) {
     auto ClonedFusedOp = this->getClonedValue(FusedOp);
     this->PendingRemovedInsts.insert(ClonedFusedOp);
-    ClonedSSInst = ClonedFusedOp;
+    ClonedFinalValueInst = ClonedFusedOp;
   }
-  /**
-   * If the stream has user, e.g. for atomic stream, we add a stream load here.
-   */
-  if (ClonedSSInst->use_empty()) {
-    // Mark this stream without core user.
-    SS->StaticStreamInfo.set_no_core_user(true);
+
+  if (llvm::isa<llvm::StoreInst>(SS->Inst)) {
+    this->addStreamStore(SS, ClonedSSInst, &ClonedSSInst->getDebugLoc());
   } else {
-    auto StreamLoadInst =
-        this->addStreamLoad(SS, ClonedSSInst->getType(), ClonedSSInst);
-    ClonedSSInst->replaceAllUsesWith(StreamLoadInst);
+    // This is an atomic stream.
+    if (ClonedFinalValueInst->use_empty()) {
+      // Mark this stream without core user.
+      SS->StaticStreamInfo.set_no_core_user(true);
+    }
+    auto StreamAtomicInst = this->addStreamLoadOrAtomic(
+        SS, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
+        &ClonedFinalValueInst->getDebugLoc(), true /* isAtomic */);
+    ClonedFinalValueInst->replaceAllUsesWith(StreamAtomicInst);
   }
 }
 
@@ -1106,6 +1122,10 @@ void StreamExecutionTransformer::cleanClonedModule() {
     auto S = StreamInstPair.first;
     auto StreamLoadInst = StreamInstPair.second;
     if (StreamLoadInst->use_empty()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Remove unused StreamLoad "
+                 << StreamLoadInst->getFunction()->getName() << ' '
+                 << Utils::formatLLVMInstWithoutFunc(StreamLoadInst) << '\n');
       StreamLoadInst->eraseFromParent();
       StreamInstPair.second = nullptr;
 

@@ -151,9 +151,10 @@ private:
   void addStreamInputValue(const llvm::Value *ClonedValue, bool Signed,
                            InputValueVec &ClonedInputValues,
                            ProtoStreamParam *ProtoParam);
-  llvm::Value *addStreamLoad(StaticStream *S, llvm::Type *LoadType,
-                             llvm::Instruction *ClonedInsertBefore,
-                             const llvm::DebugLoc *DebugLoc = nullptr);
+  llvm::Value *addStreamLoadOrAtomic(StaticStream *S, llvm::Type *LoadType,
+                                     llvm::Instruction *ClonedInsertBefore,
+                                     const llvm::DebugLoc *DebugLoc = nullptr,
+                                     bool isAtomic = false);
   void addStreamStore(StaticStream *S, llvm::Instruction *ClonedInsertBefore,
                       const llvm::DebugLoc *DebugLoc = nullptr);
 
