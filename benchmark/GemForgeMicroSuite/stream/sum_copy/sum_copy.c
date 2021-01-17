@@ -1,7 +1,7 @@
 /**
  * Simple coalesced sum copy.
  */
-#include "../../gfm_utils.h"
+#include "gfm_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 

@@ -1,7 +1,7 @@
 /**
  * Short stream stress test for stream configuration overhead.
  */
-#include "../../gfm_utils.h"
+#include "gfm_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 

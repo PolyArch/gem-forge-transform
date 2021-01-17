@@ -2,7 +2,7 @@
  * Simple dense vector add.
  */
 
-#include "../../gfm_utils.h"
+#include "gfm_utils.h"
 #include <stdio.h>
 
 typedef long long Value;

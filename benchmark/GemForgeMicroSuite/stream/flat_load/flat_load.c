@@ -1,4 +1,4 @@
-#include "../../gfm_utils.h"
+#include "gfm_utils.h"
 #include "../../ssp.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,7 +1,7 @@
 /**
  * Simple read after write for memory accesses.
  */
-#include "../../gfm_utils.h"
+#include "gfm_utils.h"
 #include <stdio.h>
 
 typedef int Value;

@@ -1,4 +1,4 @@
-#include "../../gfm_utils.h"
+#include "gfm_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -7,7 +7,7 @@ typedef int Value;
 typedef int64_t IndT;
 
 #define STRIDE 1
-// #define CHECK
+#define CHECK
 #define WARM_CACHE
 
 __attribute__((noinline)) Value foo_warm(volatile Value *a, IndT *ia, int N) {
@@ -64,7 +64,11 @@ int main() {
   gf_detail_sim_end();
 
 #ifdef CHECK
+#ifdef WARM_CACHE
+  Value expected = ret;
+#else
   Value expected = foo_warm(a, ia, N);
+#endif
   printf("Computed = %d, Expected = %d.\n", computed, expected);
   if (computed != expected) {
     gf_panic();
