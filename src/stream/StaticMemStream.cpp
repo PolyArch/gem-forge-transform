@@ -114,12 +114,16 @@ void StaticMemStream::analyzeIsCandidate() {
       return;
     }
     if (this->UpdateStream) {
-      this->StaticStreamInfo.set_not_stream_reason(
-          ::LLVM::TDG::StaticStreamInfo::IS_UPDATE_STORE);
-      this->IsCandidate = false;
-      LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Update Disabled "
-                              << this->formatName() << '\n');
-      return;
+      // We keep the StoreStream if it has ValueDG, and we do not upgreade load
+      // to update.
+      if (!this->ValueDG || StreamPassUpgradeLoadToUpdate) {
+        this->StaticStreamInfo.set_not_stream_reason(
+            ::LLVM::TDG::StaticStreamInfo::IS_UPDATE_STORE);
+        this->IsCandidate = false;
+        LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Update Disabled "
+                                << this->formatName() << '\n');
+        return;
+      }
     }
   }
   assert(this->ComputeMetaNodes.size() == 1 &&

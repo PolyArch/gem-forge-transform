@@ -544,7 +544,7 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   /**
    * Enforce all the constraints.
    * 1. ValueDG should have no circle.
-   * 2. ValueDG should only have Load/LoopInvariant inputs, at most 8 
+   * 2. ValueDG should only have Load/LoopInvariant inputs, at most 8
    * inputs. Notice that 3D stencil takes 8 inputs. This is to avoid
    * using stack to pass in parameters for the ValueDG.
    * 3. All the load inputs should be within the same BB of this store.
