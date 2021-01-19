@@ -1551,9 +1551,14 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
     });
     if (!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
         ClonedSE->isLoopInvariant(BackEdgeTakenSCEV, ClonedConfigureLoop)) {
-      this->addStreamInputSCEV(BackEdgeTakenSCEV, false /* Signed */,
-                               InsertBefore, ClonedSEExpander,
-                               ClonedInputValues, ProtoConfiguration);
+      /**
+       * We add one to the BackEdgeTakenCount to get trip count.
+       */
+      auto TripCount = ClonedSE->getAddExpr(
+          BackEdgeTakenSCEV, ClonedSE->getOne(BackEdgeTakenSCEV->getType()));
+      this->addStreamInputSCEV(TripCount, false /* Signed */, InsertBefore,
+                               ClonedSEExpander, ClonedInputValues,
+                               ProtoConfiguration);
     } else {
       assert(CurrentLoop == ClonedConfigureLoop &&
              "Need const BackEdgeTakenCount for nested loop.");
