@@ -6,7 +6,7 @@
 
 BBPredicateDataGraph::BBPredicateDataGraph(const llvm::Loop *_Loop,
                                            const llvm::BasicBlock *_BB)
-    : ExecutionDataGraph(nullptr), Loop(_Loop), BB(_BB),
+    : ExecutionDataGraph(), Loop(_Loop), BB(_BB),
       FuncName(llvm::Twine(_BB->getParent()->getName() + "_" +
                            _Loop->getHeader()->getName() + "_" +
                            _BB->getName() + "_pred")
@@ -116,7 +116,7 @@ void BBPredicateDataGraph::constructDataGraph() {
   if (IsValidTemp) {
     // Setup.
     this->IsValid = true;
-    this->ResultValue = BranchInst->getCondition();
+    this->ResultValues.emplace_back(BranchInst->getCondition());
     LLVM_DEBUG(llvm::dbgs()
                << "BBPredDG Valid: " << Utils::formatLLVMBB(this->BB) << '\n');
     /**

@@ -30,7 +30,7 @@ StreamDataGraph::StreamDataGraph(
 void StreamDataGraph::constructDataGraph(
     std::function<bool(const llvm::PHINode *)> IsInductionVar) {
   std::list<const llvm::Value *> Queue;
-  Queue.emplace_back(this->ResultValue);
+  Queue.emplace_back(this->getSingleResultValue());
 
   std::unordered_set<const llvm::Value *> UnsortedInputs;
 
@@ -91,13 +91,15 @@ void StreamDataGraph::constructDataGraph(
 
 void StreamDataGraph::format(std::ostream &OStream) const {
   OStream << "StreamDataGraph of Loop " << LoopUtils::getLoopId(this->Loop)
-          << " Value " << Utils::formatLLVMValue(this->ResultValue) << '\n';
+          << " Value " << Utils::formatLLVMValue(this->getSingleResultValue())
+          << '\n';
   OStream << "-------------- Input Values ---------------\n";
   for (const auto &Input : this->Inputs) {
     OStream << Utils::formatLLVMValue(Input) << '\n';
   }
   OStream << "-------------- Compute Insts --------------\n";
-  if (auto AddrInst = llvm::dyn_cast<llvm::Instruction>(this->ResultValue)) {
+  if (auto AddrInst =
+          llvm::dyn_cast<llvm::Instruction>(this->getSingleResultValue())) {
     if (this->ComputeInsts.count(AddrInst) == 0) {
       // This address instruction is somehow loop invariant.
       assert(this->ComputeInsts.empty() &&

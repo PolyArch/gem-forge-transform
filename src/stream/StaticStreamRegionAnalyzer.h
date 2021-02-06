@@ -72,6 +72,8 @@ public:
   }
 
   const StreamConfigureLoopInfo &
+  getConfigureLoopInfo(const llvm::Loop *ConfigureLoop) const;
+  StreamConfigureLoopInfo &
   getConfigureLoopInfo(const llvm::Loop *ConfigureLoop);
 
   llvm::Loop *getTopLoop() { return this->TopLoop; }
@@ -79,6 +81,14 @@ public:
   const std::string &getAnalyzeRelativePath() const {
     return this->AnalyzeRelativePath;
   }
+
+  /**
+   * Nest the inner region into outer region.
+   * We also reserve a special RegionStreamId for ConfigureFunc input.
+   */
+  void
+  nestRegionInto(const llvm::Loop *InnerLoop, const llvm::Loop *OuterLoop,
+                 std::unique_ptr<::LLVM::TDG::ExecFuncInfo> ConfigFuncInfo);
 
 protected:
   llvm::Loop *TopLoop;

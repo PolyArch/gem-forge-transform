@@ -1017,7 +1017,8 @@ void StaticStreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
 void StaticStreamRegionAnalyzer::allocateRegionStreamId(
     const llvm::Loop *ConfigureLoop) {
   auto &ConfigureLoopInfo = this->getConfigureLoopInfo(ConfigureLoop);
-  int UsedRegionId = 0;
+  int UsedRegionId =
+      ::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId;
   for (auto ParentLoop = ConfigureLoop->getParentLoop();
        ParentLoop != nullptr && this->TopLoop->contains(ParentLoop);
        ParentLoop = ParentLoop->getParentLoop()) {
@@ -1033,6 +1034,15 @@ void StaticStreamRegionAnalyzer::allocateRegionStreamId(
 }
 
 const StreamConfigureLoopInfo &StaticStreamRegionAnalyzer::getConfigureLoopInfo(
+    const llvm::Loop *ConfigureLoop) const {
+  assert(this->TopLoop->contains(ConfigureLoop) &&
+         "ConfigureLoop should be within TopLoop.");
+  assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) != 0 &&
+         "Failed to find the loop info.");
+  return this->ConfigureLoopInfoMap.at(ConfigureLoop);
+}
+
+StreamConfigureLoopInfo &StaticStreamRegionAnalyzer::getConfigureLoopInfo(
     const llvm::Loop *ConfigureLoop) {
   assert(this->TopLoop->contains(ConfigureLoop) &&
          "ConfigureLoop should be within TopLoop.");
@@ -1364,4 +1374,13 @@ void StaticStreamRegionAnalyzer::dumpConfigurePlan() {
          "Failed to open dump loop configure plan file.");
   PlanFStream << ss.str() << '\n';
   PlanFStream.close();
+}
+
+void StaticStreamRegionAnalyzer::nestRegionInto(
+    const llvm::Loop *InnerLoop, const llvm::Loop *OuterLoop,
+    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> ConfigFuncInfo) {
+  auto &InnerConfigInfo = this->getConfigureLoopInfo(InnerLoop);
+  auto &OuterConfigInfo = this->getConfigureLoopInfo(OuterLoop);
+  OuterConfigInfo.addNestConfigureInfo(&InnerConfigInfo,
+                                       std::move(ConfigFuncInfo));
 }

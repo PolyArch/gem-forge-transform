@@ -43,7 +43,8 @@ StaticStream::StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
 }
 
 ::LLVM::TDG::DataType
-StaticStream::translateToProtobufDataType(llvm::Type *Type) const {
+StaticStream::translateToProtobufDataType(llvm::DataLayout *DataLayout,
+                                          llvm::Type *Type) {
   if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(Type)) {
     assert(IntType->getBitWidth() <= 64 && "IntType overflow.");
     return ::LLVM::TDG::DataType::INTEGER;
@@ -54,7 +55,7 @@ StaticStream::translateToProtobufDataType(llvm::Type *Type) const {
   } else if (Type->isDoubleTy()) {
     return ::LLVM::TDG::DataType::DOUBLE;
   } else if (Type->isVectorTy()) {
-    auto NumBits = this->DataLayout->getTypeStoreSizeInBits(Type);
+    auto NumBits = DataLayout->getTypeStoreSizeInBits(Type);
     switch (NumBits) {
     case 128:
       return ::LLVM::TDG::DataType::VECTOR_128;

@@ -1,4 +1,5 @@
 #include "StreamExecutionTransformer.h"
+#include "StaticNestStreamBuilder.h"
 
 #include "TransformUtils.h"
 
@@ -15,17 +16,6 @@
 #define DEBUG_TYPE "StreamExecutionTransformer"
 #define DEBUG_FUNC "WritePixelCachePixels"
 
-/**
- * Debug flag to control whether emit specific instruction.
- * ! Not used.
- */
-#define GENERATE_STREAM_CONFIG
-#define GENERATE_STREAM_INPUT
-#define GENERATE_STREAM_READY
-#define GENERATE_STREAM_STEP
-#define GENERATE_STREAM_LOAD
-#define GENERATE_STREAM_END
-
 StreamExecutionTransformer::StreamExecutionTransformer(
     llvm::Module *_Module,
     const std::unordered_set<llvm::Function *> &_ROIFunctions,
@@ -34,7 +24,8 @@ StreamExecutionTransformer::StreamExecutionTransformer(
     const std::vector<StaticStreamRegionAnalyzer *> &Analyzers)
     : Module(_Module), ROIFunctions(_ROIFunctions), CachedLI(_CachedLI),
       OutputExtraFolderPath(_OutputExtraFolderPath),
-      TransformTextMode(_TransformTextMode) {
+      TransformTextMode(_TransformTextMode),
+      NestStreamBuilder(new StaticNestStreamBuilder(this)) {
   // Copy the module.
   LLVM_DEBUG(llvm::dbgs() << "Clone the module.\n");
   this->ClonedModule = llvm::CloneModule(*(this->Module), this->ClonedValueMap);
@@ -69,6 +60,8 @@ StreamExecutionTransformer::StreamExecutionTransformer(
   // * Must be called after writeModule().
   this->writeAllTransformedFunctions();
 }
+
+StreamExecutionTransformer::~StreamExecutionTransformer() {}
 
 void StreamExecutionTransformer::writeModule() {
   std::error_code EC;
@@ -220,6 +213,12 @@ void StreamExecutionTransformer::transformStreamRegion(
     Analyzer->coalesceStreamsAtLoop(CurrentLoop);
   }
 
+  /**
+   * After we inserted all the stream configure instructions,
+   * we try to nest streams.
+   */
+  this->NestStreamBuilder->buildNestStreams(Analyzer);
+
   // Insert address computation function in the cloned module.
   Analyzer->insertAddrFuncInModule(this->ClonedModule);
   Analyzer->insertPredicateFuncInModule(this->ClonedModule);
@@ -267,6 +266,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
   auto ClonedPreheader = this->getOrCreateLoopPreheaderInClonedModule(Loop);
   assert(ClonedPreheader != nullptr &&
          "Failed to get/create a preheader in cloned module.");
+  this->LoopToClonedConfigureBBMap.emplace(Loop, ClonedPreheader);
   // Simply insert one stream configure instruction before the terminator.
   auto ClonedPreheaderTerminator = ClonedPreheader->getTerminator();
   llvm::IRBuilder<> Builder(ClonedPreheaderTerminator);
@@ -306,74 +306,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
       LLVM_DEBUG(llvm::dbgs()
                  << "Insert StreamInput for Stream " << S->formatName()
                  << " Input " << ClonedInput->getName() << '\n');
-      auto ClonedInputValue = ClonedInput;
-      auto ClonedInputType = ClonedInput->getType();
-
-      /**
-       * Since StreamInput instruction does not care about data type,
-       * For scalar type, we always cast to int64.
-       * For vector type, we always cast to v8f64/v4f64/v2f64;
-       */
-      if (auto VecType = llvm::dyn_cast<llvm::VectorType>(ClonedInputType)) {
-        auto StoreBits =
-            this->ClonedDataLayout->getTypeStoreSizeInBits(VecType);
-        if (StoreBits == 512 || StoreBits == 256 || StoreBits == 128) {
-          auto NumElements = StoreBits / sizeof(double) / 8;
-          ClonedInputType = llvm::VectorType::get(
-              llvm::Type::getDoubleTy(this->ClonedModule->getContext()),
-              NumElements);
-          ClonedInputValue =
-              Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
-                                    "ssp.input.bitcast." + S->Inst->getName());
-        } else {
-          llvm::errs() << "Unsupported vector input type: ";
-          VecType->print(llvm::errs());
-          llvm_unreachable("Illegal vector stream input.");
-        }
-      } else {
-        if (ClonedInputType->isFloatTy()) {
-          // Float -> Int32
-          ClonedInputType =
-              llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext());
-          ClonedInputValue =
-              Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
-                                    "ssp.input.bitcast." + S->Inst->getName());
-        } else if (ClonedInputType->isDoubleTy()) {
-          // Double -> Int64
-          ClonedInputType =
-              llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
-          ClonedInputValue =
-              Builder.CreateBitCast(ClonedInputValue, ClonedInputType,
-                                    "ssp.input.bitcast." + S->Inst->getName());
-        }
-
-        // Final extension: Int8/Int16/Int32 -> Int64.
-        if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(ClonedInputType)) {
-          if (IntType->getBitWidth() < 64) {
-            ClonedInputType =
-                llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
-            ClonedInputValue =
-                Builder.CreateZExt(ClonedInputValue, ClonedInputType);
-          } else if (IntType->getBitWidth() > 64) {
-            assert(false && "Cannot handle input type larger than 64 bit.");
-          }
-        }
-      }
-
-      auto StreamId = S->getRegionStreamId();
-      assert(StreamId >= 0 && StreamId < 128 &&
-             "Illegal RegionStreamId for StreamInput.");
-      auto StreamIdValue = llvm::ConstantInt::get(
-          llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
-          StreamId, false);
-      std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue,
-                                                   ClonedInputValue};
-      std::array<llvm::Type *, 1> StreamInputType{ClonedInputType};
-      auto StreamInputInst = Builder.CreateCall(
-          llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                          llvm::Intrinsic::ID::ssp_stream_input,
-                                          StreamInputType),
-          StreamInputArgs);
+      this->addStreamInput(Builder, S->getRegionStreamId(), ClonedInput);
     }
   }
 
@@ -396,6 +329,11 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
   llvm::formDedicatedExitBlocks(ClonedLoop, ClonedDT, ClonedLI, nullptr, false);
 
   std::unordered_set<llvm::BasicBlock *> VisitedExitBlockSet;
+  auto &InsertedStreamEnds =
+      this->LoopToClonedEndInstsMap
+          .emplace(std::piecewise_construct, std::forward_as_tuple(Loop),
+                   std::forward_as_tuple())
+          .first->second;
   for (auto *BB : ClonedLoop->blocks()) {
     for (auto *SuccBB : llvm::successors(BB)) {
       if (ClonedLoop->contains(SuccBB)) {
@@ -407,10 +345,11 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
       }
       llvm::IRBuilder<> Builder(SuccBB->getFirstNonPHI());
       std::array<llvm::Value *, 1> StreamEndArgs{ConfigIdxValue};
-      Builder.CreateCall(
+      auto StreamEndInst = Builder.CreateCall(
           llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
                                           llvm::Intrinsic::ID::ssp_stream_end),
           StreamEndArgs);
+      InsertedStreamEnds.push_back(StreamEndInst);
     }
   }
 
@@ -448,7 +387,7 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
 
   auto PHINode = llvm::dyn_cast<llvm::PHINode>(ReduceStream->Inst);
   assert(PHINode && "Reduction stream should be PHINode.");
-  auto ExitValue = ReduceStream->ReduceDG->getResultValue();
+  auto ExitValue = ReduceStream->ReduceDG->getSingleResultValue();
   auto ExitInst = llvm::dyn_cast<llvm::Instruction>(ExitValue);
   assert(ExitInst &&
          "ExitValue should be an instruction for reduction stream.");
@@ -709,6 +648,71 @@ void StreamExecutionTransformer::addStreamStore(
   if (DebugLoc) {
     StreamStoreInst->setDebugLoc(llvm::DebugLoc(DebugLoc->get()));
   }
+}
+
+void StreamExecutionTransformer::addStreamInput(llvm::IRBuilder<> &Builder,
+                                                int StreamId,
+                                                llvm::Value *ClonedInputValue) {
+  auto ClonedInputType = ClonedInputValue->getType();
+  /**
+   * Since StreamInput instruction does not care about data type,
+   * For scalar type, we always cast to int64.
+   * For vector type, we always cast to v8f64/v4f64/v2f64;
+   */
+  if (auto VecType = llvm::dyn_cast<llvm::VectorType>(ClonedInputType)) {
+    auto StoreBits = this->ClonedDataLayout->getTypeStoreSizeInBits(VecType);
+    if (StoreBits == 512 || StoreBits == 256 || StoreBits == 128) {
+      auto NumElements = StoreBits / sizeof(double) / 8;
+      ClonedInputType = llvm::VectorType::get(
+          llvm::Type::getDoubleTy(this->ClonedModule->getContext()),
+          NumElements);
+      ClonedInputValue = Builder.CreateBitCast(
+          ClonedInputValue, ClonedInputType, "ssp.input.bitcast");
+    } else {
+      llvm::errs() << "Unsupported vector input type: ";
+      VecType->print(llvm::errs());
+      llvm_unreachable("Illegal vector stream input.");
+    }
+  } else {
+    if (ClonedInputType->isFloatTy()) {
+      // Float -> Int32
+      ClonedInputType =
+          llvm::IntegerType::getInt32Ty(this->ClonedModule->getContext());
+      ClonedInputValue = Builder.CreateBitCast(
+          ClonedInputValue, ClonedInputType, "ssp.input.bitcast");
+    } else if (ClonedInputType->isDoubleTy()) {
+      // Double -> Int64
+      ClonedInputType =
+          llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
+      ClonedInputValue = Builder.CreateBitCast(
+          ClonedInputValue, ClonedInputType, "ssp.input.bitcast");
+    }
+
+    // Final extension: Int8/Int16/Int32 -> Int64.
+    if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(ClonedInputType)) {
+      if (IntType->getBitWidth() < 64) {
+        ClonedInputType =
+            llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
+        ClonedInputValue =
+            Builder.CreateZExt(ClonedInputValue, ClonedInputType);
+      } else if (IntType->getBitWidth() > 64) {
+        assert(false && "Cannot handle input type larger than 64 bit.");
+      }
+    }
+  }
+
+  assert(StreamId >= 0 && StreamId < 128 &&
+         "Illegal RegionStreamId for StreamInput.");
+  auto StreamIdValue = llvm::ConstantInt::get(
+      llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()), StreamId,
+      false);
+  std::array<llvm::Value *, 2> StreamInputArgs{StreamIdValue, ClonedInputValue};
+  std::array<llvm::Type *, 1> StreamInputType{ClonedInputType};
+  auto StreamInputInst = Builder.CreateCall(
+      llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
+                                      llvm::Intrinsic::ID::ssp_stream_input,
+                                      StreamInputType),
+      StreamInputArgs);
 }
 
 void StreamExecutionTransformer::transformStoreInst(
@@ -1556,6 +1560,21 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
        */
       auto TripCount = ClonedSE->getAddExpr(
           BackEdgeTakenSCEV, ClonedSE->getOne(BackEdgeTakenSCEV->getType()));
+      // hack: Fix the case when TripCount is 0.
+      if (auto SMaxSCEV = llvm::dyn_cast<llvm::SCEVSMaxExpr>(TripCount)) {
+        bool Fixed = false;
+        if (auto OneSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SMaxSCEV->getOperand(0))) {
+          if (OneSCEV->getAPInt().getZExtValue() == 1) {
+            TripCount = SMaxSCEV->getOperand(1);
+            Fixed = true;
+          }
+        }
+        if (!Fixed) {
+          llvm::errs() << "Wrong TripCount SCEV? ";
+          TripCount->print(llvm::errs());
+          assert(false);
+        }
+      }
       this->addStreamInputSCEV(TripCount, false /* Signed */, InsertBefore,
                                ClonedSEExpander, ClonedInputValues,
                                ProtoConfiguration);
@@ -1746,6 +1765,29 @@ void StreamExecutionTransformer::replaceWithStreamMemIntrinsic() {
       }
     }
   }
+}
+
+llvm::BasicBlock *StreamExecutionTransformer::getClonedConfigureBBForLoop(
+    const llvm::Loop *Loop) const {
+  auto Iter = this->LoopToClonedConfigureBBMap.find(Loop);
+  if (Iter == this->LoopToClonedConfigureBBMap.end()) {
+    llvm::errs() << "Failed to find ClonedConfigureBB for Loop "
+                 << LoopUtils::getLoopId(Loop) << '\n';
+    assert(false);
+  }
+  return Iter->second;
+}
+
+const std::vector<llvm::CallInst *> &
+StreamExecutionTransformer::getClonedEndInstsForLoop(
+    const llvm::Loop *Loop) const {
+  auto Iter = this->LoopToClonedEndInstsMap.find(Loop);
+  if (Iter == this->LoopToClonedEndInstsMap.end()) {
+    llvm::errs() << "Failed to find ClonedEndBB for Loop "
+                 << LoopUtils::getLoopId(Loop) << '\n';
+    assert(false);
+  }
+  return Iter->second;
 }
 
 #undef DEBUG_TYPE

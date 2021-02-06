@@ -15,6 +15,7 @@ StreamConfigureLoopInfo::StreamConfigureLoopInfo(
 void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   LLVM::TDG::StreamRegion ProtobufStreamRegion;
   ProtobufStreamRegion.set_region(LoopUtils::getLoopId(this->Loop));
+  ProtobufStreamRegion.set_relative_path(this->getRelativePath());
   ProtobufStreamRegion.set_total_alive_streams(this->TotalAliveStreams);
   ProtobufStreamRegion.set_total_alive_coalesced_streams(
       this->TotalAliveCoalescedStreams);
@@ -25,7 +26,24 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   for (auto &S : this->SortedCoalescedStreams) {
     ProtobufStreamRegion.add_coalesced_stream_ids(S->StreamId);
   }
+  // Remember nest stream region information.
+  for (auto NestConfigureInfo : this->NestConfigureInfos) {
+    ProtobufStreamRegion.add_nest_region_relative_paths(
+        NestConfigureInfo->getRelativePath());
+  }
+  if (this->NestConfigureFuncInfo) {
+    *ProtobufStreamRegion.mutable_nest_config_func() = *this->NestConfigureFuncInfo;
+    ProtobufStreamRegion.set_is_nest(true);
+  }
   Gem5ProtobufSerializer Serializer(this->Path);
   Serializer.serialize(ProtobufStreamRegion);
   Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, this->JsonPath);
+}
+
+void StreamConfigureLoopInfo::addNestConfigureInfo(
+    StreamConfigureLoopInfo *NestConfigureInfo,
+    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo) {
+  assert(!NestConfigureInfo->NestConfigureFuncInfo && "Region already nested.");
+  NestConfigureInfo->NestConfigureFuncInfo = std::move(NestConfigureFuncInfo);
+  this->NestConfigureInfos.push_back(NestConfigureInfo);
 }

@@ -12,7 +12,7 @@ public:
 
   const std::string &getRelativePath() const { return this->RelativePath; }
   const llvm::Loop *getLoop() const { return this->Loop; }
-  const std::vector<StaticStream *> getSortedStreams() const {
+  const std::vector<StaticStream *> &getSortedStreams() const {
     return this->SortedStreams;
   }
 
@@ -41,12 +41,22 @@ public:
 
   void dump(llvm::DataLayout *DataLayout) const;
 
+  void addNestConfigureInfo(
+      StreamConfigureLoopInfo *NestConfigureInfo,
+      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo);
+
 private:
   const std::string Path;
   const std::string RelativePath;
   const std::string JsonPath;
   const llvm::Loop *Loop;
   std::vector<StaticStream *> SortedStreams;
+
+  /**
+   * Remember the nest stream region.
+   */
+  std::vector<StreamConfigureLoopInfo *> NestConfigureInfos;
+  std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo;
 };
 
 #endif

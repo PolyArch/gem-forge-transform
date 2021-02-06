@@ -47,3 +47,7 @@ llvm::cl::opt<bool> StreamPassMergeIndPredicatedStore(
 llvm::cl::opt<bool> StreamPassEnableValueDG(
     "stream-pass-enable-value-dg", llvm::cl::init(false),
     llvm::cl::desc("Analyze ValueDG for store/atomic streams."));
+
+llvm::cl::opt<bool> StreamPassEnableNestStream(
+    "stream-pass-enable-nest-stream", llvm::cl::init(false),
+    llvm::cl::desc("Nest inner streams with outer streams."));

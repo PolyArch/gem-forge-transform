@@ -80,6 +80,8 @@ add_library(LLVMTDGPass SHARED
     stream/ae/FunctionalStream.cpp
     stream/ae/FunctionalStreamEngine.cpp
     stream/ae/DynamicStreamCoalescer.cpp
+    stream/execution/StaticNestStreamBuilder.cpp
+    stream/execution/NestStreamConfigureDataGraph.cpp
     stream/execution/StreamExecutionTransformer.cpp
     stream/execution/StreamExecutionPass.cpp
     stream/execution/StreamExecutionStaticPass.cpp

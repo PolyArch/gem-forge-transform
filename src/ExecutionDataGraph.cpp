@@ -9,18 +9,18 @@ void ExecutionDataGraph::extendTailAtomicInst(
   // Sanity check for the atomic instruction.
   if (AtomicInst->getOpcode() == llvm::Instruction::AtomicRMW) {
     // AtomicRMW: should has my result as the second value.
-    if (AtomicInst->getOperand(1) != this->ResultValue) {
+    if (AtomicInst->getOperand(1) != this->getSingleResultValue()) {
       llvm::errs() << "TailAtomicRMW is not using my result.\n";
       assert(false);
     }
-    if (AtomicInst->getType() != this->ResultValue->getType()) {
+    if (AtomicInst->getType() != this->getSingleResultValue()->getType()) {
       llvm::errs() << "TailAtomicRMW is of different type.\n";
       assert(false);
     }
   } else if (AtomicInst->getOpcode() == llvm::Instruction::AtomicCmpXchg) {
     // AtomicCmpXchg: should has my result as the third value, and the compared
     //   value should be a constant.
-    if (AtomicInst->getOperand(2) != this->ResultValue) {
+    if (AtomicInst->getOperand(2) != this->getSingleResultValue()) {
       llvm::errs() << "TailAtomicCmpXchg is not using my result.\n";
       assert(false);
     }
@@ -56,22 +56,31 @@ void ExecutionDataGraph::dfsOnComputeInsts(const llvm::Instruction *Inst,
 }
 
 llvm::Type *ExecutionDataGraph::getReturnType(bool IsLoad) const {
-  auto ResultType = this->ResultValue->getType();
-  if (this->TailAtomicInst) {
-    /**
-     * For TailAtomicInst, the only exception is the load function for CmpXchg.
-     */
-    if (this->TailAtomicInst->getOpcode() == llvm::Instruction::AtomicCmpXchg) {
-      if (IsLoad) {
-        ResultType = this->TailAtomicInst->getType();
+  if (this->hasSingleResult()) {
+    auto ResultType = this->getSingleResultValue()->getType();
+    if (this->TailAtomicInst) {
+      /**
+       * For TailAtomicInst, the only exception is the load function for
+       * CmpXchg.
+       */
+      if (this->TailAtomicInst->getOpcode() ==
+          llvm::Instruction::AtomicCmpXchg) {
+        if (IsLoad) {
+          ResultType = this->TailAtomicInst->getType();
+        }
       }
     }
+    // However, if there is fused load ops, then it should be the final value.
+    if (IsLoad && !this->FusedLoadOps.empty()) {
+      ResultType = this->FusedLoadOps.back()->getType();
+    }
+    return ResultType;
+  } else if (this->hasMultipleResult()) {
+    // Simply return void.
+    return llvm::Type::getVoidTy(this->ResultValues.back()->getContext());
+  } else {
+    assert(false && "No ResultValue.");
   }
-  // However, if there is fused load ops, then it should be the final value.
-  if (IsLoad && !this->FusedLoadOps.empty()) {
-    ResultType = this->FusedLoadOps.back()->getType();
-  }
-  return ResultType;
 }
 
 llvm::FunctionType *ExecutionDataGraph::createFunctionType(llvm::Module *Module,
@@ -107,7 +116,8 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
   // Make sure we are using C calling convention.
   Function->setCallingConv(llvm::CallingConv::X86_64_SysV);
   // Copy the "target-features" attributes from the original function.
-  if (auto ResultInst = llvm::dyn_cast<llvm::Instruction>(this->ResultValue)) {
+  if (auto ResultInst =
+          llvm::dyn_cast<llvm::Instruction>(this->ResultValues.back())) {
     auto OriginalFunction = ResultInst->getFunction();
     for (auto &AttrSet : OriginalFunction->getAttributes()) {
       if (AttrSet.hasAttribute("target-features")) {
@@ -148,13 +158,21 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
                       &ValueMap](const llvm::Instruction *Inst) -> void {
       this->translate(Builder, ValueMap, Inst);
     };
-    auto ResultInst = llvm::dyn_cast<llvm::Instruction>(this->ResultValue);
-    assert(ResultInst != nullptr &&
-           "ResultValue is not an instruction when we have a datagraph.");
-    this->dfsOnComputeInsts(ResultInst, Translate);
+    for (auto ResultValue : this->ResultValues) {
+      auto ResultInst = llvm::dyn_cast<llvm::Instruction>(ResultValue);
+      assert(ResultInst != nullptr &&
+             "ResultValue is not an instruction when we have a datagraph.");
+      this->dfsOnComputeInsts(ResultInst, Translate);
+    }
   }
 
-  auto FinalValueIter = ValueMap.find(this->ResultValue);
+  if (this->hasMultipleResult()) {
+    // Simply return a void.
+    Builder.CreateRetVoid();
+    return Function;
+  }
+
+  auto FinalValueIter = ValueMap.find(this->getSingleResultValue());
   assert(FinalValueIter != ValueMap.end() &&
          "Failed to find the translated result value.");
   llvm::Value *FinalValue = FinalValueIter->second;
@@ -203,13 +221,25 @@ void ExecutionDataGraph::translate(llvm::IRBuilder<> &Builder,
   for (unsigned OperandIdx = 0, NumOperands = NewInst->getNumOperands();
        OperandIdx != NumOperands; ++OperandIdx) {
     auto Operand = Inst->getOperand(OperandIdx);
-    // Directly use the constant data.
+    // Directly use the constant data and intrinsic.
     if (llvm::isa<llvm::ConstantData>(Operand)) {
       NewInst->setOperand(OperandIdx, Operand);
       continue;
     }
-    auto ValueIter = ValueMap.find(Inst->getOperand(OperandIdx));
-    assert(ValueIter != ValueMap.end() && "Failed to find translated operand.");
+    if (llvm::isa<llvm::IntrinsicInst>(Inst) && OperandIdx + 1 == NumOperands) {
+      NewInst->setOperand(OperandIdx, Operand);
+      continue;
+    }
+    auto ValueIter = ValueMap.find(Operand);
+    if (ValueIter == ValueMap.end()) {
+      llvm::errs() << "Failed to find translated operand #" << OperandIdx
+                   << " ";
+      Operand->print(llvm::errs());
+      llvm::errs() << " of Inst ";
+      Inst->print(llvm::errs());
+      llvm::errs() << '\n';
+      assert(false && "Failed to find translated operand.");
+    }
     NewInst->setOperand(OperandIdx, ValueIter->second);
   }
   // Insert with the same name.
@@ -219,7 +249,11 @@ void ExecutionDataGraph::translate(llvm::IRBuilder<> &Builder,
 }
 
 bool ExecutionDataGraph::detectCircle() const {
-  if (auto ResultInst = llvm::dyn_cast<llvm::Instruction>(this->ResultValue)) {
+  for (auto ResultValue : this->ResultValues) {
+    auto ResultInst = llvm::dyn_cast<llvm::Instruction>(ResultValue);
+    if (!ResultInst) {
+      continue;
+    }
     if (!this->ComputeInsts.empty()) {
       std::list<std::pair<const llvm::Instruction *, int>> Stack;
       Stack.emplace_back(ResultInst, 0);

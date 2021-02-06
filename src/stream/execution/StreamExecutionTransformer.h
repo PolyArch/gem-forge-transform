@@ -14,6 +14,8 @@
 #include <unordered_set>
 #include <vector>
 
+class StaticNestStreamBuilder;
+
 class StreamExecutionTransformer {
 public:
   StreamExecutionTransformer(
@@ -22,6 +24,7 @@ public:
       CachedLoopInfo *_CachedLI, std::string _OutputExtraFolderPath,
       bool _TransformTextMode,
       const std::vector<StaticStreamRegionAnalyzer *> &Analyzers);
+  ~StreamExecutionTransformer();
 
 private:
   llvm::Module *Module;
@@ -157,10 +160,26 @@ private:
                                      bool isAtomic = false);
   void addStreamStore(StaticStream *S, llvm::Instruction *ClonedInsertBefore,
                       const llvm::DebugLoc *DebugLoc = nullptr);
+  void addStreamInput(llvm::IRBuilder<> &Builder, int StreamId,
+                      llvm::Value *ClonedInputValue);
 
   void writeModule();
   void writeAllConfiguredRegions();
   void writeAllTransformedFunctions();
+
+  friend class StaticNestStreamBuilder;
+  std::unique_ptr<StaticNestStreamBuilder> NestStreamBuilder;
+
+  // Map a loop to its (cloned) configure/end BB. Used for nest streams.
+  using LoopToClonedBBMapT =
+      std::unordered_map<const llvm::Loop *, llvm::BasicBlock *>;
+  LoopToClonedBBMapT LoopToClonedConfigureBBMap;
+  llvm::BasicBlock *getClonedConfigureBBForLoop(const llvm::Loop *Loop) const;
+  using LoopToClonedInstsMapT =
+      std::unordered_map<const llvm::Loop *, std::vector<llvm::CallInst *>>;
+  LoopToClonedInstsMapT LoopToClonedEndInstsMap;
+  const std::vector<llvm::CallInst *> &
+  getClonedEndInstsForLoop(const llvm::Loop *Loop) const;
 };
 
 #endif

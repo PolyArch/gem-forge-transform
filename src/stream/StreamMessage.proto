@@ -28,6 +28,7 @@ enum DataType {
   VECTOR_128 = 4;
   VECTOR_256 = 5;
   VECTOR_512 = 6;
+  VOID = 7;
 }
 
 message StreamParam {
@@ -180,14 +181,24 @@ message StreamInfo {
   }
 }
 
+// Defines the reserved RegionStreamId used for nest config input.
+enum ReservedStreamRegionId {
+  NestConfigureFuncInputRegionId = 0;
+  NumReservedStreamRegionId = 1;
+}
+
 message StreamRegion {
   string region = 1;
+  string relative_path = 2;
   // How many streams may coexist with this region (including
   // parent/sub-region).
-  int32 total_alive_streams = 2;
-  int32 total_alive_coalesced_streams = 3;
+  int32 total_alive_streams = 3;
+  int32 total_alive_coalesced_streams = 4;
   repeated StreamInfo streams = 8;
   repeated uint64 coalesced_stream_ids = 9;
+  repeated string nest_region_relative_paths = 10;
+  ExecFuncInfo nest_config_func = 11;
+  bool is_nest = 12;
 }
 
 // All the configured stream region in one place.

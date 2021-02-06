@@ -17,7 +17,8 @@ public:
   using InstSet = std::unordered_set<const llvm::Instruction *>;
 
   ExecutionDataGraph(const llvm::Value *_ResultValue)
-      : ResultValue(_ResultValue) {}
+      : ResultValues({_ResultValue}) {}
+  ExecutionDataGraph() {}
   ExecutionDataGraph(const ExecutionDataGraph &Other) = delete;
   ExecutionDataGraph(ExecutionDataGraph &&Other) = delete;
   ExecutionDataGraph &operator=(const ExecutionDataGraph &Other) = delete;
@@ -25,7 +26,12 @@ public:
 
   virtual ~ExecutionDataGraph() {}
 
-  const llvm::Value *getResultValue() const { return this->ResultValue; }
+  const llvm::Value *getSingleResultValue() const {
+    assert(this->ResultValues.size() == 1 && "No single result value");
+    return this->ResultValues.back();
+  }
+  bool hasSingleResult() const { return this->ResultValues.size() == 1; }
+  bool hasMultipleResult() const { return this->ResultValues.size() > 1; }
   const std::list<const llvm::Value *> &getInputs() const {
     return this->Inputs;
   }
@@ -63,7 +69,7 @@ public:
                                    bool IsLoad = false) const;
 
 protected:
-  const llvm::Value *ResultValue;
+  std::list<const llvm::Value *> ResultValues;
   std::list<const llvm::Value *> Inputs;
   std::unordered_set<const llvm::ConstantData *> ConstantDatas;
   InstSet ComputeInsts;

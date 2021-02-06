@@ -8,7 +8,7 @@
 class StreamDataGraph : public ExecutionDataGraph {
 public:
   StreamDataGraph(const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
-                   std::function<bool(const llvm::PHINode *)> IsInductionVar);
+                  std::function<bool(const llvm::PHINode *)> IsInductionVar);
 
   StreamDataGraph(const StreamDataGraph &Other) = delete;
   StreamDataGraph(StreamDataGraph &&Other) = delete;
@@ -31,7 +31,9 @@ public:
     return this->HasCallInstInComputeInsts;
   }
 
-  const llvm::Value *getAddrValue() const { return this->ResultValue; }
+  const llvm::Value *getAddrValue() const {
+    return this->getSingleResultValue();
+  }
 
 private:
   const llvm::Loop *Loop;

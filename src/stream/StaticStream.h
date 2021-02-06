@@ -272,6 +272,12 @@ public:
   void fillProtobufStoreFuncInfoImpl(::LLVM::TDG::ExecFuncInfo *ExInfo,
                                      bool IsLoad) const;
 
+  ::LLVM::TDG::DataType translateToProtobufDataType(llvm::Type *Type) const {
+    return translateToProtobufDataType(this->DataLayout, Type);
+  }
+  static ::LLVM::TDG::DataType
+  translateToProtobufDataType(llvm::DataLayout *DataLayout, llvm::Type *Type);
+
 protected:
   static uint64_t AllocatedStreamId;
   static uint64_t allocateStreamId() {
@@ -444,8 +450,5 @@ protected:
   void fillProtobufAddrFuncInfo(::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const;
   void fillProtobufPredFuncInfo(::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
   void fillProtobufStoreFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
-
-  ::LLVM::TDG::DataType
-  translateToProtobufDataType(llvm::Type *Type) const;
 };
 #endif
