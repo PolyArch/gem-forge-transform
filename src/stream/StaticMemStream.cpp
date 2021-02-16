@@ -27,6 +27,11 @@ StaticMemStream::StaticMemStream(const llvm::Instruction *_Inst,
   };
   this->AddrDG = std::make_unique<StreamDataGraph>(
       this->ConfigureLoop, Utils::getMemAddrValue(this->Inst), IsInductionVar);
+
+  // StoreStream always has no core user.
+  if (llvm::isa<llvm::StoreInst>(this->Inst)) {
+    this->StaticStreamInfo.set_no_core_user(true);
+  }
 }
 
 void StaticMemStream::initializeMetaGraphConstruction(
