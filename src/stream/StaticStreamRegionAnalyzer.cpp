@@ -576,6 +576,10 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
       return;
     }
     if (auto InputInst = llvm::dyn_cast<llvm::Instruction>(Input)) {
+      if (!StoreS->ConfigureLoop->contains(InputInst)) {
+        // This is an input for the configuration.
+        continue;
+      }
       if (auto LoadInput = llvm::dyn_cast<llvm::LoadInst>(InputInst)) {
         // This is a LoadInput.
         LoadInputs.insert(LoadInput);
