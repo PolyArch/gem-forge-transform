@@ -571,7 +571,7 @@ void StaticStream::generateValueFunction(
                                       true /* IsLoad */);
     }
   }
-  // Special case for update stream. The store store stream will be chosen,
+  // Special case for update stream. The store stream will be chosen,
   // so we have to call it directly.
   if (this->Inst->getOpcode() == llvm::Instruction::Load &&
       this->UpdateStream &&

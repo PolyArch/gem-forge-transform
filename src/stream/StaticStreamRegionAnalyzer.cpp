@@ -173,6 +173,13 @@ StaticStream *StaticStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
 
 void StaticStreamRegionAnalyzer::markUpdateRelationship() {
   /**
+   * The idea is to update a load to update stream.
+   */
+  if (!StreamPassUpgradeLoadToUpdate) {
+    return;
+  }
+
+  /**
    * Search for load-store update relationship.
    */
   for (auto &InstStreams : this->InstStaticStreamMap) {
@@ -193,10 +200,17 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
    * type.
    * 2. There is only one such StoreStream.
    * 3. They are in the same BB.
+   * 4. The LoadSS has fixed trip count and unconditional access.
    * TODO: We should check that there is no aliasing store between them.
    */
   LLVM_DEBUG(llvm::dbgs() << "== SSRA: Mark Update Relationship for "
                           << LoadSS->formatName() << '\n');
+  if (LoadSS->StaticStreamInfo.is_cond_access() ||
+      !LoadSS->StaticStreamInfo.is_trip_count_fixed()) {
+    LLVM_DEBUG(llvm::dbgs() << "==== ConditalAccess or VariableTripCount "
+                            << LoadSS->formatName() << '\n');
+    return;
+  }
 
   auto LoadType = Utils::getMemElementType(LoadSS->Inst);
   auto AliasBaseSS = LoadSS->AliasBaseStream;

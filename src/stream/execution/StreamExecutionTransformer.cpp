@@ -449,7 +449,8 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
   for (auto ClonedInst : ClonedS) {
     for (auto User : ClonedInst->users()) {
       if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
-        if (!ClonedS.count(UserInst)) {
+        if (!ClonedS.count(UserInst) &&
+            !this->PendingRemovedInsts.count(UserInst)) {
           LLVM_DEBUG(llvm::dbgs()
                      << "ReduceStream " << ReduceStream->formatName()
                      << " is incomplete due to user " << UserInst->getName()
@@ -634,6 +635,11 @@ llvm::Value *StreamExecutionTransformer::addStreamLoadOrAtomic(
 void StreamExecutionTransformer::addStreamStore(
     StaticStream *S, llvm::Instruction *ClonedInsertBefore,
     const llvm::DebugLoc *DebugLoc) {
+  if (!S->isChosen()) {
+    llvm::errs() << "Try to add StreamStore for unchosen stream "
+                 << S->formatName() << '\n';
+    assert(false);
+  }
   auto StreamId = S->getRegionStreamId();
   auto StreamIdValue = llvm::ConstantInt::get(
       llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()), StreamId,
@@ -800,57 +806,22 @@ void StreamExecutionTransformer::transformStepInst(
 
 void StreamExecutionTransformer::upgradeLoadToUpdateStream(
     StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
-  /**
-   * The idea is to update a load to update stream.
-   */
-  if (!StreamPassUpgradeLoadToUpdate) {
-    return;
-  }
   auto &LoadSSInfo = LoadSS->StaticStreamInfo;
   auto StoreSS = LoadSS->UpdateStream;
   if (!StoreSS) {
     // There is no StoreSS.
     return;
   }
-  if (LoadSSInfo.is_cond_access()) {
-    // Should only upgrade unconditional stream.
-    return;
-  }
-  if (!LoadSSInfo.is_trip_count_fixed()) {
-    // Should only upgrade load stream with known trip count.
-    return;
-  }
   /**
-   * Additional check for the StoreSS ValueDG.
-   * 1. The only possible input is the LoadSS.
+   * We simply call handleValueDG on the StoreSS, which will take care
+   * of setting fields if this is an UpdateStream.
    */
-  if (!StoreSS->ValueDG) {
+  this->handleValueDG(Analyzer, StoreSS);
+  if (!LoadSS->StaticStreamInfo.compute_info().enabled_store_func()) {
     return;
   }
-  for (auto LoadBaseSS : StoreSS->LoadStoreBaseStreams) {
-    if (LoadBaseSS != LoadSS) {
-      return;
-    }
-  }
-
   LLVM_DEBUG(llvm::dbgs() << "Upgrade LoadStream " << LoadSS->formatName()
                           << " to UpdateStream.\n");
-  auto LoadSSComputeInfo = LoadSSInfo.mutable_compute_info();
-  LoadSSComputeInfo->set_enabled_store_func(true);
-  StoreSS->fillProtobufStoreFuncInfoImpl(
-      LoadSSComputeInfo->mutable_store_func_info(), false /* IsLoad */);
-  /**
-   * Two things we have to do:
-   * 1. Since we only target constant update, we have to add one more input to
-   *    the stream to have the update value. Done in
-   *    generateMemStreamConfiguration.
-   * 2. Add the cloned StoreInst to PendingRemovedInsts. Done here.
-   * 3. Update the ComputeInfo to remember this decision. Done here.
-   */
-  auto StoreInst = StoreSS->Inst;
-  auto ClonedStoreInst = this->getClonedValue(StoreInst);
-
-  this->PendingRemovedInsts.insert(ClonedStoreInst);
 }
 
 void StreamExecutionTransformer::mergePredicatedStreams(
@@ -943,19 +914,39 @@ void StreamExecutionTransformer::handleValueDG(
       return;
     }
   }
-  // Remember the value dependence.
+  // Remember the value dependence (in the LoadSS if this is UpdateSS).
   auto SSProtoComputeInfo = SS->StaticStreamInfo.mutable_compute_info();
+  auto UpdateProtoComputeInfo =
+      SS->UpdateStream
+          ? SS->UpdateStream->StaticStreamInfo.mutable_compute_info()
+          : nullptr;
   for (auto LoadSS : SS->LoadStoreBaseStreams) {
     auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
                          ->add_value_dep_streams();
-    LoadProto->set_id(SS->StreamId);
-    LoadProto->set_name(SS->formatName());
-    auto SSProto = SSProtoComputeInfo->add_value_base_streams();
-    SSProto->set_id(LoadSS->StreamId);
-    SSProto->set_name(LoadSS->formatName());
+    if (SS->UpdateStream) {
+      // Also remember the information in the base load stream.
+      LoadProto->set_id(SS->UpdateStream->StreamId);
+      LoadProto->set_name(SS->UpdateStream->formatName());
+      auto SSProto = UpdateProtoComputeInfo->add_value_base_streams();
+      SSProto->set_id(LoadSS->StreamId);
+      SSProto->set_name(LoadSS->formatName());
+    } else {
+      LoadProto->set_id(SS->StreamId);
+      LoadProto->set_name(SS->formatName());
+      auto SSProto =
+          SS->StaticStreamInfo.mutable_compute_info()->add_value_base_streams();
+      SSProto->set_id(LoadSS->StreamId);
+      SSProto->set_name(LoadSS->formatName());
+    }
   }
   // Enable the store func.
-  SSProtoComputeInfo->set_enabled_store_func(true);
+  if (SS->UpdateStream) {
+    UpdateProtoComputeInfo->set_enabled_store_func(true);
+    SS->fillProtobufStoreFuncInfoImpl(
+        UpdateProtoComputeInfo->mutable_store_func_info(), false /* IsLoad */);
+  } else {
+    SSProtoComputeInfo->set_enabled_store_func(true);
+  }
 
   /**
    * Finally, we transform the program.
@@ -977,7 +968,12 @@ void StreamExecutionTransformer::handleValueDG(
   }
 
   if (llvm::isa<llvm::StoreInst>(SS->Inst)) {
-    this->addStreamStore(SS, ClonedSSInst, &ClonedSSInst->getDebugLoc());
+    if (SS->UpdateStream) {
+      this->addStreamStore(SS->UpdateStream, ClonedSSInst,
+                           &ClonedSSInst->getDebugLoc());
+    } else {
+      this->addStreamStore(SS, ClonedSSInst, &ClonedSSInst->getDebugLoc());
+    }
   } else {
     // This is an atomic stream.
     if (ClonedFinalValueInst->use_empty()) {
@@ -1563,7 +1559,8 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
       // hack: Fix the case when TripCount is 0.
       if (auto SMaxSCEV = llvm::dyn_cast<llvm::SCEVSMaxExpr>(TripCount)) {
         bool Fixed = false;
-        if (auto OneSCEV = llvm::dyn_cast<llvm::SCEVConstant>(SMaxSCEV->getOperand(0))) {
+        if (auto OneSCEV =
+                llvm::dyn_cast<llvm::SCEVConstant>(SMaxSCEV->getOperand(0))) {
           if (OneSCEV->getAPInt().getZExtValue() == 1) {
             TripCount = SMaxSCEV->getOperand(1);
             Fixed = true;

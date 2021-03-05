@@ -123,44 +123,61 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
    *    a. All the LoadStreams are controlled by the same StepRoot.
    *    b. All the LoadStreams are from the same BB.
    *    c. All the LoadStreams are from the same BB as my computation.
-   * 4. Can have the StepRoot as an optional input, not no other IVBaseStream.
+   * 4. Can have the StepRoot as an optional input, no other IVBaseStream.
    */
   if (!StreamPassEnableReduce) {
     return false;
   }
+  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsReduction " << this->formatName()
+                          << '\n');
   if (!this->NonEmptyComputePath) {
     return false;
   }
   if (this->AllComputePaths.size() != 1) {
     // Multiple compute path.
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] Not Single ComputePath: "
+                            << this->AllComputePaths.size() << '\n');
     return false;
   }
   if (this->LoadBaseStreams.empty()) {
     // No LoadStream input to reduce one.
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] No InputLoadS\n");
     return false;
   }
   if (!this->IndVarBaseStreams.count(const_cast<StaticIndVarStream *>(this))) {
     // This is not reduction.
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] Myself Not as Input\n");
     return false;
   }
   if (this->ConfigureLoop != this->InnerMostLoop) {
     // Only consider inner most loop.
+    LLVM_DEBUG(llvm::dbgs()
+               << "==== [NotReduction] Configured at Outer Loop\n");
     return false;
   }
   auto FinalInst =
       llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
   if (!FinalInst) {
     // Final value should be an instruction.
+    LLVM_DEBUG(llvm::dbgs()
+               << "==== [NotReduction] FinalValue is not Instruction\n");
     return false;
   }
   auto FirstLoadBaseS = *(this->LoadBaseStreams.begin());
   for (auto LoadBaseS : this->LoadBaseStreams) {
     if (LoadBaseS->BaseStepRootStreams != FirstLoadBaseS->BaseStepRootStreams) {
       // Not same StepRoot.
+      LLVM_DEBUG(llvm::dbgs()
+                 << "==== [NotReduction] Different StepRoot between "
+                 << LoadBaseS->formatName() << " and "
+                 << FirstLoadBaseS->formatName() << '\n');
       return false;
     }
     if (LoadBaseS->Inst->getParent() != FinalInst->getParent()) {
       // We are not from the same BB.
+      LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] Different BB between "
+                              << LoadBaseS->formatName() << " and "
+                              << Utils::formatLLVMInst(FinalInst) << '\n');
       return false;
     }
   }
