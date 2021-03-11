@@ -307,15 +307,16 @@ llvm::Value *ExecutionDataGraph::generateTailAtomicRMW(
     llvm_unreachable("Unsupported TailAtomicRMW Operation.");
   case llvm::AtomicRMWInst::FAdd:
     return Builder.CreateFAdd(AtomicArg, RhsArg, "atomicrmw");
-    break;
   case llvm::AtomicRMWInst::Add:
     return Builder.CreateAdd(AtomicArg, RhsArg, "atomicrmw");
-    break;
-  case llvm::AtomicRMWInst::UMin: {
     // LLVM has no instr/intrinsic for integer min/max...
+  case llvm::AtomicRMWInst::UMin: {
     auto CmpValue = Builder.CreateICmpULT(AtomicArg, RhsArg, "umincmp");
     return Builder.CreateSelect(CmpValue, AtomicArg, RhsArg, "atomicrmw");
-    break;
+  }
+  case llvm::AtomicRMWInst::Min: {
+    auto CmpValue = Builder.CreateICmpSLT(AtomicArg, RhsArg, "mincmp");
+    return Builder.CreateSelect(CmpValue, AtomicArg, RhsArg, "atomicrmw");
   }
   }
 }
