@@ -74,7 +74,30 @@ public:
 
   static const std::unordered_set<std::string> LoopContinuityIgnoredFunctions;
 
+  static const std::list<std::pair<std::string, std::string>>
+      SingleExitFunctions;
+
   static llvm::Instruction *getUnrollableTerminator(llvm::Loop *Loop);
+
+  /**
+   * Get the TripCount SCEV.
+   * Normally this just invokes ScalarEvolution::getBackedgeTakenCount() and add
+   * one to it.
+   *
+   * However, when there are function calls in the loop body that would
+   * throw an exception, SCEV failed to analyze the backedge taken count due
+   * to the exception exit. In such case, it will simply return CouldNotCompute.
+   *
+   * We add a list of special functions that we know in our simulation the
+   * exception won't happen, and for loops in these functions, we simply return
+   * the exit count for that normal exiting BB.
+   *
+   * NOTE: This may be called on cloned loops, so no InstUID available.
+   * TODO: Add an attribute to the function and avoid using a hacky list.
+   */
+  static const llvm::SCEV *getTripCountSCEV(llvm::ScalarEvolution *SE,
+                                            const llvm::Loop *Loop);
+  static bool isSingleExitLoop(const llvm::Loop *Loop);
 
 private:
   static int countPossiblePathFromBB(

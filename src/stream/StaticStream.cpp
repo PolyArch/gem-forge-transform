@@ -443,13 +443,13 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
         LLVM_DEBUG(llvm::dbgs() << "No loop invariant backedge count.\n");
         return false;
       }
-      auto BackEdgeTakenSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
-      if (llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV)) {
+      auto TripCountSCEV = LoopUtils::getTripCountSCEV(this->SE, CurrentLoop);
+      if (llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV)) {
         LLVM_DEBUG(llvm::dbgs() << "No computable backedge count.\n");
         return false;
       }
       // The back edge should be invariant at ConfigureLoop.
-      if (!this->SE->isLoopInvariant(BackEdgeTakenSCEV, this->ConfigureLoop)) {
+      if (!this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
         LLVM_DEBUG(llvm::dbgs() << "No computable at configure loop.\n");
         return false;
       }
@@ -533,9 +533,9 @@ void StaticStream::analyzeIsConditionalAccess() const {
 void StaticStream::analyzeIsTripCountFixed() const {
   for (auto Loop = this->InnerMostLoop; this->ConfigureLoop->contains(Loop);
        Loop = Loop->getParentLoop()) {
-    auto BackEdgeTakenSCEV = this->SE->getBackedgeTakenCount(Loop);
-    if (!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
-        this->SE->isLoopInvariant(BackEdgeTakenSCEV, this->ConfigureLoop)) {
+    auto TripCountSCEV = LoopUtils::getTripCountSCEV(this->SE, Loop);
+    if (!llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) &&
+        this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
       continue;
     } else {
       this->StaticStreamInfo.set_is_trip_count_fixed(false);

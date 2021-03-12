@@ -1544,40 +1544,19 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
     }
     // We need the back-edge taken times if this is not ConfigureLoop.
     // Otherwise it's optional.
-    auto BackEdgeTakenSCEV = ClonedSE->getBackedgeTakenCount(CurrentLoop);
+    auto TripCountSCEV = LoopUtils::getTripCountSCEV(ClonedSE, CurrentLoop);
     LLVM_DEBUG({
-      llvm::errs() << "BackEdgeTakenCount ";
-      BackEdgeTakenSCEV->dump();
+      llvm::errs() << "TripCount ";
+      TripCountSCEV->dump();
     });
-    if (!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV) &&
-        ClonedSE->isLoopInvariant(BackEdgeTakenSCEV, ClonedConfigureLoop)) {
-      /**
-       * We add one to the BackEdgeTakenCount to get trip count.
-       */
-      auto TripCount = ClonedSE->getAddExpr(
-          BackEdgeTakenSCEV, ClonedSE->getOne(BackEdgeTakenSCEV->getType()));
-      // hack: Fix the case when TripCount is 0.
-      if (auto SMaxSCEV = llvm::dyn_cast<llvm::SCEVSMaxExpr>(TripCount)) {
-        bool Fixed = false;
-        if (auto OneSCEV =
-                llvm::dyn_cast<llvm::SCEVConstant>(SMaxSCEV->getOperand(0))) {
-          if (OneSCEV->getAPInt().getZExtValue() == 1) {
-            TripCount = SMaxSCEV->getOperand(1);
-            Fixed = true;
-          }
-        }
-        if (!Fixed) {
-          llvm::errs() << "Wrong TripCount SCEV? ";
-          TripCount->print(llvm::errs());
-          assert(false);
-        }
-      }
-      this->addStreamInputSCEV(TripCount, false /* Signed */, InsertBefore,
+    if (!llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) &&
+        ClonedSE->isLoopInvariant(TripCountSCEV, ClonedConfigureLoop)) {
+      this->addStreamInputSCEV(TripCountSCEV, false /* Signed */, InsertBefore,
                                ClonedSEExpander, ClonedInputValues,
                                ProtoConfiguration);
     } else {
       assert(CurrentLoop == ClonedConfigureLoop &&
-             "Need const BackEdgeTakenCount for nested loop.");
+             "Need const TripCount for nested loop.");
     }
     CurrentLoop = CurrentLoop->getParentLoop();
   }
@@ -1672,6 +1651,12 @@ void StreamExecutionTransformer::addStreamInputValue(
 }
 
 void StreamExecutionTransformer::replaceWithStreamMemIntrinsic() {
+
+  bool enableStreamMemIntrinsic = true;
+  if (!enableStreamMemIntrinsic) {
+    return;
+  }
+
   // Check if we have stream_memset.
   auto ClonedStreamMemsetFunc =
       this->ClonedModule->getFunction("stream_memset");

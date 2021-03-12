@@ -21,20 +21,21 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
         while (CurrentLoop != this->ConfigureLoop) {
           bool hasConstantTripCount = false;
           if (this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
-            auto BackEdgeSCEV = this->SE->getBackedgeTakenCount(CurrentLoop);
-            if (this->SE->isLoopInvariant(BackEdgeSCEV, this->ConfigureLoop)) {
+            auto TripCountSCEV =
+                LoopUtils::getTripCountSCEV(this->SE, CurrentLoop);
+            if (this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
               hasConstantTripCount = true;
             }
           }
           if (!hasConstantTripCount) {
             LLVM_DEBUG(
                 llvm::dbgs()
-                    << "Variant BackEdge for " << this->formatName() << '\n';
+                    << "Variant TripCount for " << this->formatName() << '\n';
                 llvm::dbgs()
                 << " Loop " << LoopUtils::getLoopId(CurrentLoop) << " "
                 << this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)
                 << '\n';
-                this->SE->getBackedgeTakenCount(CurrentLoop)
+                LoopUtils::getTripCountSCEV(this->SE, CurrentLoop)
                     ->print(llvm::dbgs());
                 this->SE->getConstantMaxBackedgeTakenCount(CurrentLoop)
                     ->print(llvm::dbgs()));

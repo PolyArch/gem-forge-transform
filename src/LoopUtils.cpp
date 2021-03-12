@@ -1,6 +1,7 @@
 #include "LoopUtils.h"
 
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
@@ -29,6 +30,17 @@ const std::unordered_set<std::string> LoopUtils::LoopContinuityIgnoredFunctions{
     // Specific to spec2017 imagick_s
     // "ReadBlob", "ThrowMagickException", "CloseBlob", "DestroyImage",
 };
+
+/**
+ * SourceFileName, (Demangled)FunctionName.
+ */
+const std::list<std::pair<std::string, std::string>>
+    LoopUtils::SingleExitFunctions{
+        // From GapGraph SSSP.
+        {"sssp.cc", "RelaxEdges"},
+        // From GapGraph BFS_PUSH
+        {"bfs_push.cc", ".omp_outlined."},
+    };
 
 std::unordered_map<const llvm::Loop *, bool>
     LoopUtils::MemorizedIsLoopContinuous;
@@ -190,6 +202,98 @@ llvm::Instruction *LoopUtils::getUnrollableTerminator(llvm::Loop *Loop) {
   }
 
   return BI;
+}
+
+const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
+                                              const llvm::Loop *Loop) {
+
+  auto BackEdgeTakenSCEV = SE->getBackedgeTakenCount(Loop);
+  LLVM_DEBUG({
+    llvm::dbgs() << "BackEdgeTakenCount ";
+    BackEdgeTakenSCEV->dump();
+  });
+
+  const auto &FuncName =
+      Utils::getDemangledFunctionName(Loop->getHeader()->getParent());
+  if (LoopUtils::isSingleExitLoop(Loop)) {
+    // Special case: we simply take the exit count from the the single in-loop
+    // predecessor BB of the header.
+    llvm::SmallVector<llvm::BasicBlock *, 4> ExitingBBs;
+    Loop->getExitingBlocks(ExitingBBs);
+    auto HeaderBB = Loop->getHeader();
+    llvm::BasicBlock *SingleExitingBB = nullptr;
+    for (auto ExitingBB : ExitingBBs) {
+      for (auto SuccBB : llvm::successors(ExitingBB)) {
+        if (SuccBB == HeaderBB) {
+          if (SingleExitingBB) {
+            // We already have an single exiting BB.
+            llvm::errs() << "Func " << FuncName << " has multi-exit loop "
+                         << Loop->getName() << '\n';
+            llvm_unreachable("Illegal SingleExit Function.");
+          }
+          SingleExitingBB = ExitingBB;
+          break;
+        }
+      }
+    }
+    if (!SingleExitingBB) {
+      llvm::errs() << "Func " << FuncName << " has no-exit loop "
+                   << Loop->getName() << '\n';
+      llvm_unreachable("Illegal SingleExit Function.");
+    }
+    BackEdgeTakenSCEV = SE->getExitCount(Loop, SingleExitingBB);
+    LLVM_DEBUG({
+      llvm::dbgs() << "Replace with ExitCount on SingleExitingBB "
+                   << SingleExitingBB->getName();
+      BackEdgeTakenSCEV->dump();
+    });
+  }
+
+  if (!llvm::isa<llvm::SCEVCouldNotCompute>(BackEdgeTakenSCEV)) {
+    /**
+     * We add one to the BackEdgeTakenCount to get trip count.
+     */
+    auto TripCount = SE->getAddExpr(BackEdgeTakenSCEV,
+                                    SE->getOne(BackEdgeTakenSCEV->getType()));
+    // hack: Fix the case when TripCount is 0.
+    if (auto SMaxSCEV = llvm::dyn_cast<llvm::SCEVSMaxExpr>(TripCount)) {
+      bool Fixed = false;
+      if (auto OneSCEV =
+              llvm::dyn_cast<llvm::SCEVConstant>(SMaxSCEV->getOperand(0))) {
+        if (OneSCEV->getAPInt().getZExtValue() == 1) {
+          TripCount = SMaxSCEV->getOperand(1);
+          Fixed = true;
+        }
+      }
+      if (!Fixed) {
+        llvm::errs() << "Wrong TripCount SCEV? ";
+        TripCount->print(llvm::errs());
+        assert(false);
+      }
+    }
+    return TripCount;
+  } else {
+    return BackEdgeTakenSCEV;
+  }
+}
+
+bool LoopUtils::isSingleExitLoop(const llvm::Loop *Loop) {
+  std::string FileName;
+  if (auto DebugLoc = Loop->getStartLoc()) {
+    auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
+    FileName = Scope->getFilename();
+  }
+  const auto &FuncName =
+      Utils::getDemangledFunctionName(Loop->getHeader()->getParent());
+  for (const auto &FileFuncPair : LoopUtils::SingleExitFunctions) {
+    auto SearchFileName = FileName.find(FileFuncPair.first);
+    if (SearchFileName != std::string::npos &&
+        FuncName == FileFuncPair.second) {
+      // We found a match.
+      return true;
+    }
+  }
+  return false;
 }
 
 void LoopIterCounter::configure(llvm::Loop *_Loop) {
