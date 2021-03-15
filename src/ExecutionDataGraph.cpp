@@ -154,9 +154,9 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
 
   // Start to translate the datagraph into the function body.
   if (!this->ComputeInsts.empty()) {
-    auto Translate = [this, &Builder,
+    auto Translate = [this, &Module, &Builder,
                       &ValueMap](const llvm::Instruction *Inst) -> void {
-      this->translate(Builder, ValueMap, Inst);
+      this->translate(Module, Builder, ValueMap, Inst);
     };
     for (auto ResultValue : this->ResultValues) {
       auto ResultInst = llvm::dyn_cast<llvm::Instruction>(ResultValue);
@@ -198,7 +198,7 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
   // Handle LoadFusedOps for load function.
   if (IsLoad) {
     for (auto Op : this->FusedLoadOps) {
-      this->translate(Builder, ValueMap, Op);
+      this->translate(Module, Builder, ValueMap, Op);
       FinalValue = ValueMap.at(Op);
     }
   }
@@ -209,7 +209,8 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
   return Function;
 }
 
-void ExecutionDataGraph::translate(llvm::IRBuilder<> &Builder,
+void ExecutionDataGraph::translate(std::unique_ptr<llvm::Module> &Module,
+                                   llvm::IRBuilder<> &Builder,
                                    ValueMapT &ValueMap,
                                    const llvm::Instruction *Inst) const {
   if (ValueMap.count(Inst) != 0) {
@@ -241,6 +242,15 @@ void ExecutionDataGraph::translate(llvm::IRBuilder<> &Builder,
       assert(false && "Failed to find translated operand.");
     }
     NewInst->setOperand(OperandIdx, ValueIter->second);
+  }
+  // Fix the callee.
+  if (auto NewCallInst = llvm::dyn_cast<llvm::CallInst>(NewInst)) {
+    assert(NewCallInst->getIntrinsicID() != llvm::Intrinsic::not_intrinsic &&
+           "NonIntrinsicCall in ExecutionDataGraph.");
+    // Translate the IntrinsicCallee.
+    auto NewCallee = llvm::Intrinsic::getDeclaration(
+        Module.get(), NewCallInst->getIntrinsicID());
+    NewCallInst->setCalledFunction(NewCallee);
   }
   // Insert with the same name.
   Builder.Insert(NewInst, Inst->getName());

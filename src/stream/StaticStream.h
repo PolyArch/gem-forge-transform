@@ -241,7 +241,9 @@ public:
   void generateReduceFunction(std::unique_ptr<llvm::Module> &Module) const;
   void generateValueFunction(std::unique_ptr<llvm::Module> &Module) const;
 
-  // Store stream.
+  /**
+   * This can be used for Store/AtomicStream and LoadStream with FusedLoadOps.
+   */
   std::unique_ptr<StreamDataGraph> ValueDG = nullptr;
   std::string getStoreFuncName(bool IsLoad) const {
     return this->FuncNameBase + (IsLoad ? "_load" : "_store");
@@ -269,7 +271,7 @@ public:
   const InstSet &getStepInsts() const { return this->StepInsts; }
   virtual const InstSet &getComputeInsts() const = 0;
 
-  void fillProtobufStoreFuncInfoImpl(::LLVM::TDG::ExecFuncInfo *ExInfo,
+  void fillProtobufValueDGFuncInfoImpl(::LLVM::TDG::ExecFuncInfo *ExInfo,
                                      bool IsLoad) const;
 
   ::LLVM::TDG::DataType translateToProtobufDataType(llvm::Type *Type) const {
@@ -449,6 +451,6 @@ protected:
                                 llvm::Type *RetType) const;
   void fillProtobufAddrFuncInfo(::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const;
   void fillProtobufPredFuncInfo(::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
-  void fillProtobufStoreFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
+  void fillProtobufValueDGFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
 };
 #endif

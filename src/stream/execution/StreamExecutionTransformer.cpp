@@ -520,18 +520,26 @@ void StreamExecutionTransformer::transformLoadInst(
   }
 
   /**
-   * 1. Insert a StreamLoad.
-   * 2. Replace the use of original load to StreamLoad.
-   * 3. Leave the original load there (not deleted).
+   * 1. Mark instructions (including fused) pending removed.
+   * 2. Insert a StreamLoad to the final value.
+   * 3. Replace the use of the final value to StreamLoad.
    */
-  auto ClonedInst = this->getClonedValue(Inst);
+
+  auto ClonedFinalValueInst = this->getClonedValue(Inst);
+  this->PendingRemovedInsts.insert(ClonedFinalValueInst);
+  // Consider FusedLoadOps.
+  for (auto FusedOp : S->FusedLoadOps) {
+    auto ClonedFusedOp = this->getClonedValue(FusedOp);
+    this->PendingRemovedInsts.insert(ClonedFusedOp);
+    ClonedFinalValueInst = ClonedFusedOp;
+  }
+
   auto StreamLoadInst = this->addStreamLoadOrAtomic(
-      S, ClonedInst->getType(), ClonedInst, &ClonedInst->getDebugLoc());
-  ClonedInst->replaceAllUsesWith(StreamLoadInst);
+      S, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
+      &ClonedFinalValueInst->getDebugLoc());
+  ClonedFinalValueInst->replaceAllUsesWith(StreamLoadInst);
 
-  // Insert the load into the pending removed set.
-  this->PendingRemovedInsts.insert(ClonedInst);
-
+  this->handleFusedLoadOpsForLoadStream(Analyzer, S);
   this->upgradeLoadToUpdateStream(Analyzer, S);
   this->mergePredicatedStreams(Analyzer, S);
 }
@@ -804,6 +812,23 @@ void StreamExecutionTransformer::transformStepInst(
   }
 }
 
+void StreamExecutionTransformer::handleFusedLoadOpsForLoadStream(
+    StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
+  if (!LoadSS->ValueDG) {
+    return;
+  }
+  if (!LoadSS->ChosenDependentStreams.empty() ||
+      !LoadSS->LoadStoreDepStreams.empty() ||
+      !LoadSS->LoadStoreBaseStreams.empty()) {
+    llvm::errs() << "FusedLoadOps with other dependence: "
+                 << LoadSS->formatName() << '\n';
+    assert(false);
+  }
+  auto SSProtoComputeInfo = LoadSS->StaticStreamInfo.mutable_compute_info();
+  // Enable the load func.
+  SSProtoComputeInfo->set_enabled_load_func(true);
+}
+
 void StreamExecutionTransformer::upgradeLoadToUpdateStream(
     StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
   auto &LoadSSInfo = LoadSS->StaticStreamInfo;
@@ -942,7 +967,7 @@ void StreamExecutionTransformer::handleValueDG(
   // Enable the store func.
   if (SS->UpdateStream) {
     UpdateProtoComputeInfo->set_enabled_store_func(true);
-    SS->fillProtobufStoreFuncInfoImpl(
+    SS->fillProtobufValueDGFuncInfoImpl(
         UpdateProtoComputeInfo->mutable_store_func_info(), false /* IsLoad */);
   } else {
     SSProtoComputeInfo->set_enabled_store_func(true);
@@ -1185,7 +1210,7 @@ void StreamExecutionTransformer::cleanClonedModule() {
     }
   }
   this->StreamToStreamLoadInstMap.clear();
-  assert(!llvm::verifyModule(*this->ClonedModule) &&
+  assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
          "Module broken after clean up.");
 }
 

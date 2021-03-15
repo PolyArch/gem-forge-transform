@@ -40,9 +40,12 @@ void StreamDataGraph::constructDataGraph(
     auto Inst = llvm::dyn_cast<llvm::Instruction>(Value);
     if (Inst == nullptr) {
       // This is not an instruction, should be an input value unless it's an
-      // constant data.
+      // constant data or an intrinsic.
       if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Value)) {
         this->ConstantDatas.insert(ConstantData);
+        continue;
+      }
+      if (auto Func = llvm::dyn_cast<llvm::Function>(Value)) {
         continue;
       }
       UnsortedInputs.insert(Value);

@@ -84,7 +84,8 @@ protected:
                                          bool IsLoad) const;
 
   using ValueMapT = std::unordered_map<const llvm::Value *, llvm::Value *>;
-  void translate(llvm::IRBuilder<> &Builder, ValueMapT &ValueMap,
+  void translate(std::unique_ptr<llvm::Module> &Module,
+                 llvm::IRBuilder<> &Builder, ValueMapT &ValueMap,
                  const llvm::Instruction *Inst) const;
 
   bool detectCircle() const;

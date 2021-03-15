@@ -83,6 +83,8 @@ private:
                                   llvm::AtomicCmpXchgInst *AtomicCmpXchg);
   void transformStepInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
+  void handleFusedLoadOpsForLoadStream(StaticStreamRegionAnalyzer *Analyzer,
+                                       StaticStream *LoadSS);
   void upgradeLoadToUpdateStream(StaticStreamRegionAnalyzer *Analyzer,
                                  StaticStream *LoadSS);
   void mergePredicatedStreams(StaticStreamRegionAnalyzer *Analyzer,

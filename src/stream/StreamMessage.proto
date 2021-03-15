@@ -73,10 +73,11 @@ message StaticStreamComputeInfo {
   StreamId update_stream = 1; // Update relationship.
   ExecFuncInfo store_func_info = 2; // Store func for update/store/atomic stream.
   bool enabled_store_func = 3; // The store func is enabled.
-  ExecFuncInfo load_func_info = 4; // Load func for atomic stream.
+  ExecFuncInfo load_func_info = 4; // Load func for load/atomic stream.
+  bool enabled_load_func = 5; // The load func is enabled.
   // Value dependence.
-  repeated StreamId value_base_streams = 5;
-  repeated StreamId value_dep_streams = 6;
+  repeated StreamId value_base_streams = 6;
+  repeated StreamId value_dep_streams = 7;
 }
 
 message StaticStreamInfo {
