@@ -849,10 +849,13 @@ void StaticStream::fuseLoadOps() {
   if (this->FusedLoadOps.empty()) {
     return;
   }
-  // Create the ValueDG.
-  this->ValueDG = std::make_unique<StreamDataGraph>(
-      this->ConfigureLoop, this->FusedLoadOps.back(),
-      [](const llvm::PHINode *) -> bool { return false; });
+  // Create the ValueDG if this is a LoadStream.
+  // ValueDG for AtomicStream will be created by StaticStreamRegionAnalyzer.
+  if (this->Inst->getOpcode() == llvm::Instruction::Load) {
+    this->ValueDG = std::make_unique<StreamDataGraph>(
+        this->ConfigureLoop, this->FusedLoadOps.back(),
+        [](const llvm::PHINode *) -> bool { return false; });
+  }
 }
 
 void StaticStream::fillProtobufStreamInfo(
