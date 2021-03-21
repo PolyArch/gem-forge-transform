@@ -104,6 +104,39 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
         this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue,
         IsIndVarStream);
     assert(!this->ReduceDG->hasCircle() && "Circle in ReduceDG.");
+    /**
+     * This stream has the Reduce pattern. However, we don't try to configure
+     * it if we cann't completely remove the computation from the loop, i.e.
+     * there are other users within the loop.
+     */
+    std::unordered_set<const llvm::Instruction *> InstSet = {this->Inst};
+    for (auto ComputeInst : this->ReduceDG->getComputeInsts()) {
+      InstSet.insert(ComputeInst);
+    }
+    bool IsComplete = true;
+    for (auto ClonedInst : InstSet) {
+      for (auto User : ClonedInst->users()) {
+        if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
+          if (!InstSet.count(UserInst) &&
+              this->ConfigureLoop->contains(UserInst)) {
+            LLVM_DEBUG(llvm::dbgs()
+                       << "ReduceStream " << this->formatName()
+                       << " is incomplete due to user " << UserInst->getName()
+                       << " of ComputeInst " << ClonedInst->getName() << '\n');
+            IsComplete = false;
+            break;
+          }
+        }
+      }
+      if (!IsComplete) {
+        break;
+      }
+    }
+    if (!IsComplete) {
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::IN_LOOP_REDUCTION_USER);
+      return LLVM::TDG::StreamValuePattern::RANDOM;
+    }
 
     return LLVM::TDG::StreamValuePattern::REDUCTION;
   }
