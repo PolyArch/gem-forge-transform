@@ -249,7 +249,7 @@ public:
     return this->FuncNameBase + (IsLoad ? "_load" : "_store");
   }
   using InputValueList = std::list<const llvm::Value *>;
-  InputValueList getStoreFuncInputValues() const;
+  InputValueList getValueDGInputValues() const;
   InputValueList getReduceFuncInputValues() const;
   InputValueList getPredFuncInputValues() const;
   InputValueList getExecFuncInputValues(const ExecutionDataGraph &ExecDG) const;
@@ -272,7 +272,7 @@ public:
   virtual const InstSet &getComputeInsts() const = 0;
 
   void fillProtobufValueDGFuncInfoImpl(::LLVM::TDG::ExecFuncInfo *ExInfo,
-                                     bool IsLoad) const;
+                                       bool IsLoad) const;
 
   ::LLVM::TDG::DataType translateToProtobufDataType(llvm::Type *Type) const {
     return translateToProtobufDataType(this->DataLayout, Type);

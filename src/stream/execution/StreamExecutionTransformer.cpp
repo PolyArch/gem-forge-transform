@@ -1691,12 +1691,24 @@ void StreamExecutionTransformer::handleExtraInputValue(
       // This should be the update stream.
       assert(SS->UpdateStream &&
              "Missing UpdateStream for LoadStream with StoreFunc.");
-      for (auto Input : SS->UpdateStream->getStoreFuncInputValues()) {
+      for (auto Input : SS->UpdateStream->getValueDGInputValues()) {
         ClonedInputValues.push_back(this->getClonedValue(Input));
       }
     } else {
       assert(SS->ValueDG && "No ValueDG for MergedLoadStoreDepStream.");
-      for (auto Input : SS->getStoreFuncInputValues()) {
+      for (auto Input : SS->getValueDGInputValues()) {
+        ClonedInputValues.push_back(this->getClonedValue(Input));
+      }
+    }
+  }
+
+  if (SS->StaticStreamInfo.compute_info().enabled_load_func()) {
+    /**
+     * AtomicStream's LoadFunc shares the same inputs as the StoreFunc.
+     * So we only have to handle LoadComputeStream.
+     */
+    if (SS->Inst->getOpcode() == llvm::Instruction::Load) {
+      for (auto Input : SS->getValueDGInputValues()) {
         ClonedInputValues.push_back(this->getClonedValue(Input));
       }
     }

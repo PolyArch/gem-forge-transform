@@ -1096,7 +1096,7 @@ void StaticStream::fillProtobufValueDGFuncInfoImpl(
   ExInfo->set_type(this->translateToProtobufDataType(StoreType));
 }
 
-StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {
+StaticStream::InputValueList StaticStream::getValueDGInputValues() const {
   /**
    * No special handling for atomic stream here, as load/store shares the same
    * input.
@@ -1104,13 +1104,16 @@ StaticStream::InputValueList StaticStream::getStoreFuncInputValues() const {
   assert(this->ValueDG && "No ValueDG to get input values.");
   InputValueList InputValues;
   for (const auto &Input : this->ValueDG->getInputs()) {
-    StaticStream *InputStream = nullptr;
-    // Search in the LoadStoreBaseStreams.
+    const StaticStream *InputStream = nullptr;
+    // Search in the LoadStoreBaseStreams and myself.
     for (auto IS : this->LoadStoreBaseStreams) {
       if (IS->Inst == Input) {
         InputStream = IS;
         break;
       }
+    }
+    if (this->Inst == Input) {
+      InputStream = this;
     }
     if (InputStream) {
       // This comes from the base stream at runtime.
