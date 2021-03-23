@@ -61,7 +61,10 @@ void BBPredicateDataGraph::constructDataGraph() {
       // This is not an instruction, should be an input value unless it's an
       // constant data.
       if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Value)) {
-        this->ConstantDatas.insert(ConstantData);
+        this->ConstantValues.insert(ConstantData);
+      } else if (auto ConstantVec =
+                     llvm::dyn_cast<llvm::ConstantVector>(Value)) {
+        this->ConstantValues.insert(ConstantVec);
       } else {
         UnsortedInputs.insert(Value);
       }

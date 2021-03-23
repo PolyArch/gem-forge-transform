@@ -40,7 +40,7 @@ private:
    */
   std::unique_ptr<llvm::Module> ClonedModule;
   std::string ClonedModuleBCPath;
-  std::string ClonedModuleLLPath;
+  std::string ClonedModuleBeforeCleanBCPath;
 
   llvm::ValueToValueMapTy ClonedValueMap;
   std::unique_ptr<CachedLoopInfo> ClonedCachedLI;
@@ -165,7 +165,7 @@ private:
   void addStreamInput(llvm::IRBuilder<> &Builder, int StreamId,
                       llvm::Value *ClonedInputValue);
 
-  void writeModule();
+  void writeModule(const std::string &BCFileName);
   void writeAllConfiguredRegions();
   void writeAllTransformedFunctions();
 

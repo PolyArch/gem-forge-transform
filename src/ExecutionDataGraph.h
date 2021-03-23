@@ -71,7 +71,7 @@ public:
 protected:
   std::list<const llvm::Value *> ResultValues;
   std::list<const llvm::Value *> Inputs;
-  std::unordered_set<const llvm::ConstantData *> ConstantDatas;
+  std::unordered_set<const llvm::Value *> ConstantValues;
   InstSet ComputeInsts;
   const llvm::Instruction *TailAtomicInst = nullptr;
   std::vector<const llvm::Instruction *> FusedLoadOps;

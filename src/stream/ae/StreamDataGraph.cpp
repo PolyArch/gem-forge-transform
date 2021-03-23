@@ -42,7 +42,11 @@ void StreamDataGraph::constructDataGraph(
       // This is not an instruction, should be an input value unless it's an
       // constant data or an intrinsic.
       if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Value)) {
-        this->ConstantDatas.insert(ConstantData);
+        this->ConstantValues.insert(ConstantData);
+        continue;
+      }
+      if (auto ConstantVec = llvm::dyn_cast<llvm::ConstantVector>(Value)) {
+        this->ConstantValues.insert(ConstantVec);
         continue;
       }
       if (auto Func = llvm::dyn_cast<llvm::Function>(Value)) {

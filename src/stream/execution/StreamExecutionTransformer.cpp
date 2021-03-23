@@ -39,12 +39,16 @@ StreamExecutionTransformer::StreamExecutionTransformer(
   this->ClonedCachedLI =
       std::make_unique<CachedLoopInfo>(this->ClonedModule.get());
   this->ClonedModuleBCPath = this->OutputExtraFolderPath + "/ex.bc";
-  this->ClonedModuleLLPath = this->OutputExtraFolderPath + "/ex.ll";
+  this->ClonedModuleBeforeCleanBCPath =
+      this->OutputExtraFolderPath + "/ex.before_clean.bc";
 
   // Transform region.
   for (auto &Analyzer : Analyzers) {
     this->transformStreamRegion(Analyzer);
   }
+
+  LLVM_DEBUG(llvm::dbgs() << "Write the module before clean.\n");
+  this->writeModule(this->ClonedModuleBeforeCleanBCPath);
 
   // Clean up the module.
   LLVM_DEBUG(llvm::dbgs() << "Clean the module.\n");
@@ -55,7 +59,7 @@ StreamExecutionTransformer::StreamExecutionTransformer(
 
   // Generate the module.
   LLVM_DEBUG(llvm::dbgs() << "Write the module.\n");
-  this->writeModule();
+  this->writeModule(this->ClonedModuleBCPath);
   this->writeAllConfiguredRegions();
   // * Must be called after writeModule().
   this->writeAllTransformedFunctions();
@@ -63,9 +67,9 @@ StreamExecutionTransformer::StreamExecutionTransformer(
 
 StreamExecutionTransformer::~StreamExecutionTransformer() {}
 
-void StreamExecutionTransformer::writeModule() {
+void StreamExecutionTransformer::writeModule(const std::string &BCFileName) {
   std::error_code EC;
-  llvm::raw_fd_ostream ModuleFStream(this->ClonedModuleBCPath, EC,
+  llvm::raw_fd_ostream ModuleFStream(BCFileName, EC,
                                      llvm::sys::fs::OpenFlags::F_None);
   assert(!ModuleFStream.has_error() &&
          "Failed to open the cloned module bc file.");
@@ -76,8 +80,9 @@ void StreamExecutionTransformer::writeModule() {
     /**
      * Write to text mode for debug purpose.
      */
+    auto LLFileName = BCFileName.substr(0, BCFileName.size() - 2) + "ll";
     std::error_code EC;
-    llvm::raw_fd_ostream ModuleFStream(this->ClonedModuleLLPath, EC,
+    llvm::raw_fd_ostream ModuleFStream(LLFileName, EC,
                                        llvm::sys::fs::OpenFlags::F_None);
     assert(!ModuleFStream.has_error() &&
            "Failed to open the cloned module ll file.");
@@ -197,6 +202,14 @@ void StreamExecutionTransformer::transformStreamRegion(
     }
   }
 
+  LLVM_DEBUG({
+    if (llvm::verifyModule(*this->ClonedModule, &llvm::dbgs())) {
+      llvm::errs()
+          << "Module broken after transforming individual instruction.\n";
+      assert(false && "Module broken.");
+    }
+  });
+
   /**
    * BFS to iterate all loops and configure them.
    * ! This must be done at the end as UpgradeUpdate may add more inputs.
@@ -210,6 +223,14 @@ void StreamExecutionTransformer::transformStreamRegion(
       LoopQueue.push(SubLoop);
     }
     this->configureStreamsAtLoop(Analyzer, CurrentLoop);
+
+    LLVM_DEBUG({
+      if (llvm::verifyModule(*this->ClonedModule, &llvm::dbgs())) {
+        llvm::errs() << "Module broken after configuring streams.\n";
+        assert(false && "Module broken.");
+      }
+    });
+
     Analyzer->coalesceStreamsAtLoop(CurrentLoop);
   }
 
@@ -221,7 +242,21 @@ void StreamExecutionTransformer::transformStreamRegion(
 
   // Insert address computation function in the cloned module.
   Analyzer->insertAddrFuncInModule(this->ClonedModule);
+  LLVM_DEBUG({
+    if (llvm::verifyModule(*this->ClonedModule, &llvm::dbgs())) {
+      llvm::errs() << "Module broken after inserting AddrFunc.\n";
+      assert(false && "Module broken.");
+    }
+  });
+
   Analyzer->insertPredicateFuncInModule(this->ClonedModule);
+
+  LLVM_DEBUG({
+    if (llvm::verifyModule(*this->ClonedModule, &llvm::dbgs())) {
+      llvm::errs() << "Module broken after inserting PredicatFunc.\n";
+      assert(false && "Module broken.");
+    }
+  });
 }
 
 void StreamExecutionTransformer::configureStreamsAtLoop(
@@ -625,19 +660,18 @@ llvm::Value *StreamExecutionTransformer::addStreamLoadOrAtomic(
   if (!isAtomic) {
     this->StreamToStreamLoadInstMap.emplace(S, StreamLoadInst);
   }
+  llvm::Value *FinalRetInst = StreamLoadInst;
   if (NeedTruncate) {
-    auto TruncateInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
-    return TruncateInst;
+    FinalRetInst = Builder.CreateTrunc(StreamLoadInst, LoadType);
   } else if (NeedIntToPtr) {
-    auto IntToPtrInst = Builder.CreateIntToPtr(StreamLoadInst, LoadType);
-    return IntToPtrInst;
+    FinalRetInst = Builder.CreateIntToPtr(StreamLoadInst, LoadType);
   } else if (NeedBitcast) {
-    auto BitcastInst = Builder.CreateBitCast(
+    FinalRetInst = Builder.CreateBitCast(
         StreamLoadInst, LoadType, "ssp.load.bitcast." + S->Inst->getName());
-    return BitcastInst;
-  } else {
-    return StreamLoadInst;
   }
+  assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
+         "Module broken after inserting StreamLoad or StreamAtomic.");
+  return FinalRetInst;
 }
 
 void StreamExecutionTransformer::addStreamStore(
@@ -727,6 +761,9 @@ void StreamExecutionTransformer::addStreamInput(llvm::IRBuilder<> &Builder,
                                       llvm::Intrinsic::ID::ssp_stream_input,
                                       StreamInputType),
       StreamInputArgs);
+
+  assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
+         "Module broken after inserting StreamInput.");
 }
 
 void StreamExecutionTransformer::transformStoreInst(
@@ -949,12 +986,18 @@ void StreamExecutionTransformer::handleValueDG(
     auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
                          ->add_value_dep_streams();
     if (SS->UpdateStream) {
-      // Also remember the information in the base load stream.
-      LoadProto->set_id(SS->UpdateStream->StreamId);
-      LoadProto->set_name(SS->UpdateStream->formatName());
-      auto SSProto = UpdateProtoComputeInfo->add_value_base_streams();
-      SSProto->set_id(LoadSS->StreamId);
-      SSProto->set_name(LoadSS->formatName());
+      /**
+       * If this is an update stream, we remember the information in the
+       * LoadUpdateStream. Notice that update stream has implicit dependence on
+       * itself, therefore we should avoid adding the circular dependence here.
+       */
+      if (LoadSS != SS->UpdateStream) {
+        LoadProto->set_id(SS->UpdateStream->StreamId);
+        LoadProto->set_name(SS->UpdateStream->formatName());
+        auto SSProto = UpdateProtoComputeInfo->add_value_base_streams();
+        SSProto->set_id(LoadSS->StreamId);
+        SSProto->set_name(LoadSS->formatName());
+      }
     } else {
       LoadProto->set_id(SS->StreamId);
       LoadProto->set_name(SS->formatName());
@@ -1101,6 +1144,9 @@ void StreamExecutionTransformer::cleanClonedModule() {
   // ! instructions.
   this->ClonedCachedLI->clearAnalysis();
 
+  assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
+         "Module broken before clean up.");
+
   // Group by functions.
   std::unordered_map<llvm::Function *, std::list<llvm::Instruction *>>
       FuncPendingRemovedInstMap;
@@ -1147,12 +1193,18 @@ void StreamExecutionTransformer::cleanClonedModule() {
     auto S = StreamInstPair.first;
     auto StreamLoadInst = StreamInstPair.second;
     if (StreamLoadInst->use_empty()) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Remove unused StreamLoad "
-                 << StreamLoadInst->getFunction()->getName() << ' '
-                 << Utils::formatLLVMInstWithoutFunc(StreamLoadInst) << '\n');
+      LLVM_DEBUG({
+        llvm::dbgs() << "Remove unused StreamLoad "
+                     << StreamLoadInst->getFunction()->getName() << ' '
+                     << Utils::formatLLVMInstWithoutFunc(StreamLoadInst) << ' ';
+        StreamLoadInst->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
       StreamLoadInst->eraseFromParent();
       StreamInstPair.second = nullptr;
+
+      assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
+             "Module broken after removing unused StreamLoad.");
 
       bool allDepSNoCoreUser = true;
       for (auto DepS : S->ChosenDependentStreams) {
@@ -1281,6 +1333,11 @@ void StreamExecutionTransformer::removePendingRemovedInstsInFunc(
         ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo());
     Changed |= TransformUtils::simplifyCFG(
         ClonedFunc, this->ClonedCachedLI->getTargetLibraryInfo(), TTI);
+    if (llvm::verifyFunction(ClonedFunc, &llvm::errs())) {
+      llvm::errs() << "Function broken after DCE and Simplify CFG.\n";
+      ClonedFunc.print(llvm::errs());
+      assert(false && "Function broken after DCE and Simplify CFG.");
+    }
   } while (Changed);
 }
 
@@ -1369,6 +1426,8 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
 
   LLVM_DEBUG(llvm::dbgs() << "===== Generate MemStreamConfiguration "
                           << S->formatName() << '\n');
+  assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
+         "Module broken before GenerateMemStreamConfiguration.");
 
   assert(S->Type == StaticStream::TypeT::MEM && "Must be Mem stream.");
   auto SS = static_cast<const StaticMemStream *>(S);

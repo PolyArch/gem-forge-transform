@@ -54,7 +54,10 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
       // an
       // constant data.
       if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Value)) {
-        this->ConstantDatas.insert(ConstantData);
+        this->ConstantValues.insert(ConstantData);
+      } else if (auto ConstantVec =
+                     llvm::dyn_cast<llvm::ConstantVector>(Value)) {
+        this->ConstantValues.insert(ConstantVec);
       } else {
         UnsortedInputs.insert(Value);
       }

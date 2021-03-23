@@ -2,6 +2,8 @@
 
 #include "Utils.h"
 
+#define DEBUG_TYPE "ExecutionDataGraph"
+
 void ExecutionDataGraph::extendTailAtomicInst(
     const llvm::Instruction *AtomicInst,
     const std::vector<const llvm::Instruction *> &FusedLoadOps) {
@@ -144,7 +146,7 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
   }
   {
     // Remember to translate the constant value to themselves.
-    for (const auto &ConstantData : this->ConstantDatas) {
+    for (const auto &ConstantData : this->ConstantValues) {
       // This is hacky...
       ValueMap.emplace(ConstantData,
                        const_cast<llvm::Value *>(
@@ -219,15 +221,35 @@ void ExecutionDataGraph::translate(std::unique_ptr<llvm::Module> &Module,
   }
   auto NewInst = Inst->clone();
   // Fix the operand.
+  LLVM_DEBUG({
+    llvm::dbgs() << "Translating Inst";
+    Inst->print(llvm::dbgs());
+    llvm::dbgs() << '\n';
+  });
   for (unsigned OperandIdx = 0, NumOperands = NewInst->getNumOperands();
        OperandIdx != NumOperands; ++OperandIdx) {
     auto Operand = Inst->getOperand(OperandIdx);
     // Directly use the constant data and intrinsic.
     if (llvm::isa<llvm::ConstantData>(Operand)) {
-      NewInst->setOperand(OperandIdx, Operand);
-      continue;
+      LLVM_DEBUG({
+        llvm::dbgs() << "Directly use ConstantData";
+        Operand->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
+    }
+    if (llvm::isa<llvm::ConstantVector>(Operand)) {
+      LLVM_DEBUG({
+        llvm::dbgs() << "Directly use ConstantVector";
+        Operand->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
     }
     if (llvm::isa<llvm::IntrinsicInst>(Inst) && OperandIdx + 1 == NumOperands) {
+      LLVM_DEBUG({
+        llvm::dbgs() << "Directly use Intrinsic";
+        Operand->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
       NewInst->setOperand(OperandIdx, Operand);
       continue;
     }
