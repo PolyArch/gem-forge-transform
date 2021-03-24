@@ -533,6 +533,19 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Multiple StepRoot.\n");
     return;
   }
+
+  /**
+   * We never try to build ValueDG on conditional store.
+   */
+  {
+    auto StoreBB = StoreS->Inst->getParent();
+    auto HeaderBB = StoreS->InnerMostLoop->getHeader();
+    if (!this->PDT->dominates(StoreBB, HeaderBB)) {
+      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Conditional Access.\n");
+      return;
+    }
+  }
+
   /**
    * Let's try to construct the ValueDG.
    * So far we will first simply take every PHINode as an induction variable
