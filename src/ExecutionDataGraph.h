@@ -15,6 +15,7 @@
 class ExecutionDataGraph {
 public:
   using InstSet = std::unordered_set<const llvm::Instruction *>;
+  using ValueList = std::list<const llvm::Value *>;
 
   ExecutionDataGraph(const llvm::Value *_ResultValue)
       : ResultValues({_ResultValue}) {}
@@ -32,9 +33,7 @@ public:
   }
   bool hasSingleResult() const { return this->ResultValues.size() == 1; }
   bool hasMultipleResult() const { return this->ResultValues.size() > 1; }
-  const std::list<const llvm::Value *> &getInputs() const {
-    return this->Inputs;
-  }
+  const ValueList &getInputs() const { return this->Inputs; }
   const InstSet &getComputeInsts() const { return this->ComputeInsts; }
   bool hasCircle() const { return this->HasCircle; }
 

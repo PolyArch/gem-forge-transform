@@ -5,6 +5,7 @@
 
 #include "DataGraph.h"
 
+class StaticStream;
 class StreamDataGraph : public ExecutionDataGraph {
 public:
   StreamDataGraph(const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
@@ -34,6 +35,29 @@ public:
   const llvm::Value *getAddrValue() const {
     return this->getSingleResultValue();
   }
+
+  /**
+   * Generate a function, but replacing the input with the map.
+   * This is used to implement dependence on LoadComputeStream, which
+   * may fuse some operations into itself.
+   */
+  using StreamSet = std::unordered_set<StaticStream *>;
+  llvm::Function *
+  generateFunctionWithFusedOp(const std::string &FuncName,
+                              std::unique_ptr<llvm::Module> &Module,
+                              const StreamSet &Streams, bool IsLoad = false);
+
+  /**
+   * Get the updated input after removing FusedOps from this datagraph.
+   */
+  ValueList getInputsWithFusedOp(const StreamSet &Streams);
+
+  /**
+   * Remove FusedOps from this datagraph.
+   * @return A pair of updated inputs and compute instructions.
+   */
+  std::pair<ValueList, InstSet>
+  sliceWithFusedOp(const StreamSet &Streams) const;
 
 private:
   const llvm::Loop *Loop;

@@ -259,6 +259,13 @@ public:
   using InstVec = std::vector<const llvm::Instruction *>;
   InstVec FusedLoadOps;
   void fuseLoadOps();
+  const llvm::Instruction *getFinalFusedLoadInst() const {
+    if (this->FusedLoadOps.empty()) {
+      return this->Inst;
+    } else {
+      return this->FusedLoadOps.back();
+    }
+  }
 
   /**
    * Stores all the input value for the analyzed pattern.

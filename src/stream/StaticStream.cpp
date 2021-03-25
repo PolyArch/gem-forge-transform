@@ -570,12 +570,14 @@ void StaticStream::generateValueFunction(
       assert(!this->UpdateStream && "FusedLoadOp in UpdateStream.");
       return;
     }
-    this->ValueDG->generateFunction(this->getStoreFuncName(false), Module,
-                                    false /* IsLoad */);
+    this->ValueDG->generateFunctionWithFusedOp(
+        this->getStoreFuncName(false), Module, this->LoadStoreBaseStreams,
+        false /* IsLoad */);
     if (this->ValueDG->hasTailAtomicInst()) {
       // AtomicStream has one additional load func.
-      this->ValueDG->generateFunction(this->getStoreFuncName(true), Module,
-                                      true /* IsLoad */);
+      this->ValueDG->generateFunctionWithFusedOp(
+          this->getStoreFuncName(true), Module, this->LoadStoreBaseStreams,
+          true /* IsLoad */);
     }
   }
   // Special case for update stream. The store stream will be chosen,
@@ -1030,24 +1032,6 @@ void StaticStream::fillProtobufValueDGFuncInfoImpl(
     ::LLVM::TDG::ExecFuncInfo *ExInfo, bool IsLoad) const {
 
   ExInfo->set_name(this->getStoreFuncName(IsLoad));
-  auto CheckArg = [this](const llvm::Value *Input) -> void {
-    auto Type = Input->getType();
-    auto TypeSize = this->DataLayout->getTypeStoreSize(Type);
-    // if (TypeSize > 8) {
-    //   llvm::errs() << "Invalid input type, Value: "
-    //                << Utils::formatLLVMValue(Input) << " TypeSize " <<
-    //                TypeSize
-    //                << '\n';
-    //   assert(false && "Invalid type for input.");
-    // }
-    // if (!(Type->isIntOrPtrTy() || Type->isFloatTy() || Type->isDoubleTy())) {
-    //   llvm::errs() << "Invalid input type, Value: "
-    //                << Utils::formatLLVMValue(Input) << " TypeSize " <<
-    //                TypeSize
-    //                << '\n';
-    //   assert(false && "Invalid type for input.");
-    // }
-  };
   auto AddArg = [ExInfo, this](llvm::Type *Type,
                                const StaticStream *InputStream) -> void {
     auto ProtobufArg = ExInfo->add_args();
@@ -1061,19 +1045,20 @@ void StaticStream::fillProtobufValueDGFuncInfoImpl(
     }
     ProtobufArg->set_type(this->translateToProtobufDataType(Type));
   };
-  for (const auto &Input : this->ValueDG->getInputs()) {
+  for (const auto &Input :
+       this->ValueDG->getInputsWithFusedOp(this->LoadStoreBaseStreams)) {
     const StaticStream *InputStream = nullptr;
     // Search in the LoadStoreBaseStreams.
     for (auto IS : this->LoadStoreBaseStreams) {
-      if (IS->Inst == Input) {
+      if (IS->getFinalFusedLoadInst() == Input) {
         InputStream = IS;
         break;
       }
     }
+    // ! Be careful, ourself is still Inst, not FinalFusedLoadInst.
     if (this->Inst == Input) {
       InputStream = this;
     }
-    CheckArg(Input);
     AddArg(Input->getType(), InputStream);
   }
 
@@ -1103,15 +1088,17 @@ StaticStream::InputValueList StaticStream::getValueDGInputValues() const {
    */
   assert(this->ValueDG && "No ValueDG to get input values.");
   InputValueList InputValues;
-  for (const auto &Input : this->ValueDG->getInputs()) {
+  for (const auto &Input :
+       this->ValueDG->getInputsWithFusedOp(this->LoadStoreBaseStreams)) {
     const StaticStream *InputStream = nullptr;
     // Search in the LoadStoreBaseStreams and myself.
     for (auto IS : this->LoadStoreBaseStreams) {
-      if (IS->Inst == Input) {
+      if (IS->getFinalFusedLoadInst() == Input) {
         InputStream = IS;
         break;
       }
     }
+    // ! Be careful, ourself is still Inst, not FinalFusedLoadInst.
     if (this->Inst == Input) {
       InputStream = this;
     }
@@ -1119,6 +1106,8 @@ StaticStream::InputValueList StaticStream::getValueDGInputValues() const {
       // This comes from the base stream at runtime.
     } else {
       // This is an input value.
+      llvm::errs() << "Push in Input " << Utils::formatLLVMValue(Input)
+                   << " Myself " << this->formatName() << '\n';
       InputValues.push_back(Input);
     }
   }

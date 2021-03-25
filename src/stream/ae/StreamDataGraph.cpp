@@ -1,4 +1,5 @@
 #include "stream/ae/StreamDataGraph.h"
+#include "stream/StaticStream.h"
 
 #include "LoopUtils.h"
 #include "Utils.h"
@@ -150,4 +151,93 @@ void StreamDataGraph::format(std::ostream &OStream) const {
  */
 bool StreamDataGraph::isAbleToCoalesceWith(const StreamDataGraph &Other) const {
   return false;
+}
+
+std::pair<StreamDataGraph::ValueList, StreamDataGraph::InstSet>
+StreamDataGraph::sliceWithFusedOp(const StreamSet &Streams) const {
+
+  // Remove fused LoadOps.
+  InstSet NewComputeInsts;
+  for (const auto &Inst : this->ComputeInsts) {
+    bool Fused = false;
+    for (auto S : Streams) {
+      for (auto FusedLoadOp : S->FusedLoadOps) {
+        if (FusedLoadOp == Inst) {
+          Fused = true;
+          break;
+        }
+      }
+      if (Fused) {
+        break;
+      }
+    }
+    if (!Fused) {
+      llvm::errs() << "Push in ComputeInst " << Utils::formatLLVMValue(Inst)
+                   << '\n';
+      NewComputeInsts.insert(Inst);
+    }
+  }
+
+  // Replace the inputs and remove unused ones.
+  ValueList NewInputs;
+  for (const auto &Input : this->Inputs) {
+    auto FinalInputValue = Input;
+    if (auto InputInst = llvm::dyn_cast<llvm::Instruction>(Input)) {
+      for (auto S : Streams) {
+        if (S->Inst != InputInst) {
+          continue;
+        }
+        FinalInputValue = S->getFinalFusedLoadInst();
+      }
+    }
+    bool StillUsed = false;
+    for (const auto &ComputeInst : NewComputeInsts) {
+      for (auto OperandIdx = 0; OperandIdx < ComputeInst->getNumOperands();
+           ++OperandIdx) {
+        auto Operand = ComputeInst->getOperand(OperandIdx);
+        if (Operand == FinalInputValue) {
+          StillUsed = true;
+          break;
+        }
+      }
+      if (StillUsed) {
+        break;
+      }
+    }
+    if (StillUsed) {
+      llvm::errs() << "Push in Input "
+                   << Utils::formatLLVMValue(FinalInputValue) << '\n';
+      NewInputs.push_back(FinalInputValue);
+    }
+  }
+
+  return std::make_pair(NewInputs, NewComputeInsts);
+}
+
+llvm::Function *StreamDataGraph::generateFunctionWithFusedOp(
+    const std::string &FuncName, std::unique_ptr<llvm::Module> &Module,
+    const StreamSet &Streams, bool IsLoad) {
+
+  /**
+   * ! This is very hacky:
+   * We replace the Input and remove the FusedLoadOps from my ComputeInsts.
+   * TODO: Handle this more elegantly in the future.
+   */
+  auto OriginalInputs = this->Inputs;
+  auto OriginalComputeInsts = this->ComputeInsts;
+
+  auto Ret = this->sliceWithFusedOp(Streams);
+  this->Inputs = Ret.first;
+  this->ComputeInsts = Ret.second;
+
+  auto Func = this->generateFunction(FuncName, Module, IsLoad);
+
+  this->Inputs = OriginalInputs;
+  this->ComputeInsts = OriginalComputeInsts;
+  return Func;
+}
+
+StreamDataGraph::ValueList
+StreamDataGraph::getInputsWithFusedOp(const StreamSet &Streams) {
+  return this->sliceWithFusedOp(Streams).first;
 }

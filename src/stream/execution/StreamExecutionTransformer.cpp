@@ -855,7 +855,6 @@ void StreamExecutionTransformer::handleFusedLoadOpsForLoadStream(
     return;
   }
   if (!LoadSS->ChosenDependentStreams.empty() ||
-      !LoadSS->LoadStoreDepStreams.empty() ||
       !LoadSS->LoadStoreBaseStreams.empty()) {
     llvm::errs() << "FusedLoadOps with other dependence: "
                  << LoadSS->formatName() << '\n';
