@@ -981,6 +981,7 @@ void StaticStream::fillProtobufExecFuncInfo(
     ProtobufArg->set_type(this->translateToProtobufDataType(Type));
   }
   ProtoFuncInfo->set_type(this->translateToProtobufDataType(RetType));
+  ProtoFuncInfo->set_compute_op(ExecDG.getComputeOp());
 }
 
 void StaticStream::fillProtobufAddrFuncInfo(

@@ -67,6 +67,15 @@ message ExecFuncInfo {
   }
   repeated FuncArg args = 2;
   DataType type = 3;
+  /**
+   * Whether this function is just some simple computation.
+   * Mainly used for distributed reduction.
+   */
+  ComputeOp compute_op = 4;
+  enum ComputeOp {
+    UNKNOWN = 0;
+    FLOAT_ADD = 1;
+  }
 }
 
 message StaticStreamComputeInfo {

@@ -371,3 +371,24 @@ llvm::Value *ExecutionDataGraph::generateTailAtomicCmpXchg(
     return Builder.CreateSelect(MatchValue, XchgValue, AtomicArg, "cmpxchg");
   }
 }
+
+::LLVM::TDG::ExecFuncInfo::ComputeOp ExecutionDataGraph::getComputeOp() const {
+  auto Op = ::LLVM::TDG::ExecFuncInfo_ComputeOp_UNKNOWN;
+  if (this->ComputeInsts.size() == 1) {
+    auto ComputeInst = *this->ComputeInsts.begin();
+    switch (ComputeInst->getOpcode()) {
+    default:
+      break;
+    case llvm::Instruction::FAdd: {
+      if (ComputeInst->getType()->isFloatTy()) {
+        // So far we just support float addition.
+        Op = ::LLVM::TDG::ExecFuncInfo_ComputeOp_FLOAT_ADD;
+      }
+      break;
+    }
+    }
+    return Op;
+  }
+
+  return Op;
+}

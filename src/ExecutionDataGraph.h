@@ -5,6 +5,8 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 
+#include "stream/StreamMessage.pb.h"
+
 #include <functional>
 #include <list>
 #include <ostream>
@@ -66,6 +68,11 @@ public:
   llvm::Function *generateFunction(const std::string &FuncName,
                                    std::unique_ptr<llvm::Module> &Module,
                                    bool IsLoad = false) const;
+
+  /**
+   * Check if this function can be represented as single compute op.
+   */
+  ::LLVM::TDG::ExecFuncInfo::ComputeOp getComputeOp() const;
 
 protected:
   std::list<const llvm::Value *> ResultValues;
