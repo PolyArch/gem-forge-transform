@@ -204,6 +204,15 @@ StreamDataGraph::sliceWithFusedOp(const StreamSet &Streams) const {
         break;
       }
     }
+    /**
+     * Special case for empty function, e.g. memcpy, memmove, where the input
+     * is used as the final value.
+     */
+    for (auto ResultValue : this->ResultValues) {
+      if (FinalInputValue == ResultValue) {
+        StillUsed = true;
+      }
+    }
     if (StillUsed) {
       llvm::errs() << "Push in Input "
                    << Utils::formatLLVMValue(FinalInputValue) << '\n';

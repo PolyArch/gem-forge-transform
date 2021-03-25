@@ -549,6 +549,8 @@ void StaticStream::analyzeIsTripCountFixed() const {
 void StaticStream::generateAddrFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->AddrDG) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "Generating AddrDG for " << this->formatName() << '\n');
     this->AddrDG->generateFunction(this->FuncNameBase + "_addr", Module);
   }
 }
@@ -556,6 +558,8 @@ void StaticStream::generateAddrFunction(
 void StaticStream::generateReduceFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ReduceDG) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "Generating ReduceDG for " << this->formatName() << '\n');
     this->ReduceDG->generateFunction(this->FuncNameBase + "_reduce", Module);
   }
 }
@@ -563,6 +567,8 @@ void StaticStream::generateReduceFunction(
 void StaticStream::generateValueFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ValueDG) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "Generating ValueDG for " << this->formatName() << '\n');
     // Special case for fused load ops.
     if (this->Inst->getOpcode() == llvm::Instruction::Load &&
         !this->FusedLoadOps.empty()) {
@@ -585,6 +591,8 @@ void StaticStream::generateValueFunction(
   if (this->Inst->getOpcode() == llvm::Instruction::Load &&
       this->UpdateStream &&
       this->StaticStreamInfo.compute_info().enabled_store_func()) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "Generating UpdateDG for " << this->formatName() << '\n');
     assert(this->UpdateStream->ValueDG && "Missing ValueDG for UpdateStream.");
     this->UpdateStream->generateValueFunction(Module);
   }
