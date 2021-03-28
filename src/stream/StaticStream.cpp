@@ -683,7 +683,8 @@ void StaticStream::fuseLoadOps() {
    */
 
   // Also check that my size > 4 so that it is benefitial to fuse.
-  if (this->getMemElementSize() <= 4) {
+  if (this->getMemElementSize() <= 4 &&
+      this->Inst->getOpcode() == llvm::Instruction::Load) {
     LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as MyMemElementSize "
                             << this->getMemElementSize() << " too small.\n");
     return;
