@@ -1402,6 +1402,18 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
     }
     assert(NumInitialValues == 1 &&
            "Multiple initial values for reduction stream.");
+    /**
+     * If the initial value is zero, we encode it in the configuration to save
+     * one instruction.
+     */
+    auto InitialValue = ClonedInputValues.back();
+    if (auto ConstantInitialValue =
+            llvm::dyn_cast<llvm::Constant>(InitialValue)) {
+      if (ConstantInitialValue->isZeroValue()) {
+        S->StaticStreamInfo.mutable_compute_info()->set_reduce_from_zero(true);
+        ClonedInputValues.pop_back();
+      }
+    }
     // Any additional input values from the reduction function.
     for (auto Input : S->getReduceFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));

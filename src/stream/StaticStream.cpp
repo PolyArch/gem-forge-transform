@@ -682,6 +682,13 @@ void StaticStream::fuseLoadOps() {
    * Terminate when the frontier is empty.
    */
 
+  // Also check that my size > 4 so that it is benefitial to fuse.
+  if (this->getMemElementSize() <= 4) {
+    LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as MyMemElementSize "
+                            << this->getMemElementSize() << " too small.\n");
+    return;
+  }
+
   // Helper fundtion to check all users are instructions from the same BB.
   auto AreUserInstsFromSameBB = [this](const llvm::Instruction *Inst) -> bool {
     for (auto User : Inst->users()) {

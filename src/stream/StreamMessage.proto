@@ -87,6 +87,8 @@ message StaticStreamComputeInfo {
   // Value dependence.
   repeated StreamId value_base_streams = 6;
   repeated StreamId value_dep_streams = 7;
+  // This stream reduce from 0.
+  bool reduce_from_zero = 16;
 }
 
 message StaticStreamInfo {
