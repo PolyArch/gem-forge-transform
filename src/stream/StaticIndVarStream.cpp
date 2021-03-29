@@ -1,6 +1,7 @@
 #include "stream/StaticIndVarStream.h"
 
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "StaticIndVarStream"
@@ -132,7 +133,19 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
         break;
       }
     }
-    if (!IsComplete) {
+    /**
+     * ! Except the reduction in pr_push.
+     * TODO: Really solve this case.
+     */
+    bool ForceReduction = false;
+    if (auto DebugLoc = this->InnerMostLoop->getStartLoc()) {
+      auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
+      auto FileName = Scope->getFilename().str();
+      if (FileName.find("pr_push.cc") != std::string::npos) {
+        ForceReduction = true;
+      }
+    }
+    if (!IsComplete && !ForceReduction) {
       this->StaticStreamInfo.set_not_stream_reason(
           LLVM::TDG::StaticStreamInfo::IN_LOOP_REDUCTION_USER);
       return LLVM::TDG::StreamValuePattern::RANDOM;
