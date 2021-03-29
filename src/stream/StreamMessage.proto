@@ -75,6 +75,7 @@ message ExecFuncInfo {
   enum ComputeOp {
     UNKNOWN = 0;
     FLOAT_ADD = 1;
+    INT_ADD = 2;
   }
 }
 

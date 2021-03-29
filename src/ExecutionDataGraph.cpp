@@ -386,6 +386,13 @@ llvm::Value *ExecutionDataGraph::generateTailAtomicCmpXchg(
       }
       break;
     }
+    case llvm::Instruction::Add: {
+      if (ComputeInst->getType()->isIntegerTy()) {
+        // So far we just support float addition.
+        Op = ::LLVM::TDG::ExecFuncInfo_ComputeOp_INT_ADD;
+      }
+      break;
+    }
     }
     return Op;
   }
