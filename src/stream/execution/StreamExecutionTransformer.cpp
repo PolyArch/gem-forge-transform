@@ -1621,7 +1621,7 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
         auto StartSCEV = AddRecSCEV->getStart();
         CurrentSCEV = StartSCEV;
       } else {
-        llvm::errs() << "Cannot handle this LoopVariant SCEV:";
+        llvm::errs() << "Cannot handle this LoopVariant SCEV: ";
         CurrentSCEV->print(llvm::errs());
         llvm::errs() << '\n';
         assert(false && "Cannot handle this LoopVariant SCEV.");

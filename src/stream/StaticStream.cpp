@@ -538,6 +538,11 @@ void StaticStream::analyzeIsTripCountFixed() const {
         this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
       continue;
     } else {
+      LLVM_DEBUG({
+        llvm::dbgs() << "Unknown TripCount ";
+        this->SE->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
       this->StaticStreamInfo.set_is_trip_count_fixed(false);
       return;
     }

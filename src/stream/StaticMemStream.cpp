@@ -28,8 +28,8 @@ StaticMemStream::StaticMemStream(const llvm::Instruction *_Inst,
   this->AddrDG = std::make_unique<StreamDataGraph>(
       this->ConfigureLoop, Utils::getMemAddrValue(this->Inst), IsInductionVar);
 
-  // StoreStream always has no core user.
   if (llvm::isa<llvm::StoreInst>(this->Inst)) {
+    // StoreStream always has no core user.
     this->StaticStreamInfo.set_no_core_user(true);
   }
 }
@@ -52,6 +52,20 @@ void StaticMemStream::initializeMetaGraphConstruction(
 }
 
 void StaticMemStream::analyzeIsCandidate() {
+
+  /**
+   * Hack: At this point, we know an AtomicStream has ValueDG or not.
+   * If not, we mark NoCoreUser.
+   * TODO: Find a better place to do this.
+   */
+
+  if (llvm::isa<llvm::AtomicCmpXchgInst>(this->Inst) ||
+      llvm::isa<llvm::AtomicRMWInst>(this->Inst)) {
+    if (!this->ValueDG) {
+      this->StaticStreamInfo.set_no_core_user(true);
+    }
+  }
+
   /**
    * So far only look at inner most loop.
    * Ignore streams in remainder/epilogue loop.
