@@ -7,9 +7,6 @@
 #include "llvm/Transforms/Utils/LoopUtils.h"
 
 #define DEBUG_TYPE "LoopUtils"
-#if !defined(LLVM_DEBUG) && defined(DEBUG)
-#define LLVM_DEBUG DEBUG
-#endif
 
 /**
  * Determine if the static inst is the head of a loop.
@@ -38,8 +35,10 @@ const std::list<std::pair<std::string, std::string>>
     LoopUtils::SingleExitFunctions{
         // From GapGraph SSSP.
         {"sssp.cc", "RelaxEdges"},
+        {"sssp_check.cc", "RelaxEdges"},
         // From GapGraph BFS_PUSH
         {"bfs_push.cc", ".omp_outlined."},
+        {"bfs_push_check.cc", ".omp_outlined."},
     };
 
 std::unordered_map<const llvm::Loop *, bool>
