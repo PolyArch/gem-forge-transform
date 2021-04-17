@@ -26,15 +26,13 @@ typedef float Value;
 
 #define N 2 * 1024 * 1024
 
-__attribute__((noinline)) Value foo(Value *a, Value *b)
-{
+__attribute__((noinline)) Value foo(Value *a, Value *b) {
   Value ret = 0.0f;
 #pragma omp parallel
   {
     __m512 valS = _mm512_set1_ps(0.0f);
 #pragma omp for schedule(static)
-    for (int i = 0; i < N; i += 16)
-    {
+    for (int i = 0; i < N; i += 16) {
       __m512 valA = _mm512_load_ps(a + i);
       __m512 valB = _mm512_load_ps(b + i);
       __m512 valM = _mm512_mul_ps(valA, valB);
@@ -49,12 +47,10 @@ __attribute__((noinline)) Value foo(Value *a, Value *b)
 #define CACHE_BLOCK_SIZE 64
 #define PAGE_SIZE (4 * 1024)
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 
   int numThreads = 1;
-  if (argc == 2)
-  {
+  if (argc == 2) {
     numThreads = atoi(argv[1]);
   }
   printf("Number of Threads: %d.\n", numThreads);
@@ -69,29 +65,27 @@ int main(int argc, char *argv[])
   int numPages = (totalBytes + PAGE_SIZE - 1) / PAGE_SIZE;
   int *idx = (int *)aligned_alloc(CACHE_BLOCK_SIZE, numPages * sizeof(int));
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-  for (int i = 0; i < numPages; ++i)
-  {
+  for (int i = 0; i < numPages; ++i) {
     idx[i] = i;
   }
 #ifdef RANDOMIZE
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-  for (int j = numPages - 1; j > 0; --j)
-  {
+  for (int j = numPages - 1; j > 0; --j) {
     int i = (int)(((float)(rand()) / (float)(RAND_MAX)) * j);
     int tmp = idx[i];
     idx[i] = idx[j];
     idx[j] = tmp;
   }
 #endif
-  Value *Buffer = (Value *)aligned_alloc(CACHE_BLOCK_SIZE, numPages * PAGE_SIZE);
+  Value *Buffer =
+      (Value *)aligned_alloc(CACHE_BLOCK_SIZE, numPages * PAGE_SIZE);
   Value *A = Buffer + 0;
   Value *B = Buffer + N + (OFFSET_BYTES / sizeof(Value));
 
   // Now we touch all the pages according to the index.
   int elementsPerPage = PAGE_SIZE / sizeof(Value);
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-  for (int i = 0; i < numPages; i++)
-  {
+  for (int i = 0; i < numPages; i++) {
     int pageIdx = idx[i];
     int elementIdx = pageIdx * elementsPerPage;
     volatile Value v = Buffer[elementIdx];
@@ -99,8 +93,7 @@ int main(int argc, char *argv[])
 
   // Initialize the array. We avoid AVX since we only have partial AVX support.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-  for (int i = 0; i < N; i++)
-  {
+  for (int i = 0; i < N; i++) {
     A[i] = i;
     B[i] = i % 3;
   }
@@ -108,15 +101,13 @@ int main(int argc, char *argv[])
   gf_detail_sim_start();
 #ifdef WARM_CACHE
   // This should warm up the cache.
-  for (long long i = 0; i < N; i += CACHE_BLOCK_SIZE / sizeof(Value))
-  {
+  for (long long i = 0; i < N; i += CACHE_BLOCK_SIZE / sizeof(Value)) {
     volatile Value x = A[i];
     volatile Value y = B[i];
   }
   // Start the threads.
 #pragma omp parallel for schedule(static)
-  for (int tid = 0; tid < numThreads; ++tid)
-  {
+  for (int tid = 0; tid < numThreads; ++tid) {
     volatile Value x = A[tid];
   }
 #endif
@@ -131,13 +122,11 @@ int main(int argc, char *argv[])
 
 #ifdef CHECK
   Value expected = 0;
-  for (int i = 0; i < N; i += STRIDE)
-  {
+  for (int i = 0; i < N; i += STRIDE) {
     expected += A[i] * B[i];
   }
   printf("Computed = %f, Expected = %f.\n", computed, expected);
-  if ((fabs(computed - expected) / expected) > 0.01f)
-  {
+  if ((fabs(computed - expected) / expected) > 0.01f) {
     gf_panic();
   }
 #endif

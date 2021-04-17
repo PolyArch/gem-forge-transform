@@ -11,7 +11,7 @@
 
 typedef int Value;
 
-#define CHECK
+// #define CHECK
 #define WARM_CACHE
 
 const int HistogramSize = 256;

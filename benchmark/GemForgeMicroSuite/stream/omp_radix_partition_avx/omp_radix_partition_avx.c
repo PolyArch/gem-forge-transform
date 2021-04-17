@@ -167,7 +167,7 @@ __attribute__((noinline)) Value foo(Value *a, HistT *local_histograms,
 }
 
 // 65536*8 is 512kB.
-const int64_t N = 48 * 1024 * 1024 / sizeof(Value);
+const int64_t N = 24 * 1024 * 1024 / sizeof(Value);
 // const int64_t N = 1 * 1024 / sizeof(Value);
 
 HistT expected_pos[HistogramSize];

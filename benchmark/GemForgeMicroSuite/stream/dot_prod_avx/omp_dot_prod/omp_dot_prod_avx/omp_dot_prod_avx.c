@@ -15,14 +15,14 @@ typedef float Value;
 // #define CHECK
 #define WARM_CACHE
 
-#define N 2*1024*1024
+#define N 2 * 1024 * 1024
 
 __attribute__((noinline)) Value foo(Value *a, Value *b) {
   Value ret = 0.0f;
 #pragma omp parallel
   {
     __m512 valS = _mm512_set1_ps(0.0f);
-#pragma omp for schedule(static)
+#pragma omp for nowait schedule(static)
     for (int i = 0; i < N; i += 16) {
       __m512 valA = _mm512_load_ps(a + i);
       __m512 valB = _mm512_load_ps(b + i);
@@ -36,6 +36,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b) {
 }
 
 #define CACHE_BLOCK_SIZE 64
+#define PAGE_SIZE (4 * 1024)
 
 int main(int argc, char *argv[]) {
 
@@ -49,8 +50,16 @@ int main(int argc, char *argv[]) {
   omp_set_num_threads(numThreads);
   omp_set_schedule(omp_sched_static, 0);
 
-  Value *A = (Value *)aligned_alloc(CACHE_BLOCK_SIZE, N * sizeof(Value));
-  Value *B = (Value *)aligned_alloc(CACHE_BLOCK_SIZE, N * sizeof(Value));
+  Value *Buffer =
+      (Value *)aligned_alloc(CACHE_BLOCK_SIZE, 2 * N * sizeof(Value));
+  Value *A = Buffer + 0;
+  Value *B = Buffer + N;
+// Initialize separately so that their physical address is not interleaved
+  int elementsPerPage = PAGE_SIZE / sizeof(Value);
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+  for (int i = 0; i < 2 * N; i += elementsPerPage) {
+    volatile Value v = Buffer[i];
+  }
 // We avoid AVX since we only have partial AVX support.
 #pragma clang loop vectorize(disable)
   for (int i = 0; i < N; ++i) {
