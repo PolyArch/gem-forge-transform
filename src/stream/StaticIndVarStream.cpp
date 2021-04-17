@@ -175,6 +175,14 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
   if (!StreamPassEnableReduce) {
     return false;
   }
+  if (Utils::getDemangledFunctionName(this->Inst->getFunction()) == "sumROI") {
+    /**
+     * ! Force no reduction in srad_v2 sumROI.
+     * This is because so far we only support reduction in the inner most loop
+     * level, this this breaks our stream chosen scheme.
+     */
+    return false;
+  }
   LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsReduction " << this->formatName()
                           << '\n');
   if (!this->NonEmptyComputePath) {
