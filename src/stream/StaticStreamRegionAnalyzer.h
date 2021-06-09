@@ -24,6 +24,9 @@ public:
     return this->InstStaticStreamMap;
   }
 
+  CachedBBPredicateDataGraph *getBBPredDG() { return this->CachedBBPredDG; }
+  const llvm::PostDominatorTree *getPostDominatorTree() { return this->PDT; }
+
   /**
    * This function finalizes the transformation plan.
    * 1. Choose streams based on the ChooseStrategy, and build the chosen stream
@@ -86,9 +89,10 @@ public:
    * Nest the inner region into outer region.
    * We also reserve a special RegionStreamId for ConfigureFunc input.
    */
-  void
-  nestRegionInto(const llvm::Loop *InnerLoop, const llvm::Loop *OuterLoop,
-                 std::unique_ptr<::LLVM::TDG::ExecFuncInfo> ConfigFuncInfo);
+  void nestRegionInto(const llvm::Loop *InnerLoop, const llvm::Loop *OuterLoop,
+                      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> ConfigFuncInfo,
+                      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
+                      bool PredicateRet);
 
 protected:
   llvm::Loop *TopLoop;

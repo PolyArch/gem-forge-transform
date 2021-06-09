@@ -43,7 +43,9 @@ public:
 
   void addNestConfigureInfo(
       StreamConfigureLoopInfo *NestConfigureInfo,
-      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo);
+      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo,
+      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
+      bool PredicateRet);
 
 private:
   const std::string Path;
@@ -57,6 +59,8 @@ private:
    */
   std::vector<StreamConfigureLoopInfo *> NestConfigureInfos;
   std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo;
+  std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestPredFuncInfo;
+  bool NestPredRet;
 };
 
 #endif

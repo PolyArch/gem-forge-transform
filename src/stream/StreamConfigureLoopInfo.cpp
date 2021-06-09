@@ -32,8 +32,13 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
         NestConfigureInfo->getRelativePath());
   }
   if (this->NestConfigureFuncInfo) {
-    *ProtobufStreamRegion.mutable_nest_config_func() = *this->NestConfigureFuncInfo;
+    *ProtobufStreamRegion.mutable_nest_config_func() =
+        *this->NestConfigureFuncInfo;
     ProtobufStreamRegion.set_is_nest(true);
+    if (this->NestPredFuncInfo) {
+      *ProtobufStreamRegion.mutable_nest_pred_func() = *this->NestPredFuncInfo;
+      ProtobufStreamRegion.set_nest_pred_ret(this->NestPredRet);
+    }
   }
   Gem5ProtobufSerializer Serializer(this->Path);
   Serializer.serialize(ProtobufStreamRegion);
@@ -42,8 +47,12 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
 
 void StreamConfigureLoopInfo::addNestConfigureInfo(
     StreamConfigureLoopInfo *NestConfigureInfo,
-    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo) {
+    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo,
+    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
+    bool PredicateRet) {
   assert(!NestConfigureInfo->NestConfigureFuncInfo && "Region already nested.");
   NestConfigureInfo->NestConfigureFuncInfo = std::move(NestConfigureFuncInfo);
+  NestConfigureInfo->NestPredFuncInfo = std::move(PredFuncInfo);
+  NestConfigureInfo->NestPredRet = PredicateRet;
   this->NestConfigureInfos.push_back(NestConfigureInfo);
 }

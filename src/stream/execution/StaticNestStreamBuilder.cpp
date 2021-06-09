@@ -146,11 +146,71 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
   }
 
   /**
+   * We still need to check the conditional branch.
+   */
+  auto OuterHeaderBB = OuterLoop->getHeader();
+  auto InnerHeaderBB = InnerLoop->getHeader();
+  auto BBPredDG = Analyzer->getBBPredDG()->getBBPredicateDataGraph(
+      OuterLoop, OuterHeaderBB);
+  bool IsPredicated = false;
+  bool PredicateRet = false;
+  auto PredFuncInfo = std::make_unique<::LLVM::TDG::ExecFuncInfo>();
+  std::vector<const llvm::Value *> PredInputValues;
+  if (BBPredDG->isValid() && (BBPredDG->getTrueBB() == InnerHeaderBB ||
+                              BBPredDG->getFalseBB() == InnerHeaderBB)) {
+    /**
+     * This is predicated, check that all inputs are from streams.
+     * And construct the input values and FuncInfo.
+     */
+    PredFuncInfo->set_name(BBPredDG->getFuncName());
+    PredFuncInfo->set_type(::LLVM::TDG::DataType::INTEGER);
+    for (auto Input : BBPredDG->getInputs()) {
+      auto Inst = llvm::dyn_cast<llvm::Instruction>(Input);
+      auto PredFuncArg = PredFuncInfo->add_args();
+      if (!Inst || !OuterLoop->contains(Inst)) {
+        // This is a non-stream input.
+        PredFuncArg->set_is_stream(false);
+        PredFuncArg->set_type(StaticStream::translateToProtobufDataType(
+            this->Transformer->ClonedDataLayout.get(), Input->getType()));
+        PredInputValues.push_back(this->Transformer->getClonedValue(Input));
+        continue;
+      }
+      auto S = Analyzer->getChosenStreamByInst(Inst);
+      if (!S || S->ConfigureLoop != OuterLoop || !S->isChosen()) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "[Nest] Predication has non-stream load input "
+                   << Utils::formatLLVMInst(Inst) << ".\n");
+        return false;
+      }
+      PredFuncArg->set_is_stream(true);
+      PredFuncArg->set_stream_id(S->StreamId);
+      PredFuncArg->set_type(StaticStream::translateToProtobufDataType(
+          this->Transformer->ClonedDataLayout.get(), Inst->getType()));
+    }
+    IsPredicated = true;
+    if (BBPredDG->getTrueBB() == InnerHeaderBB) {
+      PredicateRet = true;
+    } else {
+      PredicateRet = false;
+    }
+  }
+  if (!IsPredicated && !Analyzer->getPostDominatorTree()->dominates(
+                           InnerHeaderBB, OuterHeaderBB)) {
+    LLVM_DEBUG(llvm::dbgs() << "[Nest] Is not predicated or post-dominated.\n");
+    return false;
+  }
+  if (!IsPredicated) {
+    PredFuncInfo = nullptr;
+    PredInputValues.clear();
+  }
+
+  /**
    * Everything checks out, we can try to transform the program.
    * 1. Insert this configure function in the cloned module.
    * 2. Mark all the StreamConfig/Input/Ready/End pending removed.
    * 3. Insert any additional input for the configure function.
    * 4. Remember the ExecFunc in the StreamRegionConfigureInfo.
+   * 5. Do the same thing for the predicate function.
    */
 
   NestConfigureDataGraph->generateFunction(
@@ -174,10 +234,10 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
     }
   }
   // TODO: For now I keep the StreamEnd for simplicity
-  for (auto StreamEndInst :
-       this->Transformer->getClonedEndInstsForLoop(InnerLoop)) {
-    // this->Transformer->PendingRemovedInsts.insert(StreamEndInst);
-  }
+  // for (auto StreamEndInst :
+  //      this->Transformer->getClonedEndInstsForLoop(InnerLoop)) {
+  //   this->Transformer->PendingRemovedInsts.insert(StreamEndInst);
+  // }
 
   auto ClonedOuterConfigureBB =
       this->Transformer->getClonedConfigureBBForLoop(OuterLoop);
@@ -203,9 +263,17 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
         ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId,
         const_cast<llvm::Value *>(InputValue));
   }
+  // Push input for the predication.
+  for (auto InputValue : PredInputValues) {
+    this->Transformer->addStreamInput(
+        Builder,
+        ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId,
+        const_cast<llvm::Value *>(InputValue));
+  }
 
   Analyzer->nestRegionInto(InnerLoop, OuterLoop,
-                           std::move(NestConfigureFuncInfo));
+                           std::move(NestConfigureFuncInfo),
+                           std::move(PredFuncInfo), PredicateRet);
 
   return true;
 }

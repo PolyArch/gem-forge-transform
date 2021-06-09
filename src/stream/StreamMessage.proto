@@ -212,7 +212,9 @@ message StreamRegion {
   repeated uint64 coalesced_stream_ids = 9;
   repeated string nest_region_relative_paths = 10;
   ExecFuncInfo nest_config_func = 11;
-  bool is_nest = 12;
+  ExecFuncInfo nest_pred_func = 12;
+  bool nest_pred_ret = 13;
+  bool is_nest = 14;
 }
 
 // All the configured stream region in one place.

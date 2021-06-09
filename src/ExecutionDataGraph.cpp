@@ -4,6 +4,30 @@
 
 #define DEBUG_TYPE "ExecutionDataGraph"
 
+namespace {
+// A utility function copied from upstream llvm.
+bool getIntrinsicSignature(llvm::Function *F,
+                           llvm::SmallVectorImpl<llvm::Type *> &ArgTys) {
+  llvm::Intrinsic::ID ID = F->getIntrinsicID();
+  if (!ID)
+    return false;
+
+  llvm::SmallVector<llvm::Intrinsic::IITDescriptor, 8> Table;
+  llvm::Intrinsic::getIntrinsicInfoTableEntries(ID, Table);
+  llvm::ArrayRef<llvm::Intrinsic::IITDescriptor> TableRef = Table;
+
+  if (llvm::Intrinsic::matchIntrinsicSignature(F->getFunctionType(), TableRef,
+                                               ArgTys) !=
+      llvm::Intrinsic::MatchIntrinsicTypesResult::MatchIntrinsicTypes_Match) {
+    return false;
+  }
+  if (llvm::Intrinsic::matchIntrinsicVarArg(F->getFunctionType()->isVarArg(),
+                                            TableRef))
+    return false;
+  return true;
+}
+} // namespace
+
 void ExecutionDataGraph::extendTailAtomicInst(
     const llvm::Instruction *AtomicInst,
     const std::vector<const llvm::Instruction *> &FusedLoadOps) {
@@ -269,9 +293,16 @@ void ExecutionDataGraph::translate(std::unique_ptr<llvm::Module> &Module,
   if (auto NewCallInst = llvm::dyn_cast<llvm::CallInst>(NewInst)) {
     assert(NewCallInst->getIntrinsicID() != llvm::Intrinsic::not_intrinsic &&
            "NonIntrinsicCall in ExecutionDataGraph.");
+    LLVM_DEBUG({
+      llvm::dbgs() << "Fix Intrinsic";
+      NewInst->print(llvm::dbgs());
+      llvm::dbgs() << '\n';
+    });
+    llvm::SmallVector<llvm::Type *, 4> OverloadedTypes;
+    getIntrinsicSignature(NewCallInst->getCalledFunction(), OverloadedTypes);
     // Translate the IntrinsicCallee.
     auto NewCallee = llvm::Intrinsic::getDeclaration(
-        Module.get(), NewCallInst->getIntrinsicID());
+        Module.get(), NewCallInst->getIntrinsicID(), OverloadedTypes);
     NewCallInst->setCalledFunction(NewCallee);
   }
   // Insert with the same name.

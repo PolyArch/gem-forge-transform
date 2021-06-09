@@ -432,7 +432,7 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
 
       bool Coalesced = false;
       if (AddrSCEV) {
-        LLVM_DEBUG(llvm::dbgs() << "AddrSCEV: "; AddrSCEV->dump());
+        LLVM_DEBUG(llvm::dbgs() << "== AddrSCEV: "; AddrSCEV->dump());
         for (auto &Group : CoalescedGroup) {
           auto TargetS = Group.front().first;
           if (TargetS->BaseStepRootStreams != S->BaseStepRootStreams) {
@@ -447,20 +447,20 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
           }
           // Check the scev.
           LLVM_DEBUG(llvm::dbgs()
-                     << "TargetStream: " << TargetS->formatName() << '\n');
-          LLVM_DEBUG(llvm::dbgs() << "TargetAddrSCEV: ";
+                     << "== TargetStream: " << TargetS->formatName() << '\n');
+          LLVM_DEBUG(llvm::dbgs() << "== TargetAddrSCEV: ";
                      TargetAddrSCEV->dump());
           auto MinusSCEV = this->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
-          LLVM_DEBUG(llvm::dbgs() << "MinusSCEV: "; MinusSCEV->dump());
+          LLVM_DEBUG(llvm::dbgs() << "== MinusSCEV: "; MinusSCEV->dump());
           auto OffsetSCEV = llvm::dyn_cast<llvm::SCEVConstant>(MinusSCEV);
           if (!OffsetSCEV) {
             // Not constant offset.
             continue;
           }
-          LLVM_DEBUG(llvm::dbgs() << "OffsetSCEV: "; OffsetSCEV->dump());
+          LLVM_DEBUG(llvm::dbgs() << "== OffsetSCEV: "; OffsetSCEV->dump());
           int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
           LLVM_DEBUG(llvm::dbgs()
-                     << "Coalesced, offset: " << Offset
+                     << "== Coalesced, offset: " << Offset
                      << " with stream: " << TargetS->formatName() << '\n');
           Coalesced = true;
           Group.emplace_back(S, Offset);
@@ -469,7 +469,7 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
       }
 
       if (!Coalesced) {
-        LLVM_DEBUG(llvm::dbgs() << "New coalesce group\n");
+        LLVM_DEBUG(llvm::dbgs() << "== New coalesce group\n");
         CoalescedGroup.emplace_back();
         CoalescedGroup.back().emplace_back(S, 0);
       }
@@ -1409,9 +1409,12 @@ void StaticStreamRegionAnalyzer::dumpConfigurePlan() {
 
 void StaticStreamRegionAnalyzer::nestRegionInto(
     const llvm::Loop *InnerLoop, const llvm::Loop *OuterLoop,
-    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> ConfigFuncInfo) {
+    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> ConfigFuncInfo,
+    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
+    bool PredicateRet) {
   auto &InnerConfigInfo = this->getConfigureLoopInfo(InnerLoop);
   auto &OuterConfigInfo = this->getConfigureLoopInfo(OuterLoop);
   OuterConfigInfo.addNestConfigureInfo(&InnerConfigInfo,
-                                       std::move(ConfigFuncInfo));
+                                       std::move(ConfigFuncInfo),
+                                       std::move(PredFuncInfo), PredicateRet);
 }

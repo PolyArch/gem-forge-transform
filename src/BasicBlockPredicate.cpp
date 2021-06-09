@@ -128,14 +128,31 @@ void BBPredicateDataGraph::constructDataGraph() {
      */
     this->Inputs.insert(this->Inputs.end(), UnsortedInputs.begin(),
                         UnsortedInputs.end());
-    // Check if we predicate the True/False BB.
-    if (TrueBB->getSinglePredecessor() == this->BB) {
+    /**
+     * Check if we are the only predecessor except the BB itself.
+     */
+    auto IsPredicated = [this](const llvm::BasicBlock *BB) -> bool {
+      if (BB->getSinglePredecessor() == this->BB) {
+        return true;
+      }
+      for (auto Predecessor : llvm::predecessors(BB)) {
+        if (Predecessor == BB) {
+          continue;
+        }
+        if (Predecessor != this->BB) {
+          // This BB has other predecessors, return false.
+          return false;
+        }
+      }
+      return true;
+    };
+    if (IsPredicated(TrueBB)) {
       LLVM_DEBUG(llvm::dbgs()
                  << "BBPredDG Add TrueBB: " << Utils::formatLLVMBB(TrueBB)
                  << " to " << Utils::formatLLVMBB(this->BB) << '\n');
       this->TrueBB = TrueBB;
     }
-    if (FalseBB->getSinglePredecessor() == this->BB) {
+    if (IsPredicated(FalseBB)) {
       LLVM_DEBUG(llvm::dbgs()
                  << "BBPredDG Add FalseBB: " << Utils::formatLLVMBB(FalseBB)
                  << " to " << Utils::formatLLVMBB(this->BB) << '\n');
