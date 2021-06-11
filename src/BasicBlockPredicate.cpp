@@ -132,15 +132,25 @@ void BBPredicateDataGraph::constructDataGraph() {
      * Check if we are the only predecessor except the BB itself.
      */
     auto IsPredicated = [this](const llvm::BasicBlock *BB) -> bool {
-      if (BB->getSinglePredecessor() == this->BB) {
-        return true;
+      return BB->getSinglePredecessor() == this->BB;
+    };
+    auto IsPredicatedLoopHeader = [this](const llvm::BasicBlock *BB) -> bool {
+      llvm::Loop *BBLoop = nullptr;
+      for (auto SubLoop : this->Loop->getSubLoops()) {
+        if (SubLoop->getHeader() == BB) {
+          BBLoop = SubLoop;
+          break;
+        }
+      }
+      if (!BBLoop) {
+        return false;
       }
       for (auto Predecessor : llvm::predecessors(BB)) {
-        if (Predecessor == BB) {
+        if (BBLoop->contains(Predecessor)) {
           continue;
         }
         if (Predecessor != this->BB) {
-          // This BB has other predecessors, return false.
+          // This BB has other predecessors from loop outside, return false.
           return false;
         }
       }
@@ -157,6 +167,18 @@ void BBPredicateDataGraph::constructDataGraph() {
                  << "BBPredDG Add FalseBB: " << Utils::formatLLVMBB(FalseBB)
                  << " to " << Utils::formatLLVMBB(this->BB) << '\n');
       this->FalseBB = FalseBB;
+    }
+    if (IsPredicatedLoopHeader(TrueBB)) {
+      LLVM_DEBUG(llvm::dbgs() << "BBPredDG Add TrueLoopHeaderBB: "
+                              << Utils::formatLLVMBB(TrueBB) << " to "
+                              << Utils::formatLLVMBB(this->BB) << '\n');
+      this->TrueLoopHeaderBB = TrueBB;
+    }
+    if (IsPredicatedLoopHeader(FalseBB)) {
+      LLVM_DEBUG(llvm::dbgs() << "BBPredDG Add FalseLoopHeaderBB: "
+                              << Utils::formatLLVMBB(FalseBB) << " to "
+                              << Utils::formatLLVMBB(this->BB) << '\n');
+      this->FalseLoopHeaderBB = FalseBB;
     }
     this->HasCircle = this->detectCircle();
   } else {

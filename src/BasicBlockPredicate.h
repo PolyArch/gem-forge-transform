@@ -26,6 +26,12 @@ public:
   bool isValid() const { return this->IsValid; }
   const llvm::BasicBlock *getTrueBB() const { return this->TrueBB; }
   const llvm::BasicBlock *getFalseBB() const { return this->FalseBB; }
+  const llvm::BasicBlock *getTrueLoopHeaderBB() const {
+    return this->TrueLoopHeaderBB;
+  }
+  const llvm::BasicBlock *getFalseLoopHeaderBB() const {
+    return this->FalseLoopHeaderBB;
+  }
   const std::unordered_set<const llvm::LoadInst *> &getInputLoads() const {
     return this->InputLoads;
   }
@@ -37,6 +43,8 @@ private:
   bool IsValid = false;
   const llvm::BasicBlock *TrueBB = nullptr;
   const llvm::BasicBlock *FalseBB = nullptr;
+  const llvm::BasicBlock *TrueLoopHeaderBB = nullptr;
+  const llvm::BasicBlock *FalseLoopHeaderBB = nullptr;
   std::unordered_set<const llvm::LoadInst *> InputLoads;
   std::unordered_set<const llvm::PHINode *> InputPHIs;
 

@@ -156,8 +156,26 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
   bool PredicateRet = false;
   auto PredFuncInfo = std::make_unique<::LLVM::TDG::ExecFuncInfo>();
   std::vector<const llvm::Value *> PredInputValues;
-  if (BBPredDG->isValid() && (BBPredDG->getTrueBB() == InnerHeaderBB ||
-                              BBPredDG->getFalseBB() == InnerHeaderBB)) {
+  LLVM_DEBUG({
+    llvm::dbgs() << "[Nest] BBPredDG Valid " << BBPredDG->isValid() << ".\n";
+    if (BBPredDG->isValid()) {
+      auto TrueLoopHeaderBB = BBPredDG->getTrueLoopHeaderBB();
+      llvm::dbgs() << "[Nest] BBPredDG TrueLoopHeaderBB "
+                   << (TrueLoopHeaderBB ? Utils::formatLLVMBB(TrueLoopHeaderBB)
+                                        : "Null")
+                   << ".\n";
+      auto FalseLoopHeaderBB = BBPredDG->getFalseLoopHeaderBB();
+      llvm::dbgs() << "[Nest] BBPredDG FalseLoopHeaderBB "
+                   << (FalseLoopHeaderBB
+                           ? Utils::formatLLVMBB(FalseLoopHeaderBB)
+                           : "Null")
+                   << ".\n";
+    }
+  });
+
+  if (BBPredDG->isValid() &&
+      (BBPredDG->getTrueLoopHeaderBB() == InnerHeaderBB ||
+       BBPredDG->getFalseLoopHeaderBB() == InnerHeaderBB)) {
     /**
      * This is predicated, check that all inputs are from streams.
      * And construct the input values and FuncInfo.
@@ -188,7 +206,7 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
           this->Transformer->ClonedDataLayout.get(), Inst->getType()));
     }
     IsPredicated = true;
-    if (BBPredDG->getTrueBB() == InnerHeaderBB) {
+    if (BBPredDG->getTrueLoopHeaderBB() == InnerHeaderBB) {
       PredicateRet = true;
     } else {
       PredicateRet = false;
@@ -196,7 +214,9 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
   }
   if (!IsPredicated && !Analyzer->getPostDominatorTree()->dominates(
                            InnerHeaderBB, OuterHeaderBB)) {
-    LLVM_DEBUG(llvm::dbgs() << "[Nest] Is not predicated or post-dominated.\n");
+    LLVM_DEBUG(llvm::dbgs()
+               << "[Nest] Is not predicated or post-dominated. BBPredDG Valid "
+               << BBPredDG->isValid() << ".\n");
     return false;
   }
   if (!IsPredicated) {
