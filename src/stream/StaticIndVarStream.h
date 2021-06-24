@@ -85,10 +85,26 @@ private:
       const ComputeMetaNode *FirstNonEmptyComputeMNode);
 
   /**
-   * Analyze if this a simple reduction stream for a single load.
+   * Analyze if this a simple reduction stream for load.
    */
   bool analyzeIsReductionFromComputePath(
       const ComputeMetaNode *FirstNonEmptyComputeMNode) const;
+
+  /**
+   * Analyze if this is a simple pointer-chase stream for a single load.
+   */
+  bool analyzeIsPointerChaseFromComputePath(
+      const ComputeMetaNode *FirstNonEmptyComputeMNode) const;
+
+  /**
+   * Build the ReduceDG.
+   */
+  void buildReduceDG(const ComputeMetaNode *FirstNonEmptyComputeMNode);
+
+  /**
+   * Check if ReduceDG is complete.
+   */
+  bool checkReduceDGComplete();
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override {
     // No computation required.

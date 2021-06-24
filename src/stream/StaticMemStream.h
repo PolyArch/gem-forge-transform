@@ -49,6 +49,11 @@ private:
       const std::unordered_set<const llvm::SCEV *> &InputSCEVs);
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override;
+
+  /**
+   * Helper function to check if this is a DirectMemStream.
+   */
+  bool isDirectMemStream() const;
 };
 
 #endif

@@ -616,6 +616,10 @@ bool StaticStream::ComputeMetaNode::isEmpty() const {
   if (llvm::isa<llvm::ConstantData>(this->RootValue)) {
     return false;
   }
+  // If this is a load, this is not empty.
+  if (llvm::isa<llvm::LoadInst>(this->RootValue)) {
+    return false;
+  }
   return true;
 }
 

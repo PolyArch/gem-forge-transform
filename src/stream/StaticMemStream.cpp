@@ -194,7 +194,7 @@ void StaticMemStream::analyzeIsCandidate() {
     return;
   }
 
-  if (this->LoadBaseStreams.empty()) {
+  if (this->isDirectMemStream()) {
     // For direct MemStream we want to enforce AddRecSCEV.
     if (!llvm::isa<llvm::SCEVAddRecExpr>(SCEV)) {
       LLVM_DEBUG(llvm::dbgs()
@@ -367,4 +367,19 @@ void StaticMemStream::finalizePattern() {
       LoopUtils::countPossiblePath(this->InnerMostLoop));
   this->StaticStreamInfo.set_config_loop_possible_path(
       LoopUtils::countPossiblePath(this->ConfigureLoop));
+}
+
+bool StaticMemStream::isDirectMemStream() const {
+  if (!this->LoadBaseStreams.empty()) {
+    // This is IndirectStream.
+    return false;
+  }
+  if (this->IndVarBaseStreams.size() == 1) {
+    // Check for PointerChase or PrevLoad.
+    auto IVBaseS = *this->IndVarBaseStreams.begin();
+    if (!IVBaseS->BackMemBaseStreams.empty()) {
+      return false;
+    }
+  }
+  return true;
 }

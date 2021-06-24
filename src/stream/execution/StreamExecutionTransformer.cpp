@@ -1373,6 +1373,8 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
       llvm::dbgs() << "None\n";
   });
 
+  const auto ValuePattern = SS->StaticStreamInfo.val_pattern();
+
   if (PHINodeSCEV && llvm::isa<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
     auto PHINodeAddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV);
     auto ClonedPHINodeAddRecSCEV =
@@ -1382,13 +1384,12 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
         ClonedConfigureLoop, ClonedInnerMostLoop, ClonedPHINodeAddRecSCEV,
         InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
         ProtoConfiguration);
-  } else if (SS->StaticStreamInfo.val_pattern() ==
-             ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+  } else if (ValuePattern == ::LLVM::TDG::StreamValuePattern::REDUCTION ||
+             ValuePattern == ::LLVM::TDG::StreamValuePattern::POINTER_CHASE) {
     // Handle reduction stream.
     // Set the IV pattern to reduction, and the stream will fill in AddrFunc
     // info.
-    ProtoConfiguration->set_val_pattern(
-        ::LLVM::TDG::StreamValuePattern::REDUCTION);
+    ProtoConfiguration->set_val_pattern(ValuePattern);
     // Add the input value.
     int NumInitialValues = 0;
     for (int Idx = 0, NumIncoming = PHINode->getNumIncomingValues();
@@ -1397,7 +1398,7 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
       auto IncomingValue = PHINode->getIncomingValue(Idx);
       if (!SS->ConfigureLoop->contains(IncomingBB)) {
         NumInitialValues++;
-        ClonedInputValues.push_back(IncomingValue);
+        ClonedInputValues.push_back(this->getClonedValue(IncomingValue));
       }
     }
     assert(NumInitialValues == 1 &&
@@ -1462,10 +1463,14 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     AddrSCEV->dump();
   });
 
-  if (SS->StaticStreamInfo.val_pattern() ==
-      ::LLVM::TDG::StreamValuePattern::INDIRECT) {
-    // Check if this is indirect stream.
-    LLVM_DEBUG(llvm::dbgs() << "This is Indirect MemStream.\n");
+  auto ValuePattern = SS->StaticStreamInfo.val_pattern();
+
+  if (ValuePattern == ::LLVM::TDG::StreamValuePattern::INDIRECT ||
+      ValuePattern == ::LLVM::TDG::StreamValuePattern::POINTER_CHASE) {
+    /**
+     * Indirect/PointerChase streams are handled similarly.
+     */
+    LLVM_DEBUG(llvm::dbgs() << "This is Indirect/PtrChase MemStream.\n");
     for (auto BaseSS : S->ChosenBaseStreams) {
       if (BaseSS->ConfigureLoop != SS->ConfigureLoop ||
           BaseSS->InnerMostLoop != SS->InnerMostLoop) {
@@ -1473,25 +1478,25 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
                 ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL ||
             BaseSS->StaticStreamInfo.stp_pattern() !=
                 ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
-          llvm::errs() << "Cannot handle indirect streams (mismatch loop, "
-                          "conditional step): \n";
+          llvm::errs()
+              << "Cannot handle Indirect/PtrChase streams (mismatch loop, "
+                 "conditional step): \n";
           llvm::errs() << "Base: " << BaseSS->formatName() << '\n';
           llvm::errs() << "Dep:  " << SS->formatName() << '\n';
-          assert(false && "Mismatch in configure loop for indirect streams.");
+          assert(false &&
+                 "Mismatch in configure loop for Indirect/PtrChase streams.");
         }
       }
     }
     // Set the IV pattern to indirect, and the stream will fill in AddrFunc
     // info.
-    ProtoConfiguration->set_val_pattern(
-        ::LLVM::TDG::StreamValuePattern::INDIRECT);
+    ProtoConfiguration->set_val_pattern(ValuePattern);
     // Handle the addr func input values.
     for (auto Input : SS->getAddrFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
     }
     return;
-  } else if (SS->StaticStreamInfo.val_pattern() ==
-             ::LLVM::TDG::StreamValuePattern::LINEAR) {
+  } else if (ValuePattern == ::LLVM::TDG::StreamValuePattern::LINEAR) {
     if (SS->StaticStreamInfo.stp_pattern() ==
         ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
       if (!llvm::isa<llvm::SCEVAddRecExpr>(AddrSCEV)) {
@@ -1524,6 +1529,10 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   llvm::errs() << "Can't handle this stream " << SS->formatName() << '\n';
   llvm::errs() << "AddrSCEV: ";
   AddrSCEV->print(llvm::errs());
+  llvm::errs() << "ValuePattern: "
+               << ::LLVM::TDG::StreamValuePattern_Name(
+                      SS->StaticStreamInfo.val_pattern())
+               << '\n';
   assert(false && "Can't handle this Addr.");
 }
 

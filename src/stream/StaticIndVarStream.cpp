@@ -88,75 +88,92 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
   }
   if (this->analyzeIsReductionFromComputePath(FirstNonEmptyComputeMNode)) {
     // Let's try to construct the reduction datagraph.
-    // The only IndVarStream should be myself.
-    auto IsIndVarStream = [this](const llvm::PHINode *PHI) -> bool {
-      if (PHI == this->Inst) {
-        return true;
-      }
-      // Otherwise, search in our IVBaseStream.
-      for (auto IVBaseS : this->IndVarBaseStreams) {
-        if (IVBaseS->Inst == PHI) {
-          return true;
-        }
-      }
-      return false;
-    };
-    this->ReduceDG = std::make_unique<StreamDataGraph>(
-        this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue,
-        IsIndVarStream);
-    assert(!this->ReduceDG->hasCircle() && "Circle in ReduceDG.");
-    /**
-     * This stream has the Reduce pattern. However, we don't try to configure
-     * it if we cann't completely remove the computation from the loop, i.e.
-     * there are other users within the loop.
-     */
-    std::unordered_set<const llvm::Instruction *> InstSet = {this->Inst};
-    for (auto ComputeInst : this->ReduceDG->getComputeInsts()) {
-      InstSet.insert(ComputeInst);
-    }
-    bool IsComplete = true;
-    for (auto ClonedInst : InstSet) {
-      for (auto User : ClonedInst->users()) {
-        if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
-          if (!InstSet.count(UserInst) &&
-              this->ConfigureLoop->contains(UserInst)) {
-            LLVM_DEBUG(llvm::dbgs()
-                       << "ReduceStream " << this->formatName()
-                       << " is incomplete due to user " << UserInst->getName()
-                       << " of ComputeInst " << ClonedInst->getName() << '\n');
-            IsComplete = false;
-            break;
-          }
-        }
-      }
-      if (!IsComplete) {
-        break;
-      }
-    }
-    /**
-     * ! Except the reduction in pr_push.
-     * TODO: Really solve this case.
-     */
-    bool ForceReduction = false;
-    if (auto DebugLoc = this->InnerMostLoop->getStartLoc()) {
-      auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
-      auto FileName = Scope->getFilename().str();
-      if (FileName.find("pr_push.cc") != std::string::npos) {
-        ForceReduction = true;
-      }
-    }
-    if (!IsComplete && !ForceReduction) {
-      this->StaticStreamInfo.set_not_stream_reason(
-          LLVM::TDG::StaticStreamInfo::IN_LOOP_REDUCTION_USER);
+    this->buildReduceDG(FirstNonEmptyComputeMNode);
+    if (!this->checkReduceDGComplete()) {
       return LLVM::TDG::StreamValuePattern::RANDOM;
     }
-
     return LLVM::TDG::StreamValuePattern::REDUCTION;
+  } else if (this->analyzeIsPointerChaseFromComputePath(
+                 FirstNonEmptyComputeMNode)) {
+    // PointerChase also has ReduceDG.
+    // For now we don't check if it's complete.
+    this->buildReduceDG(FirstNonEmptyComputeMNode);
+    return LLVM::TDG::StreamValuePattern::POINTER_CHASE;
   }
 
   this->StaticStreamInfo.set_not_stream_reason(
       LLVM::TDG::StaticStreamInfo::RANDOM_PATTERN);
   return LLVM::TDG::StreamValuePattern::RANDOM;
+}
+
+void StaticIndVarStream::buildReduceDG(
+    const ComputeMetaNode *FirstNonEmptyComputeMNode) {
+  // The only IndVarStream should be myself.
+  auto IsIndVarStream = [this](const llvm::PHINode *PHI) -> bool {
+    if (PHI == this->Inst) {
+      return true;
+    }
+    // Otherwise, search in our IVBaseStream.
+    for (auto IVBaseS : this->IndVarBaseStreams) {
+      if (IVBaseS->Inst == PHI) {
+        return true;
+      }
+    }
+    return false;
+  };
+  this->ReduceDG = std::make_unique<StreamDataGraph>(
+      this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue,
+      IsIndVarStream);
+  assert(!this->ReduceDG->hasCircle() && "Circle in ReduceDG.");
+}
+
+bool StaticIndVarStream::checkReduceDGComplete() {
+  /**
+   * This stream has the Reduce pattern. However, we don't try to configure
+   * it if we cann't completely remove the computation from the loop, i.e.
+   * there are other users within the loop.
+   */
+  std::unordered_set<const llvm::Instruction *> InstSet = {this->Inst};
+  for (auto ComputeInst : this->ReduceDG->getComputeInsts()) {
+    InstSet.insert(ComputeInst);
+  }
+  bool IsComplete = true;
+  for (auto ClonedInst : InstSet) {
+    for (auto User : ClonedInst->users()) {
+      if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
+        if (!InstSet.count(UserInst) &&
+            this->ConfigureLoop->contains(UserInst)) {
+          LLVM_DEBUG(llvm::dbgs()
+                     << "ReduceDG for " << this->formatName()
+                     << " is incomplete due to user " << UserInst->getName()
+                     << " of ComputeInst " << ClonedInst->getName() << '\n');
+          IsComplete = false;
+          break;
+        }
+      }
+    }
+    if (!IsComplete) {
+      break;
+    }
+  }
+  /**
+   * ! Except the reduction in pr_push.
+   * TODO: Really solve this case.
+   */
+  bool ForceReduction = false;
+  if (auto DebugLoc = this->InnerMostLoop->getStartLoc()) {
+    auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
+    auto FileName = Scope->getFilename().str();
+    if (FileName.find("pr_push.cc") != std::string::npos) {
+      ForceReduction = true;
+    }
+  }
+  if (!IsComplete && !ForceReduction) {
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::IN_LOOP_REDUCTION_USER);
+    return false;
+  }
+  return true;
 }
 
 bool StaticIndVarStream::analyzeIsReductionFromComputePath(
@@ -252,6 +269,65 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
   return true;
 }
 
+bool StaticIndVarStream::analyzeIsPointerChaseFromComputePath(
+    const ComputeMetaNode *FirstNonEmptyComputeMNode) const {
+
+  /**
+   * We consider it a pointer-chase stream iff.
+   * 1. No EmptyComputePath.
+   * 2. Have single LoadStream input:
+   *    a. LoadStream's StepRoot is myself.
+   */
+  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsPtrChase " << this->formatName()
+                          << '\n');
+  if (!this->NonEmptyComputePath) {
+    return false;
+  }
+  if (this->AllComputePaths.size() != 1) {
+    // Multiple compute path.
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] Not Single ComputePath: "
+                            << this->AllComputePaths.size() << '\n');
+    return false;
+  }
+  if (this->LoadBaseStreams.size() != 1) {
+    // No LoadStream input to reduce one.
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] No/Multi InputLoadS.\n");
+    return false;
+  }
+  if (!this->IndVarBaseStreams.empty()) {
+    // This has other IndVarBaseStream, cannot be Pointer Cahse.
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] Has IndVarBaseS.\n");
+    return false;
+  }
+  if (this->ConfigureLoop != this->InnerMostLoop) {
+    // Only consider inner most loop.
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] Configured at Outer Loop\n");
+    return false;
+  }
+  auto FinalInst =
+      llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
+  if (!FinalInst) {
+    // Final value should be an instruction.
+    LLVM_DEBUG(llvm::dbgs()
+               << "==== [NotPtrChase] FinalValue is not Instruction\n");
+    return false;
+  }
+  auto LoadBaseS = *(this->LoadBaseStreams.begin());
+  if (LoadBaseS->BaseStepRootStreams.size() != 1) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "==== [NotPtrChase] Multi StepRoot for LoadBaseS: "
+               << LoadBaseS->formatName() << '\n');
+    return false;
+  }
+  if (LoadBaseS->BaseStepRootStreams.count(
+          const_cast<StaticIndVarStream *>(this)) == 0) {
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] StepRoot not Myself: "
+                            << LoadBaseS->formatName() << '\n');
+    return false;
+  }
+  return true;
+}
+
 void StaticIndVarStream::analyzeIsCandidate() {
   /**
    * So far only consider inner most loop.
@@ -333,18 +409,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
     return;
   }
 
-  // 4.
-  // for (const auto &ComputeMNode :
-  //      this->NonEmptyComputePath->ComputeMetaNodes) {
-  //   // 4a. No empty SCEV.
-  //   if (ComputeMNode->SCEV == nullptr) {
-  //     this->IsCandidate = false;
-  //     this->StaticStreamInfo.set_not_stream_reason(
-  //         LLVM::TDG::StaticStreamInfo::NOT_SCEVABLE_COMPUTEMNODE);
-  //     return;
-  //   }
-  // }
-  // 4b. Check the ValuePattern from the first non-empty SCEV.
+  // 4a. Check the ValuePattern from the first non-empty SCEV.
   const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
   for (const auto &ComputeMNode : this->NonEmptyComputePath->ComputeMetaNodes) {
     if (ComputeMNode->isEmpty()) {
@@ -353,12 +418,16 @@ void StaticIndVarStream::analyzeIsCandidate() {
     FirstNonEmptyComputeMNode = ComputeMNode;
     break;
   }
-  LLVM_DEBUG(llvm::dbgs() << "StaticIVStream: FirstNonEmpty Value: "
-                          << FirstNonEmptyComputeMNode->RootValue->getName()
-                          << " SCEV: ";
-             if (FirstNonEmptyComputeMNode->SCEV)
-                 FirstNonEmptyComputeMNode->SCEV->dump();
-             else llvm::dbgs() << "None\n");
+  LLVM_DEBUG({
+    llvm::dbgs() << "StaticIVStream: FirstNonEmpty Value: "
+                 << FirstNonEmptyComputeMNode->RootValue->getName()
+                 << " SCEV: ";
+    if (FirstNonEmptyComputeMNode->SCEV) {
+      FirstNonEmptyComputeMNode->SCEV->dump();
+    } else {
+      llvm::dbgs() << "None\n";
+    }
+  });
   this->StaticStreamInfo.set_val_pattern(
       this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
   LLVM_DEBUG(llvm::dbgs() << this->formatName() << ": Value pattern "
