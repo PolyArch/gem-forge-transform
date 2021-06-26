@@ -181,6 +181,11 @@ protected:
   sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
 
   /**
+   * Recognize LoopBound predicate datagraph.
+   */
+  void buildLoopBoundPredicate(const llvm::Loop *ConfigureLoop);
+
+  /**
    * Finalize the StreamConfigureLoopInfo after the transformation.
    * Mainly compute the number of peer streams and peer coalesced streams.
    * Coalesce information is only available after transformation.

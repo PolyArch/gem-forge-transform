@@ -56,3 +56,9 @@ void StreamConfigureLoopInfo::addNestConfigureInfo(
   NestConfigureInfo->NestPredRet = PredicateRet;
   this->NestConfigureInfos.push_back(NestConfigureInfo);
 }
+
+void StreamConfigureLoopInfo::addLoopBoundDG(BBBranchDataGraph *LoopBoundDG) {
+  assert(!this->LoopBoundDG && "Multile LoopBoundDG.");
+  assert(LoopBoundDG->isValidLoopBoundPredicate() && "Invalid LoopBoundDG.");
+  this->LoopBoundDG = LoopBoundDG;
+}

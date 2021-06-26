@@ -47,6 +47,9 @@ public:
       std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
       bool PredicateRet);
 
+  void addLoopBoundDG(BBBranchDataGraph *LoopBoundDG);
+  BBBranchDataGraph *getLoopBoundDG() const { return this->LoopBoundDG; }
+
 private:
   const std::string Path;
   const std::string RelativePath;
@@ -61,6 +64,11 @@ private:
   std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestConfigureFuncInfo;
   std::unique_ptr<::LLVM::TDG::ExecFuncInfo> NestPredFuncInfo;
   bool NestPredRet;
+
+  /**
+   * Remember the LoopBoundDG.
+   */
+  BBBranchDataGraph *LoopBoundDG = nullptr;
 };
 
 #endif

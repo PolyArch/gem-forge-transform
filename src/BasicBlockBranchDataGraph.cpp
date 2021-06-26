@@ -182,6 +182,29 @@ bool BBBranchDataGraph::isLoopHeadPredicate(
   return true;
 }
 
+bool BBBranchDataGraph::isValidLoopBoundPredicate() const {
+  if (!this->isValid()) {
+    return false;
+  }
+  if (this->Loop->getExitingBlock() != this->BB) {
+    LLVM_DEBUG(llvm::dbgs() << "LoopBoundPredDG Invalid: Not Single ExitingBB "
+                            << Utils::formatLLVMBB(this->BB) << '\n');
+    return false;
+  }
+  if (this->Loop->getLoopLatch() != this->BB) {
+    LLVM_DEBUG(llvm::dbgs() << "LoopBoundPredDG Invalid: Not Single Latch "
+                            << Utils::formatLLVMBB(this->BB) << '\n');
+    return false;
+  }
+  if (this->Loop->getNumBlocks() != 1) {
+    // This is very restricted.
+    LLVM_DEBUG(llvm::dbgs() << "LoopBoundPredDG Invalid: Not Single BB "
+                            << Utils::formatLLVMBB(this->BB) << '\n');
+    return false;
+  }
+  return true;
+}
+
 CachedBBBranchDataGraph::~CachedBBBranchDataGraph() {
   for (auto &Entry : this->KeyToDGMap) {
     delete Entry.second;

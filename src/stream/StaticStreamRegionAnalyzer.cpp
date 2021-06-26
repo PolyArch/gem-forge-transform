@@ -779,6 +779,8 @@ void StaticStreamRegionAnalyzer::finalizePlan() {
   LLVM_DEBUG(llvm::dbgs() << "Build transform plan done.\n");
   this->buildStreamConfigureLoopInfoMap(this->TopLoop);
   LLVM_DEBUG(llvm::dbgs() << "Build StreamConfigureLoopInfoMap done.\n");
+  this->buildLoopBoundPredicate(this->TopLoop);
+  LLVM_DEBUG(llvm::dbgs() << "Build LoopBoundDG done.\n");
 
   this->dumpTransformPlan();
   this->dumpConfigurePlan();
@@ -1042,6 +1044,27 @@ void StaticStreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
   this->allocateRegionStreamId(ConfigureLoop);
   for (auto &SubLoop : *ConfigureLoop) {
     this->buildStreamConfigureLoopInfoMap(SubLoop);
+  }
+}
+
+void StaticStreamRegionAnalyzer::buildLoopBoundPredicate(
+    const llvm::Loop *ConfigureLoop) {
+  if (!StreamPassEnableLoopBoundPredication) {
+    return;
+  }
+  if (auto LatchBB = ConfigureLoop->getLoopLatch()) {
+    // This is the single latch.
+    auto LatchBBBranchDG =
+        this->CachedBBBranchDG->getBBBranchDataGraph(ConfigureLoop, LatchBB);
+    if (LatchBBBranchDG->isValidLoopBoundPredicate()) {
+      LLVM_DEBUG(llvm::dbgs() << "Add LoopBoundDG to Loop "
+                              << LoopUtils::getLoopId(ConfigureLoop) << "\n");
+      auto &ConfigureInfo = this->getConfigureLoopInfo(ConfigureLoop);
+      ConfigureInfo.addLoopBoundDG(LatchBBBranchDG);
+    }
+  }
+  for (auto &SubLoop : *ConfigureLoop) {
+    this->buildLoopBoundPredicate(SubLoop);
   }
 }
 

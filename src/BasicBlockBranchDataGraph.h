@@ -22,6 +22,7 @@ public:
   ~BBBranchDataGraph() {}
 
   const std::string &getFuncName() const { return this->FuncName; }
+  const llvm::Loop *getLoop() const { return this->Loop; }
   bool isValid() const { return this->IsValid; }
   const llvm::BasicBlock *getTrueBB() const { return this->TrueBB; }
   const llvm::BasicBlock *getFalseBB() const { return this->FalseBB; }
@@ -63,6 +64,13 @@ public:
     return this->isLoopHeadPredicate(TargetBB) ? TargetBB : nullptr;
   }
   bool isLoopHeadPredicate(const llvm::BasicBlock *TargetBB) const;
+
+  /**
+   * LoopBoundBB requires:
+   * 1. This BB is the single latch/exiting of the Loop.
+   * 2. The Loop has a single BB (is this too restrict?).
+   */
+  bool isValidLoopBoundPredicate() const;
 
 protected:
   const llvm::Loop *Loop;
