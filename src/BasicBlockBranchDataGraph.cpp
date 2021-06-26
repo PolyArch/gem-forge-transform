@@ -1,20 +1,21 @@
-#include "BasicBlockPredicate.h"
+#include "BasicBlockBranchDataGraph.h"
 
 #include "Utils.h"
 
-#define DEBUG_TYPE "BasicBlockPredicate"
+#define DEBUG_TYPE "BasicBlockBranchDataGraph"
 
-BBPredicateDataGraph::BBPredicateDataGraph(const llvm::Loop *_Loop,
-                                           const llvm::BasicBlock *_BB)
+BBBranchDataGraph::BBBranchDataGraph(const llvm::Loop *_Loop,
+                                     const llvm::BasicBlock *_BB,
+                                     const std::string _Suffix)
     : ExecutionDataGraph(), Loop(_Loop), BB(_BB),
       FuncName(llvm::Twine(_BB->getParent()->getName() + "_" +
                            _Loop->getHeader()->getName() + "_" +
-                           _BB->getName() + "_pred")
+                           _BB->getName() + _Suffix)
                    .str()) {
   this->constructDataGraph();
 }
 
-void BBPredicateDataGraph::constructDataGraph() {
+void BBBranchDataGraph::constructDataGraph() {
   auto Terminator = this->BB->getTerminator();
   auto BranchInst = llvm::dyn_cast<llvm::BranchInst>(Terminator);
   if (!BranchInst) {
@@ -37,18 +38,6 @@ void BBPredicateDataGraph::constructDataGraph() {
   }
   auto TrueBB = BranchInst->getSuccessor(0);
   auto FalseBB = BranchInst->getSuccessor(1);
-  if (TrueBB == this->BB || FalseBB == this->BB) {
-    // Do not allow branching back to myself.
-    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid: Branch Back "
-                            << Utils::formatLLVMBB(this->BB) << '\n');
-    return;
-  }
-  if (!(this->Loop->contains(TrueBB) && this->Loop->contains(FalseBB))) {
-    // Both BB should be within our loop.
-    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid: Outside Successor "
-                            << Utils::formatLLVMBB(this->BB) << '\n');
-    return;
-  }
   // Start bfs on the conditional value to construct the datagraph.
   std::list<const llvm::Value *> Queue;
   Queue.emplace_back(BranchInst->getCondition());
@@ -128,89 +117,94 @@ void BBPredicateDataGraph::constructDataGraph() {
      */
     this->Inputs.insert(this->Inputs.end(), UnsortedInputs.begin(),
                         UnsortedInputs.end());
-    /**
-     * Check if we are the only predecessor except the BB itself.
-     */
-    auto IsPredicated = [this](const llvm::BasicBlock *BB) -> bool {
-      return BB->getSinglePredecessor() == this->BB;
-    };
-    auto IsPredicatedLoopHeader = [this](const llvm::BasicBlock *BB) -> bool {
-      llvm::Loop *BBLoop = nullptr;
-      for (auto SubLoop : this->Loop->getSubLoops()) {
-        if (SubLoop->getHeader() == BB) {
-          BBLoop = SubLoop;
-          break;
-        }
-      }
-      if (!BBLoop) {
-        return false;
-      }
-      for (auto Predecessor : llvm::predecessors(BB)) {
-        if (BBLoop->contains(Predecessor)) {
-          continue;
-        }
-        if (Predecessor != this->BB) {
-          // This BB has other predecessors from loop outside, return false.
-          return false;
-        }
-      }
-      return true;
-    };
-    if (IsPredicated(TrueBB)) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "BBPredDG Add TrueBB: " << Utils::formatLLVMBB(TrueBB)
-                 << " to " << Utils::formatLLVMBB(this->BB) << '\n');
-      this->TrueBB = TrueBB;
-    }
-    if (IsPredicated(FalseBB)) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "BBPredDG Add FalseBB: " << Utils::formatLLVMBB(FalseBB)
-                 << " to " << Utils::formatLLVMBB(this->BB) << '\n');
-      this->FalseBB = FalseBB;
-    }
-    if (IsPredicatedLoopHeader(TrueBB)) {
-      LLVM_DEBUG(llvm::dbgs() << "BBPredDG Add TrueLoopHeaderBB: "
-                              << Utils::formatLLVMBB(TrueBB) << " to "
-                              << Utils::formatLLVMBB(this->BB) << '\n');
-      this->TrueLoopHeaderBB = TrueBB;
-    }
-    if (IsPredicatedLoopHeader(FalseBB)) {
-      LLVM_DEBUG(llvm::dbgs() << "BBPredDG Add FalseLoopHeaderBB: "
-                              << Utils::formatLLVMBB(FalseBB) << " to "
-                              << Utils::formatLLVMBB(this->BB) << '\n');
-      this->FalseLoopHeaderBB = FalseBB;
-    }
+    this->TrueBB = TrueBB;
+    this->FalseBB = FalseBB;
     this->HasCircle = this->detectCircle();
   } else {
     // Clean up.
-    this->IsValid = false;
-    this->InputPHIs.clear();
-    this->InputLoads.clear();
-    this->ComputeInsts.clear();
+    this->clear();
   }
 }
 
-CachedBBPredicateDataGraph::~CachedBBPredicateDataGraph() {
+void BBBranchDataGraph::clear() {
+  this->IsValid = false;
+  this->InputPHIs.clear();
+  this->InputLoads.clear();
+  this->ComputeInsts.clear();
+  this->TrueBB = nullptr;
+  this->FalseBB = nullptr;
+}
+
+bool BBBranchDataGraph::isPredicate(const llvm::BasicBlock *TargetBB) const {
+  assert((TargetBB == this->TrueBB || TargetBB == this->FalseBB) &&
+         "Invalid Predicate TargetBB");
+  if (!this->isValid() || !TargetBB) {
+    return false;
+  }
+  if (TargetBB == this->BB) {
+    // Do not allow self predicate.
+    return false;
+  }
+  return TargetBB->getSinglePredecessor() == this->BB;
+}
+
+bool BBBranchDataGraph::isLoopHeadPredicate(
+    const llvm::BasicBlock *TargetBB) const {
+  assert((TargetBB == this->TrueBB || TargetBB == this->FalseBB) &&
+         "Invalid LoopHead TargetBB");
+  if (!this->isValid() || !TargetBB) {
+    return false;
+  }
+  if (TargetBB == this->BB) {
+    // Do not allow self predicate.
+    return false;
+  }
+  llvm::Loop *TargetLoop = nullptr;
+  for (auto SubLoop : this->Loop->getSubLoops()) {
+    if (SubLoop->getHeader() == TargetBB) {
+      TargetLoop = SubLoop;
+      break;
+    }
+  }
+  if (!TargetLoop) {
+    // TargetBB is not a LoopHeader.
+    return false;
+  }
+  for (auto Predecessor : llvm::predecessors(TargetBB)) {
+    if (TargetLoop->contains(Predecessor)) {
+      continue;
+    }
+    if (Predecessor != this->BB) {
+      // TargetBB has other predecessors from loop outside, return false.
+      return false;
+    }
+  }
+  return true;
+}
+
+CachedBBBranchDataGraph::~CachedBBBranchDataGraph() {
   for (auto &Entry : this->KeyToDGMap) {
     delete Entry.second;
   }
   this->KeyToDGMap.clear();
 }
 
-BBPredicateDataGraph *CachedBBPredicateDataGraph::getBBPredicateDataGraph(
-    const llvm::Loop *Loop, const llvm::BasicBlock *BB) {
+BBBranchDataGraph *
+CachedBBBranchDataGraph::getBBBranchDataGraph(const llvm::Loop *Loop,
+                                              const llvm::BasicBlock *BB) {
   auto K = std::make_pair(Loop, BB);
   auto Iter = this->KeyToDGMap.find(K);
   if (Iter == this->KeyToDGMap.end()) {
-    auto BBPredDG = new BBPredicateDataGraph(Loop, BB);
+    auto BBPredDG = new BBBranchDataGraph(Loop, BB);
     this->KeyToDGMap.emplace(K, BBPredDG);
     return BBPredDG;
   }
   return Iter->second;
 }
 
-BBPredicateDataGraph *CachedBBPredicateDataGraph::tryBBPredicateDataGraph(
-    const llvm::Loop *Loop, const llvm::BasicBlock *BB) {
+BBBranchDataGraph *
+CachedBBBranchDataGraph::tryBBBranchDataGraph(const llvm::Loop *Loop,
+                                              const llvm::BasicBlock *BB) {
   auto K = std::make_pair(Loop, BB);
   auto Iter = this->KeyToDGMap.find(K);
   if (Iter == this->KeyToDGMap.end()) {

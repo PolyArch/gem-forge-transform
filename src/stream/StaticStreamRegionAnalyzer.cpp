@@ -13,10 +13,10 @@
 StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
     llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
     CachedLoopInfo *_CachedLI, CachedPostDominanceFrontier *_CachedPDF,
-    CachedBBPredicateDataGraph *_CachedBBPredDG, uint64_t _RegionIdx,
+    CachedBBBranchDataGraph *_CachedBBBranchDG, uint64_t _RegionIdx,
     const std::string &_RootPath)
     : TopLoop(_TopLoop), DataLayout(_DataLayout), CachedLI(_CachedLI),
-      CachedBBPredDG(_CachedBBPredDG),
+      CachedBBBranchDG(_CachedBBBranchDG),
       LI(_CachedLI->getLoopInfo(_TopLoop->getHeader()->getParent())),
       SE(_CachedLI->getScalarEvolution(_TopLoop->getHeader()->getParent())),
       PDT(_CachedPDF->getPostDominatorTree(_TopLoop->getHeader()->getParent())),
@@ -272,8 +272,8 @@ void StaticStreamRegionAnalyzer::markPredicateRelationship() {
 
 void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
     const llvm::Loop *Loop, const llvm::BasicBlock *BB) {
-  auto BBPredDG = this->CachedBBPredDG->getBBPredicateDataGraph(Loop, BB);
-  if (!BBPredDG->isValid()) {
+  auto BBPredDG = this->CachedBBBranchDG->getBBBranchDataGraph(Loop, BB);
+  if (!BBPredDG->isValidPredicate()) {
     LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid " << BB->getName() << '\n');
     return;
   }
@@ -310,10 +310,10 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
       }
     }
   };
-  if (auto TrueBB = BBPredDG->getTrueBB()) {
+  if (auto TrueBB = BBPredDG->getPredicateBB(true)) {
     MarkStreamInBB(TrueBB, true);
   }
-  if (auto FalseBB = BBPredDG->getFalseBB()) {
+  if (auto FalseBB = BBPredDG->getPredicateBB(false)) {
     MarkStreamInBB(FalseBB, false);
   }
 }
@@ -328,7 +328,7 @@ void StaticStreamRegionAnalyzer::insertPredicateFuncInModule(
     for (auto Loop = this->LI->getLoopFor(BB); this->TopLoop->contains(Loop);
          Loop = Loop->getParentLoop()) {
 
-      auto BBPredDG = this->CachedBBPredDG->tryBBPredicateDataGraph(Loop, BB);
+      auto BBPredDG = this->CachedBBBranchDG->tryBBBranchDataGraph(Loop, BB);
       if (!BBPredDG) {
         continue;
       }

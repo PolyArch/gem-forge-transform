@@ -36,7 +36,7 @@ add_library(LLVMTDGPass SHARED
     UserSpecifiedInstructionSet.cpp
     LoopUtils.cpp
     LoopUnroller.cpp
-    BasicBlockPredicate.cpp
+    BasicBlockBranchDataGraph.cpp
     PostDominanceFrontier.cpp
     ExecutionDataGraph.cpp
     DynamicLoopTree.cpp

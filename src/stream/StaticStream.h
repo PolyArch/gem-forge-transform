@@ -4,7 +4,7 @@
 #include "StreamPassOptions.h"
 #include "StreamUtils.h"
 
-#include "BasicBlockPredicate.h"
+#include "BasicBlockBranchDataGraph.h"
 #include "LoopUtils.h"
 #include "PostDominanceFrontier.h"
 #include "stream/ae/StreamDataGraph.h"
@@ -228,7 +228,7 @@ public:
   StaticStream *UpdateStream = nullptr;
 
   // Predicate stream.
-  BBPredicateDataGraph *BBPredDG = nullptr;
+  BBBranchDataGraph *BBPredDG = nullptr;
   StreamSet PredicatedTrueStreams;
   StreamSet PredicatedFalseStreams;
 

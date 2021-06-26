@@ -68,7 +68,7 @@ void StreamPass::pushLoopStack(LoopStackT &LoopStack, llvm::Loop *Loop) {
     if (this->LoopStreamAnalyzerMap.count(Loop) == 0) {
       auto StreamAnalyzer = std::make_unique<DynStreamRegionAnalyzer>(
           Loop, this->Trace->DataLayout, this->CachedLI, this->CachedPDF,
-          this->CachedBBPredDG, this->RegionIdx, this->OutputExtraFolderPath);
+          this->CachedBBBranchDG, this->RegionIdx, this->OutputExtraFolderPath);
       this->RegionIdx++;
       this->LoopStreamAnalyzerMap.insert(
           std::make_pair(Loop, std::move(StreamAnalyzer)));

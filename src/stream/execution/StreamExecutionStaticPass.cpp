@@ -66,7 +66,7 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
         // Check if loop is continuous.
         auto Analyzer = new StaticStreamRegionAnalyzer(
             Loop, this->DataLayout, this->CachedLI, this->CachedPDF,
-            this->CachedBBPredDG, Analyzers.size(),
+            this->CachedBBBranchDG, Analyzers.size(),
             this->OutputExtraFolderPath);
 
         // Directly call finalizePlan.

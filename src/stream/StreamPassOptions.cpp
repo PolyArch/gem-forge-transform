@@ -55,3 +55,7 @@ llvm::cl::opt<bool> StreamPassEnableFuseLoadOp(
 llvm::cl::opt<bool> StreamPassEnableNestStream(
     "stream-pass-enable-nest-stream", llvm::cl::init(false),
     llvm::cl::desc("Nest inner streams with outer streams."));
+
+llvm::cl::opt<bool> StreamPassEnableLoopBoundPredication(
+    "stream-pass-enable-loop-bound-predication", llvm::cl::init(false),
+    llvm::cl::desc("Stream-based loop bound predication."));

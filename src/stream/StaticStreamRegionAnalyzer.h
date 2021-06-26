@@ -16,7 +16,7 @@ public:
                              llvm::DataLayout *_DataLayout,
                              CachedLoopInfo *_CachedLI,
                              CachedPostDominanceFrontier *_CachedPDF,
-                             CachedBBPredicateDataGraph *_CachedBBPredDG,
+                             CachedBBBranchDataGraph *_CachedBBBranchDG,
                              uint64_t _RegionIdx, const std::string &_RootPath);
   ~StaticStreamRegionAnalyzer();
 
@@ -24,7 +24,7 @@ public:
     return this->InstStaticStreamMap;
   }
 
-  CachedBBPredicateDataGraph *getBBPredDG() { return this->CachedBBPredDG; }
+  CachedBBBranchDataGraph *getBBBranchDG() { return this->CachedBBBranchDG; }
   const llvm::PostDominatorTree *getPostDominatorTree() { return this->PDT; }
 
   /**
@@ -98,7 +98,7 @@ protected:
   llvm::Loop *TopLoop;
   llvm::DataLayout *DataLayout;
   CachedLoopInfo *CachedLI;
-  CachedBBPredicateDataGraph *CachedBBPredDG;
+  CachedBBBranchDataGraph *CachedBBBranchDG;
   llvm::LoopInfo *LI;
   llvm::ScalarEvolution *SE;
   const llvm::PostDominatorTree *PDT;

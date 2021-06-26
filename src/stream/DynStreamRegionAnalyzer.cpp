@@ -12,10 +12,10 @@
 DynStreamRegionAnalyzer::DynStreamRegionAnalyzer(
     llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
     CachedLoopInfo *_CachedLI, CachedPostDominanceFrontier *_CachedPDF,
-    CachedBBPredicateDataGraph *_CachedBBPredDG, uint64_t _RegionIdx,
+    CachedBBBranchDataGraph *_CachedBBBranchDG, uint64_t _RegionIdx,
     const std::string &_RootPath)
     : StaticStreamRegionAnalyzer(_TopLoop, _DataLayout, _CachedLI, _CachedPDF,
-                                 _CachedBBPredDG, _RegionIdx, _RootPath) {
+                                 _CachedBBBranchDG, _RegionIdx, _RootPath) {
   this->initializeStreams();
 }
 

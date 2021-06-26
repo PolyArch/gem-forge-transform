@@ -20,7 +20,7 @@ public:
   DynStreamRegionAnalyzer(llvm::Loop *_TopLoop, llvm::DataLayout *_DataLayout,
                           CachedLoopInfo *_CachedLI,
                           CachedPostDominanceFrontier *_CachedPDF,
-                          CachedBBPredicateDataGraph *_CachedBBPredDG,
+                          CachedBBBranchDataGraph *_CachedBBBranchDG,
                           uint64_t _RegionIdx, const std::string &_RootPath);
 
   DynStreamRegionAnalyzer(const DynStreamRegionAnalyzer &Other) = delete;
