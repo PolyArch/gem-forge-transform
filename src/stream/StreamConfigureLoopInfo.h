@@ -47,8 +47,9 @@ public:
       std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
       bool PredicateRet);
 
-  void addLoopBoundDG(BBBranchDataGraph *LoopBoundDG);
-  BBBranchDataGraph *getLoopBoundDG() const { return this->LoopBoundDG; }
+  void addLoopBoundDG(
+      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> LoopBoundFuncInfo,
+      bool LoopBoundRet);
 
 private:
   const std::string Path;
@@ -68,7 +69,8 @@ private:
   /**
    * Remember the LoopBoundDG.
    */
-  BBBranchDataGraph *LoopBoundDG = nullptr;
+  std::unique_ptr<::LLVM::TDG::ExecFuncInfo> LoopBoundFuncInfo;
+  bool LoopBoundRet;
 };
 
 #endif

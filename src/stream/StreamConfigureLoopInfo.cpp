@@ -40,6 +40,11 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
       ProtobufStreamRegion.set_nest_pred_ret(this->NestPredRet);
     }
   }
+  if (this->LoopBoundFuncInfo) {
+    *ProtobufStreamRegion.mutable_loop_bound_func() = *this->LoopBoundFuncInfo;
+    ProtobufStreamRegion.set_is_loop_bound(true);
+    ProtobufStreamRegion.set_loop_bound_ret(this->LoopBoundRet);
+  }
   Gem5ProtobufSerializer Serializer(this->Path);
   Serializer.serialize(ProtobufStreamRegion);
   Utils::dumpProtobufMessageToJson(ProtobufStreamRegion, this->JsonPath);
@@ -57,8 +62,10 @@ void StreamConfigureLoopInfo::addNestConfigureInfo(
   this->NestConfigureInfos.push_back(NestConfigureInfo);
 }
 
-void StreamConfigureLoopInfo::addLoopBoundDG(BBBranchDataGraph *LoopBoundDG) {
-  assert(!this->LoopBoundDG && "Multile LoopBoundDG.");
-  assert(LoopBoundDG->isValidLoopBoundPredicate() && "Invalid LoopBoundDG.");
-  this->LoopBoundDG = LoopBoundDG;
+void StreamConfigureLoopInfo::addLoopBoundDG(
+    std::unique_ptr<::LLVM::TDG::ExecFuncInfo> LoopBoundFuncInfo,
+    bool LoopBoundRet) {
+  assert(!this->LoopBoundFuncInfo && "Multile LoopBoundDG.");
+  this->LoopBoundFuncInfo = std::move(LoopBoundFuncInfo);
+  this->LoopBoundRet = LoopBoundRet;
 }

@@ -1,5 +1,6 @@
 #include "StreamExecutionTransformer.h"
 #include "StaticNestStreamBuilder.h"
+#include "StaticStreamLoopBoundBuilder.h"
 
 #include "TransformUtils.h"
 
@@ -25,7 +26,8 @@ StreamExecutionTransformer::StreamExecutionTransformer(
     : Module(_Module), ROIFunctions(_ROIFunctions), CachedLI(_CachedLI),
       OutputExtraFolderPath(_OutputExtraFolderPath),
       TransformTextMode(_TransformTextMode),
-      NestStreamBuilder(new StaticNestStreamBuilder(this)) {
+      NestStreamBuilder(new StaticNestStreamBuilder(this)),
+      StreamLoopBoundBuilder(new StaticStreamLoopBoundBuilder(this)) {
   // Copy the module.
   LLVM_DEBUG(llvm::dbgs() << "Clone the module.\n");
   this->ClonedModule = llvm::CloneModule(*(this->Module), this->ClonedValueMap);
@@ -343,6 +345,20 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
                  << " Input " << ClonedInput->getName() << '\n');
       this->addStreamInput(Builder, S->getRegionStreamId(), ClonedInput);
     }
+  }
+
+  // Try to insert StreamLoopBound inputs.
+  InputValueVec ClonedLoopBoundInputValues;
+  this->StreamLoopBoundBuilder->buildStreamLoopBoundForLoop(
+      Analyzer, Loop, ClonedLoopBoundInputValues);
+  for (auto ClonedInput : ClonedLoopBoundInputValues) {
+    // This is a live in?
+    LLVM_DEBUG(llvm::dbgs() << "Insert StreamLoopBound "
+                            << " Input " << ClonedInput->getName() << '\n');
+    this->addStreamInput(
+        Builder,
+        ::LLVM::TDG::ReservedStreamRegionId::LoopBoundFuncInputRegionId,
+        ClonedInput);
   }
 
   // Insert the StreamReady instruction.

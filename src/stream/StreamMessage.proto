@@ -198,7 +198,8 @@ message StreamInfo {
 // Defines the reserved RegionStreamId used for nest config input.
 enum ReservedStreamRegionId {
   NestConfigureFuncInputRegionId = 0;
-  NumReservedStreamRegionId = 1;
+  LoopBoundFuncInputRegionId = 1;
+  NumReservedStreamRegionId = 2;
 }
 
 message StreamRegion {
@@ -215,6 +216,10 @@ message StreamRegion {
   ExecFuncInfo nest_pred_func = 12;
   bool nest_pred_ret = 13;
   bool is_nest = 14;
+  // Break out when func() == ret.
+  ExecFuncInfo loop_bound_func = 15;
+  bool loop_bound_ret = 16;
+  bool is_loop_bound = 17;
 }
 
 // All the configured stream region in one place.

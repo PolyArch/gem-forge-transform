@@ -15,6 +15,7 @@
 #include <vector>
 
 class StaticNestStreamBuilder;
+class StaticStreamLoopBoundBuilder;
 
 class StreamExecutionTransformer {
 public:
@@ -170,7 +171,9 @@ private:
   void writeAllTransformedFunctions();
 
   friend class StaticNestStreamBuilder;
+  friend class StaticStreamLoopBoundBuilder;
   std::unique_ptr<StaticNestStreamBuilder> NestStreamBuilder;
+  std::unique_ptr<StaticStreamLoopBoundBuilder> StreamLoopBoundBuilder;
 
   // Map a loop to its (cloned) configure/end BB. Used for nest streams.
   using LoopToClonedBBMapT =
