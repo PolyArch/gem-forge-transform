@@ -16,6 +16,7 @@
 
 class StaticNestStreamBuilder;
 class StaticStreamLoopBoundBuilder;
+class StreamLoopEliminator;
 
 class StreamExecutionTransformer {
 public:
@@ -172,8 +173,10 @@ private:
 
   friend class StaticNestStreamBuilder;
   friend class StaticStreamLoopBoundBuilder;
+  friend class StreamLoopEliminator;
   std::unique_ptr<StaticNestStreamBuilder> NestStreamBuilder;
   std::unique_ptr<StaticStreamLoopBoundBuilder> StreamLoopBoundBuilder;
+  std::unique_ptr<StreamLoopEliminator> LoopEliminator;
 
   // Map a loop to its (cloned) configure/end BB. Used for nest streams.
   using LoopToClonedBBMapT =

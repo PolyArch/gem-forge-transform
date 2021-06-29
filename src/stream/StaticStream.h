@@ -287,6 +287,13 @@ public:
   static ::LLVM::TDG::DataType
   translateToProtobufDataType(llvm::DataLayout *DataLayout, llvm::Type *Type);
 
+  void setLoopEliminated(bool LoopEliminated) {
+    this->StaticStreamInfo.set_loop_eliminated(LoopEliminated);
+  }
+  bool isLoopEliminated() const {
+    return this->StaticStreamInfo.loop_eliminated();
+  }
+
 protected:
   static uint64_t AllocatedStreamId;
   static uint64_t allocateStreamId() {

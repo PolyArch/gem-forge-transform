@@ -8,7 +8,8 @@
 
 #define DEBUG_TYPE "StaticStream"
 
-uint64_t StaticStream::AllocatedStreamId = 0;
+uint64_t StaticStream::AllocatedStreamId =
+    ::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId;
 
 /**
  * The constructor just creates the object and does not perform any analysis.

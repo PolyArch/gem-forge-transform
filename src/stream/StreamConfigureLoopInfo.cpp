@@ -19,6 +19,7 @@ void StreamConfigureLoopInfo::dump(llvm::DataLayout *DataLayout) const {
   ProtobufStreamRegion.set_total_alive_streams(this->TotalAliveStreams);
   ProtobufStreamRegion.set_total_alive_coalesced_streams(
       this->TotalAliveCoalescedStreams);
+  ProtobufStreamRegion.set_loop_eliminated(this->LoopEliminated);
   for (auto &S : this->SortedStreams) {
     auto Info = ProtobufStreamRegion.add_streams();
     S->fillProtobufStreamInfo(Info);
@@ -68,4 +69,11 @@ void StreamConfigureLoopInfo::addLoopBoundDG(
   assert(!this->LoopBoundFuncInfo && "Multile LoopBoundDG.");
   this->LoopBoundFuncInfo = std::move(LoopBoundFuncInfo);
   this->LoopBoundRet = LoopBoundRet;
+}
+
+void StreamConfigureLoopInfo::setLoopEliminated(bool LoopEliminated) {
+  this->LoopEliminated = LoopEliminated;
+  for (auto S : this->getSortedStreams()) {
+    S->setLoopEliminated(LoopEliminated);
+  }
 }

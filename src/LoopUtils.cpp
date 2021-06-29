@@ -437,26 +437,29 @@ CachedLoopInfo::~CachedLoopInfo() {
 }
 
 void CachedLoopInfo::clearAnalysis() {
-  for (auto &Entry : this->SEExpanderCache) {
-    delete Entry.second;
+  this->clearCacheMap(this->SEExpanderCache);
+  this->clearCacheMap(this->SECache);
+  this->clearCacheMap(this->LICache);
+  this->clearCacheMap(this->DTCache);
+  this->clearCacheMap(this->ACCache);
+  this->UnrollableTerminatorCache.clear();
+}
+
+void CachedLoopInfo::clearFuncAnalysis(llvm::Function *Func) {
+  this->clearFuncCacheMap(this->SEExpanderCache, Func);
+  this->clearFuncCacheMap(this->SECache, Func);
+  this->clearFuncCacheMap(this->LICache, Func);
+  this->clearFuncCacheMap(this->DTCache, Func);
+  this->clearFuncCacheMap(this->ACCache, Func);
+  for (auto Iter = this->UnrollableTerminatorCache.begin();
+       Iter != this->UnrollableTerminatorCache.end();) {
+    auto Loop = Iter->first;
+    if (Loop->getHeader()->getParent() == Func) {
+      Iter = this->UnrollableTerminatorCache.erase(Iter);
+    } else {
+      ++Iter;
+    }
   }
-  this->SEExpanderCache.clear();
-  for (auto &Entry : this->SECache) {
-    delete Entry.second;
-  }
-  this->SECache.clear();
-  for (auto &Entry : this->LICache) {
-    delete Entry.second;
-  }
-  this->LICache.clear();
-  for (auto &Entry : this->DTCache) {
-    delete Entry.second;
-  }
-  this->DTCache.clear();
-  for (auto &Entry : this->ACCache) {
-    delete Entry.second;
-  }
-  this->ACCache.clear();
 }
 
 llvm::AssumptionCache *

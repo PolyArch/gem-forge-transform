@@ -47,9 +47,12 @@ public:
       std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
       bool PredicateRet);
 
-  void addLoopBoundDG(
-      std::unique_ptr<::LLVM::TDG::ExecFuncInfo> LoopBoundFuncInfo,
-      bool LoopBoundRet);
+  void
+  addLoopBoundDG(std::unique_ptr<::LLVM::TDG::ExecFuncInfo> LoopBoundFuncInfo,
+                 bool LoopBoundRet);
+  bool hasLoopBoundDG() const { return this->LoopBoundFuncInfo != nullptr; }
+
+  void setLoopEliminated(bool LoopEliminated);
 
 private:
   const std::string Path;
@@ -71,6 +74,11 @@ private:
    */
   std::unique_ptr<::LLVM::TDG::ExecFuncInfo> LoopBoundFuncInfo;
   bool LoopBoundRet;
+
+  /**
+   * Remember if loop is eliminated.
+   */
+  bool LoopEliminated = false;
 };
 
 #endif

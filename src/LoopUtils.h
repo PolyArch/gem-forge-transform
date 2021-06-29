@@ -246,6 +246,11 @@ public:
    */
   void clearAnalysis();
 
+  /**
+   * Clear cached Analysis associated with this function.
+   */
+  void clearFuncAnalysis(llvm::Function *Func);
+
   llvm::TargetTransformInfo getTargetTransformInfo(llvm::Function *Func);
 
 private:
@@ -259,6 +264,21 @@ private:
   std::unordered_map<llvm::Function *, llvm::SCEVExpander *> SEExpanderCache;
   std::unordered_map<llvm::Loop *, llvm::Instruction *>
       UnrollableTerminatorCache;
+
+  template <typename T> void clearCacheMap(T &Map) {
+    for (auto &Entry : Map) {
+      delete Entry.second;
+    }
+    Map.clear();
+  }
+
+  template <typename T> void clearFuncCacheMap(T &Map, llvm::Function *Func) {
+    auto Iter = Map.find(Func);
+    if (Iter != Map.end()) {
+      delete Iter->second;
+      Map.erase(Iter);
+    }
+  }
 };
 
 #endif

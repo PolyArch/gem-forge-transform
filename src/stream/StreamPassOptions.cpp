@@ -59,3 +59,7 @@ llvm::cl::opt<bool> StreamPassEnableNestStream(
 llvm::cl::opt<bool> StreamPassEnableLoopBoundPredication(
     "stream-pass-enable-loop-bound-predication", llvm::cl::init(false),
     llvm::cl::desc("Stream-based loop bound predication."));
+
+llvm::cl::opt<bool> StreamPassEnableLoopElimination(
+    "stream-pass-enable-loop-elimination", llvm::cl::init(false),
+    llvm::cl::desc("Completely eliminate a loop to streams."));

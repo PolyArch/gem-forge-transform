@@ -1,6 +1,7 @@
 #include "StreamExecutionTransformer.h"
 #include "StaticNestStreamBuilder.h"
 #include "StaticStreamLoopBoundBuilder.h"
+#include "StreamLoopEliminator.h"
 
 #include "TransformUtils.h"
 
@@ -27,7 +28,8 @@ StreamExecutionTransformer::StreamExecutionTransformer(
       OutputExtraFolderPath(_OutputExtraFolderPath),
       TransformTextMode(_TransformTextMode),
       NestStreamBuilder(new StaticNestStreamBuilder(this)),
-      StreamLoopBoundBuilder(new StaticStreamLoopBoundBuilder(this)) {
+      StreamLoopBoundBuilder(new StaticStreamLoopBoundBuilder(this)),
+      LoopEliminator(new StreamLoopEliminator(this)) {
   // Copy the module.
   LLVM_DEBUG(llvm::dbgs() << "Clone the module.\n");
   this->ClonedModule = llvm::CloneModule(*(this->Module), this->ClonedValueMap);
@@ -241,6 +243,12 @@ void StreamExecutionTransformer::transformStreamRegion(
    * we try to nest streams.
    */
   this->NestStreamBuilder->buildNestStreams(Analyzer);
+
+  /**
+   * Try to eliminate some empty loops.
+   * ! After this point, ClonedModule may have different LoopStructure.
+   */
+  this->LoopEliminator->eliminateLoops(Analyzer);
 
   // Insert address computation function in the cloned module.
   Analyzer->insertAddrFuncInModule(this->ClonedModule);
@@ -1197,7 +1205,7 @@ void StreamExecutionTransformer::cleanClonedModule() {
    * Since we mark StreamLoad with side effect, so it would not be removed by
    * previous dead code elimination.
    * A stream is marked without core user if:
-   * 1. The StreamLoad is removed.
+   * 1. The StreamLoad is removed or LoopEliminated.
    * 2. All the dependent and back-dependent streams do not have core user.
    * This is to make sure that a[b[i]] are correctly marked as we need b[] to
    * compute a[] in the SE, even if the core has no usage.
@@ -1206,16 +1214,25 @@ void StreamExecutionTransformer::cleanClonedModule() {
   std::queue<StaticStream *> NoCoreUserStreams;
   for (auto &StreamInstPair : this->StreamToStreamLoadInstMap) {
     auto S = StreamInstPair.first;
-    auto StreamLoadInst = StreamInstPair.second;
-    if (StreamLoadInst->use_empty()) {
-      LLVM_DEBUG({
-        llvm::dbgs() << "Remove unused StreamLoad "
-                     << StreamLoadInst->getFunction()->getName() << ' '
-                     << Utils::formatLLVMInstWithoutFunc(StreamLoadInst) << ' ';
-        StreamLoadInst->print(llvm::dbgs());
-        llvm::dbgs() << '\n';
-      });
-      StreamLoadInst->eraseFromParent();
+    bool StreamCleared = false;
+    if (S->isLoopEliminated()) {
+      StreamCleared = true;
+    } else {
+      auto StreamLoadInst = StreamInstPair.second;
+      if (StreamLoadInst->use_empty()) {
+        LLVM_DEBUG({
+          llvm::dbgs() << "Remove unused StreamLoad "
+                       << StreamLoadInst->getFunction()->getName() << ' '
+                       << Utils::formatLLVMInstWithoutFunc(StreamLoadInst)
+                       << ' ';
+          StreamLoadInst->print(llvm::dbgs());
+          llvm::dbgs() << '\n';
+        });
+        StreamLoadInst->eraseFromParent();
+        StreamCleared = true;
+      }
+    }
+    if (StreamCleared) {
       StreamInstPair.second = nullptr;
 
       assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&

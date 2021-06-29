@@ -23,5 +23,6 @@ extern llvm::cl::opt<bool> StreamPassEnableValueDG;
 extern llvm::cl::opt<bool> StreamPassEnableFuseLoadOp;
 extern llvm::cl::opt<bool> StreamPassEnableNestStream;
 extern llvm::cl::opt<bool> StreamPassEnableLoopBoundPredication;
+extern llvm::cl::opt<bool> StreamPassEnableLoopElimination;
 
 #endif

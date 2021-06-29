@@ -127,6 +127,9 @@ message StaticStreamInfo {
   // Stream Compute extension.
   StaticStreamComputeInfo compute_info = 35;
 
+  // Loop Eliminated.
+  bool loop_eliminated = 36;
+
   int32 core_element_size = 60;
   int32 mem_element_size = 61;
   // Optional data type for debug purpose.
@@ -197,9 +200,10 @@ message StreamInfo {
 
 // Defines the reserved RegionStreamId used for nest config input.
 enum ReservedStreamRegionId {
-  NestConfigureFuncInputRegionId = 0;
-  LoopBoundFuncInputRegionId = 1;
-  NumReservedStreamRegionId = 2;
+  InvalidRegionId = 0;
+  NestConfigureFuncInputRegionId = 1;
+  LoopBoundFuncInputRegionId = 2;
+  NumReservedStreamRegionId = 3;
 }
 
 message StreamRegion {
@@ -220,6 +224,7 @@ message StreamRegion {
   ExecFuncInfo loop_bound_func = 15;
   bool loop_bound_ret = 16;
   bool is_loop_bound = 17;
+  bool loop_eliminated = 18;
 }
 
 // All the configured stream region in one place.
