@@ -24,6 +24,7 @@ void StaticStreamLoopBoundBuilder::buildStreamLoopBoundForLoop(
       Analyzer->getBBBranchDG()->getBBBranchDataGraph(Loop, LatchBB);
   if (!this->isStreamLoopBound(Analyzer, Loop, LatchBBBranchDG)) {
     LLVM_DEBUG(llvm::dbgs() << "[LoopBound] Not StreamLoopBound.\n");
+    return;
   }
 
   // Break out the loop when DB() == Ret.
