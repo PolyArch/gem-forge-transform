@@ -260,6 +260,52 @@ bool StaticMemStream::validateSCEVAsStreamDG(
           continue;
         }
       }
+    } else if (auto UnknownSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(SCEV)) {
+      auto Value = UnknownSCEV->getValue();
+      /**
+       * SCEV can not handle binary operation, e.g. and. Here I explicitly take
+       * care of them.
+       */
+      if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+        if (Inst->getOpcode() == llvm::Instruction::And) {
+          llvm::dbgs() << "[And]" << '\n';
+          const llvm::SCEV *LoopVariantSCEV = nullptr;
+          for (size_t OperandIdx = 0, NumOperands = Inst->getNumOperands();
+               OperandIdx < NumOperands; ++OperandIdx) {
+            auto Op = Inst->getOperand(OperandIdx);
+            if (!this->SE->isSCEVable(Op->getType())) {
+              LLVM_DEBUG(llvm::dbgs() << "[NotCandidate] Non SCEVable Op: ";
+                         Op->print(llvm::dbgs(), true /* IsForDebug */);
+                         llvm::dbgs() << ".\n");
+            }
+            auto OpSCEV = this->SE->getSCEV(Op);
+            if (this->SE->isLoopInvariant(OpSCEV, this->ConfigureLoop)) {
+              // Loop invariant.
+              continue;
+            }
+            if (InputSCEVs.count(OpSCEV)) {
+              // Input SCEV.
+              continue;
+            }
+            if (llvm::isa<llvm::SCEVAddRecExpr>(OpSCEV)) {
+              // AddRec SCEV.
+              continue;
+            }
+            if (LoopVariantSCEV == nullptr) {
+              LoopVariantSCEV = OpSCEV;
+            } else {
+              // More than one LoopVariant/Non-Input SCEV operand.
+              return false;
+            }
+          }
+          if (LoopVariantSCEV == nullptr) {
+            // We are done.
+            break;
+          }
+          SCEV = LoopVariantSCEV;
+          continue;
+        }
+      }
     }
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEV in StreamDG "
                             << this->formatName() << " SCEV: ";
