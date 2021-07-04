@@ -464,6 +464,7 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
   auto ClonedExitInst = this->getClonedValue(ExitInst);
   auto ClonedReducedValue = this->addStreamLoadOrAtomic(
       ReduceStream, ClonedExitInst->getType(), ClonedExitBB->getFirstNonPHI());
+  ReduceStream->StaticStreamInfo.set_core_need_final_value(true);
   /**
    * Find out-of-loop ExitValue user instructions.
    * We have to first find them and then replace the usages, cause we can

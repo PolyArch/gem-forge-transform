@@ -130,6 +130,9 @@ message StaticStreamInfo {
   // Loop Eliminated.
   bool loop_eliminated = 36;
 
+  // Need final value (e.g. loop ends).
+  bool core_need_final_value = 37;
+
   int32 core_element_size = 60;
   int32 mem_element_size = 61;
   // Optional data type for debug purpose.
