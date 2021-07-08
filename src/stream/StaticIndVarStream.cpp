@@ -289,10 +289,38 @@ bool StaticIndVarStream::analyzeIsPointerChaseFromComputePath(
                             << this->AllComputePaths.size() << '\n');
     return false;
   }
-  if (this->LoadBaseStreams.size() != 1) {
+  if (this->LoadBaseStreams.size() == 0) {
     // No LoadStream input to reduce one.
-    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] No/Multi InputLoadS.\n");
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] No InputLoadS.\n");
     return false;
+  }
+  auto FirstLoadBaseS = *(this->LoadBaseStreams.begin());
+  for (auto LoadBaseS : this->LoadBaseStreams) {
+    if (LoadBaseS->AliasBaseStream != FirstLoadBaseS->AliasBaseStream) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "==== [NotPtrChase] InputLoadS Not Same AliasBase: "
+                 << LoadBaseS->formatName() << ".\n");
+      return false;
+    }
+    if (LoadBaseS->AliasOffset > 64) {
+      // Maximum one cache line offset.
+      LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] InputLoadS AliasOffset "
+                              << LoadBaseS->AliasOffset << " Too Large: "
+                              << LoadBaseS->formatName() << ".\n");
+      return false;
+    }
+    if (LoadBaseS->BaseStepRootStreams.size() != 1) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "==== [NotPtrChase] Multi StepRoot for LoadBaseS: "
+                 << LoadBaseS->formatName() << '\n');
+      return false;
+    }
+    if (LoadBaseS->BaseStepRootStreams.count(
+            const_cast<StaticIndVarStream *>(this)) == 0) {
+      LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] StepRoot not Myself: "
+                              << LoadBaseS->formatName() << '\n');
+      return false;
+    }
   }
   if (!this->IndVarBaseStreams.empty()) {
     // This has other IndVarBaseStream, cannot be Pointer Cahse.
@@ -310,19 +338,6 @@ bool StaticIndVarStream::analyzeIsPointerChaseFromComputePath(
     // Final value should be an instruction.
     LLVM_DEBUG(llvm::dbgs()
                << "==== [NotPtrChase] FinalValue is not Instruction\n");
-    return false;
-  }
-  auto LoadBaseS = *(this->LoadBaseStreams.begin());
-  if (LoadBaseS->BaseStepRootStreams.size() != 1) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "==== [NotPtrChase] Multi StepRoot for LoadBaseS: "
-               << LoadBaseS->formatName() << '\n');
-    return false;
-  }
-  if (LoadBaseS->BaseStepRootStreams.count(
-          const_cast<StaticIndVarStream *>(this)) == 0) {
-    LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] StepRoot not Myself: "
-                            << LoadBaseS->formatName() << '\n');
     return false;
   }
   return true;
