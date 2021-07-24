@@ -102,8 +102,8 @@ bool StreamLoopEliminator::canLoopBeEliminated(
    * 1. For all ClonedInsts, must be one of these:
    *   a. Pending removed.
    *   b. No outside user and
-   *      Not Call/Invoke, except StreamLoad/StreamStep.
-   * 2. Has StreamLoopBound.
+   *      Not Call/Invoke/Store, except StreamLoad/StreamStep.
+   * 2. Has StreamLoopBound or FixedTripCountSCEV.
    * 3. Has a preheader and single dedicated exit block.
    * 4. Has only one BasicBlock.
    *   This is mainly to restrict the control flow. May be relaxed later.
@@ -150,6 +150,13 @@ bool StreamLoopEliminator::canLoopBeEliminated(
           });
           return false;
         }
+      } else if (llvm::isa<llvm::StoreInst>(Inst)) {
+        LLVM_DEBUG({
+          llvm::dbgs() << "[LoopEliminate] Invalid Store Inst ";
+          Inst->print(llvm::dbgs(), true /* IsForDebug */);
+          llvm::dbgs() << "\n";
+        });
+        return false;
       }
     }
   }
@@ -157,8 +164,21 @@ bool StreamLoopEliminator::canLoopBeEliminated(
   auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   if (!ConfigureInfo.hasLoopBoundDG()) {
     // 2.
-    LLVM_DEBUG({ llvm::dbgs() << "[LoopEliminate] No StreamLoopBound.\n"; });
-    return false;
+    LLVM_DEBUG({
+      llvm::dbgs()
+          << "[LoopEliminate] No StreamLoopBound. Check TripCountSCEV.\n";
+    });
+
+    auto SE = this->Transformer->CachedLI->getScalarEvolution(
+        Loop->getHeader()->getParent());
+    auto TripCountSCEV = LoopUtils::getTripCountSCEV(SE, Loop);
+    if (llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) ||
+        (!SE->isLoopInvariant(TripCountSCEV, Loop))) {
+
+      LLVM_DEBUG(
+          { llvm::dbgs() << "[LoopEliminate] No FixedTripCountSCEV.\n"; });
+      return false;
+    }
   }
 
   if (!ClonedLoop->getLoopPreheader()) {

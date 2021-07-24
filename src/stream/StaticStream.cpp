@@ -406,7 +406,7 @@ bool StaticStream::checkBaseStreamInnerMostLoopContainsMine() const {
 }
 
 bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
-  // Noo need to worry about back edge base streams, cause they are guaranteed
+  // No need to worry about back edge base streams, cause they are guaranteed
   // to be not in a parent loop.
   assert(this->isCandidate() &&
          "Should not check static mapping for non-candidate stream.");

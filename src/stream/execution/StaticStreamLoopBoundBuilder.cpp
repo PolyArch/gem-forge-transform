@@ -14,6 +14,21 @@ void StaticStreamLoopBoundBuilder::buildStreamLoopBoundForLoop(
   }
   LLVM_DEBUG(llvm::dbgs() << "[LoopBound] Try to build StreamLoopBound for "
                           << LoopUtils::getLoopId(Loop) << "\n");
+
+  auto SE = this->Transformer->CachedLI->getScalarEvolution(
+      Loop->getHeader()->getParent());
+  auto TripCountSCEV = LoopUtils::getTripCountSCEV(SE, Loop);
+  if (!llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) &&
+      SE->isLoopInvariant(TripCountSCEV, Loop)) {
+    LLVM_DEBUG({
+      llvm::dbgs()
+          << "[LoopBound] Skip StreamLoopBound for FixedTripCountSCEV ";
+      TripCountSCEV->print(llvm::dbgs());
+      llvm::dbgs() << "\n";
+    });
+    return;
+  }
+
   auto LatchBB = Loop->getLoopLatch();
   if (!LatchBB) {
     LLVM_DEBUG(llvm::dbgs() << "[LoopBound] No Latch.\n");

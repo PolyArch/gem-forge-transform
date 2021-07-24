@@ -21,26 +21,29 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
         auto CurrentLoop = this->InnerMostLoop;
         while (CurrentLoop != this->ConfigureLoop) {
           bool hasConstantTripCount = false;
-          if (this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
-            auto TripCountSCEV =
-                LoopUtils::getTripCountSCEV(this->SE, CurrentLoop);
-            if (this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
-              hasConstantTripCount = true;
-            }
+          auto TripCountSCEV =
+              LoopUtils::getTripCountSCEV(this->SE, CurrentLoop);
+          if (!llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) &&
+              this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
+            hasConstantTripCount = true;
           }
           if (!hasConstantTripCount) {
-            LLVM_DEBUG(
-                llvm::dbgs()
-                    << "Variant TripCount for " << this->formatName() << '\n';
-                llvm::dbgs()
-                << " Loop " << LoopUtils::getLoopId(CurrentLoop) << " "
-                << this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)
-                << '\n';
-                LoopUtils::getTripCountSCEV(this->SE, CurrentLoop)
-                    ->print(llvm::dbgs());
-                this->SE->getConstantMaxBackedgeTakenCount(CurrentLoop)
-                    ->print(llvm::dbgs()));
-            llvm::dbgs() << '\n';
+            LLVM_DEBUG({
+              llvm::dbgs() << "Variant TripCount for " << this->formatName()
+                           << '\n';
+              llvm::dbgs() << " Loop " << LoopUtils::getLoopId(CurrentLoop)
+                           << " HasLoopInvariantBackedgeTakeCount "
+                           << this->SE->hasLoopInvariantBackedgeTakenCount(
+                                  CurrentLoop)
+                           << '\n';
+              llvm::dbgs() << "TripCountSCEV ";
+              TripCountSCEV->print(llvm::dbgs());
+              llvm::dbgs() << '\n';
+              llvm::dbgs() << "ConstantMaxBackedgeTakenCount ";
+              this->SE->getConstantMaxBackedgeTakenCount(CurrentLoop)
+                  ->print(llvm::dbgs());
+              llvm::dbgs() << '\n';
+            });
           }
           if (!hasConstantTripCount) {
             this->StaticStreamInfo.set_not_stream_reason(

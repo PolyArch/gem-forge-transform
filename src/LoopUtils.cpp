@@ -206,11 +206,16 @@ llvm::Instruction *LoopUtils::getUnrollableTerminator(llvm::Loop *Loop) {
 const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
                                               const llvm::Loop *Loop) {
 
-  auto BackEdgeTakenSCEV = SE->getBackedgeTakenCount(Loop);
-  LLVM_DEBUG({
-    llvm::dbgs() << "BackEdgeTakenCount ";
-    BackEdgeTakenSCEV->dump();
-  });
+  auto BackEdgeTakenSCEV = SE->getCouldNotCompute();
+  if (SE->hasLoopInvariantBackedgeTakenCount(Loop)) {
+    LLVM_DEBUG(llvm::dbgs() << "LoopVariantBackedgeTakenCount for Loop "
+                            << LoopUtils::getLoopId(Loop) << "\n");
+    BackEdgeTakenSCEV = SE->getBackedgeTakenCount(Loop);
+    LLVM_DEBUG({
+      llvm::dbgs() << "BackEdgeTakenCount ";
+      BackEdgeTakenSCEV->dump();
+    });
+  }
 
   const auto &FuncName =
       Utils::getDemangledFunctionName(Loop->getHeader()->getParent());
