@@ -1,9 +1,7 @@
 /**
  * Simple array sum.
  */
-#ifdef GEM_FORGE
-#include "gem5/m5ops.h"
-#endif
+#include "gfm_utils.h"
 
 #include <malloc.h>
 #include <omp.h>
@@ -64,9 +62,7 @@ int main(int argc, char *argv[]) {
 
 #ifdef WARM_CACHE
   // This should warm up the cache.
-  for (long long i = 0; i < N; i += CACHE_BLOCK_SIZE / sizeof(Value)) {
-    volatile Value x = A[i];
-  }
+  WARM_UP_ARRAY(A, N);
   // Start the threads.
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {

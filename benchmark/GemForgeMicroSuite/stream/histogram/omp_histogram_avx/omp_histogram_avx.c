@@ -65,19 +65,21 @@ __attribute__((noinline)) Value foo(Value *a, uint64_t *histogram, int64_t N) {
 }
 
 // 65536*8 is 512kB.
-const int64_t N = 48 * 1024 * 1024 / sizeof(Value);
-// const int64_t N = 1 * 1024 / sizeof(Value);
-
 uint64_t histogram[HistogramSize];
 uint64_t expected[HistogramSize];
 
 int main(int argc, char *argv[]) {
 
   int numThreads = 1;
-  if (argc == 2) {
+  int64_t N = 48 * 1024 * 1024 / sizeof(Value);
+  if (argc >= 2) {
     numThreads = atoi(argv[1]);
   }
+  if (argc >= 3) {
+    N = atoll(argv[2]);
+  }
   printf("Number of Threads: %d.\n", numThreads);
+  printf("N: %lld.\n", N);
 
   omp_set_dynamic(0);
   omp_set_num_threads(numThreads);
