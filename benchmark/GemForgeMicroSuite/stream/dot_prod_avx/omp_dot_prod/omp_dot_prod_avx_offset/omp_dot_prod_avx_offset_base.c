@@ -78,10 +78,7 @@ int main(int argc, char *argv[]) {
   }
 #endif
   Value *Buffer =
-      (Value *)aligned_alloc(CACHE_BLOCK_SIZE, numPages * PAGE_SIZE);
-  Value *A = Buffer + 0;
-  Value *B = Buffer + N + (OFFSET_BYTES / sizeof(Value));
-
+      (Value *)aligned_alloc(PAGE_SIZE, numPages * PAGE_SIZE);
   // Now we touch all the pages according to the index.
   int elementsPerPage = PAGE_SIZE / sizeof(Value);
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
@@ -90,6 +87,15 @@ int main(int argc, char *argv[]) {
     int elementIdx = pageIdx * elementsPerPage;
     volatile Value v = Buffer[elementIdx];
   }
+
+  Value *A = Buffer + 0;
+  Value *B = Buffer + N + (OFFSET_BYTES / sizeof(Value));
+
+  printf("A %p B %p N %ld ElementSize %d.\n", A, B, N, sizeof(A[0]));
+  gf_stream_nuca_region(A, sizeof(Value), N);
+  gf_stream_nuca_region(B, sizeof(Value), N);
+  gf_stream_nuca_align(A, B, 0);
+  gf_stream_nuca_remap();
 
   // Initialize the array. We avoid AVX since we only have partial AVX support.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)

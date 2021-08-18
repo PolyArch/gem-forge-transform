@@ -50,22 +50,30 @@ int main(int argc, char *argv[]) {
   omp_set_num_threads(numThreads);
   omp_set_schedule(omp_sched_static, 0);
 
-  Value *Buffer =
-      (Value *)aligned_alloc(CACHE_BLOCK_SIZE, 2 * N * sizeof(Value));
-  Value *A = Buffer + 0;
-  Value *B = Buffer + N;
-// Initialize separately so that their physical address is not interleaved
+  Value *Buffer = (Value *)aligned_alloc(PAGE_SIZE, 2 * N * sizeof(Value));
+  // Initialize separately so that their physical address is not interleaved
   int elementsPerPage = PAGE_SIZE / sizeof(Value);
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
   for (int i = 0; i < 2 * N; i += elementsPerPage) {
     volatile Value v = Buffer[i];
   }
-// We avoid AVX since we only have partial AVX support.
+  // We avoid AVX since we only have partial AVX support.
+  Value *A = Buffer + 0;
+  Value *B = Buffer + N;
+
+  printf("A %p B %p N %ld ElementSize %d.\n", A, B, N, sizeof(A[0]));
+  gf_stream_nuca_region(A, sizeof(Value), N);
+  gf_stream_nuca_region(B, sizeof(Value), N);
+  gf_stream_nuca_align(A, B, 0);
+  gf_stream_nuca_remap();
+
+// #ifdef CHECK
 #pragma clang loop vectorize(disable)
   for (int i = 0; i < N; ++i) {
     A[i] = i;
     B[i] = i % 3;
   }
+  // #endif
 
   gf_detail_sim_start();
 #ifdef WARM_CACHE
