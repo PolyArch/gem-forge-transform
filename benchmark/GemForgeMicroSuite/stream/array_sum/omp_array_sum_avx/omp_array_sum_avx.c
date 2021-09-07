@@ -2,7 +2,7 @@
  * Simple array sum.
  */
 
-#include "../gfm_utils.h"
+#include "gfm_utils.h"
 
 #include <malloc.h>
 #include <math.h>
@@ -16,20 +16,26 @@
 typedef float Value;
 
 #define STRIDE 1
-// #define CHECK
-#define WARM_CACHE
 
-// We sum over 16MB data. 16M / sizeof(Value)
-#define N 4194304
-// #define N 1024
-#define V 16
+/**
+ * Parameters:
+ * STATIC_CHUNK_SIZE: OpenMP static scheduling chunk size.
+ * OFFSET_BYTES:      Offset between arrays.
+ */
+#ifndef STATIC_CHUNK_SIZE
+#define STATIC_CHUNK_SIZE 0
+#endif
 
-__attribute__((noinline)) Value foo(Value *A) {
+__attribute__((noinline)) Value foo(Value *A, uint64_t N) {
   Value ret = 0.0f;
 #pragma omp parallel
   {
     __m512 valS = _mm512_set1_ps(0.0f);
-#pragma omp for schedule(static)
+#if STATIC_CHUNK_SIZE == 0
+#pragma omp for nowait schedule(static) firstprivate(A)
+#else
+#pragma omp for nowait schedule(static, STATIC_CHUNK_SIZE) firstprivate(A)
+#endif
     for (uint64_t i = 0; i < N; i += 16) {
       __m512 valA = _mm512_load_ps(A + i);
       valS = _mm512_add_ps(valA, valS);
@@ -40,60 +46,76 @@ __attribute__((noinline)) Value foo(Value *A) {
   return ret;
 }
 
-#define CACHE_BLOCK_SIZE 64
-
 int main(int argc, char *argv[]) {
 
   int numThreads = 1;
-  if (argc == 2) {
-    numThreads = atoi(argv[1]);
+  uint64_t N = 16 * 1024 * 1024 / sizeof(Value);
+  int check = 0;
+  int warm = 1;
+  int argx = 2;
+  if (argc >= argx) {
+    numThreads = atoi(argv[argx - 1]);
   }
+  argx++;
+  if (argc >= argx) {
+    N = atoll(argv[argx - 1]);
+  }
+  argx++;
+  if (argc >= argx) {
+    check = atoi(argv[argx - 1]);
+  }
+  argx++;
+  if (argc >= argx) {
+    warm = atoi(argv[argx - 1]);
+  }
+  argx++;
+
   printf("Number of Threads: %d.\n", numThreads);
+  printf("Data size %lukB. Warm %d Check %d.\n", N * sizeof(Value) / 1024, warm,
+         check);
 
   omp_set_dynamic(0);
   omp_set_num_threads(numThreads);
   omp_set_schedule(omp_sched_static, 0);
 
-  Value *A = (Value *)aligned_alloc(CACHE_BLOCK_SIZE, N * sizeof(Value));
-  for (int i = 0; i < N; ++i) {
-    A[i] = i;
+  Value *A = (Value *)aligned_alloc(PAGE_SIZE, N * sizeof(Value));
+  if (check) {
+    for (int i = 0; i < N; ++i) {
+      A[i] = i;
+    }
   }
 
-#ifdef GEM_FORGE
-  m5_detail_sim_start();
-#endif
+  Value p;
+  Value *pp = &p;
 
-#ifdef WARM_CACHE
-  // This should warm up the cache.
-  for (long long i = 0; i < N; i += CACHE_BLOCK_SIZE / sizeof(Value)) {
-    volatile Value x = A[i];
+  gf_detail_sim_start();
+
+  if (warm) {
+    // This should warm up the cache.
+    for (long long i = 0; i < N; i += CACHE_LINE_SIZE / sizeof(Value)) {
+      volatile Value x = A[i];
+    }
   }
   // Start the threads.
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) firstprivate(pp)
   for (int tid = 0; tid < numThreads; ++tid) {
-    volatile Value x = A[tid];
+    volatile Value x = *pp;
   }
-#endif
-#ifdef GEM_FORGE
-  m5_reset_stats(0, 0);
-#endif
 
-  volatile Value computed = foo(A);
-#ifdef GEM_FORGE
-  m5_detail_sim_end();
-  exit(0);
-#endif
+  gf_reset_stats();
+  volatile Value computed = foo(A, N);
+  gf_detail_sim_end();
 
-#ifdef CHECK
-  Value expected = 0;
-  for (int i = 0; i < N; i++) {
-    expected += A[i];
+  if (check) {
+    Value expected = 0;
+    for (int i = 0; i < N; i++) {
+      expected += A[i];
+    }
+    printf("Ret = %f, Expected = %f.\n", computed, expected);
+    if (fabs((computed - expected) / expected) > 0.01f) {
+      gf_panic();
+    }
   }
-  printf("Ret = %f, Expected = %f.\n", computed, expected);
-  if (fabs(computed - expected) > 0.01f) {
-    gf_panic();
-  }
-#endif
 
   return 0;
 }
