@@ -96,7 +96,7 @@ bool LoopUtils::isLoopContinuous(const llvm::Loop *Loop) {
       // Check if calling some supported math function.
       if (Callee->isDeclaration()) {
         if (LoopUtils::LoopContinuityIgnoredFunctions.count(
-                Callee->getName()) != 0) {
+                Callee->getName().str()) != 0) {
           continue;
         }
       }
@@ -285,7 +285,7 @@ bool LoopUtils::isSingleExitLoop(const llvm::Loop *Loop) {
   std::string FileName;
   if (auto DebugLoc = Loop->getStartLoc()) {
     auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
-    FileName = Scope->getFilename();
+    FileName = Scope->getFilename().str();
   }
   const auto &FuncName =
       Utils::getDemangledFunctionName(Loop->getHeader()->getParent());

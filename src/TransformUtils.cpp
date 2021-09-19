@@ -12,7 +12,8 @@ llvm::Constant *TransformUtils::insertStringLiteral(llvm::Module *Module,
   auto GlobalVariableStr = new llvm::GlobalVariable(
       *(Module), ArrayTy, true, llvm::GlobalValue::PrivateLinkage, Array,
       ".str");
-  GlobalVariableStr->setAlignment(1);
+  llvm::MaybeAlign AlignBytes(1);
+  GlobalVariableStr->setAlignment(AlignBytes);
   /**
    * Get the address of the first element in the string.
    * Notice that the global variable %.str is also a pointer, that's why we

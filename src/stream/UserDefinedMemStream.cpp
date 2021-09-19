@@ -30,8 +30,8 @@ bool UserDefinedMemStream::isUserDefinedMemStream(
   if (Utils::isCallOrInvokeInst(Inst)) {
     auto *Callee = Utils::getCalledFunction(Inst);
     if (Callee->isDeclaration() &&
-        UserDefinedMemStream::StreamLoadFuncNames.count(Callee->getName()) !=
-            0) {
+        UserDefinedMemStream::StreamLoadFuncNames.count(
+            Callee->getName().str()) != 0) {
       return true;
     }
   }

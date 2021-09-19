@@ -108,8 +108,8 @@ void SimpointIntervalSelectPass::generateProfileInterval() {
       }
     }
     auto Inst = Utils::getInstUIDMap().getInst(UID);
-    Logger.addInst(Inst->getFunction()->getName(),
-                   Inst->getParent()->getName());
+    Logger.addInst(Inst->getFunction()->getName().str(),
+                   Inst->getParent()->getName().str());
   }
   std::string ProfileFileName = TraceFileName + ".profile";
   Logger.serializeToFile(ProfileFileName);
@@ -140,8 +140,7 @@ void SimpointIntervalSelectPass::registerEdgeMarkFunc() {
   auto EdgeMarkFuncTy =
       llvm::FunctionType::get(VoidTy, EdgeMarkFuncArgs, false);
   this->EdgeMarkFunc =
-      this->Module->getOrInsertFunction("m5_work_mark", EdgeMarkFuncTy)
-          .getCallee();
+      this->Module->getOrInsertFunction("m5_work_mark", EdgeMarkFuncTy);
 }
 
 void SimpointIntervalSelectPass::insertEdgeMark(

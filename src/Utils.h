@@ -96,9 +96,9 @@ public:
 
   static const llvm::Value *getCalledValue(const llvm::Instruction *Inst) {
     if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
-      return CallInst->getCalledValue();
+      return CallInst->getCalledOperand();
     } else if (auto InvokeInst = llvm::dyn_cast<llvm::InvokeInst>(Inst)) {
-      return InvokeInst->getCalledValue();
+      return InvokeInst->getCalledOperand();
     } else {
       llvm_unreachable(
           "Should not send no call/invoke instruction to getCalledFunction.");

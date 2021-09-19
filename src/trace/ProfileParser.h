@@ -5,6 +5,7 @@
 
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
+#include "llvm/Support/CommandLine.h"
 
 extern llvm::cl::opt<std::string> ProfileFolder;
 

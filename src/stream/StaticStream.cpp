@@ -2,6 +2,7 @@
 
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/IntrinsicsX86.h" // For some x86 intrinsic ids.
 #include "llvm/Support/raw_ostream.h"
 
 #include <sstream>

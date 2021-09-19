@@ -57,7 +57,8 @@ getOrCreateStringLiteral(std::map<std::string, llvm::Constant *> &GlobalStrings,
     auto GlobalVariableStr = new llvm::GlobalVariable(
         *(Module), ArrayTy, true, llvm::GlobalValue::PrivateLinkage, Array,
         ".str");
-    GlobalVariableStr->setAlignment(1);
+    llvm::MaybeAlign AlignBytes(1);
+    GlobalVariableStr->setAlignment(AlignBytes);
     // Get the address of the first element in the string.
     // Notice that the global variable %.str is also a pointer, that's why we
     // need two indexes. See great tutorial:
@@ -325,8 +326,8 @@ bool ReplayTrace::processFunction(llvm::Function &Function) {
     }
     // Map all pointer
     auto ArgName = ArgIter->getName();
-    auto ArgNameValue =
-        getOrCreateStringLiteral(this->GlobalStrings, this->Module, ArgName);
+    auto ArgNameValue = getOrCreateStringLiteral(this->GlobalStrings,
+                                                 this->Module, ArgName.str());
     auto CastAddrValue = Builder.CreateCast(
         llvm::Instruction::CastOps::BitCast, &*ArgIter,
         llvm::Type::getInt8PtrTy(this->Module->getContext()));
@@ -336,7 +337,7 @@ bool ReplayTrace::processFunction(llvm::Function &Function) {
 
   // Insert replay call.
   auto TraceNameValue = getOrCreateStringLiteral(
-      this->GlobalStrings, this->Module, Function.getName());
+      this->GlobalStrings, this->Module, Function.getName().str());
   auto NumMapsValue = llvm::ConstantInt::get(
       llvm::IntegerType::getInt64Ty(this->Module->getContext()),
       ReplayArgs.size() / 2, false);
@@ -715,7 +716,7 @@ void ReplayTrace::registerFunction(llvm::Module &Module) {
       Int64Ty,
   };
   auto ReplayTy = llvm::FunctionType::get(VoidTy, ReplayArgs, true);
-  this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy).getCallee();
+  this->ReplayFunc = Module.getOrInsertFunction("replay", ReplayTy);
 
   auto FakeRegisterAllocationTy = llvm::FunctionType::get(VoidTy, false);
   auto FakeRegisterAllocationFunc = llvm::Function::Create(

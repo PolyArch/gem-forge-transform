@@ -204,13 +204,13 @@ private:
   InstructionUIDMap InstUIDMap;
 
   /* Print functions. */
-  llvm::Value *GetOrAllocateDataBufferFunc;
-  llvm::Value *PrintInstFunc;
-  llvm::Value *PrintValueFunc;
-  llvm::Value *PrintInstValueFunc;
-  llvm::Value *PrintFuncEnterFunc;
-  llvm::Value *PrintInstEndFunc;
-  llvm::Value *PrintFuncEnterEndFunc;
+  llvm::FunctionCallee GetOrAllocateDataBufferFunc;
+  llvm::FunctionCallee PrintInstFunc;
+  llvm::FunctionCallee PrintValueFunc;
+  llvm::FunctionCallee PrintInstValueFunc;
+  llvm::FunctionCallee PrintFuncEnterFunc;
+  llvm::FunctionCallee PrintInstEndFunc;
+  llvm::FunctionCallee PrintFuncEnterEndFunc;
 
   // Contains all the traced functions, if specified.
   std::unordered_set<llvm::Function *> tracedFunctions;
@@ -244,19 +244,15 @@ private:
     };
     auto GetOrAllocateDataBufferTy =
         llvm::FunctionType::get(Int8PtrTy, GetOrAllocateDataBufferArgs, false);
-    this->GetOrAllocateDataBufferFunc =
-        Module
-            .getOrInsertFunction("getOrAllocateDataBuffer",
-                                 GetOrAllocateDataBufferTy)
-            .getCallee();
+    this->GetOrAllocateDataBufferFunc = Module.getOrInsertFunction(
+        "getOrAllocateDataBuffer", GetOrAllocateDataBufferTy);
 
     std::vector<llvm::Type *> PrintInstArgs{
         Int8PtrTy, // char* FunctionName
         Int64Ty,   // uint64_t UID,
     };
     auto PrintInstTy = llvm::FunctionType::get(VoidTy, PrintInstArgs, false);
-    this->PrintInstFunc =
-        Module.getOrInsertFunction("printInst", PrintInstTy).getCallee();
+    this->PrintInstFunc = Module.getOrInsertFunction("printInst", PrintInstTy);
 
     std::vector<llvm::Type *> PrintValueArgs{
         Int8Ty,
@@ -266,7 +262,7 @@ private:
     };
     auto PrintValueTy = llvm::FunctionType::get(VoidTy, PrintValueArgs, true);
     this->PrintValueFunc =
-        Module.getOrInsertFunction("printValue", PrintValueTy).getCallee();
+        Module.getOrInsertFunction("printValue", PrintValueTy);
 
     std::vector<llvm::Type *> PrintInstValueArgs{
         Int32Ty, // unsigned NumAdditionalArgs,
@@ -274,8 +270,7 @@ private:
     auto PrintInstValueTy =
         llvm::FunctionType::get(VoidTy, PrintInstValueArgs, true);
     this->PrintInstValueFunc =
-        Module.getOrInsertFunction("printInstValue", PrintInstValueTy)
-            .getCallee();
+        Module.getOrInsertFunction("printInstValue", PrintInstValueTy);
 
     std::vector<llvm::Type *> PrintFuncEnterArgs{
         Int8PtrTy,
@@ -284,17 +279,15 @@ private:
     auto PrintFuncEnterTy =
         llvm::FunctionType::get(VoidTy, PrintFuncEnterArgs, false);
     this->PrintFuncEnterFunc =
-        Module.getOrInsertFunction("printFuncEnter", PrintFuncEnterTy)
-            .getCallee();
+        Module.getOrInsertFunction("printFuncEnter", PrintFuncEnterTy);
 
     auto PrintInstEndTy = llvm::FunctionType::get(VoidTy, false);
     this->PrintInstEndFunc =
-        Module.getOrInsertFunction("printInstEnd", PrintInstEndTy).getCallee();
+        Module.getOrInsertFunction("printInstEnd", PrintInstEndTy);
 
     auto PrintFuncEnterEndTy = llvm::FunctionType::get(VoidTy, false);
     this->PrintFuncEnterEndFunc =
-        Module.getOrInsertFunction("printFuncEnterEnd", PrintFuncEnterEndTy)
-            .getCallee();
+        Module.getOrInsertFunction("printFuncEnterEnd", PrintFuncEnterEndTy);
   }
 
   std::map<std::string, llvm::Constant *> GlobalStrings;
@@ -322,7 +315,7 @@ private:
 
     auto PrintFuncEnterArgs = std::vector<llvm::Value *>{
         getOrCreateStringLiteral(this->GlobalStrings, this->Module,
-                                 Function.getName()),
+                                 Function.getName().str()),
         IsTracedValue,
     };
     Builder.CreateCall(this->PrintFuncEnterFunc, PrintFuncEnterArgs);
@@ -340,7 +333,7 @@ private:
     llvm::BasicBlock::iterator NextInstIter;
 
     auto FunctionNameValue = getOrCreateStringLiteral(
-        this->GlobalStrings, this->Module, BB.getParent()->getName());
+        this->GlobalStrings, this->Module, BB.getParent()->getName().str());
     // HeadInst is an instruction that must be at the first place of BB.
     // e.g. PHINode, landingpad.
     auto HeadInsts = std::vector<std::pair<llvm::Instruction *, unsigned>>();
@@ -550,7 +543,7 @@ private:
     auto TagValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt8Ty(this->Module->getContext()),
         PRINT_VALUE_TAG_PARAMETER, false);
-    auto Name = IncomingBlock->getName();
+    auto Name = IncomingBlock->getName().str();
     auto NameValue =
         getOrCreateStringLiteral(this->GlobalStrings, this->Module, Name);
 
@@ -567,7 +560,7 @@ private:
         llvm::IntegerType::getInt32Ty(this->Module->getContext()),
         NumAdditionalArgs, false);
 
-    auto IncomingValueName = IncomingValue->getName();
+    auto IncomingValueName = IncomingValue->getName().str();
     auto IncomingValueNameValue = getOrCreateStringLiteral(
         this->GlobalStrings, this->Module, IncomingValueName);
 
@@ -581,7 +574,7 @@ private:
   std::vector<llvm::Value *> getPrintInstValueArgs(const char Tag,
                                                    llvm::Value *Parameter,
                                                    llvm::IRBuilder<> &Builder) {
-    auto Name = Parameter->getName();
+    auto Name = Parameter->getName().str();
     auto Type = Parameter->getType();
     auto TypeId = Type->getTypeID();
 
@@ -611,19 +604,19 @@ private:
       }
       break;
     }
-    case llvm::Type::TypeID::VectorTyID: {
+    case llvm::Type::TypeID::FixedVectorTyID: {
       // Cast to VectorType.
-      auto VectorType = llvm::cast<llvm::VectorType>(Type);
+      auto VectorType = llvm::cast<llvm::FixedVectorType>(Type);
       NumAdditionalArgs = 2;
       // For vector, we have to allocate a buffer.
       auto Buffer = this->getOrCreateVectorStoreBuffer(VectorType, Builder);
       // Store the vector into the buffer.
-      auto TypeBytes = VectorType->getBitWidth() / 8;
+      auto TypeBytes = this->DataLayout->getTypeSizeInBits(Type) / 8;
       // Since the buffer can be allocated from other vector, do a bitcast.
       auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
       // Align with 1 byte is always safe.
       // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
-      auto AlignBytes = 1;
+      llvm::MaybeAlign AlignBytes(1);
       Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
       /**
        * For some corner case, the bit width will be less than 8!
@@ -673,7 +666,7 @@ private:
                                                llvm::IRBuilder<> &Builder) {
     auto TagValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt8Ty(this->Module->getContext()), Tag, false);
-    auto Name = Parameter->getName();
+    auto Name = Parameter->getName().str();
     auto NameValue =
         getOrCreateStringLiteral(this->GlobalStrings, this->Module, Name);
 
@@ -709,19 +702,19 @@ private:
       }
       break;
     }
-    case llvm::Type::TypeID::VectorTyID: {
+    case llvm::Type::TypeID::FixedVectorTyID: {
       // Cast to VectorType.
-      auto VectorType = llvm::cast<llvm::VectorType>(Type);
+      auto VectorType = llvm::cast<llvm::FixedVectorType>(Type);
       NumAdditionalArgs = 2;
       // For vector, we have to allocate a buffer.
       auto Buffer = this->getOrCreateVectorStoreBuffer(VectorType, Builder);
       // Store the vector into the buffer.
-      auto TypeBytes = VectorType->getBitWidth() / 8;
+      auto TypeBytes = this->DataLayout->getTypeSizeInBits(Type) / 8;
       // Since the buffer can be allocated from other vector, do a bitcast.
       auto CastBuffer = Builder.CreateBitCast(Buffer, Type->getPointerTo());
       // Align with 1 byte is always safe.
       // auto AlignBytes = VectorType->getScalarSizeInBits() / 8;
-      auto AlignBytes = 1;
+      llvm::MaybeAlign AlignBytes(1);
       Builder.CreateAlignedStore(Parameter, CastBuffer, AlignBytes);
       /**
        * For some corner case, the bit width will be less than 8!

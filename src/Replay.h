@@ -63,7 +63,7 @@ protected:
    */
   LLVM::TDG::StaticInformation StaticInfo;
 
-  llvm::Value *ReplayFunc;
+  llvm::FunctionCallee ReplayFunc;
   llvm::Instruction *FakeRegisterSpill;
   llvm::Instruction *FakeRegisterFill;
 

@@ -26,7 +26,7 @@ const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
   auto MemorizedIter = Utils::MemorizedDemangledFunctionNames.find(Func);
   if (MemorizedIter == Utils::MemorizedDemangledFunctionNames.end()) {
 
-    std::string MangledName = Func->getName();
+    std::string MangledName = Func->getName().str();
     auto DemangledName = llvm::demangle(MangledName);
     LLVM_DEBUG(llvm::dbgs() << "Demangled " << MangledName << " into "
                             << DemangledName << '\n');
@@ -70,7 +70,7 @@ std::string Utils::formatLLVMValueWithoutFunc(const llvm::Value *Value) {
     ss << ')';
     return ss.str();
   } else {
-    return Value->getName();
+    return Value->getName().str();
   }
 }
 

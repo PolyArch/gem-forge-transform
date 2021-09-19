@@ -98,7 +98,7 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
     *reinterpret_cast<uint64_t *>(&Bytes[0]) = this->getAddr();
     break;
   }
-  case llvm::Type::VectorTyID: {
+  case llvm::Type::FixedVectorTyID: {
     Bytes = this->Value;
     // auto VectorType = llvm::cast<llvm::VectorType>(Type);
     // size_t ByteWidth = VectorType->getBitWidth() / 8;
@@ -113,7 +113,9 @@ std::string DynamicValue::serializeToBytes(llvm::Type *Type) const {
     // }
     break;
   }
-  default: { llvm_unreachable("Unsupported type.\n"); }
+  default: {
+    llvm_unreachable("Unsupported type.\n");
+  }
   }
   return Bytes;
 }
@@ -331,7 +333,7 @@ std::string LLVMDynamicInstruction::getOpName() const {
       if (Callee->isIntrinsic()) {
         // If this is a simple memset, translate to a "huge" store instruction.
         auto IntrinsicId = Callee->getIntrinsicID();
-        if (IntrinsicId == llvm::Intrinsic::ID::memset) {
+        if (IntrinsicId == llvm::Intrinsic::memset) {
           return "memset";
         }
         // For instrinsic, use "call_intrinsic" for now.
@@ -390,7 +392,7 @@ void LLVMDynamicInstruction::formatCustomizedFields(llvm::raw_ostream &Out,
       // Make sure this is no indirect call.
       if (Callee->isIntrinsic()) {
         auto IntrinsicId = Callee->getIntrinsicID();
-        if (IntrinsicId == llvm::Intrinsic::ID::memset) {
+        if (IntrinsicId == llvm::Intrinsic::memset) {
           // base|offset|trace_vaddr|size|value|
 
           /**
@@ -436,7 +438,7 @@ void LLVMDynamicInstruction::formatCustomizedFields(llvm::raw_ostream &Out,
       // Log the static instruction's address and target branch name.
       // Use the memory address as the identifier for static instruction
       // is very hacky, but it does maintain unique.
-      std::string NextBBName =
+      auto NextBBName =
           (*NextIter)->getStaticInstruction()->getParent()->getName();
       Out << BranchStaticInstruction << '|' << NextBBName << '|';
     }
@@ -459,7 +461,7 @@ void LLVMDynamicInstruction::formatCustomizedFields(llvm::raw_ostream &Out,
     // Log the static instruction's address and target branch name.
     // Use the memory address as the identifier for static instruction
     // is very hacky, but it does maintain unique.
-    std::string NextBBName =
+    auto NextBBName =
         (*NextIter)->getStaticInstruction()->getParent()->getName();
     Out << SwitchStaticInstruction << '|' << NextBBName << '|';
     return;
@@ -483,7 +485,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     if (this->DynamicResult->MemBase != "") {
       // This load inst will produce some new base for future memory access.
       LLVM_DEBUG(llvm::dbgs() << "Set new base for load "
-                         << this->DynamicResult->MemBase << '\n');
+                              << this->DynamicResult->MemBase << '\n');
       LoadExtra->set_new_base(this->DynamicResult->MemBase);
     }
     return;
@@ -506,7 +508,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
 
     if (StoreExtra->size() != StoreExtra->value().size()) {
       LLVM_DEBUG(llvm::dbgs() << "size " << StoreExtra->size() << " value size "
-                         << StoreExtra->value().size() << '\n');
+                              << StoreExtra->value().size() << '\n');
       LLVM_DEBUG(llvm::dbgs() << "Stored type: ");
       LLVM_DEBUG(StoredType->print(llvm::errs()));
       LLVM_DEBUG(llvm::dbgs() << "\n");
@@ -534,7 +536,7 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
        */
       if (Callee && Callee->isIntrinsic()) {
         auto IntrinsicId = Callee->getIntrinsicID();
-        if (IntrinsicId == llvm::Intrinsic::ID::memset) {
+        if (IntrinsicId == llvm::Intrinsic::memset) {
           DynamicValue *StoredAddr = this->DynamicOperands[0];
           uint64_t StoredSize = this->DynamicOperands[2]->getInt();
           auto StoreExtra = ProtobufEntry->mutable_store();
@@ -562,7 +564,8 @@ void LLVMDynamicInstruction::serializeToProtobufExtra(
     AllocExtra->set_size(AllocatedSize);
     AllocExtra->set_new_base(this->DynamicResult->MemBase);
     // This alloc inst will produce some new base for future memory access.
-    // LLVM_DEBUG(llvm::dbgs() << "Set new base for alloc " << AllocExtra->new_base()
+    // LLVM_DEBUG(llvm::dbgs() << "Set new base for alloc " <<
+    // AllocExtra->new_base()
     //                    << '\n');
     return;
   }

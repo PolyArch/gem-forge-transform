@@ -15,7 +15,7 @@ public:
 private:
   CallLoopProfileTree *CLProfileTree = nullptr;
 
-  llvm::Value *EdgeMarkFunc = nullptr;
+  llvm::FunctionCallee EdgeMarkFunc;
 
   void generateProfileInterval();
   void generateEdgeTimeline();

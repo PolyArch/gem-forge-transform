@@ -725,7 +725,7 @@ void DataGraph::parseFunctionEnter(TraceParser::TracedFuncEnter &Parsed) {
       // Otherwise, initialize to itself.
       if (this->DynamicFrameStack.size() == 0) {
         // There is no caller.
-        DynamicArgument.MemBase = StaticArgument->getName();
+        DynamicArgument.MemBase = StaticArgument->getName().str();
         DynamicArgument.MemOffset = 0;
       } else {
         // Get the dynamic value of calling stack.
@@ -896,7 +896,7 @@ void DataGraph::handleMemoryBase(DynamicInstruction *DynamicInst) {
       // check it is an address.
       if (GlobalVar->getType()->isPointerTy()) {
         DynamicInst->DynamicOperands[OperandIndex]->MemBase =
-            GlobalVar->getName();
+            GlobalVar->getName().str();
         DynamicInst->DynamicOperands[OperandIndex]->MemOffset = 0;
       }
     } else {

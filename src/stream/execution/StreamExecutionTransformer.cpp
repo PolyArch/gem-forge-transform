@@ -318,7 +318,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
   std::array<llvm::Value *, 1> StreamConfigArgs{ConfigIdxValue};
   Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                      llvm::Intrinsic::ID::ssp_stream_config),
+                                      llvm::Intrinsic::ssp_stream_config),
       StreamConfigArgs);
 
   for (auto S : ConfigureInfo.getSortedStreams()) {
@@ -371,7 +371,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
 
   // Insert the StreamReady instruction.
   Builder.CreateCall(llvm::Intrinsic::getDeclaration(
-      this->ClonedModule.get(), llvm::Intrinsic::ID::ssp_stream_ready));
+      this->ClonedModule.get(), llvm::Intrinsic::ssp_stream_ready));
 }
 
 void StreamExecutionTransformer::insertStreamEndAtLoop(
@@ -406,7 +406,7 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
       std::array<llvm::Value *, 1> StreamEndArgs{ConfigIdxValue};
       auto StreamEndInst = Builder.CreateCall(
           llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                          llvm::Intrinsic::ID::ssp_stream_end),
+                                          llvm::Intrinsic::ssp_stream_end),
           StreamEndArgs);
       InsertedStreamEnds.push_back(StreamEndInst);
     }
@@ -642,8 +642,8 @@ llvm::Value *StreamExecutionTransformer::addStreamLoadOrAtomic(
     StreamLoadType =
         llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext());
     NeedIntToPtr = true;
-  } else if (auto VecType = llvm::dyn_cast<llvm::VectorType>(LoadType)) {
-    auto ElementType = VecType->getVectorElementType();
+  } else if (auto VecType = llvm::dyn_cast<llvm::FixedVectorType>(LoadType)) {
+    auto ElementType = VecType->getElementType();
     if (ElementType->isIntegerTy() || ElementType->isFloatingPointTy()) {
       // Make sure these are correct type.
       auto CastedNumFP64 = 0;
@@ -658,7 +658,7 @@ llvm::Value *StreamExecutionTransformer::addStreamLoadOrAtomic(
         StreamLoadType =
             llvm::Type::getDoubleTy(this->ClonedModule->getContext());
       } else {
-        StreamLoadType = llvm::VectorType::get(
+        StreamLoadType = llvm::FixedVectorType::get(
             llvm::Type::getDoubleTy(this->ClonedModule->getContext()),
             CastedNumFP64);
       }
@@ -672,8 +672,8 @@ llvm::Value *StreamExecutionTransformer::addStreamLoadOrAtomic(
   std::array<llvm::Type *, 1> StreamLoadTypes{StreamLoadType};
   llvm::IRBuilder<> Builder(ClonedInsertBefore);
 
-  auto IntrinsicID = isAtomic ? llvm::Intrinsic::ID::ssp_stream_atomic
-                              : llvm::Intrinsic::ID::ssp_stream_load;
+  auto IntrinsicID = isAtomic ? llvm::Intrinsic::ssp_stream_atomic
+                              : llvm::Intrinsic::ssp_stream_load;
 
   auto StreamLoadInst = Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(), IntrinsicID,
@@ -716,7 +716,7 @@ void StreamExecutionTransformer::addStreamStore(
   llvm::IRBuilder<> Builder(ClonedInsertBefore);
   auto StreamStoreInst = Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                      llvm::Intrinsic::ID::ssp_stream_store),
+                                      llvm::Intrinsic::ssp_stream_store),
       Args);
   if (DebugLoc) {
     StreamStoreInst->setDebugLoc(llvm::DebugLoc(DebugLoc->get()));
@@ -732,11 +732,11 @@ void StreamExecutionTransformer::addStreamInput(llvm::IRBuilder<> &Builder,
    * For scalar type, we always cast to int64.
    * For vector type, we always cast to v8f64/v4f64/v2f64;
    */
-  if (auto VecType = llvm::dyn_cast<llvm::VectorType>(ClonedInputType)) {
+  if (auto VecType = llvm::dyn_cast<llvm::FixedVectorType>(ClonedInputType)) {
     auto StoreBits = this->ClonedDataLayout->getTypeStoreSizeInBits(VecType);
     if (StoreBits == 512 || StoreBits == 256 || StoreBits == 128) {
       auto NumElements = StoreBits / sizeof(double) / 8;
-      ClonedInputType = llvm::VectorType::get(
+      ClonedInputType = llvm::FixedVectorType::get(
           llvm::Type::getDoubleTy(this->ClonedModule->getContext()),
           NumElements);
       ClonedInputValue = Builder.CreateBitCast(
@@ -783,7 +783,7 @@ void StreamExecutionTransformer::addStreamInput(llvm::IRBuilder<> &Builder,
   std::array<llvm::Type *, 1> StreamInputType{ClonedInputType};
   auto StreamInputInst = Builder.CreateCall(
       llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                      llvm::Intrinsic::ID::ssp_stream_input,
+                                      llvm::Intrinsic::ssp_stream_input,
                                       StreamInputType),
       StreamInputArgs);
 
@@ -859,7 +859,7 @@ void StreamExecutionTransformer::transformStepInst(
     std::array<llvm::Value *, 1> StreamStepArgs{StreamIdValue};
     auto StreamStepInst = Builder.CreateCall(
         llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                        llvm::Intrinsic::ID::ssp_stream_step),
+                                        llvm::Intrinsic::ssp_stream_step),
         StreamStepArgs);
   }
   /**
@@ -1826,7 +1826,7 @@ void StreamExecutionTransformer::replaceWithStreamMemIntrinsic() {
         auto Inst = &*InstIter;
         if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
           auto Callee = CallInst->getCalledFunction();
-          if (Callee->getIntrinsicID() == llvm::Intrinsic::ID::memset &&
+          if (Callee->getIntrinsicID() == llvm::Intrinsic::memset &&
               ClonedStreamMemsetFunc) {
             // Check that the last volatile argument is false.
             auto ClonedCallInst = this->getClonedValue(CallInst);
@@ -1848,7 +1848,7 @@ void StreamExecutionTransformer::replaceWithStreamMemIntrinsic() {
                 ClonedCallInst->eraseFromParent();
               }
             }
-          } else if (Callee->getIntrinsicID() == llvm::Intrinsic::ID::memcpy &&
+          } else if (Callee->getIntrinsicID() == llvm::Intrinsic::memcpy &&
                      ClonedStreamMemcpyFunc) {
             // Check that the last volatile argument is false.
             auto ClonedCallInst = this->getClonedValue(CallInst);
@@ -1870,7 +1870,7 @@ void StreamExecutionTransformer::replaceWithStreamMemIntrinsic() {
                 ClonedCallInst->eraseFromParent();
               }
             }
-          } else if (Callee->getIntrinsicID() == llvm::Intrinsic::ID::memmove &&
+          } else if (Callee->getIntrinsicID() == llvm::Intrinsic::memmove &&
                      ClonedStreamMemmoveFunc) {
             // Check that the last volatile argument is false.
             auto ClonedCallInst = this->getClonedValue(CallInst);

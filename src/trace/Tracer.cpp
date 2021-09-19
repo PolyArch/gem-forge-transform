@@ -27,26 +27,28 @@
 // Definitely not the best way to do thes, but since it barely changes
 // and imitiveTypes - make sure LastPrimitiveTyID stays up to date.
 enum TypeID {
-  VoidTyID = 0,  ///<  0: type with no size
-  HalfTyID,      ///<  1: 16-bit floating point type
-  FloatTyID,     ///<  2: 32-bit floating point type
-  DoubleTyID,    ///<  3: 64-bit floating point type
-  X86_FP80TyID,  ///<  4: 80-bit floating point type (X87)
-  FP128TyID,     ///<  5: 128-bit floating point type (112-bit mantissa)
-  PPC_FP128TyID, ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
-  LabelTyID,     ///<  7: Labels
-  MetadataTyID,  ///<  8: Metadata
-  X86_MMXTyID,   ///<  9: MMX vectors (64 bits, X86 specific)
-  TokenTyID,     ///< 10: Tokens
+  // PrimitiveTypes
+  HalfTyID = 0,  ///< 16-bit floating point type
+  BFloatTyID,    ///< 16-bit floating point type (7-bit significand)
+  FloatTyID,     ///< 32-bit floating point type
+  DoubleTyID,    ///< 64-bit floating point type
+  X86_FP80TyID,  ///< 80-bit floating point type (X87)
+  FP128TyID,     ///< 128-bit floating point type (112-bit significand)
+  PPC_FP128TyID, ///< 128-bit floating point type (two 64-bits, PowerPC)
+  VoidTyID,      ///< type with no size
+  LabelTyID,     ///< Labels
+  MetadataTyID,  ///< Metadata
+  X86_MMXTyID,   ///< MMX vectors (64 bits, X86 specific)
+  TokenTyID,     ///< Tokens
 
   // Derived types... see DerivedTypes.h file.
-  // Make sure FirstDerivedTyID stays up to date!
-  IntegerTyID,  ///< 11: Arbitrary bit width integers
-  FunctionTyID, ///< 12: Functions
-  StructTyID,   ///< 13: Structures
-  ArrayTyID,    ///< 14: Arrays
-  PointerTyID,  ///< 15: Pointers
-  VectorTyID    ///< 16: SIMD 'packed' format, or other vector type
+  IntegerTyID,       ///< Arbitrary bit width integers
+  FunctionTyID,      ///< Functions
+  PointerTyID,       ///< Pointers
+  StructTyID,        ///< Structures
+  ArrayTyID,         ///< Arrays
+  FixedVectorTyID,   ///< Fixed width SIMD vector type
+  ScalableVectorTyID ///< Scalable SIMD vector type
 };
 
 namespace {
@@ -798,7 +800,7 @@ void printValue(const char Tag, const char *Name, unsigned TypeId,
     printValuePointerImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
-  case TypeID::VectorTyID: {
+  case TypeID::FixedVectorTyID: {
     uint32_t size = va_arg(VAList, uint32_t);
     uint8_t *buffer = va_arg(VAList, uint8_t *);
     printValueVectorImpl(tts.seqTid, Tag, Name, TypeId, size, buffer);
@@ -861,7 +863,7 @@ void printInstValue(unsigned NumAdditionalArgs, ...) {
     printValuePointerImpl(tts.seqTid, Tag, Name, TypeId, value);
     break;
   }
-  case TypeID::VectorTyID: {
+  case TypeID::FixedVectorTyID: {
     uint32_t size = va_arg(VAList, uint32_t);
     uint8_t *buffer = va_arg(VAList, uint8_t *);
     printValueVectorImpl(tts.seqTid, Tag, Name, TypeId, size, buffer);

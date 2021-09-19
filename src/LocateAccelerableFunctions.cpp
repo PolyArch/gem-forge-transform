@@ -64,7 +64,8 @@ bool LocateAccelerableFunctions::runOnModule(llvm::Module &Module) {
         continue;
       }
       auto Function = Caller->getFunction();
-      if (Function != nullptr && this->isMathAccelerable(Function->getName())) {
+      if (Function != nullptr &&
+          this->isMathAccelerable(Function->getName().str())) {
         continue;
       }
       Queue.push_back(Caller);
@@ -124,7 +125,7 @@ bool AccelerableFunctionInfo::doInitialization(llvm::Module &Module) {
 bool AccelerableFunctionInfo::runOnFunction(llvm::Function &Function) {
   bool Accelerable =
       this->getAnalysis<LocateAccelerableFunctions>().isAccelerable(
-          Function.getName());
+          Function.getName().str());
 
   uint64_t InstructionInFunctionCount =
       this->countInstructionInFunction(&Function);

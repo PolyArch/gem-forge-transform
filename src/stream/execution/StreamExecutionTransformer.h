@@ -8,8 +8,8 @@
 
 #include "stream/StaticStreamRegionAnalyzer.h"
 
-#include "llvm/Analysis/ScalarEvolutionExpander.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
 
 #include <unordered_set>
 #include <vector>

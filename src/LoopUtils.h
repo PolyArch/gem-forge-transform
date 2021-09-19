@@ -1,12 +1,13 @@
 #ifndef LLVM_TDG_LOOP_UTILS_H
 #define LLVM_TDG_LOOP_UTILS_H
 
+#include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
-#include "llvm/Analysis/ScalarEvolutionExpander.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
 
 #include "Utils.h"
 

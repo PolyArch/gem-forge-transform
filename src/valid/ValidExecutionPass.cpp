@@ -130,11 +130,8 @@ void ValidExecutionPass::transformModule() {
   std::vector<llvm::Type *> GemForgeRegionSimpointArgs;
   auto GemForgeRegionSimpointTy =
       llvm::FunctionType::get(VoidTy, GemForgeRegionSimpointArgs, false);
-  auto GemForgeRegionSimpointFunc =
-      this->ClonedModule
-          ->getOrInsertFunction("m5_gem_forge_region_simpoint",
-                                GemForgeRegionSimpointTy)
-          .getCallee();
+  auto GemForgeRegionSimpointFunc = this->ClonedModule->getOrInsertFunction(
+      "m5_gem_forge_region_simpoint", GemForgeRegionSimpointTy);
   LLVM_DEBUG(llvm::dbgs() << "Insert m5_gem_forge_region_simpoint().\n");
 
   // Insert this to the preheader of the loop.
