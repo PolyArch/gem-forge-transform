@@ -10,12 +10,12 @@ std::string StreamTransformPlan::format() const {
   if (this->Plan == StreamTransformPlan::PlanT::STEP) {
     ss << '-';
     for (auto StepStream : this->StepStreams) {
-      ss << StepStream->formatName();
+      ss << StepStream->getStreamName();
     }
     ss << '-';
   }
   for (auto UsedStream : this->UsedStreams) {
-    ss << UsedStream->formatName() << ' ';
+    ss << UsedStream->getStreamName() << ' ';
   }
   return ss.str();
 }

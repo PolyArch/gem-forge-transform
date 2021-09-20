@@ -21,7 +21,7 @@ protected:
     for (auto BBIter = Loop->block_begin(), BBEnd = Loop->block_end();
          BBIter != BBEnd; ++BBIter) {
       auto BB = *BBIter;
-      auto BBName = BB->getName();
+      auto BBName = BB->getName().str();
       auto ExpectedPlanIter = ExpectedPlan.find(BBName);
       if (ExpectedPlanIter == ExpectedPlan.end()) {
         // We do not care about this block.
@@ -43,7 +43,7 @@ protected:
             << "Mismatch transformation plan for inst "
             << Utils::formatLLVMInst(Inst) << '\n';
 
-        std::string InstName = Inst->getName();
+        std::string InstName = Inst->getName().str();
         if (ExpectedStepStreams.count(InstName) == 0) {
           // We don't care about the step streams of this inst.
           continue;
@@ -52,7 +52,7 @@ protected:
         if (ActualPlan.Plan == PlanT::STEP) {
           std::unordered_set<std::string> ActualStepStreams;
           for (const auto &StepStream : ActualPlan.getStepStreams()) {
-            ActualStepStreams.insert(StepStream->Inst->getName());
+            ActualStepStreams.insert(StepStream->Inst->getName().str());
           }
           this->testTwoSets<std::string>(ExpectedStepStreams.at(InstName),
                                          ActualStepStreams);

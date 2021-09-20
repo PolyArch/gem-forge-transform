@@ -126,7 +126,7 @@ public:
                               LLVM::TDG::StreamInfo *ProtobufInfo) const;
 
   virtual bool isAliased() const { return false; }
-  std::string formatName() const { return this->SStream->formatName(); }
+  std::string getStreamName() const { return this->SStream->getStreamName(); }
 
   virtual const std::unordered_set<const llvm::Instruction *> &
   getComputeInsts() const = 0;

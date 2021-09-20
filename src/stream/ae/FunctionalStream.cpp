@@ -14,7 +14,7 @@ FunctionalStream::FunctionalStream(DynStream *_S, FunctionalStreamEngine *_SE)
     : S(_S), SE(_SE), Pattern(_S->getProtobufPatterns()),
       CurrentIdx(InvalidIdx), IsAddressValid(false), IsValueValid(false) {
   LLVM_DEBUG(llvm::dbgs() << "Initialized FunctionalStream of "
-                          << S->formatName() << '\n');
+                          << S->getStreamName() << '\n');
 }
 
 void FunctionalStream::addBaseStream(FunctionalStream *BaseStream) {
@@ -24,7 +24,7 @@ void FunctionalStream::addBaseStream(FunctionalStream *BaseStream) {
 }
 
 void FunctionalStream::DEBUG_DUMP(llvm::raw_ostream &OS) const {
-  OS << this->S->formatName() << " idx " << this->CurrentIdx << " addr "
+  OS << this->S->getStreamName() << " idx " << this->CurrentIdx << " addr "
      << llvm::format_hex(this->CurrentAddress, 18) << " value "
      << llvm::format_hex(this->CurrentValue, 18) << " valid "
      << this->IsValueValid;
@@ -261,7 +261,7 @@ void FunctionalStream::setGenericValueFromDynamicValue(
     break;
   }
   default: {
-    llvm::errs() << "Unsupported llvm type found for " << this->S->formatName()
+    llvm::errs() << "Unsupported llvm type found for " << this->S->getStreamName()
                  << '\n';
     llvm_unreachable(
         "Unsupported llvm type to be translated into generic value.");

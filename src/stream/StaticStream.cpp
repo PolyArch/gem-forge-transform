@@ -32,9 +32,9 @@ StaticStream::StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                                "_" +
                                llvm::Twine(Utils::getLLVMInstPosInBB(_Inst)))
                        .str()),
-      SE(_SE), PDT(_PDT), DataLayout(_DataLayout), IsCandidate(false),
-      IsQualified(false), IsChosen(false), CoalesceGroup(StreamId),
-      CoalesceOffset(0) {
+      SE(_SE), PDT(_PDT), DataLayout(_DataLayout),
+      StreamName(generateStreamName()), IsCandidate(false), IsQualified(false),
+      IsChosen(false), CoalesceGroup(StreamId), CoalesceOffset(0) {
   this->StaticStreamInfo.set_loop_level(this->InnerMostLoop->getLoopDepth());
   this->StaticStreamInfo.set_config_loop_level(
       this->ConfigureLoop->getLoopDepth());
@@ -171,7 +171,7 @@ void StaticStream::handleFirstTimeComputeNode(
         if (!LoadBaseStream) {
           llvm::errs() << "Failed to find LoadBaseStream "
                        << Utils::formatLLVMInst(Inst) << " for "
-                       << this->formatName() << '\n';
+                       << this->getStreamName() << '\n';
           assert(false && "Failed to find LoadBaseStream.");
         }
         ComputeMNode->LoadBaseStreams.insert(LoadBaseStream);
@@ -317,7 +317,8 @@ void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
 
 void StaticStream::addBaseStream(StaticStream *Other) {
   LLVM_DEBUG(llvm::dbgs() << "== SS: AddBaseStream: "
-                          << (Other ? Other->formatName() : "nullptr") << '\n');
+                          << (Other ? Other->getStreamName() : "nullptr")
+                          << '\n');
   this->BaseStreams.insert(Other);
   if (Other != nullptr) {
     Other->DependentStreams.insert(this);
@@ -386,7 +387,7 @@ void StaticStream::computeBaseStepRootStreams() {
     }
     for (auto &BaseStepRootStream : BaseStepStream->BaseStepRootStreams) {
       LLVM_DEBUG(llvm::dbgs() << "== SS: AddBaseStepRoot "
-                              << BaseStepRootStream->formatName() << '\n');
+                              << BaseStepRootStream->getStreamName() << '\n');
       this->BaseStepRootStreams.insert(BaseStepRootStream);
     }
   }
@@ -428,7 +429,7 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
       // Illegal base stream step pattern.
       LLVM_DEBUG(llvm::dbgs()
                  << "Illegal BaseStream StepPattern " << BaseStpPattern
-                 << " from " << BaseStream->formatName() << '\n');
+                 << " from " << BaseStream->getStreamName() << '\n');
       return false;
     }
     // Check my step pattern.
@@ -470,8 +471,8 @@ void StaticStream::constructChosenGraph() {
                                   StreamSet &ChosenSet) -> void {
     for (const auto &BaseS : BasicSet) {
       if (!BaseS->isChosen()) {
-        llvm::errs() << "Miss chosen stream " << BaseS->formatName() << " for "
-                     << this->formatName() << ".\n";
+        llvm::errs() << "Miss chosen stream " << BaseS->getStreamName()
+                     << " for " << this->getStreamName() << ".\n";
         assert(false && "Missing chosen base stream.");
       }
       ChosenSet.insert(BaseS);
@@ -500,10 +501,41 @@ void StaticStream::constructChosenGraph() {
   TranslateToChosen(this->BaseStepRootStreams, this->ChosenBaseStepRootStreams);
 }
 
-std::string StaticStream::formatName() const {
-  // We need a more compact encoding of a stream name. Since the function is
-  // always the same, let it be (function line loop_header_bb inst_bb
-  // inst_name)
+std::string StaticStream::generateStreamName() const {
+
+  /**
+   * Prefer pragma specified name in #pragma ss stream_name "name".
+   */
+  if (auto SSMetadata = this->Inst->getMetadata("llvm.ss")) {
+    for (unsigned OpIdx = 0, NumOps = SSMetadata->getNumOperands();
+         OpIdx != NumOps; ++OpIdx) {
+      const llvm::MDOperand &Op = SSMetadata->getOperand(OpIdx);
+      if (auto SSField = llvm::dyn_cast<llvm::MDString>(Op.get())) {
+        if (SSField->getString() == "ss.stream_name") {
+          // Found ss.stream_name.
+          if (OpIdx + 1 == NumOps) {
+            llvm::errs()
+                << "Found Metadata ss.stream_name, but no StreamName for Inst "
+                << Utils::formatLLVMInst(this->Inst) << '\n';
+            assert(false && "Missing StreamName.");
+          }
+          auto SSName = llvm::dyn_cast<llvm::MDString>(
+              SSMetadata->getOperand(OpIdx + 1).get());
+          assert(SSName && "StreamName should be MDString.");
+
+          LLVM_DEBUG(llvm::dbgs() << "[StreamName] Using SS Pragma "
+                                  << SSName->getString() << ".\n");
+          return SSName->getString().str();
+        }
+      }
+    }
+  }
+
+  /**
+   * Otherwise, we need a more compact encoding of a stream name. Since the
+   * function is always the same, let it be (function line loop_header_bb
+   * inst_bb inst_name)
+   */
 
   auto Line = 0;
   const auto &DebugLoc = this->Inst->getDebugLoc();
@@ -514,6 +546,8 @@ std::string StaticStream::formatName() const {
   SS << "(" << Utils::formatLLVMFunc(this->Inst->getFunction()) << " " << Line
      << " " << this->ConfigureLoop->getHeader()->getName().str() << " "
      << Utils::formatLLVMInstWithoutFunc(this->Inst) << ")";
+  LLVM_DEBUG(llvm::dbgs() << "[StreamName] Using Generated Name " << SS.str()
+                          << ".\n");
   return SS.str();
 }
 
@@ -557,7 +591,7 @@ void StaticStream::generateAddrFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->AddrDG) {
     LLVM_DEBUG(llvm::dbgs()
-               << "Generating AddrDG for " << this->formatName() << '\n');
+               << "Generating AddrDG for " << this->getStreamName() << '\n');
     this->AddrDG->generateFunction(this->FuncNameBase + "_addr", Module);
   }
 }
@@ -566,7 +600,7 @@ void StaticStream::generateReduceFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ReduceDG) {
     LLVM_DEBUG(llvm::dbgs()
-               << "Generating ReduceDG for " << this->formatName() << '\n');
+               << "Generating ReduceDG for " << this->getStreamName() << '\n');
     this->ReduceDG->generateFunction(this->FuncNameBase + "_reduce", Module);
   }
 }
@@ -575,7 +609,7 @@ void StaticStream::generateValueFunction(
     std::unique_ptr<llvm::Module> &Module) const {
   if (this->ValueDG) {
     LLVM_DEBUG(llvm::dbgs()
-               << "Generating ValueDG for " << this->formatName() << '\n');
+               << "Generating ValueDG for " << this->getStreamName() << '\n');
     // Special case for fused load ops.
     if (this->Inst->getOpcode() == llvm::Instruction::Load &&
         !this->FusedLoadOps.empty()) {
@@ -599,7 +633,7 @@ void StaticStream::generateValueFunction(
       this->UpdateStream &&
       this->StaticStreamInfo.compute_info().enabled_store_func()) {
     LLVM_DEBUG(llvm::dbgs()
-               << "Generating UpdateDG for " << this->formatName() << '\n');
+               << "Generating UpdateDG for " << this->getStreamName() << '\n');
     assert(this->UpdateStream->ValueDG && "Missing ValueDG for UpdateStream.");
     this->UpdateStream->generateValueFunction(Module);
   }
@@ -670,7 +704,7 @@ void StaticStream::fuseLoadOps() {
       this->Inst->getOpcode() != llvm::Instruction::Load) {
     return;
   }
-  LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOps for " << this->formatName()
+  LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOps for " << this->getStreamName()
                           << '\n');
   /**
    * We maintain two sets:
@@ -891,7 +925,7 @@ void StaticStream::fillProtobufStreamInfo(
     LLVM::TDG::StreamInfo *ProtobufInfo) const {
   auto ProtobufStaticInfo = ProtobufInfo->mutable_static_info();
   this->setStaticStreamInfo(*ProtobufStaticInfo);
-  ProtobufInfo->set_name(this->formatName());
+  ProtobufInfo->set_name(this->getStreamName());
   ProtobufInfo->set_id(this->StreamId);
   ProtobufInfo->set_region_stream_id(this->RegionStreamId);
   switch (this->Inst->getOpcode()) {
@@ -910,7 +944,7 @@ void StaticStream::fillProtobufStreamInfo(
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
     break;
   default:
-    llvm::errs() << "Invalid stream type " << this->formatName() << '\n';
+    llvm::errs() << "Invalid stream type " << this->getStreamName() << '\n';
     break;
   }
 
@@ -938,7 +972,7 @@ void StaticStream::fillProtobufStreamInfo(
   {                                                                            \
     for (const auto &S : SET) {                                                \
       auto Entry = ProtobufInfo->add_##FIELD();                                \
-      Entry->set_name(S->formatName());                                        \
+      Entry->set_name(S->getStreamName());                                     \
       Entry->set_id(S->StreamId);                                              \
     }                                                                          \
   }
@@ -1102,7 +1136,7 @@ void StaticStream::fillProtobufValueDGFuncInfoImpl(
   auto StoreType = this->ValueDG->getReturnType(false /* IsLoad */);
   auto StoreTypeBits = DataLayout->getTypeStoreSizeInBits(StoreType);
   // if (StoreTypeBits > 64) {
-  //   llvm::errs() << "Invalid result type, Stream: " << this->formatName()
+  //   llvm::errs() << "Invalid result type, Stream: " << this->getStreamName()
   //                << " Bits " << StoreTypeBits << '\n';
   //   assert(false && "Invalid type for result.");
   // }
@@ -1135,7 +1169,7 @@ StaticStream::InputValueList StaticStream::getValueDGInputValues() const {
     } else {
       // This is an input value.
       llvm::errs() << "Push in Input " << Utils::formatLLVMValue(Input)
-                   << " Myself " << this->formatName() << '\n';
+                   << " Myself " << this->getStreamName() << '\n';
       InputValues.push_back(Input);
     }
   }

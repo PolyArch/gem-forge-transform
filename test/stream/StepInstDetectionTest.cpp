@@ -17,7 +17,8 @@ protected:
     for (auto PHIIter = PHIRange.begin(), PHIEnd = PHIRange.end();
          PHIIter != PHIEnd; ++PHIIter) {
       auto PHIInst = &*PHIIter;
-      auto ExpectedStepInstsIter = ExpectedStepInsts.find(PHIInst->getName());
+      auto ExpectedStepInstsIter =
+          ExpectedStepInsts.find(PHIInst->getName().str());
       if (ExpectedStepInstsIter == ExpectedStepInsts.end()) {
         // We do not expect this PHIInst to be an iv stream.
         continue;
@@ -29,10 +30,11 @@ protected:
       const auto &ExpectedStepInstNames = ExpectedStepInstsIter->second;
       std::unordered_set<std::string> ActualStepInstNames;
       for (auto StepInst : IVStream.getStepInsts()) {
-        EXPECT_EQ(1, ExpectedStepInstsIter->second.count(StepInst->getName()))
+        EXPECT_EQ(
+            1, ExpectedStepInstsIter->second.count(StepInst->getName().str()))
             << "Extra step instruction " << Utils::formatLLVMInst(StepInst)
             << '\n';
-        ActualStepInstNames.insert(StepInst->getName());
+        ActualStepInstNames.insert(StepInst->getName().str());
       }
       if (ActualStepInstNames.size() != ExpectedStepInstNames.size()) {
         for (const auto &ExpectedStepInstName : ExpectedStepInstNames) {

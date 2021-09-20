@@ -324,7 +324,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
   for (auto S : ConfigureInfo.getSortedStreams()) {
 
     LLVM_DEBUG(if (ClonedPreheader->getParent()->getName() == DEBUG_FUNC) {
-      llvm::dbgs() << "--------------- Before Config " << S->formatName()
+      llvm::dbgs() << "--------------- Before Config " << S->getStreamName()
                    << " --------------\n";
       ClonedPreheader->getParent()->print(llvm::dbgs());
     });
@@ -349,7 +349,7 @@ void StreamExecutionTransformer::insertStreamConfigAtLoop(
     for (auto ClonedInput : ClonedInputValues) {
       // This is a live in?
       LLVM_DEBUG(llvm::dbgs()
-                 << "Insert StreamInput for Stream " << S->formatName()
+                 << "Insert StreamInput for Stream " << S->getStreamName()
                  << " Input " << ClonedInput->getName() << '\n');
       this->addStreamInput(Builder, S->getRegionStreamId(), ClonedInput);
     }
@@ -474,7 +474,7 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
   for (auto ClonedUser : ClonedExitInst->users()) {
     if (auto ClonedUserInst = llvm::dyn_cast<llvm::Instruction>(ClonedUser)) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "ReduceStream " << ReduceStream->formatName()
+                 << "ReduceStream " << ReduceStream->getStreamName()
                  << " ExitInst " << ClonedExitInst->getName() << " user "
                  << ClonedUserInst->getName() << " Loop "
                  << ClonedLoop->getHeader()->getName() << " contains "
@@ -512,7 +512,7 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
         if (!ClonedS.count(UserInst) &&
             !this->PendingRemovedInsts.count(UserInst)) {
           LLVM_DEBUG(llvm::dbgs()
-                     << "ReduceStream " << ReduceStream->formatName()
+                     << "ReduceStream " << ReduceStream->getStreamName()
                      << " is incomplete due to user " << UserInst->getName()
                      << " of ComputeInst " << ClonedInst->getName() << '\n');
           IsComplete = false;
@@ -704,7 +704,7 @@ void StreamExecutionTransformer::addStreamStore(
     const llvm::DebugLoc *DebugLoc) {
   if (!S->isChosen()) {
     llvm::errs() << "Try to add StreamStore for unchosen stream "
-                 << S->formatName() << '\n';
+                 << S->getStreamName() << '\n';
     assert(false);
   }
   auto StreamId = S->getRegionStreamId();
@@ -882,7 +882,7 @@ void StreamExecutionTransformer::handleFusedLoadOpsForLoadStream(
   if (!LoadSS->ChosenDependentStreams.empty() ||
       !LoadSS->LoadStoreBaseStreams.empty()) {
     llvm::errs() << "FusedLoadOps with other dependence: "
-                 << LoadSS->formatName() << '\n';
+                 << LoadSS->getStreamName() << '\n';
     assert(false);
   }
   auto SSProtoComputeInfo = LoadSS->StaticStreamInfo.mutable_compute_info();
@@ -906,7 +906,7 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
   if (!LoadSS->StaticStreamInfo.compute_info().enabled_store_func()) {
     return;
   }
-  LLVM_DEBUG(llvm::dbgs() << "Upgrade LoadStream " << LoadSS->formatName()
+  LLVM_DEBUG(llvm::dbgs() << "Upgrade LoadStream " << LoadSS->getStreamName()
                           << " to UpdateStream.\n");
 }
 
@@ -969,12 +969,12 @@ void StreamExecutionTransformer::mergePredicatedStore(
     return;
   }
   // Decided to merge.
-  LLVM_DEBUG(llvm::dbgs() << "Merge Predicated Store " << StoreSS->formatName()
-                          << " -> " << LoadSS->formatName() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "Merge Predicated Store " << StoreSS->getStreamName()
+                          << " -> " << LoadSS->getStreamName() << '\n');
   StoreSS->StaticStreamInfo.set_is_merged_predicated_stream(true);
   auto ProtoEntry = LoadSS->StaticStreamInfo.add_merged_predicated_streams();
   ProtoEntry->mutable_id()->set_id(StoreSS->StreamId);
-  ProtoEntry->mutable_id()->set_name(StoreSS->formatName());
+  ProtoEntry->mutable_id()->set_name(StoreSS->getStreamName());
   ProtoEntry->set_pred_true(PredTrue);
   // Add the store to pending remove.
   auto ClonedStoreInst = this->getClonedValue(StoreInst);
@@ -1017,18 +1017,18 @@ void StreamExecutionTransformer::handleValueDG(
        */
       if (LoadSS != SS->UpdateStream) {
         LoadProto->set_id(SS->UpdateStream->StreamId);
-        LoadProto->set_name(SS->UpdateStream->formatName());
+        LoadProto->set_name(SS->UpdateStream->getStreamName());
         auto SSProto = UpdateProtoComputeInfo->add_value_base_streams();
         SSProto->set_id(LoadSS->StreamId);
-        SSProto->set_name(LoadSS->formatName());
+        SSProto->set_name(LoadSS->getStreamName());
       }
     } else {
       LoadProto->set_id(SS->StreamId);
-      LoadProto->set_name(SS->formatName());
+      LoadProto->set_name(SS->getStreamName());
       auto SSProto =
           SS->StaticStreamInfo.mutable_compute_info()->add_value_base_streams();
       SSProto->set_id(LoadSS->StreamId);
-      SSProto->set_name(LoadSS->formatName());
+      SSProto->set_name(LoadSS->getStreamName());
     }
   }
   // Enable the store func.
@@ -1153,7 +1153,7 @@ StreamExecutionTransformer::findStepPosition(StaticStream *StepStream,
     if (llvm::isPotentiallyReachableFromMany(StartBB, DepBB, &ExclusionBB, DT,
                                              LI)) {
       llvm::errs() << "Potential MemStream after StreamStep "
-                   << StepStream->formatName() << " BB " << DepBB->getName()
+                   << StepStream->getStreamName() << " BB " << DepBB->getName()
                    << '\n';
       assert(false && "MemStream after Step.");
     }
@@ -1399,7 +1399,7 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
     ClonedPHINodeSCEV = ClonedSE->getSCEV(ClonedPHINode);
   }
   LLVM_DEBUG({
-    llvm::dbgs() << "====== Generate IVStreamConfiguration " << SS->formatName()
+    llvm::dbgs() << "====== Generate IVStreamConfiguration " << SS->getStreamName()
                  << " PHINodeSCEV ";
     if (PHINodeSCEV)
       PHINodeSCEV->dump();
@@ -1458,10 +1458,10 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
              SS->StaticStreamInfo.stp_pattern() ==
                  ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
     llvm::errs() << "Can't handle Conditional Linear IVStream "
-                 << S->formatName() << '\n';
+                 << S->getStreamName() << '\n';
     assert(false);
   } else {
-    llvm::errs() << "Can't handle IVStream " << S->formatName() << '\n';
+    llvm::errs() << "Can't handle IVStream " << S->getStreamName() << '\n';
     assert(false);
   }
 }
@@ -1471,7 +1471,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     InputValueVec &ClonedInputValues) {
 
   LLVM_DEBUG(llvm::dbgs() << "===== Generate MemStreamConfiguration "
-                          << S->formatName() << '\n');
+                          << S->getStreamName() << '\n');
   assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
          "Module broken before GenerateMemStreamConfiguration.");
 
@@ -1492,7 +1492,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   auto AddrSCEV = SS->SE->getSCEV(Addr);
 
   LLVM_DEBUG({
-    llvm::errs() << "Generate MemStreamConfiguration " << SS->formatName()
+    llvm::errs() << "Generate MemStreamConfiguration " << SS->getStreamName()
                  << " Addr ";
     AddrSCEV->dump();
   });
@@ -1515,8 +1515,8 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
           llvm::errs()
               << "Cannot handle Indirect/PtrChase streams (mismatch loop, "
                  "conditional step): \n";
-          llvm::errs() << "Base: " << BaseSS->formatName() << '\n';
-          llvm::errs() << "Dep:  " << SS->formatName() << '\n';
+          llvm::errs() << "Base: " << BaseSS->getStreamName() << '\n';
+          llvm::errs() << "Dep:  " << SS->getStreamName() << '\n';
           assert(false &&
                  "Mismatch in configure loop for Indirect/PtrChase streams.");
         }
@@ -1534,7 +1534,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     if (SS->StaticStreamInfo.stp_pattern() ==
         ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
       if (!llvm::isa<llvm::SCEVAddRecExpr>(AddrSCEV)) {
-        llvm::errs() << "Unconditional LinearMemStream " << SS->formatName()
+        llvm::errs() << "Unconditional LinearMemStream " << SS->getStreamName()
                      << " should have AddRecSCEV, but got ";
         AddrSCEV->print(llvm::errs());
         llvm::errs() << '\n';
@@ -1555,12 +1555,12 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     } else if (SS->StaticStreamInfo.stp_pattern() ==
                ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
       llvm::errs() << "Can't handle conditional linear mem stream "
-                   << S->formatName() << '\n';
+                   << S->getStreamName() << '\n';
       assert(false);
     }
   }
 
-  llvm::errs() << "Can't handle this stream " << SS->formatName() << '\n';
+  llvm::errs() << "Can't handle this stream " << SS->getStreamName() << '\n';
   llvm::errs() << "AddrSCEV: ";
   AddrSCEV->print(llvm::errs());
   llvm::errs() << "ValuePattern: "
@@ -1575,7 +1575,7 @@ void StreamExecutionTransformer::generateUserMemStreamConfiguration(
     InputValueVec &ClonedInputValues) {
 
   LLVM_DEBUG(llvm::dbgs() << "===== Generate UserMemStreamConfiguration "
-                          << S->formatName() << '\n');
+                          << S->getStreamName() << '\n');
 
   assert(S->Type == StaticStream::TypeT::USER && "Must be UserMem stream.");
   auto SS = static_cast<const UserDefinedMemStream *>(S);
@@ -1590,12 +1590,12 @@ void StreamExecutionTransformer::generateUserMemStreamConfiguration(
 
   if (S->StaticStreamInfo.val_pattern() !=
       ::LLVM::TDG::StreamValuePattern::LINEAR) {
-    llvm::errs() << "Non linear UserMemStream " << S->formatName() << '\n';
+    llvm::errs() << "Non linear UserMemStream " << S->getStreamName() << '\n';
     assert(false);
   }
   if (S->StaticStreamInfo.stp_pattern() !=
       ::LLVM::TDG::StreamStepPattern::UNCONDITIONAL) {
-    llvm::errs() << "Conditional step UserMemStream " << S->formatName()
+    llvm::errs() << "Conditional step UserMemStream " << S->getStreamName()
                  << '\n';
     assert(false);
   }

@@ -72,10 +72,10 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
 
   LLVM_DEBUG({
     for (auto S : InnerConfigInfo.getSortedStreams()) {
-      llvm::dbgs() << "[Nest] Found InnerStream: " << S->formatName() << '\n';
+      llvm::dbgs() << "[Nest] Found InnerStream: " << S->getStreamName() << '\n';
     }
     for (auto S : OuterConfigInfo.getSortedStreams()) {
-      llvm::dbgs() << "[Nest] Found OuterStream: " << S->formatName() << '\n';
+      llvm::dbgs() << "[Nest] Found OuterStream: " << S->getStreamName() << '\n';
     }
   });
 

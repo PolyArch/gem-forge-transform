@@ -243,7 +243,7 @@ void StreamPass::pushLoopStackAndConfigureStreams(
   for (auto &SS : SortedStreams) {
     auto S = this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
     // Inform the stream engine.
-    LLVM_DEBUG(llvm::dbgs() << "Configure stream " << S->formatName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Configure stream " << S->getStreamName() << '\n');
     this->CurrentStreamAnalyzer->getFuncSE()->configure(S, this->Trace);
 
     auto Inst = S->getInst();

@@ -75,7 +75,7 @@ void StaticMemStream::analyzeIsCandidate() {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::IN_LOOP_REMAINDER_OR_EPILOGUE);
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Loop Remainder/Epilogue "
-                            << this->formatName() << '\n');
+                            << this->getStreamName() << '\n');
     return;
   }
 
@@ -86,7 +86,7 @@ void StaticMemStream::analyzeIsCandidate() {
             BASE_STREAM_INNER_MOST_LOOP_NOT_CONTAIN_MINE);
     LLVM_DEBUG(llvm::dbgs()
                << "[NotCandidate]: Base Stream InnerMostLoop Not Contain Mine "
-               << this->formatName() << '\n');
+               << this->getStreamName() << '\n');
     return;
   }
 
@@ -97,7 +97,7 @@ void StaticMemStream::analyzeIsCandidate() {
   if (!this->PHIMetaNodes.empty()) {
     this->IsCandidate = false;
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: No PhiMetaNode "
-                            << this->formatName() << '\n');
+                            << this->getStreamName() << '\n');
     return;
   }
   /**
@@ -108,7 +108,7 @@ void StaticMemStream::analyzeIsCandidate() {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::MULTI_STEP_ROOT);
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Multiple Step Root "
-                            << this->formatName() << '\n');
+                            << this->getStreamName() << '\n');
     return;
   }
   /**
@@ -119,7 +119,7 @@ void StaticMemStream::analyzeIsCandidate() {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STEP_ROOT);
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: No Step Root "
-                            << this->formatName() << '\n');
+                            << this->getStreamName() << '\n');
     return;
   }
   /**
@@ -129,7 +129,7 @@ void StaticMemStream::analyzeIsCandidate() {
     if (!StreamPassEnableStore) {
       this->IsCandidate = false;
       LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Store Disabled "
-                              << this->formatName() << '\n');
+                              << this->getStreamName() << '\n');
       return;
     }
     if (this->UpdateStream) {
@@ -140,7 +140,7 @@ void StaticMemStream::analyzeIsCandidate() {
             ::LLVM::TDG::StaticStreamInfo::IS_UPDATE_STORE);
         this->IsCandidate = false;
         LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Update Disabled "
-                                << this->formatName() << '\n');
+                                << this->getStreamName() << '\n');
         return;
       }
     }
@@ -159,7 +159,7 @@ void StaticMemStream::analyzeIsCandidate() {
     if (!this->SE->isSCEVable(Inst->getType())) {
       this->IsCandidate = false;
       LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Not SCEVable LoadBase "
-                              << this->formatName() << '\n');
+                              << this->getStreamName() << '\n');
       return;
     }
     InputSCEVs.insert(this->SE->getSCEV(Inst));
@@ -169,7 +169,7 @@ void StaticMemStream::analyzeIsCandidate() {
     if (!this->SE->isSCEVable(Inst->getType())) {
       this->IsCandidate = false;
       LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Not SCEVable IVBase "
-                              << this->formatName() << '\n');
+                              << this->getStreamName() << '\n');
       return;
     }
     InputSCEVs.insert(this->SE->getSCEV(Inst));
@@ -179,7 +179,7 @@ void StaticMemStream::analyzeIsCandidate() {
       this->IsCandidate = false;
       LLVM_DEBUG(llvm::dbgs()
                  << "[NotCandidate]: Not SCEVable LoopInvariantInput "
-                 << this->formatName() << '\n');
+                 << this->getStreamName() << '\n');
       return;
     }
     InputSCEVs.insert(
@@ -187,7 +187,7 @@ void StaticMemStream::analyzeIsCandidate() {
   }
   if (!this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEVStreamDG "
-                            << this->formatName() << " SCEV: ";
+                            << this->getStreamName() << " SCEV: ";
                SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
 
     this->IsCandidate = false;
@@ -199,7 +199,7 @@ void StaticMemStream::analyzeIsCandidate() {
     if (!llvm::isa<llvm::SCEVAddRecExpr>(SCEV)) {
       LLVM_DEBUG(llvm::dbgs()
                      << "[NotCandidate]: DirectMemStream Requires AddRecSCEV "
-                     << this->formatName() << " SCEV: ";
+                     << this->getStreamName() << " SCEV: ";
                  SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
       this->IsCandidate = false;
       return;
@@ -308,7 +308,7 @@ bool StaticMemStream::validateSCEVAsStreamDG(
       }
     }
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEV in StreamDG "
-                            << this->formatName() << " SCEV: ";
+                            << this->getStreamName() << " SCEV: ";
                SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
     return false;
   }
@@ -333,7 +333,7 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
     LLVM_DEBUG(llvm::dbgs()
-               << "[UnQualify]: NoStaticMap " << this->formatName() << '\n');
+               << "[UnQualify]: NoStaticMap " << this->getStreamName() << '\n');
     return false;
   }
   return true;
@@ -358,7 +358,7 @@ LLVM::TDG::StreamStepPattern StaticMemStream::computeStepPattern() const {
         StepRootStream->StaticStreamInfo.stp_pattern();
     LLVM_DEBUG(llvm::dbgs()
                << "Computed step pattern " << StepRootStreamStpPattern
-               << " for " << this->formatName() << '\n');
+               << " for " << this->getStreamName() << '\n');
     return StepRootStreamStpPattern;
   }
 }
@@ -375,16 +375,16 @@ void StaticMemStream::constructChosenGraph() {
   if (this->ChosenBaseStepRootStreams.size() != 1) {
     llvm::errs() << "Invalid " << this->ChosenBaseStepRootStreams.size()
                  << " chosen StepRoot, " << this->BaseStepRootStreams.size()
-                 << " StepRoot for " << this->formatName() << ":\n";
+                 << " StepRoot for " << this->getStreamName() << ":\n";
     for (auto StepRootS : this->ChosenBaseStepRootStreams) {
-      llvm::errs() << "  " << StepRootS->formatName() << '\n';
+      llvm::errs() << "  " << StepRootS->getStreamName() << '\n';
     }
     assert(false);
   }
   for (auto StepRootS : this->ChosenBaseStepRootStreams) {
     if (StepRootS->ConfigureLoop != this->ConfigureLoop) {
       llvm::errs() << "StepRootStream is not configured at the same loop: "
-                   << this->formatName() << " root " << StepRootS->formatName()
+                   << this->getStreamName() << " root " << StepRootS->getStreamName()
                    << '\n';
       assert(false);
     }

@@ -65,8 +65,8 @@ void DynamicStreamCoalescer::finalize() {
       auto CoalescedCount = this->CoalescerMatrix[Row.second][Col.second];
       // llvm::errs() << "Total " << this->TotalSteps << " Coalesced "
       //              << CoalescedCount << ' '
-      //              << Row.first->getStream()->formatName() << ' '
-      //              << Col.first->getStream()->formatName() << '\n';
+      //              << Row.first->getStream()->getStreamName() << ' '
+      //              << Col.first->getStream()->getStreamName() << '\n';
       auto CoalescedPercentage = static_cast<float>(CoalescedCount) /
                                  static_cast<float>(this->TotalSteps);
       auto RowStream = Row.first->getStream();
@@ -79,8 +79,8 @@ void DynamicStreamCoalescer::finalize() {
         if ((RowStream->SStream->Inst->getOpcode() ==
              ColStream->SStream->Inst->getOpcode())) {
           // llvm::errs() << "Coalescing " <<
-          // Row.first->getStream()->formatName()
-          //              << ' ' << Col.first->getStream()->formatName() <<
+          // Row.first->getStream()->getStreamName()
+          //              << ' ' << Col.first->getStream()->getStreamName() <<
           //              '\n';
           this->coalesce(Row.second, Col.second);
         }
@@ -96,7 +96,7 @@ void DynamicStreamCoalescer::finalize() {
     auto CoalesceGroup = CoalesceRootFS->getStream()->getStreamId();
     FSId.first->getStream()->setCoalesceGroup(CoalesceGroup);
     // llvm::errs() << "Setting Coalesce group " << CoalesceGroup << " of "
-    //              << FSId.first->getStream()->formatName() << '\n';
+    //              << FSId.first->getStream()->getStreamName() << '\n';
   }
 }
 

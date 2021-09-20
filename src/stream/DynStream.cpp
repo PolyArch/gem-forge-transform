@@ -23,8 +23,8 @@ DynStream::DynStream(const std::string &_Folder,
   ErrCode = llvm::sys::fs::create_directory(InfoFolder);
   assert(!ErrCode && "Failed to create info folder.");
 
-  this->PatternFileName = "pattern/" + this->formatName() + ".pattern";
-  this->HistoryFileName = "history/" + this->formatName() + ".history";
+  this->PatternFileName = "pattern/" + this->getStreamName() + ".pattern";
+  this->HistoryFileName = "history/" + this->getStreamName() + ".history";
 
   auto PosInBB = Utils::getLLVMInstPosInBB(this->getInst());
 }
@@ -81,8 +81,8 @@ void DynStream::buildChosenDependenceGraph(
       const auto &BaseInst = BaseS->SStream->Inst;
       auto ChosenBaseS = GetChosenStream(BaseInst);
       if (!ChosenBaseS) {
-        llvm::errs() << "Miss chosen stream " << BaseS->SStream->formatName()
-                     << " for " << this->SStream->formatName() << ".\n";
+        llvm::errs() << "Miss chosen stream " << BaseS->SStream->getStreamName()
+                     << " for " << this->SStream->getStreamName() << ".\n";
       }
       assert(ChosenBaseS && "Missing chosen base stream.");
       ChosenSet.insert(ChosenBaseS);

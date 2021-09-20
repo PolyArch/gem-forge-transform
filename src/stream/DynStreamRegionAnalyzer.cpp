@@ -260,7 +260,7 @@ void DynStreamRegionAnalyzer::markQualifiedStreams(
       continue;
     }
 
-    LLVM_DEBUG(llvm::dbgs() << "Mark Qualified " << S->formatName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Mark Qualified " << S->getStreamName() << '\n');
     S->markQualified();
     // Check all the dependent streams.
     for (const auto &DependentStream : S->getDependentStreams()) {
@@ -376,7 +376,7 @@ void DynStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
       auto DynS = this->getDynStreamByStaticStream(SS);
       if (DynS->isQualified() && SS->isQualified()) {
         LLVM_DEBUG(llvm::dbgs() << "==== Choose stream StaticOuterMost for "
-                                << SS->formatName() << '\n');
+                                << SS->getStreamName() << '\n');
         /**
          * Instead of just choose the out-most loop, we use
          * a heuristic to select the level with most number
@@ -388,7 +388,7 @@ void DynStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
           if (DepSS->isQualified()) {
             NumQualifiedDepStreams++;
             LLVM_DEBUG(llvm::dbgs() << "====== Qualified DepS "
-                                    << DepSS->formatName() << '\n');
+                                    << DepSS->getStreamName() << '\n');
           }
         }
         LLVM_DEBUG(llvm::dbgs()
@@ -405,7 +405,7 @@ void DynStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
       this->InstChosenStreamMap.emplace(Inst, ChosenDynS->SStream);
       ChosenDynS->markChosen();
       LLVM_DEBUG(llvm::dbgs()
-                 << "== Choose " << ChosenDynS->formatName() << '\n');
+                 << "== Choose " << ChosenDynS->getStreamName() << '\n');
     }
   }
 }

@@ -29,7 +29,7 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
           }
           if (!hasConstantTripCount) {
             LLVM_DEBUG({
-              llvm::dbgs() << "Variant TripCount for " << this->formatName()
+              llvm::dbgs() << "Variant TripCount for " << this->getStreamName()
                            << '\n';
               llvm::dbgs() << " Loop " << LoopUtils::getLoopId(CurrentLoop)
                            << " HasLoopInvariantBackedgeTakeCount "
@@ -147,7 +147,7 @@ bool StaticIndVarStream::checkReduceDGComplete() {
         if (!InstSet.count(UserInst) &&
             this->ConfigureLoop->contains(UserInst)) {
           LLVM_DEBUG(llvm::dbgs()
-                     << "ReduceDG for " << this->formatName()
+                     << "ReduceDG for " << this->getStreamName()
                      << " is incomplete due to user " << UserInst->getName()
                      << " of ComputeInst " << ClonedInst->getName() << '\n');
           IsComplete = false;
@@ -203,7 +203,7 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
      */
     return false;
   }
-  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsReduction " << this->formatName()
+  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsReduction " << this->getStreamName()
                           << '\n');
   if (!this->NonEmptyComputePath) {
     return false;
@@ -244,14 +244,14 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
       // Not same StepRoot.
       LLVM_DEBUG(llvm::dbgs()
                  << "==== [NotReduction] Different StepRoot between "
-                 << LoadBaseS->formatName() << " and "
-                 << FirstLoadBaseS->formatName() << '\n');
+                 << LoadBaseS->getStreamName() << " and "
+                 << FirstLoadBaseS->getStreamName() << '\n');
       return false;
     }
     if (LoadBaseS->Inst->getParent() != FinalInst->getParent()) {
       // We are not from the same BB.
       LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] Different BB between "
-                              << LoadBaseS->formatName() << " and "
+                              << LoadBaseS->getStreamName() << " and "
                               << Utils::formatLLVMInst(FinalInst) << '\n');
       return false;
     }
@@ -281,7 +281,7 @@ bool StaticIndVarStream::analyzeIsPointerChaseFromComputePath(
    * 2. Have single LoadStream input:
    *    a. LoadStream's StepRoot is myself.
    */
-  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsPtrChase " << this->formatName()
+  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsPtrChase " << this->getStreamName()
                           << '\n');
   if (!this->NonEmptyComputePath) {
     return false;
@@ -302,26 +302,26 @@ bool StaticIndVarStream::analyzeIsPointerChaseFromComputePath(
     if (LoadBaseS->AliasBaseStream != FirstLoadBaseS->AliasBaseStream) {
       LLVM_DEBUG(llvm::dbgs()
                  << "==== [NotPtrChase] InputLoadS Not Same AliasBase: "
-                 << LoadBaseS->formatName() << ".\n");
+                 << LoadBaseS->getStreamName() << ".\n");
       return false;
     }
     if (LoadBaseS->AliasOffset > 64) {
       // Maximum one cache line offset.
       LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] InputLoadS AliasOffset "
                               << LoadBaseS->AliasOffset << " Too Large: "
-                              << LoadBaseS->formatName() << ".\n");
+                              << LoadBaseS->getStreamName() << ".\n");
       return false;
     }
     if (LoadBaseS->BaseStepRootStreams.size() != 1) {
       LLVM_DEBUG(llvm::dbgs()
                  << "==== [NotPtrChase] Multi StepRoot for LoadBaseS: "
-                 << LoadBaseS->formatName() << '\n');
+                 << LoadBaseS->getStreamName() << '\n');
       return false;
     }
     if (LoadBaseS->BaseStepRootStreams.count(
             const_cast<StaticIndVarStream *>(this)) == 0) {
       LLVM_DEBUG(llvm::dbgs() << "==== [NotPtrChase] StepRoot not Myself: "
-                              << LoadBaseS->formatName() << '\n');
+                              << LoadBaseS->getStreamName() << '\n');
       return false;
     }
   }
@@ -351,7 +351,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
    * So far only consider inner most loop.
    */
   LLVM_DEBUG(llvm::dbgs() << "====== AnalyzeIsCandidate() - "
-                          << this->formatName() << '\n');
+                          << this->getStreamName() << '\n');
 
   if (!this->checkBaseStreamInnerMostLoopContainsMine()) {
     this->IsCandidate = false;
@@ -391,7 +391,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
   this->AllComputePaths = this->constructComputePath();
 
   auto EmptyPathFound = false;
-  LLVM_DEBUG(llvm::dbgs() << "Analyzing ComputePath of " << this->formatName()
+  LLVM_DEBUG(llvm::dbgs() << "Analyzing ComputePath of " << this->getStreamName()
                           << '\n');
   for (const auto &Path : AllComputePaths) {
     LLVM_DEBUG(Path.debug());
@@ -448,7 +448,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
   });
   this->StaticStreamInfo.set_val_pattern(
       this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
-  LLVM_DEBUG(llvm::dbgs() << this->formatName() << ": Value pattern "
+  LLVM_DEBUG(llvm::dbgs() << this->getStreamName() << ": Value pattern "
                           << ::LLVM::TDG::StreamValuePattern_Name(
                                  this->StaticStreamInfo.val_pattern())
                           << '\n');
@@ -509,7 +509,7 @@ void StaticIndVarStream::initializeMetaGraphConstruction(
 std::list<StaticIndVarStream::ComputePath>
 StaticIndVarStream::constructComputePath() const {
   LLVM_DEBUG(llvm::dbgs() << "==== SIVS: ConstructComputePath "
-                          << this->formatName() << '\n');
+                          << this->getStreamName() << '\n');
   // Start from the root.
   assert(!this->PHIMetaNodes.empty() && "Failed to find the root PHIMetaNode.");
   auto &RootPHIMetaNode = this->PHIMetaNodes.front();
@@ -594,7 +594,7 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
     return false;
   }
   LLVM_DEBUG(llvm::dbgs() << "Check IsQualifed Without BackEdgeDep for "
-                          << this->formatName() << '\n');
+                          << this->getStreamName() << '\n');
   // Make sure all the BackMemBaseStreams have same StepRoot.
   if (this->BackMemBaseStreams.size() > 1) {
     auto FirstBackMemBaseStream = *(this->BackMemBaseStreams.begin());
@@ -613,7 +613,7 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
       this->StaticStreamInfo.set_not_stream_reason(
           LLVM::TDG::StaticStreamInfo::BASE_STREAM_NOT_QUALIFIED);
       LLVM_DEBUG(llvm::dbgs() << "[Unqualified] Unqualified BackMemBaseStream "
-                              << BaseStream->formatName() << ".\n");
+                              << BaseStream->getStreamName() << ".\n");
       return false;
     }
   }
@@ -666,7 +666,7 @@ void StaticIndVarStream::searchStepInsts() {
   std::list<llvm::Instruction *> Queue;
 
   LLVM_DEBUG(llvm::dbgs() << "Search step instructions for "
-                          << this->formatName() << '\n');
+                          << this->getStreamName() << '\n');
 
   /**
    * Special case for reduction stream, which always just use the final compute
@@ -753,7 +753,7 @@ void StaticIndVarStream::searchComputeInsts() {
   std::list<llvm::Instruction *> Queue;
 
   LLVM_DEBUG(llvm::dbgs() << "Search compute instructions for "
-                          << this->formatName() << '\n');
+                          << this->getStreamName() << '\n');
 
   for (unsigned IncomingIdx = 0,
                 NumIncomingValues = this->PHINode->getNumIncomingValues();

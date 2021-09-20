@@ -81,7 +81,7 @@ FunctionalStreamEngine::FunctionalStreamEngine(
         .emplace(std::piecewise_construct, std::forward_as_tuple(RootFS),
                  std::forward_as_tuple())
         .first->second.emplace_back(PotentialCoalesceGroup.second);
-    // llvm::errs() << "Create coalescer for " << RootS->formatName() << '\n';
+    // llvm::errs() << "Create coalescer for " << RootS->getStreamName() << '\n';
   }
 }
 
@@ -128,7 +128,7 @@ void FunctionalStreamEngine::step(DynStream *S, DataGraph *DG) {
       Coalescer.updateCoalesceMatrix();
     }
     // llvm::errs() << "Update coalescer for stream "
-    //              << FS.getStream()->formatName() << '\n';
+    //              << FS.getStream()->getStreamName() << '\n';
   }
 }
 
@@ -160,7 +160,7 @@ void FunctionalStreamEngine::updateWithValue(DynStream *S, DataGraph *DG,
     // With n streams, at most n^2 updates.
     if (Count == this->StreamMap.size() * this->StreamMap.size() + 1) {
       llvm::errs() << "Potential cycle dependence found when updating for "
-                   << S->formatName() << '\n';
+                   << S->getStreamName() << '\n';
       assert(false && "Potential cycle dependence found.\n");
     }
     FS->update(DG);
@@ -194,7 +194,7 @@ void FunctionalStreamEngine::finalizeCoalesceInfo() {
       Coalescer.finalize();
     }
     // llvm::errs() << "Finalize coalescer for stream "
-    //              << StepRootStreamCoalescers.first->getStream()->formatName()
+    //              << StepRootStreamCoalescers.first->getStream()->getStreamName()
     //              << '\n';
   }
 }

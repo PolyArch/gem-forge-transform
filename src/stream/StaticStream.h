@@ -43,6 +43,12 @@ public:
   const llvm::PostDominatorTree *PDT;
   llvm::DataLayout *DataLayout;
 
+  const std::string StreamName;
+  std::string generateStreamName() const;
+  const std::string &getStreamName() const {
+    return this->StreamName;
+  }
+
   /**
    * The constructor just creates the object and does not perform any analysis.
    *
@@ -74,10 +80,9 @@ public:
     }
   }
 
-  std::string formatName() const;
   void formatProtoStreamId(::LLVM::TDG::StreamId *ProtoId) const {
     ProtoId->set_id(this->StreamId);
-    ProtoId->set_name(this->formatName());
+    ProtoId->set_name(this->getStreamName());
   }
 
   /**

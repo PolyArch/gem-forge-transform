@@ -204,11 +204,11 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
    * TODO: We should check that there is no aliasing store between them.
    */
   LLVM_DEBUG(llvm::dbgs() << "== SSRA: Mark Update Relationship for "
-                          << LoadSS->formatName() << '\n');
+                          << LoadSS->getStreamName() << '\n');
   if (LoadSS->StaticStreamInfo.is_cond_access() ||
       !LoadSS->StaticStreamInfo.is_trip_count_fixed()) {
     LLVM_DEBUG(llvm::dbgs() << "==== ConditalAccess or VariableTripCount "
-                            << LoadSS->formatName() << '\n');
+                            << LoadSS->getStreamName() << '\n');
     return;
   }
 
@@ -220,7 +220,7 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
   StaticStream *CandidateSS = nullptr;
   for (auto AliasSS : AliasBaseSS->AliasedStreams) {
     LLVM_DEBUG(llvm::dbgs()
-               << "==== Check AliasStream " << AliasSS->formatName() << '\n');
+               << "==== Check AliasStream " << AliasSS->getStreamName() << '\n');
     if (AliasSS->AliasOffset != LoadSS->AliasOffset)
       continue;
     if (AliasSS->Inst->getOpcode() != llvm::Instruction::Store)
@@ -232,7 +232,7 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
       return;
     } else {
       LLVM_DEBUG(llvm::dbgs()
-                 << "==== Select candidate " << AliasSS->formatName() << '\n');
+                 << "==== Select candidate " << AliasSS->getStreamName() << '\n');
       CandidateSS = AliasSS;
     }
   }
@@ -252,7 +252,7 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
   }
   assert(!LoadSS->UpdateStream && "This LoadSS already has UpdateStream.");
   LLVM_DEBUG(llvm::dbgs() << "==== Set Update Stream "
-                          << CandidateSS->formatName() << '\n');
+                          << CandidateSS->getStreamName() << '\n');
   LoadSS->UpdateStream = CandidateSS;
   CandidateSS->UpdateStream = LoadSS;
 }
@@ -300,9 +300,9 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
         continue;
       }
       LLVM_DEBUG(llvm::dbgs()
-                 << "Add predicated relation " << PredLoadStream->formatName()
+                 << "Add predicated relation " << PredLoadStream->getStreamName()
                  << " -- " << PredicatedTrue << " --> "
-                 << TargetStream->formatName() << '\n');
+                 << TargetStream->getStreamName() << '\n');
       if (PredicatedTrue) {
         PredLoadStream->PredicatedTrueStreams.insert(TargetStream);
       } else {
@@ -359,7 +359,7 @@ void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "== SSRA: Construct Graph for " << S->formatName() << '\n');
+                 << "== SSRA: Construct Graph for " << S->getStreamName() << '\n');
       S->constructGraph(GetStream);
     }
   }
@@ -373,7 +373,7 @@ void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
       LLVM_DEBUG(llvm::dbgs() << "== SSRA: ComputeBaseStepRoot for "
-                              << S->formatName() << '\n');
+                              << S->getStreamName() << '\n');
       S->computeBaseStepRootStreams();
     }
   }
@@ -426,7 +426,7 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
         continue;
       }
       LLVM_DEBUG(llvm::dbgs() << "====== Try to coalesce stream: "
-                              << S->formatName() << '\n');
+                              << S->getStreamName() << '\n');
       auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(S->Inst));
       auto AddrSCEV = this->SE->getSCEV(Addr);
 
@@ -447,7 +447,7 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
           }
           // Check the scev.
           LLVM_DEBUG(llvm::dbgs()
-                     << "== TargetStream: " << TargetS->formatName() << '\n');
+                     << "== TargetStream: " << TargetS->getStreamName() << '\n');
           LLVM_DEBUG(llvm::dbgs() << "== TargetAddrSCEV: ";
                      TargetAddrSCEV->dump());
           auto MinusSCEV = this->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
@@ -461,7 +461,7 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
           int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
           LLVM_DEBUG(llvm::dbgs()
                      << "== Coalesced, offset: " << Offset
-                     << " with stream: " << TargetS->formatName() << '\n');
+                     << " with stream: " << TargetS->getStreamName() << '\n');
           Coalesced = true;
           Group.emplace_back(S, Offset);
           break;
@@ -525,7 +525,7 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   bool IsAtomic = (StreamOpcode == llvm::Instruction::AtomicRMW) ||
                   (StreamOpcode == llvm::Instruction::AtomicCmpXchg);
 
-  LLVM_DEBUG(llvm::dbgs() << "Build ValueDG for " << StoreS->formatName()
+  LLVM_DEBUG(llvm::dbgs() << "Build ValueDG for " << StoreS->getStreamName()
                           << '\n');
 
   if (StoreS->BaseStepRootStreams.size() != 1) {
@@ -631,7 +631,7 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     if (LoadS->BaseStepRootStreams != StoreS->BaseStepRootStreams) {
       // They are not stepped by the same stream.
       LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Not same StepRoot: "
-                              << LoadS->formatName() << '\n');
+                              << LoadS->getStreamName() << '\n');
       return;
     }
     LoadInputStreams.push_back(LoadS);
@@ -709,7 +709,7 @@ void StaticStreamRegionAnalyzer::markQualifiedStreams() {
       assert(false && "Stream should be qualified to be inserted into the "
                       "qualifying queue.");
     }
-    LLVM_DEBUG(llvm::dbgs() << "Mark Qualified " << S->formatName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "Mark Qualified " << S->getStreamName() << '\n');
     S->setIsQualified(true);
     // Check all the dependent streams.
     for (const auto &DependentStream : S->DependentStreams) {
@@ -824,7 +824,7 @@ void StaticStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
     for (auto &S : InstStream.second) {
       if (S->isQualified()) {
         LLVM_DEBUG(llvm::dbgs() << "==== Choose stream StaticOuterMost for "
-                                << S->formatName() << '\n');
+                                << S->getStreamName() << '\n');
         /**
          * Instead of just choose the out-most loop, we use
          * a heuristic to select the level with most number
@@ -836,7 +836,7 @@ void StaticStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
           if (DepSS->isQualified()) {
             NumQualifiedDepStreams++;
             LLVM_DEBUG(llvm::dbgs() << "====== Qualified DepS "
-                                    << DepSS->formatName() << '\n');
+                                    << DepSS->getStreamName() << '\n');
           }
         }
         LLVM_DEBUG(llvm::dbgs()
@@ -853,7 +853,7 @@ void StaticStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
       this->InstChosenStreamMap.emplace(Inst, ChosenStream);
       ChosenStream->markChosen();
       LLVM_DEBUG(llvm::dbgs()
-                 << "== Choose " << ChosenStream->formatName() << '\n');
+                 << "== Choose " << ChosenStream->getStreamName() << '\n');
     }
   }
 }
@@ -903,7 +903,7 @@ void StaticStreamRegionAnalyzer::buildTransformPlan() {
     auto &S = InstChosenStream.second;
 
     LLVM_DEBUG(llvm::dbgs()
-               << "make transform plan for stream " << S->formatName() << '\n');
+               << "make transform plan for stream " << S->getStreamName() << '\n');
 
     // Handle all the step instructions.
     for (const auto &StepInst : S->getStepInsts()) {
@@ -942,7 +942,7 @@ void StaticStreamRegionAnalyzer::buildTransformPlan() {
         this->InstPlanMap.at(I).addUsedStream(S);
         LLVM_DEBUG(llvm::dbgs()
                    << "Add used stream for user " << Utils::formatLLVMInst(I)
-                   << " with stream " << S->formatName() << '\n');
+                   << " with stream " << S->getStreamName() << '\n');
       }
     }
 
@@ -1173,7 +1173,7 @@ void StaticStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
   std::list<std::vector<std::pair<StaticStream *, int64_t>>> CoalescedGroup;
   for (auto SS : ConfigureInfo.getSortedStreams()) {
     LLVM_DEBUG(llvm::dbgs() << "====== Try to coalesce stream: "
-                            << SS->formatName() << '\n');
+                            << SS->getStreamName() << '\n');
     if (SS->BaseStepRootStreams.size() != 1 ||
         SS->Type == StaticStream::TypeT::IV) {
       // These streams are not coalesced, set the coalesce group to itself.
@@ -1215,7 +1215,7 @@ void StaticStreamRegionAnalyzer::coalesceStreamsAtLoop(llvm::Loop *Loop) {
         int64_t Offset = OffsetSCEV->getAPInt().getSExtValue();
         LLVM_DEBUG(llvm::dbgs()
                    << "Coalesced, offset: " << Offset
-                   << " with stream: " << TargetSS->formatName() << '\n');
+                   << " with stream: " << TargetSS->getStreamName() << '\n');
         Coalesced = true;
         Group.emplace_back(SS, Offset);
         break;
@@ -1396,7 +1396,7 @@ void StaticStreamRegionAnalyzer::dumpConfigurePlan() {
            Level < Loop->getLoopDepth(); ++Level) {
         ss << "  ";
       }
-      ss << S->formatName() << '\n';
+      ss << S->getStreamName() << '\n';
     }
   }
   std::string PlanPath = this->getAnalyzePath() + "/config.plan.txt";
