@@ -18,6 +18,21 @@
   for (int i = 0; i < sizeof(*(a)) * (n); i += CACHE_LINE_SIZE) {              \
     volatile char x = ((char *)(a))[i];                                        \
   }
+#define DUMP_BIN_ARRAY_TO_FILE(a, n, f)                                        \
+  {                                                                            \
+    uint64_t s = sizeof(*(a)) * (n);                                           \
+    fwrite(&s, sizeof(s), 1, f);                                               \
+    fwrite((a), sizeof(*(a)), (n), (f));                                       \
+  }
+
+uint8_t *LOAD_BIN_ARRAY_FROM_FILE(uint64_t *size, FILE *f) {
+  uint64_t s;
+  fread(&s, sizeof(s), 1, f);
+  uint8_t *buffer = (uint8_t *)aligned_alloc(PAGE_SIZE, s);
+  fread(buffer, sizeof(*buffer), s, (f));
+  *size = s;
+  return buffer;
+}
 
 #ifdef GEM_FORGE
 #define gf_detail_sim_start() m5_detail_sim_start()

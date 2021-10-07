@@ -33,7 +33,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
 #pragma omp parallel for schedule(static, STATIC_CHUNK_SIZE)                   \
     firstprivate(a, b, c)
 #endif
-  for (int i = 0; i < N; i += 16) {
+  for (int64_t i = 0; i < N; i += 16) {
     __m512 valA = _mm512_load_ps(a + i);
     __m512 valB = _mm512_load_ps(b + i);
     __m512 valM = _mm512_add_ps(valA, valB);
