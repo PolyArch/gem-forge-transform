@@ -119,8 +119,8 @@ int main(int argc, char *argv[]) {
 #endif
 
   printf("A %p B %p N %ld ElementSize %lu.\n", A, B, N, sizeof(A[0]));
-  gf_stream_nuca_region(A, sizeof(Value), N);
-  gf_stream_nuca_region(B, sizeof(Value), N);
+  gf_stream_nuca_region("gfm.dot_prod.A", A, sizeof(Value), N);
+  gf_stream_nuca_region("gfm.dot_prod.A", B, sizeof(Value), N);
   gf_stream_nuca_align(A, B, 0);
   gf_stream_nuca_remap();
 
