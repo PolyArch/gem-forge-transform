@@ -18,21 +18,22 @@ BBBranchDataGraph::BBBranchDataGraph(const llvm::Loop *_Loop,
 void BBBranchDataGraph::constructDataGraph() {
   auto Terminator = this->BB->getTerminator();
   auto BranchInst = llvm::dyn_cast<llvm::BranchInst>(Terminator);
+  LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Construct " << this->FuncName << '\n');
   if (!BranchInst) {
     // Can not analyze non-branch instruction.
-    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid: Non-Branch "
+    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: Non-Branch "
                             << Utils::formatLLVMBB(this->BB) << '\n');
     return;
   }
   if (!BranchInst->isConditional()) {
     // Not a conditional branch.
-    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid: Unconditional "
+    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: Unconditional "
                             << Utils::formatLLVMBB(this->BB) << '\n');
     return;
   }
   if (BranchInst->getNumSuccessors() != 2) {
     // Too many targets.
-    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid: Too Many Targets "
+    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: Too Many Targets "
                             << Utils::formatLLVMBB(this->BB) << '\n');
     return;
   }
@@ -95,13 +96,13 @@ void BBBranchDataGraph::constructDataGraph() {
   bool IsValidTemp = true;
   for (auto InputLoad : this->InputLoads) {
     if (InputLoad->getParent() != this->BB) {
-      LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid: Other BB Load "
+      LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: Other BB Load "
                               << Utils::formatLLVMBB(this->BB) << '\n');
       IsValidTemp = false;
     }
   }
   if (!this->InputPHIs.empty()) {
-    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid: PHI Input "
+    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: PHI Input "
                             << Utils::formatLLVMBB(this->BB) << '\n');
     IsValidTemp = false;
   }
@@ -109,8 +110,8 @@ void BBBranchDataGraph::constructDataGraph() {
     // Setup.
     this->IsValid = true;
     this->ResultValues.emplace_back(BranchInst->getCondition());
-    LLVM_DEBUG(llvm::dbgs()
-               << "BBPredDG Valid: " << Utils::formatLLVMBB(this->BB) << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Valid: "
+                            << Utils::formatLLVMBB(this->BB) << '\n');
     /**
      * Generate the sorted inputs list, (actually just
      * get a fixed order).
@@ -148,38 +149,69 @@ bool BBBranchDataGraph::isPredicate(const llvm::BasicBlock *TargetBB) const {
   return TargetBB->getSinglePredecessor() == this->BB;
 }
 
-bool BBBranchDataGraph::isLoopHeadPredicate(
+const llvm::BasicBlock *BBBranchDataGraph::getLoopHeadPredicateBB(
     const llvm::BasicBlock *TargetBB) const {
   assert((TargetBB == this->TrueBB || TargetBB == this->FalseBB) &&
          "Invalid LoopHead TargetBB");
   if (!this->isValid() || !TargetBB) {
-    return false;
+    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Not LoopHeadPred as IsValid? "
+                            << this->isValid() << '\n');
+    return nullptr;
   }
+  LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Check isLoopHeadPredicate TargetBB "
+                          << TargetBB->getName() << ".\n");
   if (TargetBB == this->BB) {
     // Do not allow self predicate.
-    return false;
+    LLVM_DEBUG(llvm::dbgs()
+               << "[BBPredDG] Not LoopHeadPred as SelfPredicate.\n");
+    return nullptr;
   }
   llvm::Loop *TargetLoop = nullptr;
-  for (auto SubLoop : this->Loop->getSubLoops()) {
-    if (SubLoop->getHeader() == TargetBB) {
-      TargetLoop = SubLoop;
-      break;
+  auto TryGetTargetLoop = [this,
+                           &TargetLoop](const llvm::BasicBlock *BB) -> bool {
+    for (auto SubLoop : this->Loop->getSubLoops()) {
+      if (SubLoop->getHeader() == BB) {
+        TargetLoop = SubLoop;
+        return true;
+      }
     }
+    return false;
+  };
+  auto TargetPredBB = this->BB;
+  while (!TryGetTargetLoop(TargetBB)) {
+    /**
+     * TargetBB is not a LoopHeader. See if we can expand it.
+     */
+    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] TargetBB " << TargetBB->getName()
+                            << "  is not LoopHeader.\n");
+    if (auto SingleSuccBB = TargetBB->getSingleSuccessor()) {
+      // This forms a unique chain.
+      if (TargetBB->getSinglePredecessor() == TargetPredBB) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "[BBPredDG] Extend TargetBB to Single Succ BB "
+                   << SingleSuccBB->getName() << ".\n");
+        TargetPredBB = TargetBB;
+        TargetBB = SingleSuccBB;
+        continue;
+      }
+    }
+    break;
   }
   if (!TargetLoop) {
-    // TargetBB is not a LoopHeader.
-    return false;
+    return nullptr;
   }
   for (auto Predecessor : llvm::predecessors(TargetBB)) {
     if (TargetLoop->contains(Predecessor)) {
       continue;
     }
-    if (Predecessor != this->BB) {
+    if (Predecessor != TargetPredBB) {
       // TargetBB has other predecessors from loop outside, return false.
-      return false;
+      LLVM_DEBUG(llvm::dbgs()
+                 << "[BBPredDG] TargetBB has other predecessor.\n");
+      return nullptr;
     }
   }
-  return true;
+  return TargetBB;
 }
 
 bool BBBranchDataGraph::isValidLoopBoundPredicate() const {
@@ -187,18 +219,19 @@ bool BBBranchDataGraph::isValidLoopBoundPredicate() const {
     return false;
   }
   if (this->Loop->getExitingBlock() != this->BB) {
-    LLVM_DEBUG(llvm::dbgs() << "LoopBoundPredDG Invalid: Not Single ExitingBB "
-                            << Utils::formatLLVMBB(this->BB) << '\n');
+    LLVM_DEBUG(llvm::dbgs()
+               << "[LoopBoundPredDG] Invalid: Not Single ExitingBB "
+               << Utils::formatLLVMBB(this->BB) << '\n');
     return false;
   }
   if (this->Loop->getLoopLatch() != this->BB) {
-    LLVM_DEBUG(llvm::dbgs() << "LoopBoundPredDG Invalid: Not Single Latch "
+    LLVM_DEBUG(llvm::dbgs() << "[LoopBoundPredDG] Invalid: Not Single Latch "
                             << Utils::formatLLVMBB(this->BB) << '\n');
     return false;
   }
   if (this->Loop->getNumBlocks() != 1) {
     // This is very restricted.
-    LLVM_DEBUG(llvm::dbgs() << "LoopBoundPredDG Invalid: Not Single BB "
+    LLVM_DEBUG(llvm::dbgs() << "[LoopBoundPredDG] Invalid: Not Single BB "
                             << Utils::formatLLVMBB(this->BB) << '\n');
     return false;
   }

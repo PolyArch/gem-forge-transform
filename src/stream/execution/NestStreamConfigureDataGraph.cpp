@@ -16,6 +16,8 @@ NestStreamConfigureDataGraph::NestStreamConfigureDataGraph(
 
 void NestStreamConfigureDataGraph::constructDataGraph() {
   // Start bfs on the conditional value to construct the datagraph.
+  LLVM_DEBUG(llvm::dbgs() << "[Nest] Construct for " << this->FuncName
+                          << ".\n";);
   std::list<const llvm::Value *> Queue;
   for (auto InstIter = this->ConfigBB->begin(), InstEnd = this->ConfigBB->end();
        InstIter != InstEnd; ++InstIter) {

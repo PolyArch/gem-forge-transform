@@ -53,17 +53,26 @@ public:
    * LoopHeaderBB requires:
    * 1. True/FalseBB are not this BB.
    * 2. TargetBB is a LoopHeader.
-   * 3. Or other Predecessor is from inside of the Loop.
+   * 3. All other Predecessor is from inside of the Loop.
+   * NOTICE: We may extend TargetBB along the unconditional chain.
+   * TargetBB -> BB -> LoopHeaderBB.
    */
   bool isValidLoopHeadPredicate() const {
-    return this->isLoopHeadPredicate(this->TrueBB) ||
-           this->isLoopHeadPredicate(this->FalseBB);
+    return this->getLoopHeadPredicateBB(this->TrueBB) ||
+           this->getLoopHeadPredicateBB(this->FalseBB);
   }
   const llvm::BasicBlock *getLoopHeadPredicateBB(bool True) const {
     auto TargetBB = True ? this->TrueBB : this->FalseBB;
-    return this->isLoopHeadPredicate(TargetBB) ? TargetBB : nullptr;
+    return this->getLoopHeadPredicateBB(TargetBB);
   }
-  bool isLoopHeadPredicate(const llvm::BasicBlock *TargetBB) const;
+  /**
+   * Check this BBPredDG forms a LoopHeadPredication.
+   * Notice that we may try to expand TargetBB following the unconditional chain
+   * to handle some loop-invariant code optimization.
+   * @return Possibly extended TargetBB or nullptr.
+   */
+  const llvm::BasicBlock *
+  getLoopHeadPredicateBB(const llvm::BasicBlock *TargetBB) const;
 
   /**
    * LoopBoundBB requires:

@@ -72,10 +72,12 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
 
   LLVM_DEBUG({
     for (auto S : InnerConfigInfo.getSortedStreams()) {
-      llvm::dbgs() << "[Nest] Found InnerStream: " << S->getStreamName() << '\n';
+      llvm::dbgs() << "[Nest] Found InnerStream: " << S->getStreamName()
+                   << '\n';
     }
     for (auto S : OuterConfigInfo.getSortedStreams()) {
-      llvm::dbgs() << "[Nest] Found OuterStream: " << S->getStreamName() << '\n';
+      llvm::dbgs() << "[Nest] Found OuterStream: " << S->getStreamName()
+                   << '\n';
     }
   });
 
@@ -156,10 +158,11 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
   bool PredicateRet = false;
   auto PredFuncInfo = std::make_unique<::LLVM::TDG::ExecFuncInfo>();
   std::vector<const llvm::Value *> PredInputValues;
+  bool isValidLoopHeadPredicate = BBPredDG->isValidLoopHeadPredicate();
   LLVM_DEBUG({
-    llvm::dbgs() << "[Nest] BBPredDG Valid "
-                 << BBPredDG->isValidLoopHeadPredicate() << ".\n";
-    if (BBPredDG->isValidLoopHeadPredicate()) {
+    llvm::dbgs() << "[Nest] BBPredDG Valid " << isValidLoopHeadPredicate
+                 << ".\n";
+    if (isValidLoopHeadPredicate) {
       auto TrueLoopHeaderBB = BBPredDG->getLoopHeadPredicateBB(true);
       llvm::dbgs() << "[Nest] BBPredDG TrueLoopHeaderBB "
                    << (TrueLoopHeaderBB ? Utils::formatLLVMBB(TrueLoopHeaderBB)
@@ -174,7 +177,7 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
     }
   });
 
-  if (BBPredDG->isValidLoopHeadPredicate() &&
+  if (isValidLoopHeadPredicate &&
       (BBPredDG->getLoopHeadPredicateBB(true) == InnerHeaderBB ||
        BBPredDG->getLoopHeadPredicateBB(false) == InnerHeaderBB)) {
     /**
@@ -217,7 +220,7 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
                            InnerHeaderBB, OuterHeaderBB)) {
     LLVM_DEBUG(llvm::dbgs()
                << "[Nest] Is not predicated or post-dominated. BBPredDG Valid "
-               << BBPredDG->isValidLoopHeadPredicate() << ".\n");
+               << isValidLoopHeadPredicate << ".\n");
     return false;
   }
   if (!IsPredicated) {
