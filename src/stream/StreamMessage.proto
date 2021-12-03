@@ -272,6 +272,14 @@ message StreamFloatEvent {
   uint64 cycle = 1;
   uint32 llc_bank = 2;
   StreamFloatEventType type = 3;
+  StreamEngineType se = 4;
+
+  enum StreamEngineType {
+    CORE = 0;
+    MLC = 1;
+    LLC = 2;
+    MEM = 3;
+  }
   
   enum StreamFloatEventType {
     CONFIG = 0;
