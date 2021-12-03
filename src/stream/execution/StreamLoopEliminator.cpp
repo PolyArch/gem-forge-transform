@@ -31,7 +31,7 @@ void StreamLoopEliminator::eliminateLoop(StaticStreamRegionAnalyzer *Analyzer,
   auto ClonedLI = this->Transformer->CachedLI->getLoopInfo(ClonedFunc);
   auto ClonedLoop = ClonedLI->getLoopFor(ClonedLoopHeader);
   if (!ClonedLoop) {
-    // 0. Still ahs the ClonedLoop.
+    // 0. Still has the ClonedLoop.
     LLVM_DEBUG(llvm::dbgs() << "[LoopEliminate] Missing ClonedLoop.\n");
     return;
   }
