@@ -99,7 +99,7 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
   /**
    * Ensure that:
    * 1. All Inputs are from StreamLoad in the same BB.
-   * 2. Or are just values (not instructions).
+   * 2. Or are just values outside of OuterLoop.
    */
   bool IsValidTemp = true;
   const llvm::BasicBlock *StreamLoadBB = nullptr;
@@ -111,6 +111,9 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
     });
     auto Inst = llvm::dyn_cast<llvm::Instruction>(Input);
     if (!Inst) {
+      continue;
+    }
+    if (!this->OuterLoop->contains(Inst)) {
       continue;
     }
     auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst);
