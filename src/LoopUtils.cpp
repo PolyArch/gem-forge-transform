@@ -36,8 +36,9 @@ const std::list<std::pair<std::string, std::string>>
         // From GapGraph SSSP.
         {"sssp.cc", "RelaxEdges"},
         {"sssp_check.cc", "RelaxEdges"},
+        {"sssp_inline.cc", ".omp_outlined..22"},
         // From GapGraph BFS_PUSH
-        {"bfs_push.cc", ".omp_outlined."},
+        {"bfs_push.cc", ".omp_outlined..15"},
         {"bfs_push_check.cc", ".omp_outlined."},
     };
 
@@ -207,12 +208,16 @@ const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
                                               const llvm::Loop *Loop) {
 
   auto BackEdgeTakenSCEV = SE->getCouldNotCompute();
+  LLVM_DEBUG(llvm::dbgs() << "[LoopTripCount] Check "
+                          << LoopUtils::getLoopId(Loop) << "\n");
+
   if (SE->hasLoopInvariantBackedgeTakenCount(Loop)) {
-    LLVM_DEBUG(llvm::dbgs() << "LoopVariantBackedgeTakenCount for Loop "
-                            << LoopUtils::getLoopId(Loop) << "\n");
+    LLVM_DEBUG(llvm::dbgs()
+               << "[LoopTripCount] LoopVariantBackedgeTakenCount for "
+               << LoopUtils::getLoopId(Loop) << "\n");
     BackEdgeTakenSCEV = SE->getBackedgeTakenCount(Loop);
     LLVM_DEBUG({
-      llvm::dbgs() << "BackEdgeTakenCount ";
+      llvm::dbgs() << "[LoopTripCount] BackEdgeTakenCount ";
       BackEdgeTakenSCEV->dump();
     });
   }
@@ -247,8 +252,9 @@ const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
     }
     BackEdgeTakenSCEV = SE->getExitCount(Loop, SingleExitingBB);
     LLVM_DEBUG({
-      llvm::dbgs() << "Replace with ExitCount on SingleExitingBB "
-                   << SingleExitingBB->getName();
+      llvm::dbgs()
+          << "[LoopTripCount] Replace with ExitCount on SingleExitingBB "
+          << SingleExitingBB->getName();
       BackEdgeTakenSCEV->dump();
     });
   }

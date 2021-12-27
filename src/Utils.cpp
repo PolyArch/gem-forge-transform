@@ -46,7 +46,13 @@ const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
 }
 
 std::string Utils::formatLLVMFunc(const llvm::Function *Func) {
-  return Utils::getInstUIDMap().getFuncUID(Func);
+  auto &UIDMap = Utils::getInstUIDMap();
+  if (UIDMap.hasFuncUID(Func)) {
+    return UIDMap.getFuncUID(Func);
+  } else {
+    // For a cloned or new function without UID, we just return UIDBase.
+    return UIDMap.generateFuncUIDBase(Func);
+  }
 }
 
 std::string Utils::formatLLVMValue(const llvm::Value *Value) {

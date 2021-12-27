@@ -98,11 +98,10 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
   }
   /**
    * Ensure that:
-   * 1. All Inputs are from StreamLoad in the same BB.
+   * 1. All Inputs are from StreamLoad.
    * 2. Or are just values outside of OuterLoop.
    */
   bool IsValidTemp = true;
-  const llvm::BasicBlock *StreamLoadBB = nullptr;
   for (auto Input : UnsortedInputs) {
     LLVM_DEBUG({
       llvm::dbgs() << "[Nest] Checking Input ";
@@ -128,12 +127,6 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
     }
     auto IntrinsicID = Callee->getIntrinsicID();
     if (IntrinsicID != llvm::Intrinsic::ssp_stream_load) {
-      IsValidTemp = false;
-      break;
-    }
-    if (!StreamLoadBB) {
-      StreamLoadBB = CallInst->getParent();
-    } else if (StreamLoadBB != CallInst->getParent()) {
       IsValidTemp = false;
       break;
     }

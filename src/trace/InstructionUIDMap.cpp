@@ -89,6 +89,27 @@ void InstructionUIDMap::allocateWholeFunction(llvm::Function *Func) {
 void InstructionUIDMap::allocateFunctionUID(const llvm::Function *Func) {
   assert(this->FuncUIDMap.count(Func) == 0 &&
          "Function UID already allocated.");
+  auto FuncUIDBase = generateFuncUIDBase(Func);
+
+  auto UIDEmplaceResult = this->FuncUIDUsedMap.emplace(FuncUIDBase, 1);
+  if (!UIDEmplaceResult.second) {
+    // This FuncUIDBase is already used.
+    // Increase the used count.
+    UIDEmplaceResult.first->second++;
+    // Modify the FuncUID by appending a sequence number.
+    FuncUIDBase += std::to_string(UIDEmplaceResult.first->second);
+  }
+
+  // Insert the FuncUID.
+  LLVM::TDG::FunctionDescriptor FuncDescriptor;
+  FuncDescriptor.set_func_name(Func->getName().str());
+  auto &FuncUIDMap = *(this->UIDMap.mutable_func_map());
+  FuncUIDMap.operator[](FuncUIDBase) = FuncDescriptor;
+
+  this->FuncUIDMap.emplace(Func, FuncUIDBase);
+}
+
+std::string InstructionUIDMap::generateFuncUIDBase(const llvm::Function *Func) {
   auto FuncUIDBase = Func->getName().str();
   auto DebugMDNode = Func->getMetadata(llvm::LLVMContext::MD_dbg);
   if (DebugMDNode != nullptr) {
@@ -113,23 +134,7 @@ void InstructionUIDMap::allocateFunctionUID(const llvm::Function *Func) {
       }
     }
   }
-
-  auto UIDEmplaceResult = this->FuncUIDUsedMap.emplace(FuncUIDBase, 1);
-  if (!UIDEmplaceResult.second) {
-    // This FuncUIDBase is already used.
-    // Increase the used count.
-    UIDEmplaceResult.first->second++;
-    // Modify the FuncUID by appending a sequence number.
-    FuncUIDBase += std::to_string(UIDEmplaceResult.first->second);
-  }
-
-  // Insert the FuncUID.
-  LLVM::TDG::FunctionDescriptor FuncDescriptor;
-  FuncDescriptor.set_func_name(Func->getName().str());
-  auto &FuncUIDMap = *(this->UIDMap.mutable_func_map());
-  FuncUIDMap.operator[](FuncUIDBase) = FuncDescriptor;
-
-  this->FuncUIDMap.emplace(Func, FuncUIDBase);
+  return FuncUIDBase;
 }
 
 void InstructionUIDMap::serializeToTxt(const std::string &FileName) const {
@@ -263,6 +268,10 @@ InstructionUIDMap::getUID(const llvm::Instruction *Inst) const {
   auto Iter = this->InstUIDMap.find(Inst);
   assert(Iter != this->InstUIDMap.end() && "Unrecognized inst.");
   return Iter->second;
+}
+
+bool InstructionUIDMap::hasFuncUID(const llvm::Function *Func) const {
+  return this->FuncUIDMap.count(Func);
 }
 
 const std::string &

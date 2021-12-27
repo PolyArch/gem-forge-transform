@@ -33,7 +33,10 @@ public:
 
   llvm::Instruction *getInst(const InstructionUID UID) const;
   InstructionUID getUID(const llvm::Instruction *Inst) const;
+  bool hasFuncUID(const llvm:: Function *Func) const;
   const std::string &getFuncUID(const llvm::Function *Func) const;
+
+  static std::string generateFuncUIDBase(const llvm::Function *Func);
 
 private:
   LLVM::TDG::UIDMap UIDMap;
