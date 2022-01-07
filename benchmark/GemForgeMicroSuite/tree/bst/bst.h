@@ -2,6 +2,7 @@
 #define AVL_TREE_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 /**
@@ -14,6 +15,8 @@ struct BSTreeNode {
   struct BSTreeNode *lhs;
   struct BSTreeNode *rhs;
   struct BSTreeNode *parent;
+  // Padding to one cache line?
+  uint64_t dummy[4];
 };
 
 struct BSTree {
@@ -100,6 +103,54 @@ void buildTreeRecursive(TreeValueT keyMin, TreeValueT keyMax, uint64_t nodes,
   buildTreeRecursive(keyMin, nodeVal, lhsNodes, node, freeNodes + 1);
   buildTreeRecursive(nodeVal + 1, keyMax, rhsNodes, node,
                      freeNodes + 1 + lhsNodes);
+}
+
+void dumpTree(const struct BSTree *tree, TreeValueT keyMax) {
+  char fn[256];
+  snprintf(fn, 256, "bst-%lu-%lu.data", tree->total, keyMax);
+
+  FILE *f = fopen(fn, "wb");
+  fwrite(tree, sizeof(*tree), 1, f);
+  fwrite(tree->array, sizeof(*tree->array), tree->total, f);
+  fclose(f);
+}
+
+struct BSTree loadTree(TreeValueT keyMax, uint64_t totalNodes) {
+  char fn[256];
+  snprintf(fn, 256, "bst-%lu-%lu.data", totalNodes, keyMax);
+
+  struct BSTree tree;
+
+  FILE *f = fopen(fn, "rb");
+  if (!f) {
+    printf("Failed to open tree %s.\n", fn);
+    exit(1);
+  }
+  fread(&tree, sizeof(tree), 1, f);
+
+  struct BSTreeNode *nodes =
+      aligned_alloc(64, sizeof(struct BSTreeNode) * totalNodes);
+  fread(nodes, sizeof(struct BSTreeNode), tree.total, f);
+
+  fclose(f);
+
+#define rewrite_ptr(old_ptr)                                                   \
+  (((old_ptr) != NULL) ? (nodes + ((old_ptr)-tree.array)) : NULL)
+
+  // Rewrite all the pointers.
+  for (uint64_t i = 0; i < tree.total; ++i) {
+    nodes[i].lhs = rewrite_ptr(nodes[i].lhs);
+    nodes[i].rhs = rewrite_ptr(nodes[i].rhs);
+    nodes[i].parent = rewrite_ptr(nodes[i].parent);
+  }
+
+  tree.freelist = rewrite_ptr(tree.freelist);
+  tree.root = rewrite_ptr(tree.root);
+
+  // Replace the array.
+  tree.array = nodes;
+
+  return tree;
 }
 
 #endif

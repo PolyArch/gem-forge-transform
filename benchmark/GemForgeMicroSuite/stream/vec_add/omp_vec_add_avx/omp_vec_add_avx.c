@@ -27,6 +27,7 @@ typedef float Value;
 #endif
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
+  printf("Entered TripCount N %d.\n", N);
 #if STATIC_CHUNK_SIZE == 0
 #pragma omp parallel for schedule(static) firstprivate(a, b, c)
 #else
@@ -34,6 +35,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
     firstprivate(a, b, c)
 #endif
   for (int64_t i = 0; i < N; i += 16) {
+    printf("Compute %ld.\n", i);
     __m512 valA = _mm512_load_ps(a + i);
     __m512 valB = _mm512_load_ps(b + i);
     __m512 valM = _mm512_add_ps(valA, valB);

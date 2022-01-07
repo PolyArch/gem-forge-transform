@@ -10,13 +10,22 @@ typedef int64_t Value;
 struct Node {
   struct Node *next;
   Value val;
+  // Make this one cache line.
+  uint64_t dummy[6];
 };
 
 __attribute__((noinline)) Value foo(struct Node *head) {
   Value sum = 0;
   while (head != NULL) {
-    sum += head->val;
-    head = head->next;
+
+#pragma ss stream_name "gfm.link_list.val.ld"
+    Value v = head->val;
+
+#pragma ss stream_name "gfm.link_list.next.ld"
+    struct Node *next = head->next;
+
+    sum += v;
+    head = next;
   }
   return sum;
 }

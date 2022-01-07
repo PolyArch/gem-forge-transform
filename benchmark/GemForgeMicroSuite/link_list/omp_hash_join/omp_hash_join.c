@@ -19,10 +19,10 @@ __attribute__((noinline)) void foo(struct Node **heads, uint64_t hashMask,
 #pragma omp parallel for schedule(static)                                      \
     firstprivate(heads, hashMask, keys, matched)
   for (int64_t i = 0; i < totalKeys; ++i) {
-#pragma ss stream_name "gfm.omp_hash_join.key.ld"
+#pragma ss stream_name "gfm.hash_join.key.ld"
     Value key = keys[i];
     Value hash = key & hashMask;
-#pragma ss stream_name "gfm.omp_hash_join.head.ld"
+#pragma ss stream_name "gfm.hash_join.head.ld"
     struct Node *head = heads[hash];
     Value val = 0;
     uint8_t found = 0;
@@ -31,10 +31,10 @@ __attribute__((noinline)) void foo(struct Node **heads, uint64_t hashMask,
        * This helps us getting a single BB loop body, with simple condition.
        */
       do {
-#pragma ss stream_name "gfm.omp_hash_join.val.ld"
+#pragma ss stream_name "gfm.hash_join.val.ld"
         Value v = head->val;
 
-#pragma ss stream_name "gfm.omp_hash_join.next.ld"
+#pragma ss stream_name "gfm.hash_join.next.ld"
         struct Node *n = head->next;
 
         val = v;
@@ -43,7 +43,7 @@ __attribute__((noinline)) void foo(struct Node **heads, uint64_t hashMask,
         found = found || (val == key);
       } while (val != key && head != NULL);
     }
-#pragma ss stream_name "gfm.omp_hash_join.match.st"
+#pragma ss stream_name "gfm.hash_join.match.st"
     matched[i] = found;
   }
 }
@@ -105,18 +105,6 @@ struct InputArgs parseArgs(int argc, char *argv[]) {
 
 const int MAX_FILE_NAME = 256;
 char fileName[MAX_FILE_NAME];
-
-const char *formatBytes(uint64_t *bytes) {
-  const char *suffix = "B";
-  if ((*bytes) >= 1024 * 1024) {
-    (*bytes) /= 1024 * 1024;
-    suffix = "MB";
-  } else if ((*bytes) >= 1024) {
-    (*bytes) /= 1024;
-    suffix = "kB";
-  }
-  return suffix;
-}
 
 const char *generateFileName(struct InputArgs args) {
 
@@ -208,6 +196,9 @@ struct DataArrays generateData(struct InputArgs args) {
 
   {
     struct DataArrays data = loadData(args, fileName);
+#ifdef GEM_FORGE
+    assert(data.nodes != NULL && "Failed to load data.");
+#endif
     if (data.nodes != NULL) {
       return data;
     }
@@ -302,11 +293,22 @@ int main(int argc, char *argv[]) {
   // Allocated the matched results.
   uint8_t *matched = aligned_alloc(64, sizeof(uint8_t) * args.totalKeys);
 
+#ifdef GEM_FORGE
+  m5_stream_nuca_region("gfm.hash_join.nodes", data.nodes,
+                        sizeof(data.nodes[0]), args.totalElements);
+  m5_stream_nuca_region("gfm.hash_join.keys", data.keys, sizeof(data.keys[0]),
+                        args.totalKeys);
+  m5_stream_nuca_region("gfm.hash_join.match", matched, sizeof(matched[0]),
+                        args.totalKeys);
+  m5_stream_nuca_remap();
+#endif
+
   gf_detail_sim_start();
   if (args.warm) {
-    WARM_UP_ARRAY(data.nodes, args.totalElements);
-    WARM_UP_ARRAY(data.keys, args.totalKeys);
-    WARM_UP_ARRAY(matched, args.totalKeys);
+    gf_warm_array("nodes", data.nodes,
+                  args.totalElements * sizeof(data.nodes[0]));
+    gf_warm_array("keys", data.keys, args.totalKeys * sizeof(data.keys[0]));
+    gf_warm_array("match", matched, args.totalKeys * sizeof(matched[0]));
   }
 
   Value p;
