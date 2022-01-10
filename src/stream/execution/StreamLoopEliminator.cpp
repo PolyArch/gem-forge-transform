@@ -122,7 +122,7 @@ bool StreamLoopEliminator::canLoopBeEliminated(
           if (!ClonedLoop->contains(UserInst)) {
             // 1b.
             LLVM_DEBUG({
-              llvm::dbgs() << "[LoopEliminate] Outside user for Inst:\n";
+              llvm::dbgs() << "[LoopEliminate] Outside User for Inst:\n";
               llvm::dbgs() << "[LoopEliminate] ";
               Inst->print(llvm::dbgs(), true /* IsForDebug */);
               llvm::dbgs() << "\n";

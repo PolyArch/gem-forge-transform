@@ -73,8 +73,8 @@ private:
                                 llvm::Constant *ConfigIdxValue);
   void insertStreamEndAtLoop(StaticStreamRegionAnalyzer *Analyzer,
                              llvm::Loop *Loop, llvm::Constant *ConfigIdxValue);
-  void insertStreamReduceAtLoop(StaticStreamRegionAnalyzer *Analyzer,
-                                llvm::Loop *Loop, StaticStream *ReduceStream);
+  void insertStreamExitValueUserAtLoop(StaticStreamRegionAnalyzer *Analyzer,
+                                       llvm::Loop *Loop, StaticStream *ExitSS);
   void transformLoadInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *LoadInst);
   void transformStoreInst(StaticStreamRegionAnalyzer *Analyzer,

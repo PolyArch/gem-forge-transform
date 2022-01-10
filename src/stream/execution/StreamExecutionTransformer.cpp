@@ -413,12 +413,13 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
   }
 
   /**
-   * Handle reduction stream.
+   * Handle streams with user on the exit value.
+   * * So far this only works for reduction stream and IV stream.
    * * Only do this after we create dedicated exit blocks and insert StreamEnd.
    */
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   for (auto S : ConfigureInfo.getSortedStreams()) {
-    this->insertStreamReduceAtLoop(Analyzer, Loop, S);
+    this->insertStreamExitValueUserAtLoop(Analyzer, Loop, S);
   }
 
   /**
@@ -435,21 +436,35 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
   }
 }
 
-void StreamExecutionTransformer::insertStreamReduceAtLoop(
+void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
     StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
-    StaticStream *ReduceStream) {
+    StaticStream *ExitSS) {
 
-  const auto &SSInfo = ReduceStream->StaticStreamInfo;
-  if (SSInfo.val_pattern() != ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+  /**
+   * So far we only handle exit value user for ReductionStream and IVStream.
+   * They both should be PHINode stream.
+   */
+
+  auto PHINode = llvm::dyn_cast<llvm::PHINode>(ExitSS->Inst);
+  if (!PHINode) {
     return;
   }
 
-  auto PHINode = llvm::dyn_cast<llvm::PHINode>(ReduceStream->Inst);
-  assert(PHINode && "Reduction stream should be PHINode.");
-  auto ExitValue = ReduceStream->ReduceDG->getSingleResultValue();
-  auto ExitInst = llvm::dyn_cast<llvm::Instruction>(ExitValue);
-  assert(ExitInst &&
-         "ExitValue should be an instruction for reduction stream.");
+  auto &SSInfo = ExitSS->StaticStreamInfo;
+  bool IsReduce =
+      SSInfo.val_pattern() == ::LLVM::TDG::StreamValuePattern::REDUCTION;
+
+  const llvm::Instruction *ExitInst = nullptr;
+  if (IsReduce) {
+    auto ExitValue = ExitSS->ReduceDG->getSingleResultValue();
+    ExitInst = llvm::dyn_cast<llvm::Instruction>(ExitValue);
+    assert(ExitInst &&
+           "ExitValue should be an instruction for reduction stream.");
+  } else {
+    // This is a normal IV stream. We will just use the PHINode.
+    ExitInst = PHINode;
+  }
+
   // Add a final StreamLoad.
   auto ClonedLoop = this->getOrCreateLoopInClonedModule(Loop);
 
@@ -461,20 +476,17 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
   if (!ClonedExitBB) {
     return;
   }
-  auto ClonedExitInst = this->getClonedValue(ExitInst);
-  auto ClonedReducedValue = this->addStreamLoadOrAtomic(
-      ReduceStream, ClonedExitInst->getType(), ClonedExitBB->getFirstNonPHI());
-  ReduceStream->StaticStreamInfo.set_core_need_final_value(true);
   /**
    * Find out-of-loop ExitValue user instructions.
    * We have to first find them and then replace the usages, cause we can
    * not iterate through users() and modify it at the same time.
    */
+  auto ClonedExitInst = this->getClonedValue(ExitInst);
   std::unordered_set<llvm::Instruction *> OutOfLoopClonedExitInstUsers;
   for (auto ClonedUser : ClonedExitInst->users()) {
     if (auto ClonedUserInst = llvm::dyn_cast<llvm::Instruction>(ClonedUser)) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "ReduceStream " << ReduceStream->getStreamName()
+                 << "ExitValueStream " << ExitSS->getStreamName()
                  << " ExitInst " << ClonedExitInst->getName() << " user "
                  << ClonedUserInst->getName() << " Loop "
                  << ClonedLoop->getHeader()->getName() << " contains "
@@ -485,11 +497,23 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
       }
     }
   }
+  if (OutOfLoopClonedExitInstUsers.empty()) {
+    // There is no user of ExitValue.
+    return;
+  }
+  auto ClonedReducedValue = this->addStreamLoadOrAtomic(
+      ExitSS, ClonedExitInst->getType(), ClonedExitBB->getFirstNonPHI());
+  if (IsReduce) {
+    SSInfo.set_core_need_final_value(true);
+  } else {
+    SSInfo.set_core_need_second_final_value(true);
+  }
   for (auto ClonedUserInst : OutOfLoopClonedExitInstUsers) {
     // This is an outside user, replace it.
     ClonedUserInst->replaceUsesOfWith(ClonedExitInst, ClonedReducedValue);
   }
   /**
+   * * So far we only do this for ReduceStream, as IVStream has no ReduceDG.
    * After we replace the out-of-loop user, we check if the reduction
    * is complete, i.e. define a set of instruction as:
    * S = ComputeInsts U { ReductionPHINode }.
@@ -500,9 +524,12 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
    * Since there is no other core user, we can remove the computation
    * from the core and purely let the StreamEngine handle it.
    */
+  if (!IsReduce) {
+    return;
+  }
   std::unordered_set<llvm::Instruction *> ClonedS = {
       this->getClonedValue(PHINode)};
-  for (auto ComputeInst : ReduceStream->ReduceDG->getComputeInsts()) {
+  for (auto ComputeInst : ExitSS->ReduceDG->getComputeInsts()) {
     ClonedS.insert(this->getClonedValue(ComputeInst));
   }
   bool IsComplete = true;
@@ -512,7 +539,7 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
         if (!ClonedS.count(UserInst) &&
             !this->PendingRemovedInsts.count(UserInst)) {
           LLVM_DEBUG(llvm::dbgs()
-                     << "ReduceStream " << ReduceStream->getStreamName()
+                     << "ExitValueStream " << ExitSS->getStreamName()
                      << " is incomplete due to user " << UserInst->getName()
                      << " of ComputeInst " << ClonedInst->getName() << '\n');
           IsComplete = false;
@@ -533,7 +560,7 @@ void StreamExecutionTransformer::insertStreamReduceAtLoop(
     }
     this->PendingRemovedInsts.insert(ClonedS.begin(), ClonedS.end());
     // Mark the reduction stream has no core user.
-    ReduceStream->StaticStreamInfo.set_no_core_user(true);
+    ExitSS->StaticStreamInfo.set_no_core_user(true);
   }
 }
 
@@ -969,8 +996,9 @@ void StreamExecutionTransformer::mergePredicatedStore(
     return;
   }
   // Decided to merge.
-  LLVM_DEBUG(llvm::dbgs() << "Merge Predicated Store " << StoreSS->getStreamName()
-                          << " -> " << LoadSS->getStreamName() << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "Merge Predicated Store "
+                          << StoreSS->getStreamName() << " -> "
+                          << LoadSS->getStreamName() << '\n');
   StoreSS->StaticStreamInfo.set_is_merged_predicated_stream(true);
   auto ProtoEntry = LoadSS->StaticStreamInfo.add_merged_predicated_streams();
   ProtoEntry->mutable_id()->set_id(StoreSS->StreamId);
@@ -1399,8 +1427,8 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
     ClonedPHINodeSCEV = ClonedSE->getSCEV(ClonedPHINode);
   }
   LLVM_DEBUG({
-    llvm::dbgs() << "====== Generate IVStreamConfiguration " << SS->getStreamName()
-                 << " PHINodeSCEV ";
+    llvm::dbgs() << "====== Generate IVStreamConfiguration "
+                 << SS->getStreamName() << " PHINodeSCEV ";
     if (PHINodeSCEV)
       PHINodeSCEV->dump();
     else

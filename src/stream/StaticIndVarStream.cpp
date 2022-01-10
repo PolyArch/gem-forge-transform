@@ -203,8 +203,8 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
      */
     return false;
   }
-  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsReduction " << this->getStreamName()
-                          << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsReduction "
+                          << this->getStreamName() << '\n');
   if (!this->NonEmptyComputePath) {
     return false;
   }
@@ -391,8 +391,8 @@ void StaticIndVarStream::analyzeIsCandidate() {
   this->AllComputePaths = this->constructComputePath();
 
   auto EmptyPathFound = false;
-  LLVM_DEBUG(llvm::dbgs() << "Analyzing ComputePath of " << this->getStreamName()
-                          << '\n');
+  LLVM_DEBUG(llvm::dbgs() << "Analyzing ComputePath of "
+                          << this->getStreamName() << '\n');
   for (const auto &Path : AllComputePaths) {
     LLVM_DEBUG(Path.debug());
     if (Path.isEmpty()) {
@@ -593,7 +593,7 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->isCandidate()) {
     return false;
   }
-  LLVM_DEBUG(llvm::dbgs() << "Check IsQualifed Without BackEdgeDep for "
+  LLVM_DEBUG(llvm::dbgs() << "[IsQualifed] Without BackEdgeDep for "
                           << this->getStreamName() << '\n');
   // Make sure all the BackMemBaseStreams have same StepRoot.
   if (this->BackMemBaseStreams.size() > 1) {
@@ -601,8 +601,9 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
     for (auto BackMemBaseS : this->BackMemBaseStreams) {
       if (BackMemBaseS->BaseStepRootStreams !=
           FirstBackMemBaseStream->BaseStepRootStreams) {
-        LLVM_DEBUG(llvm::dbgs() << "[Unqualified] Multiple BackMemBaseStreams "
-                                   "with Different StepRoot.\n");
+        LLVM_DEBUG(llvm::dbgs()
+                   << "  [Unqualified] Multiple BackMemBaseStreams "
+                      "with Different StepRoot.\n");
         return false;
       }
     }
@@ -612,8 +613,9 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
     if (!BaseStream->isQualified()) {
       this->StaticStreamInfo.set_not_stream_reason(
           LLVM::TDG::StaticStreamInfo::BASE_STREAM_NOT_QUALIFIED);
-      LLVM_DEBUG(llvm::dbgs() << "[Unqualified] Unqualified BackMemBaseStream "
-                              << BaseStream->getStreamName() << ".\n");
+      LLVM_DEBUG(llvm::dbgs()
+                 << "  [Unqualified] Unqualified BackMemBaseStream "
+                 << BaseStream->getStreamName() << ".\n");
       return false;
     }
   }
@@ -622,9 +624,10 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
-    LLVM_DEBUG(llvm::dbgs() << "[Unqualified] No StaticMapping.\n");
+    LLVM_DEBUG(llvm::dbgs() << "  [Unqualified] No StaticMapping.\n");
     return false;
   }
+  LLVM_DEBUG(llvm::dbgs() << "  [Qualified] Without BackEdgeDep.\n");
   return true;
 }
 

@@ -319,11 +319,15 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->isCandidate()) {
     return false;
   }
+  LLVM_DEBUG(llvm::dbgs() << "[IsQualifed] Without BackEdgeDep for "
+                          << this->getStreamName() << '\n');
   // Check all the base streams are qualified.
   for (auto &BaseStream : this->BaseStreams) {
     if (!BaseStream->isQualified()) {
       this->StaticStreamInfo.set_not_stream_reason(
           LLVM::TDG::StaticStreamInfo::BASE_STREAM_NOT_QUALIFIED);
+      LLVM_DEBUG(llvm::dbgs() << "  [Unqualified] BaseStream not Qualified "
+                              << BaseStream->getStreamName() << ".\n");
       return false;
     }
   }
@@ -332,10 +336,10 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
-    LLVM_DEBUG(llvm::dbgs()
-               << "[UnQualify]: NoStaticMap " << this->getStreamName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "  [UnQualify] NoStaticMap.\n");
     return false;
   }
+  LLVM_DEBUG(llvm::dbgs() << "  [Qualified] Without BackEdgeDep.\n");
   return true;
 }
 
@@ -384,8 +388,8 @@ void StaticMemStream::constructChosenGraph() {
   for (auto StepRootS : this->ChosenBaseStepRootStreams) {
     if (StepRootS->ConfigureLoop != this->ConfigureLoop) {
       llvm::errs() << "StepRootStream is not configured at the same loop: "
-                   << this->getStreamName() << " root " << StepRootS->getStreamName()
-                   << '\n';
+                   << this->getStreamName() << " root "
+                   << StepRootS->getStreamName() << '\n';
       assert(false);
     }
   }

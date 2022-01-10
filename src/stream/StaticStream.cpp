@@ -394,14 +394,27 @@ void StaticStream::computeBaseStepRootStreams() {
 }
 
 bool StaticStream::checkBaseStreamInnerMostLoopContainsMine() const {
+  /**
+   * We want to support getting the final value of inner-loop stream.
+   * So far, we allow at most one inner-loop base stream.
+   */
+  const StaticStream *InnerBaseStream = nullptr;
   for (const auto &BaseStream : this->BaseStreams) {
     if (!BaseStream->InnerMostLoop->contains(this->InnerMostLoop)) {
-      return false;
+      if (!InnerBaseStream) {
+        InnerBaseStream = BaseStream;
+      } else {
+        return false;
+      }
     }
   }
   for (const auto &BackMemBaseStream : this->BackMemBaseStreams) {
     if (!BackMemBaseStream->InnerMostLoop->contains(this->InnerMostLoop)) {
-      return false;
+      if (!InnerBaseStream) {
+        InnerBaseStream = BackMemBaseStream;
+      } else {
+        return false;
+      }
     }
   }
   return true;
