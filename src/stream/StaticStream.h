@@ -43,9 +43,14 @@ public:
   const llvm::PostDominatorTree *PDT;
   llvm::DataLayout *DataLayout;
 
-  const std::string StreamName;
-  std::string generateStreamName() const;
+  std::string StreamName;
+  std::string generateStreamName();
+  std::string generateStreamNameFromMetaInfo(llvm::StringRef SSName);
   const std::string &getStreamName() const { return this->StreamName; }
+  /**
+   * User specified params through #pragma ss stream_name "name/param1/param2"
+   */
+  bool UserParamInnerDep = false;
 
   /**
    * The constructor just creates the object and does not perform any analysis.

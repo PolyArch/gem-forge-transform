@@ -32,9 +32,11 @@ StaticStream::StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
                                "_" +
                                llvm::Twine(Utils::getLLVMInstPosInBB(_Inst)))
                        .str()),
-      SE(_SE), PDT(_PDT), DataLayout(_DataLayout),
-      StreamName(generateStreamName()), IsCandidate(false), IsQualified(false),
-      IsChosen(false), CoalesceGroup(StreamId), CoalesceOffset(0) {
+      SE(_SE), PDT(_PDT), DataLayout(_DataLayout), StreamName("Invalid"),
+      IsCandidate(false), IsQualified(false), IsChosen(false),
+      CoalesceGroup(StreamId), CoalesceOffset(0) {
+
+  this->StreamName = this->generateStreamName();
   this->StaticStreamInfo.set_loop_level(this->InnerMostLoop->getLoopDepth());
   this->StaticStreamInfo.set_config_loop_level(
       this->ConfigureLoop->getLoopDepth());
@@ -520,7 +522,37 @@ void StaticStream::constructChosenGraph() {
   TranslateToChosen(this->BaseStepRootStreams, this->ChosenBaseStepRootStreams);
 }
 
-std::string StaticStream::generateStreamName() const {
+std::string
+StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
+
+  /**
+   * The name format is: name[/param]*
+   * Anything after a slash '/' will some flags to guide the compiler.
+   * TODO: Avoid using this feature too much.
+   * List of flags:
+   *  - inner-dep: When building the MetaGraph, choose the BaseStream
+   *      with ConfigureLoop == InnerMostLoop. This breaks the default
+   *      behavior to pick ConfigureLoop == DepStream's ConfigureLoop,
+   *      and is a temporary solution to support an OuterLoopStream
+   *      using the InnerLoopStream's exit value, when the
+   *      InnerLoopStream can not be configured at outer loop.
+   */
+  auto SlashPos = SSName.find('/');
+  auto FirstSlashPos = SlashPos;
+  while (SlashPos != SSName.npos) {
+    auto NextSlashPos = SSName.find('/', SlashPos + 1);
+    auto Param = SSName.substr(SlashPos + 1, NextSlashPos).str();
+    this->StaticStreamInfo.add_user_param(Param);
+    if (Param == "inner-dep") {
+      this->UserParamInnerDep = true;
+    }
+
+    SlashPos = NextSlashPos;
+  }
+  return SSName.substr(0, FirstSlashPos).str();
+}
+
+std::string StaticStream::generateStreamName() {
 
   /**
    * Prefer pragma specified name in #pragma ss stream_name "name".
@@ -544,7 +576,7 @@ std::string StaticStream::generateStreamName() const {
 
           LLVM_DEBUG(llvm::dbgs() << "[StreamName] Using SS Pragma "
                                   << SSName->getString() << ".\n");
-          return SSName->getString().str();
+          return this->generateStreamNameFromMetaInfo(SSName->getString());
         }
       }
     }

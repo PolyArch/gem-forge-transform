@@ -142,6 +142,8 @@ message StaticStreamInfo {
   DataType core_element_type = 62;
   DataType mem_element_type = 63;
 
+  repeated string user_param = 64;
+
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
