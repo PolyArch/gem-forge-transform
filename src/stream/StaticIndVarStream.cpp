@@ -595,15 +595,27 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   }
   LLVM_DEBUG(llvm::dbgs() << "[IsQualifed] Without BackEdgeDep for "
                           << this->getStreamName() << '\n');
-  // Make sure all the BackMemBaseStreams have same StepRoot.
-  if (this->BackMemBaseStreams.size() > 1) {
-    auto FirstBackMemBaseStream = *(this->BackMemBaseStreams.begin());
-    for (auto BackMemBaseS : this->BackMemBaseStreams) {
-      if (BackMemBaseS->BaseStepRootStreams !=
-          FirstBackMemBaseStream->BaseStepRootStreams) {
-        LLVM_DEBUG(llvm::dbgs()
-                   << "  [Unqualified] Multiple BackMemBaseStreams "
-                      "with Different StepRoot.\n");
+  // Make sure all the BackBaseStreams have same StepRoot.
+  if (this->BackBaseStreams.size() > 1) {
+    auto IsSameStepRoot = [](StaticStream *A, StaticStream *B) -> bool {
+      if (A->Type == TypeT::IV && B->Type == TypeT::IV) {
+        // IV streams are step roots.
+        return A == B;
+      } else if (A->Type == TypeT::IV) {
+        StreamSet StepRootA = {A};
+        return StepRootA == B->BaseStepRootStreams;
+      } else if (B->Type == TypeT::IV) {
+        StreamSet StepRootB = {B};
+        return StepRootB == A->BaseStepRootStreams;
+      } else {
+        return A->BaseStepRootStreams == B->BaseStepRootStreams;
+      }
+    };
+    auto FirstBackBaseS = *(this->BackBaseStreams.begin());
+    for (auto BackBaseS : this->BackBaseStreams) {
+      if (!IsSameStepRoot(FirstBackBaseS, BackBaseS)) {
+        LLVM_DEBUG(llvm::dbgs() << "  [Unqualified] Multiple BackBaseStreams "
+                                   "with Different StepRoot.\n");
         return false;
       }
     }
@@ -632,8 +644,8 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
 }
 
 bool StaticIndVarStream::checkIsQualifiedWithBackEdgeDep() const {
-  for (const auto &BackMemBaseStream : this->BackMemBaseStreams) {
-    if (!BackMemBaseStream->isQualified()) {
+  for (const auto &BackBaseS : this->BackBaseStreams) {
+    if (!BackBaseS->isQualified()) {
       return false;
     }
   }
@@ -641,13 +653,13 @@ bool StaticIndVarStream::checkIsQualifiedWithBackEdgeDep() const {
 }
 
 void StaticIndVarStream::finalizePattern() {
-  if (!this->BackMemBaseStreams.empty()) {
+  if (!this->BackBaseStreams.empty()) {
     /**
-     * We already make sure that all BackMemBaseStreams have same StepRoot.
+     * We already make sure that all BackBaseStreams have same StepRoot.
      */
-    auto BackMemBaseStream = *(this->BackMemBaseStreams.begin());
+    auto BackBaseS = *(this->BackBaseStreams.begin());
     // Check if I am its step root.
-    if (BackMemBaseStream->BaseStepRootStreams.count(this) == 0) {
+    if (BackBaseS->BaseStepRootStreams.count(this) == 0) {
       // I am not its step root, which means this is not a pointer chase.
       if (this->StaticStreamInfo.val_pattern() ==
           LLVM::TDG::StreamValuePattern::REDUCTION) {

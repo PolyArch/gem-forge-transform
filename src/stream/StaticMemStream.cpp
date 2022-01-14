@@ -345,7 +345,7 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
 
 bool StaticMemStream::checkIsQualifiedWithBackEdgeDep() const {
   // MemStream should have no back edge dependence.
-  assert(this->BackMemBaseStreams.empty() &&
+  assert(this->BackBaseStreams.empty() &&
          "Memory stream should not have back edge base stream.");
   return this->checkIsQualifiedWithoutBackEdgeDep();
 }
@@ -427,7 +427,7 @@ bool StaticMemStream::isDirectMemStream() const {
   if (this->IndVarBaseStreams.size() == 1) {
     // Check for PointerChase or PrevLoad.
     auto IVBaseS = *this->IndVarBaseStreams.begin();
-    if (!IVBaseS->BackMemBaseStreams.empty()) {
+    if (!IVBaseS->BackBaseStreams.empty()) {
       return false;
     }
   }

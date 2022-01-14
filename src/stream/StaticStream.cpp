@@ -329,33 +329,39 @@ void StaticStream::addBaseStream(StaticStream *Other) {
 }
 
 void StaticStream::addBackEdgeBaseStream(StaticStream *Other) {
-  this->BackMemBaseStreams.insert(Other);
+  this->BackBaseStreams.insert(Other);
   Other->BackIVDependentStreams.insert(this);
 }
 
 void StaticStream::constructStreamGraph() {
   // Basically translate from what we found in LoadBaseStreams and
   // IndVarBaseStreams during the construction of the MetaGraph to BaseStreams
-  // and BackMemBaseStreams.
-  for (auto LoadBaseStream : this->LoadBaseStreams) {
-    if (LoadBaseStream == this) {
+  // and BackBaseStreams.
+  for (auto LoadBaseS : this->LoadBaseStreams) {
+    if (LoadBaseS == this) {
       // No circle dependency in stream graph.
       continue;
     }
-    if (LoadBaseStream->InnerMostLoop == this->InnerMostLoop &&
+    if (LoadBaseS->InnerMostLoop == this->InnerMostLoop &&
         this->Type == TypeT::IV) {
       // This is a back edge dependence.
-      this->addBackEdgeBaseStream(LoadBaseStream);
+      this->addBackEdgeBaseStream(LoadBaseS);
     } else {
-      this->addBaseStream(LoadBaseStream);
+      this->addBaseStream(LoadBaseS);
     }
   }
-  for (auto IndVarBaseStream : this->IndVarBaseStreams) {
-    if (IndVarBaseStream == this) {
+  for (auto IndVarBaseS : this->IndVarBaseStreams) {
+    if (IndVarBaseS == this) {
       // No circle dependency in stream graph.
       continue;
     }
-    this->addBaseStream(IndVarBaseStream);
+    if (IndVarBaseS->InnerMostLoop == this->InnerMostLoop &&
+        this->Type == TypeT::IV) {
+      // This is a back edge from IV to IV.
+      this->addBackEdgeBaseStream(IndVarBaseS);
+    } else {
+      this->addBaseStream(IndVarBaseS);
+    }
   }
 }
 
@@ -408,10 +414,10 @@ bool StaticStream::checkBaseStreamInnerMostLoopContainsMine() const {
       }
     }
   }
-  for (const auto &BackMemBaseStream : this->BackMemBaseStreams) {
-    if (!BackMemBaseStream->InnerMostLoop->contains(this->InnerMostLoop)) {
+  for (const auto &BackBaseS : this->BackBaseStreams) {
+    if (!BackBaseS->InnerMostLoop->contains(this->InnerMostLoop)) {
       if (!InnerBaseStream) {
-        InnerBaseStream = BackMemBaseStream;
+        InnerBaseStream = BackBaseS;
       } else {
         return false;
       }
@@ -506,7 +512,7 @@ void StaticStream::constructChosenGraph() {
   // DependentStream may not be chosen
   TranslateToChosenNullable(this->DependentStreams,
                             this->ChosenDependentStreams);
-  TranslateToChosen(this->BackMemBaseStreams, this->ChosenBackMemBaseStreams);
+  TranslateToChosen(this->BackBaseStreams, this->ChosenBackBaseStreams);
   // BackIVDependentStream may not be chosen
   TranslateToChosenNullable(this->BackIVDependentStreams,
                             this->ChosenBackIVDependentStreams);
@@ -990,9 +996,9 @@ void StaticStream::fillProtobufStreamInfo(
     }                                                                          \
   }
   ADD_STREAM(this->BaseStreams, base_streams);
-  ADD_STREAM(this->BackMemBaseStreams, back_base_streams);
+  ADD_STREAM(this->BackBaseStreams, back_base_streams);
   ADD_STREAM(this->ChosenBaseStreams, chosen_base_streams);
-  ADD_STREAM(this->ChosenBackMemBaseStreams, chosen_back_base_streams);
+  ADD_STREAM(this->ChosenBackBaseStreams, chosen_back_base_streams);
 
 #undef ADD_STREAM
 }
@@ -1010,16 +1016,15 @@ StaticStream::getExecFuncInputStream(const llvm::Value *Value) const {
       }
     }
     if (this->ReduceDG) {
-      for (auto BackBaseStream : this->ChosenBackMemBaseStreams) {
-        if (BackBaseStream->Inst == Inst) {
+      for (auto BackBaseS : this->ChosenBackBaseStreams) {
+        if (BackBaseS->Inst == Inst) {
           // The input is back base stream. Only for ReduceFunc.
-          return BackBaseStream;
+          return BackBaseS;
         }
         // Search for the induction variable of the BackBaseStream.
-        for (auto BackBaseStepRootStream :
-             BackBaseStream->ChosenBaseStepRootStreams) {
-          if (BackBaseStepRootStream->Inst == Inst) {
-            return BackBaseStepRootStream;
+        for (auto BackBaseStepRootS : BackBaseS->ChosenBaseStepRootStreams) {
+          if (BackBaseStepRootS->Inst == Inst) {
+            return BackBaseStepRootS;
           }
         }
       }

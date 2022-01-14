@@ -22,8 +22,8 @@
  *
  * StreamGraph:
  *   Nodes are StaticStream. Encode the dependence between streams. BackEdge
- * dependence from IndVarStream to MemStream within the same InnerMostLoop is
- * separate in BackMemBaseStreams.
+ * dependence from IndVarStream to other streams within the same InnerMostLoop
+ * is separate in BackBaseStreams.
  *
  */
 class StaticStream {
@@ -45,9 +45,7 @@ public:
 
   const std::string StreamName;
   std::string generateStreamName() const;
-  const std::string &getStreamName() const {
-    return this->StreamName;
-  }
+  const std::string &getStreamName() const { return this->StreamName; }
 
   /**
    * The constructor just creates the object and does not perform any analysis.
@@ -92,7 +90,7 @@ public:
   using StreamVec = std::vector<StaticStream *>;
   StreamSet BaseStreams;
   StreamSet DependentStreams;
-  StreamSet BackMemBaseStreams;
+  StreamSet BackBaseStreams;
   StreamSet BackIVDependentStreams;
   StreamSet BaseStepStreams;
   StreamSet BaseStepRootStreams;
@@ -103,7 +101,7 @@ public:
   // Chosen graphs.
   StreamSet ChosenBaseStreams;
   StreamSet ChosenDependentStreams;
-  StreamSet ChosenBackMemBaseStreams;
+  StreamSet ChosenBackBaseStreams;
   StreamSet ChosenBackIVDependentStreams;
   StreamSet ChosenBaseStepStreams;
   StreamSet ChosenBaseStepRootStreams;

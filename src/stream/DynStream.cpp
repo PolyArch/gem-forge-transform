@@ -112,7 +112,7 @@ void DynStream::buildChosenDependenceGraph(
                                  this->SStream->ChosenDependentStreams);
   TranslateBasicToChosen(this->BackMemBaseStreams,
                          this->ChosenBackMemBaseStreams,
-                         this->SStream->ChosenBackMemBaseStreams);
+                         this->SStream->ChosenBackBaseStreams);
   // BackIVDependentStream may not be chosen
   TranslateBasicToChosenNullable(this->BackIVDependentStreams,
                                  this->ChosenBackIVDependentStreams,
