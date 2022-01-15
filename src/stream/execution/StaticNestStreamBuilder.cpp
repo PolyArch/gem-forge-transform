@@ -95,8 +95,9 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
   }
 
   /**
-   * Try to construct the ExecFuncInfo. This will check that all StreamLoad
-   * inputs are from streams configured in OuterLoop.
+   * Try to construct the ExecFuncInfo. This will check that
+   * 1. All StreamLoad inputs are from streams configured in OuterLoop.
+   * 2. All PHINode are from IV streams configured in OuterLoop.
    */
   auto NestConfigureFuncInfo = std::make_unique<::LLVM::TDG::ExecFuncInfo>();
   NestConfigureFuncInfo->set_name(NestConfigureDataGraph->getFuncName());
@@ -106,6 +107,11 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
   for (auto Input : NestConfigureDataGraph->getInputs()) {
     auto Inst = llvm::dyn_cast<llvm::Instruction>(Input);
     auto NestConfigureFuncArg = NestConfigureFuncInfo->add_args();
+    LLVM_DEBUG({
+      llvm::dbgs() << "[Nest] Checking Input  ";
+      Input->print(llvm::dbgs());
+      llvm::dbgs() << ".\n";
+    });
     if (!Inst || !ClonedOuterLoop->contains(Inst)) {
       // This is a non-stream input.
       NestConfigureFuncArg->set_is_stream(false);
@@ -114,31 +120,46 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
       InputValues.push_back(Input);
       continue;
     }
-    auto IntrinsicInst = llvm::dyn_cast<llvm::IntrinsicInst>(Inst);
-    assert(IntrinsicInst && "This should be a call to StreamLoad.");
-    assert(IntrinsicInst->getIntrinsicID() ==
-               llvm::Intrinsic::ssp_stream_load &&
-           "Callee should be StreamLoad.");
-    auto StreamRegionIdValue =
-        llvm::dyn_cast<llvm::ConstantInt>(IntrinsicInst->getArgOperand(0));
-    assert(StreamRegionIdValue && "Failed to get RegionStreamId.");
-    auto StreamRegionId = StreamRegionIdValue->getZExtValue();
-    bool FoundStream = false;
-    for (auto S : OuterConfigInfo.getSortedStreams()) {
-      if (S->getRegionStreamId() == StreamRegionId) {
-        InputStreams.emplace_back(S);
-        NestConfigureFuncArg->set_is_stream(true);
-        NestConfigureFuncArg->set_stream_id(S->StreamId);
-        NestConfigureFuncArg->set_type(
-            StaticStream::translateToProtobufDataType(
-                this->Transformer->ClonedDataLayout.get(), Input->getType()));
-        FoundStream = true;
-        break;
+    StaticStream *InputS = nullptr;
+    if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
+      if (auto OrigInst = this->Transformer->getOrigInstFromCloned(Inst)) {
+        if (auto S = Analyzer->getChosenStreamByInst(OrigInst)) {
+          LLVM_DEBUG(llvm::dbgs() << "[Nest] PHINodeInput got ChosenS "
+                                  << S->getStreamName() << ".\n");
+          if (S->ConfigureLoop == OuterLoop) {
+            InputS = S;
+          }
+        } else {
+          LLVM_DEBUG(llvm::dbgs() << "[Nest] PHINodeInput without ChosenS.\n");
+        }
+      } else {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "[Nest] PHINodeInput not in Original Module.\n");
+      }
+    } else if (auto IntrinsicInst = llvm::dyn_cast<llvm::IntrinsicInst>(Inst)) {
+      assert(IntrinsicInst && "This should be a call to StreamLoad.");
+      assert(IntrinsicInst->getIntrinsicID() ==
+                 llvm::Intrinsic::ssp_stream_load &&
+             "Callee should be StreamLoad.");
+      auto StreamRegionIdValue =
+          llvm::dyn_cast<llvm::ConstantInt>(IntrinsicInst->getArgOperand(0));
+      assert(StreamRegionIdValue && "Failed to get RegionStreamId.");
+      auto StreamRegionId = StreamRegionIdValue->getZExtValue();
+      for (auto S : OuterConfigInfo.getSortedStreams()) {
+        if (S->getRegionStreamId() == StreamRegionId) {
+          InputS = S;
+          break;
+        }
       }
     }
-    if (!FoundStream) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "[Nest] StreamLoad input not from outer loop.");
+    if (InputS) {
+      InputStreams.emplace_back(InputS);
+      NestConfigureFuncArg->set_is_stream(true);
+      NestConfigureFuncArg->set_stream_id(InputS->StreamId);
+      NestConfigureFuncArg->set_type(StaticStream::translateToProtobufDataType(
+          this->Transformer->ClonedDataLayout.get(), Input->getType()));
+    } else {
+      LLVM_DEBUG(llvm::dbgs() << "[Nest] Failed to find InputS.\n");
       return false;
     }
   }

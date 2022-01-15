@@ -388,7 +388,8 @@ void StaticMemStream::constructChosenGraph() {
   for (auto StepRootS : this->ChosenBaseStepRootStreams) {
     if (StepRootS->ConfigureLoop != this->ConfigureLoop) {
       llvm::errs() << "StepRootStream is not configured at the same loop: "
-                   << this->getStreamName() << " root "
+                   << this->getStreamName() << " my configure loop "
+                   << LoopUtils::getLoopId(this->ConfigureLoop) << " root "
                    << StepRootS->getStreamName() << '\n';
       assert(false);
     }

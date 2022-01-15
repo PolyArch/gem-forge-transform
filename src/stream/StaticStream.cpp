@@ -176,6 +176,12 @@ void StaticStream::handleFirstTimeComputeNode(
                        << this->getStreamName() << '\n';
           assert(false && "Failed to find LoadBaseStream.");
         }
+        if (this->UserParamInnerDep &&
+            this->InnerMostLoop != LoadBaseStream->InnerMostLoop &&
+            this->InnerMostLoop->contains(LoadBaseStream->InnerMostLoop)) {
+          // Switch to InnerMostLoop stream.
+          LoadBaseStream = GetStream(Inst, LoadBaseStream->InnerMostLoop);
+        }
         ComputeMNode->LoadBaseStreams.insert(LoadBaseStream);
         this->LoadBaseStreams.insert(LoadBaseStream);
         DFSStack.pop_back();
@@ -185,6 +191,12 @@ void StaticStream::handleFirstTimeComputeNode(
         DFSStack.pop_back();
         if (auto IndVarBaseStream = GetStream(Inst, this->ConfigureLoop)) {
           // IndVarBaseStream.
+          if (this->UserParamInnerDep &&
+              this->InnerMostLoop != IndVarBaseStream->InnerMostLoop &&
+              this->InnerMostLoop->contains(IndVarBaseStream->InnerMostLoop)) {
+            // Switch to InnerMostLoop stream.
+            IndVarBaseStream = GetStream(Inst, IndVarBaseStream->InnerMostLoop);
+          }
           ComputeMNode->IndVarBaseStreams.insert(IndVarBaseStream);
           this->IndVarBaseStreams.insert(IndVarBaseStream);
         } else {
@@ -435,10 +447,12 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
          "Should not check static mapping for non-candidate stream.");
   auto MyStpPattern = this->computeStepPattern();
   for (const auto &BaseStream : this->BaseStreams) {
-    assert(BaseStream->InnerMostLoop->contains(this->InnerMostLoop) &&
-           "This should not happen for a candidate stream.");
     assert(BaseStream->isQualified() && "Can not check static mapping when "
                                         "base streams are not qualified yet.");
+    if (!BaseStream->InnerMostLoop->contains(this->InnerMostLoop)) {
+      // This is an inner loop dependence, just ignore for now.
+      continue;
+    }
     if (BaseStream->InnerMostLoop == this->InnerMostLoop) {
       // With in the same inner most loop.
       continue;

@@ -441,8 +441,16 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
     StaticStream *ExitSS) {
 
   /**
-   * So far we only handle exit value user for ReductionStream and IVStream.
-   * They both should be PHINode stream.
+   * So far we only handle exit value user for:
+   * 1. ReductionStream.
+   * 2. IVStream.
+   * They both should be PHINode stream, and we support two cases:
+   * 1. Out-of-Loop user directly uses the PHINode, which is the
+   * second last value.
+   * 2. Out-of-Loop user uses the PHINode's back incoming value,
+   * which is the last value.
+   *
+   * So far ReductionStream always uses the last value.
    */
 
   auto PHINode = llvm::dyn_cast<llvm::PHINode>(ExitSS->Inst);
@@ -450,22 +458,6 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
     return;
   }
 
-  auto &SSInfo = ExitSS->StaticStreamInfo;
-  bool IsReduce =
-      SSInfo.val_pattern() == ::LLVM::TDG::StreamValuePattern::REDUCTION;
-
-  const llvm::Instruction *ExitInst = nullptr;
-  if (IsReduce) {
-    auto ExitValue = ExitSS->ReduceDG->getSingleResultValue();
-    ExitInst = llvm::dyn_cast<llvm::Instruction>(ExitValue);
-    assert(ExitInst &&
-           "ExitValue should be an instruction for reduction stream.");
-  } else {
-    // This is a normal IV stream. We will just use the PHINode.
-    ExitInst = PHINode;
-  }
-
-  // Add a final StreamLoad.
   auto ClonedLoop = this->getOrCreateLoopInClonedModule(Loop);
 
   /**
@@ -476,34 +468,102 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
   if (!ClonedExitBB) {
     return;
   }
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "[ExitValueS] Working on " << ExitSS->getStreamName()
+                 << ".\n";
+  });
+
   /**
    * Find out-of-loop ExitValue user instructions.
    * We have to first find them and then replace the usages, cause we can
    * not iterate through users() and modify it at the same time.
    */
-  auto ClonedExitInst = this->getClonedValue(ExitInst);
-  std::unordered_set<llvm::Instruction *> OutOfLoopClonedExitInstUsers;
-  for (auto ClonedUser : ClonedExitInst->users()) {
-    if (auto ClonedUserInst = llvm::dyn_cast<llvm::Instruction>(ClonedUser)) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "ExitValueStream " << ExitSS->getStreamName()
-                 << " ExitInst " << ClonedExitInst->getName() << " user "
-                 << ClonedUserInst->getName() << " Loop "
-                 << ClonedLoop->getHeader()->getName() << " contains "
-                 << ClonedLoop->contains(ClonedUserInst) << '\n');
-      if (!ClonedLoop->contains(ClonedUserInst)) {
-        // Ignore in loop user.
-        OutOfLoopClonedExitInstUsers.insert(ClonedUserInst);
+  auto FindOutOfLoopClonedExitInstUsers =
+      [ClonedLoop, ExitSS](llvm::Instruction *ClonedExitInst)
+      -> std::unordered_set<llvm::Instruction *> {
+    std::unordered_set<llvm::Instruction *> OutOfLoopClonedExitInstUsers;
+    LLVM_DEBUG({
+      llvm::dbgs() << "[ExitValueS]   Search user for ";
+      ClonedExitInst->print(llvm::dbgs());
+      llvm::dbgs() << "\n";
+    });
+    for (auto ClonedUser : ClonedExitInst->users()) {
+      if (auto ClonedUserInst = llvm::dyn_cast<llvm::Instruction>(ClonedUser)) {
+        LLVM_DEBUG({
+          llvm::dbgs() << "[ExitValueS]   User ";
+          ClonedUserInst->print(llvm::dbgs());
+          llvm::dbgs() << " Loop " << ClonedLoop->getHeader()->getName()
+                       << " contains " << ClonedLoop->contains(ClonedUserInst)
+                       << '\n';
+        });
+        if (!ClonedLoop->contains(ClonedUserInst)) {
+          // Ignore in loop user.
+          OutOfLoopClonedExitInstUsers.insert(ClonedUserInst);
+        }
       }
     }
+    return OutOfLoopClonedExitInstUsers;
+  };
+
+  auto &SSInfo = ExitSS->StaticStreamInfo;
+  bool IsReduce =
+      SSInfo.val_pattern() == ::LLVM::TDG::StreamValuePattern::REDUCTION;
+  bool IsLastValue = true;
+
+  const llvm::Instruction *ExitInst = nullptr;
+  if (IsReduce) {
+    auto ExitValue = ExitSS->ReduceDG->getSingleResultValue();
+    ExitInst = llvm::dyn_cast<llvm::Instruction>(ExitValue);
+    assert(ExitInst &&
+           "ExitValue should be an instruction for reduction stream.");
+  } else {
+    /**
+     * This is a normal IV stream. Check if
+     * we are using the PHINode (second last value) or the BackIncomingValue
+     * (last value). So far we can't support both, and prefer last value if it
+     * has out-of-loop users.
+     */
+    for (int I = 0; I < PHINode->getNumIncomingValues(); ++I) {
+      auto IncomingBB = PHINode->getIncomingBlock(I);
+      auto IncomingValue = PHINode->getIncomingValue(I);
+      if (auto IncomingInst =
+              llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+        if (Loop->contains(IncomingBB) &&
+            IncomingInst->getParent() == IncomingBB) {
+          auto ClonedIncomingInst = this->getClonedValue(IncomingInst);
+          if (!FindOutOfLoopClonedExitInstUsers(ClonedIncomingInst).empty()) {
+            // Found some out-of-loop user.
+            ExitInst = IncomingInst;
+          }
+        }
+      }
+    }
+
+    if (ExitInst == nullptr) {
+      // Try the PHINode.
+      ExitInst = PHINode;
+      IsLastValue = false;
+    }
   }
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "[ExitValueS] Use ExitInst ";
+    ExitInst->print(llvm::dbgs());
+    llvm::dbgs() << "\n";
+  });
+
+  llvm::Instruction *ClonedExitInst = this->getClonedValue(ExitInst);
+  std::unordered_set<llvm::Instruction *> OutOfLoopClonedExitInstUsers =
+      FindOutOfLoopClonedExitInstUsers(ClonedExitInst);
+
   if (OutOfLoopClonedExitInstUsers.empty()) {
     // There is no user of ExitValue.
     return;
   }
   auto ClonedReducedValue = this->addStreamLoadOrAtomic(
       ExitSS, ClonedExitInst->getType(), ClonedExitBB->getFirstNonPHI());
-  if (IsReduce) {
+  if (IsLastValue) {
     SSInfo.set_core_need_final_value(true);
   } else {
     SSInfo.set_core_need_second_final_value(true);
@@ -562,6 +622,30 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
     // Mark the reduction stream has no core user.
     ExitSS->StaticStreamInfo.set_no_core_user(true);
   }
+}
+
+llvm::Instruction *StreamExecutionTransformer::getOrigInstFromCloned(
+    const llvm::Instruction *ClonedInst) {
+  auto ClonedFunc = ClonedInst->getFunction();
+  auto ClonedBB = ClonedInst->getParent();
+  if (ClonedFunc->getName().empty() || ClonedBB->getName().empty() ||
+      ClonedInst->getName().empty()) {
+    return nullptr;
+  }
+  auto OrigFunc = this->Module->getFunction(ClonedFunc->getName());
+  if (!OrigFunc) {
+    return nullptr;
+  }
+  for (auto &OrigBB : *OrigFunc) {
+    if (OrigBB.getName().equals(ClonedBB->getName())) {
+      for (auto &OrigInst : OrigBB) {
+        if (OrigInst.getName() == ClonedInst->getName()) {
+          return &OrigInst;
+        }
+      }
+    }
+  }
+  return nullptr;
 }
 
 llvm::Loop *StreamExecutionTransformer::getOrCreateLoopInClonedModule(

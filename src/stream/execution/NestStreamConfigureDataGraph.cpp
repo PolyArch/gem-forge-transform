@@ -99,6 +99,7 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
   /**
    * Ensure that:
    * 1. All Inputs are from StreamLoad.
+   * 2. Or are from a PHINode.
    * 2. Or are just values outside of OuterLoop.
    */
   bool IsValidTemp = true;
@@ -113,6 +114,9 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
       continue;
     }
     if (!this->OuterLoop->contains(Inst)) {
+      continue;
+    }
+    if (llvm::isa<llvm::PHINode>(Inst)) {
       continue;
     }
     auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst);

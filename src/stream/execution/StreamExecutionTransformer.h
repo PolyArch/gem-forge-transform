@@ -123,6 +123,12 @@ private:
     return ClonedValue;
   }
 
+  /**
+   * Get the original instruction from cloned one.
+   * Notice that this requires ClonedInst/BB/Func has name.
+   * @return nullptr if not found.
+   */
+  llvm::Instruction *getOrigInstFromCloned(const llvm::Instruction *ClonedInst);
   llvm::Loop *getOrCreateLoopInClonedModule(const llvm::Loop *Loop);
   llvm::BasicBlock *getOrCreateLoopPreheaderInClonedModule(llvm::Loop *Loop);
 
