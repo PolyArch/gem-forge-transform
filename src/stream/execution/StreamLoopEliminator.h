@@ -9,6 +9,14 @@ public:
 
   void eliminateLoops(StaticStreamRegionAnalyzer *Analyzer);
 
+  /**
+   * Remember the eliminated loop body BBs.
+   */
+  std::unordered_set<const llvm::BasicBlock *> EliminatedBBs;
+  bool isBBElminated(const llvm::BasicBlock *BB) const {
+    return this->EliminatedBBs.count(BB);
+  }
+
 private:
   StreamExecutionTransformer *Transformer;
 

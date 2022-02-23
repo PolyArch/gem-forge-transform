@@ -1334,9 +1334,7 @@ void StreamExecutionTransformer::cleanClonedModule() {
       auto StreamLoadInst = StreamInstPair.second;
       if (StreamLoadInst->use_empty()) {
         LLVM_DEBUG({
-          llvm::dbgs() << "Remove unused StreamLoad "
-                       << StreamLoadInst->getFunction()->getName() << ' '
-                       << Utils::formatLLVMInstWithoutFunc(StreamLoadInst)
+          llvm::dbgs() << "Remove unused StreamLoad for " << S->getStreamName()
                        << ' ';
           StreamLoadInst->print(llvm::dbgs());
           llvm::dbgs() << '\n';

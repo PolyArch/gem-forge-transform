@@ -50,6 +50,11 @@ void StreamLoopEliminator::eliminateLoop(StaticStreamRegionAnalyzer *Analyzer,
   auto ClonedPreheaderBB = ClonedLoop->getLoopPreheader();
   auto ClonedSingleExitBB = ClonedLoop->getExitBlock();
 
+  // Remember the eliminated BB.
+  for (auto ClonedBB : ClonedLoop->blocks()) {
+    this->EliminatedBBs.insert(ClonedBB);
+  }
+
   this->Transformer->CachedLI->clearFuncAnalysis(ClonedFunc);
 
   auto ClonedPreheaderTerminator = ClonedPreheaderBB->getTerminator();
@@ -105,8 +110,6 @@ bool StreamLoopEliminator::canLoopBeEliminated(
    *      Not Call/Invoke/Store, except StreamLoad/StreamStep.
    * 2. Has StreamLoopBound or FixedTripCountSCEV.
    * 3. Has a preheader and single dedicated exit block.
-   * 4. Has only one BasicBlock.
-   *   This is mainly to restrict the control flow. May be relaxed later.
    */
 
   for (auto *BB : ClonedLoop->blocks()) {
@@ -119,7 +122,9 @@ bool StreamLoopEliminator::canLoopBeEliminated(
       }
       for (auto User : Inst->users()) {
         if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
-          if (!ClonedLoop->contains(UserInst)) {
+          // Check if the UserInst is from eliminated subloop.
+          if (!ClonedLoop->contains(UserInst) &&
+              !this->isBBElminated(UserInst->getParent())) {
             // 1b.
             LLVM_DEBUG({
               llvm::dbgs() << "[LoopEliminate] Outside User for Inst:\n";
@@ -201,11 +206,11 @@ bool StreamLoopEliminator::canLoopBeEliminated(
     return false;
   }
 
-  if (ClonedLoop->getNumBlocks() != 1) {
-    // 4.
-    LLVM_DEBUG({ llvm::dbgs() << "[LoopEliminate] Multiple BBs.\n"; });
-    return false;
-  }
+  // if (ClonedLoop->getNumBlocks() != 1) {
+  //   // 4.
+  //   LLVM_DEBUG({ llvm::dbgs() << "[LoopEliminate] Multiple BBs.\n"; });
+  //   return false;
+  // }
 
   LLVM_DEBUG(llvm::dbgs() << "[LoopEliminate] Can eliminate Loop "
                           << LoopUtils::getLoopId(Loop) << ".\n");
