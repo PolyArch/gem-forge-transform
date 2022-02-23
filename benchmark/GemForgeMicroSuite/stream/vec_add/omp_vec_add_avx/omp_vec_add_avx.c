@@ -27,18 +27,27 @@ typedef float Value;
 #endif
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
-  printf("Entered TripCount N %d.\n", N);
+#ifndef NO_OPENMP
 #if STATIC_CHUNK_SIZE == 0
 #pragma omp parallel for schedule(static) firstprivate(a, b, c)
 #else
 #pragma omp parallel for schedule(static, STATIC_CHUNK_SIZE)                   \
     firstprivate(a, b, c)
 #endif
+#else
+#pragma clang loop unroll(disable)
+#endif
   for (int64_t i = 0; i < N; i += 16) {
-    printf("Compute %ld.\n", i);
+
+#pragma ss stream_name "gfm.vec_add.A.ld"
     __m512 valA = _mm512_load_ps(a + i);
+
+#pragma ss stream_name "gfm.vec_add.B.ld"
     __m512 valB = _mm512_load_ps(b + i);
+
     __m512 valM = _mm512_add_ps(valA, valB);
+
+#pragma ss stream_name "gfm.vec_add.C.st"
     _mm512_store_ps(c + i, valM);
   }
   return 0;
@@ -70,9 +79,11 @@ int main(int argc, char *argv[]) {
   printf("Number of Threads: %d.\n", numThreads);
   printf("Data size %lukB.\n", N * sizeof(Value) / 1024);
 
+#ifndef NO_OPENMP
   omp_set_dynamic(0);
   omp_set_num_threads(numThreads);
   omp_set_schedule(omp_sched_static, 0);
+#endif
 
   const int NUM_ARRAYS = 3;
   uint64_t totalBytes = NUM_ARRAYS * (N * sizeof(Value) + OFFSET_BYTES);
@@ -89,6 +100,15 @@ int main(int argc, char *argv[]) {
   Value *a = buffer + 0;
   Value *b = a + N + (OFFSET_BYTES / sizeof(Value));
   Value *c = b + N + (OFFSET_BYTES / sizeof(Value));
+
+#ifdef GEM_FORGE
+  m5_stream_nuca_region("gfm.omp_vec_add_avx.a", a, sizeof(a[0]), N);
+  m5_stream_nuca_region("gfm.omp_vec_add_avx.b", b, sizeof(b[0]), N);
+  m5_stream_nuca_region("gfm.omp_vec_add_avx.c", c, sizeof(c[0]), N);
+  m5_stream_nuca_align(a, c, 0);
+  m5_stream_nuca_align(b, c, 0);
+  m5_stream_nuca_remap();
+#endif
 
   if (check) {
 #pragma clang loop vectorize(disable)
@@ -114,7 +134,9 @@ int main(int argc, char *argv[]) {
     WARM_UP_ARRAY(b, N);
     WARM_UP_ARRAY(c, N);
   }
+#ifndef NO_OPENMP
 #pragma omp parallel for schedule(static) firstprivate(pp)
+#endif
   for (int tid = 0; tid < numThreads; ++tid) {
     volatile Value x = *pp;
   }
