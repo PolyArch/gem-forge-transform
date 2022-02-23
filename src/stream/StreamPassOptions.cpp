@@ -63,3 +63,7 @@ llvm::cl::opt<bool> StreamPassEnableLoopBoundPredication(
 llvm::cl::opt<bool> StreamPassEnableLoopElimination(
     "stream-pass-enable-loop-elimination", llvm::cl::init(false),
     llvm::cl::desc("Completely eliminate a loop to streams."));
+
+llvm::cl::opt<bool> StreamPassEnableIncompleteReduction(
+    "stream-pass-enable-incomplete-reduction", llvm::cl::init(false),
+    llvm::cl::desc("Enable reduction with in-loop user."));

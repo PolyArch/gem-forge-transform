@@ -136,6 +136,9 @@ bool StaticIndVarStream::checkReduceDGComplete() {
    * it if we cann't completely remove the computation from the loop, i.e.
    * there are other users within the loop.
    */
+  if (StreamPassEnableIncompleteReduction) {
+    return true;
+  }
   std::unordered_set<const llvm::Instruction *> InstSet = {this->Inst};
   for (auto ComputeInst : this->ReduceDG->getComputeInsts()) {
     InstSet.insert(ComputeInst);

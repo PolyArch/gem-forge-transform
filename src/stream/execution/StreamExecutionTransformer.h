@@ -147,6 +147,12 @@ private:
   void generateUserMemStreamConfiguration(StaticStream *S,
                                           llvm::Instruction *InsertBefore,
                                           InputValueVec &ClonedInputValues);
+  void generateReduceAndPtrChaseStreamConfiguration(
+      const llvm::Loop *ClonedConfigureLoop,
+      const llvm::Loop *ClonedInnerMostLoop, const StaticIndVarStream *SS,
+      llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
+      llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
+      ProtoStreamConfiguration *ProtoConfiguration);
   void generateAddRecStreamConfiguration(
       const llvm::Loop *ClonedConfigureLoop,
       const llvm::Loop *ClonedInnerMostLoop,

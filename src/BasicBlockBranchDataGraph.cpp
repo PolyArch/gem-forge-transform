@@ -91,7 +91,7 @@ void BBBranchDataGraph::constructDataGraph() {
   /**
    * Ensure that:
    * 1. All InputLoads are from the same BB.
-   * 2. No InputPHIs.
+   * 2. No InputPHIs unless from loop header BB.
    */
   bool IsValidTemp = true;
   for (auto InputLoad : this->InputLoads) {
@@ -102,9 +102,15 @@ void BBBranchDataGraph::constructDataGraph() {
     }
   }
   if (!this->InputPHIs.empty()) {
-    LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: PHI Input "
-                            << Utils::formatLLVMBB(this->BB) << '\n');
-    IsValidTemp = false;
+    for (auto InputPHI : this->InputPHIs) {
+      if (InputPHI->getParent() != this->BB ||
+          this->BB != this->Loop->getHeader()) {
+        LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: PHI Input "
+                                << Utils::formatLLVMBB(this->BB) << '\n');
+        IsValidTemp = false;
+        break;
+      }
+    }
   }
   if (IsValidTemp) {
     // Setup.

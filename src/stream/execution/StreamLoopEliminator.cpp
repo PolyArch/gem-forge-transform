@@ -140,8 +140,9 @@ bool StreamLoopEliminator::canLoopBeEliminated(
         auto Callee = Utils::getCalledFunction(Inst);
         if (Callee &&
             (Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_load ||
-             Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_step || 
-             Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_atomic)) {
+             Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_step ||
+             Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_atomic ||
+             Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_store)) {
           // This is Okay.
         } else {
           LLVM_DEBUG({

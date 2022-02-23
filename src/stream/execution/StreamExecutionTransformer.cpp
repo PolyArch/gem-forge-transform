@@ -1532,39 +1532,11 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
         ProtoConfiguration);
   } else if (ValuePattern == ::LLVM::TDG::StreamValuePattern::REDUCTION ||
              ValuePattern == ::LLVM::TDG::StreamValuePattern::POINTER_CHASE) {
-    // Handle reduction stream.
-    // Set the IV pattern to reduction, and the stream will fill in AddrFunc
-    // info.
+    // Set the IV pattern, and the generate the configuration.
     ProtoConfiguration->set_val_pattern(ValuePattern);
-    // Add the input value.
-    int NumInitialValues = 0;
-    for (int Idx = 0, NumIncoming = PHINode->getNumIncomingValues();
-         Idx < NumIncoming; ++Idx) {
-      auto IncomingBB = PHINode->getIncomingBlock(Idx);
-      auto IncomingValue = PHINode->getIncomingValue(Idx);
-      if (!SS->ConfigureLoop->contains(IncomingBB)) {
-        NumInitialValues++;
-        ClonedInputValues.push_back(this->getClonedValue(IncomingValue));
-      }
-    }
-    assert(NumInitialValues == 1 &&
-           "Multiple initial values for reduction stream.");
-    /**
-     * If the initial value is zero, we encode it in the configuration to save
-     * one instruction.
-     */
-    auto InitialValue = ClonedInputValues.back();
-    if (auto ConstantInitialValue =
-            llvm::dyn_cast<llvm::Constant>(InitialValue)) {
-      if (ConstantInitialValue->isZeroValue()) {
-        S->StaticStreamInfo.mutable_compute_info()->set_reduce_from_zero(true);
-        ClonedInputValues.pop_back();
-      }
-    }
-    // Any additional input values from the reduction function.
-    for (auto Input : S->getReduceFuncInputValues()) {
-      ClonedInputValues.push_back(this->getClonedValue(Input));
-    }
+    this->generateReduceAndPtrChaseStreamConfiguration(
+        ClonedConfigureLoop, ClonedInnerMostLoop, SS, InsertBefore, ClonedSE,
+        ClonedSEExpander, ClonedInputValues, ProtoConfiguration);
   } else if (SS->StaticStreamInfo.val_pattern() ==
                  ::LLVM::TDG::StreamValuePattern::LINEAR &&
              SS->StaticStreamInfo.stp_pattern() ==
@@ -1738,6 +1710,61 @@ void StreamExecutionTransformer::generateUserMemStreamConfiguration(
   }
   // Add the ConfigInst to PendingRemoved instructions.
   this->PendingRemovedInsts.insert(ClonedConfigInst);
+}
+
+void StreamExecutionTransformer::generateReduceAndPtrChaseStreamConfiguration(
+    const llvm::Loop *ClonedConfigureLoop,
+    const llvm::Loop *ClonedInnerMostLoop, const StaticIndVarStream *SS,
+    llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
+    llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
+    ProtoStreamConfiguration *ProtoConfiguration) {
+  // Add the input value.
+  auto PHINode = SS->PHINode;
+  int NumInitialValues = 0;
+  for (int Idx = 0, NumIncoming = PHINode->getNumIncomingValues();
+       Idx < NumIncoming; ++Idx) {
+    auto IncomingBB = PHINode->getIncomingBlock(Idx);
+    auto IncomingValue = PHINode->getIncomingValue(Idx);
+    if (!SS->ConfigureLoop->contains(IncomingBB)) {
+      NumInitialValues++;
+      ClonedInputValues.push_back(this->getClonedValue(IncomingValue));
+    }
+  }
+  assert(NumInitialValues == 1 &&
+         "Multiple initial values for Reduce/PtrChase stream.");
+  /**
+   * If the initial value is zero, we encode it in the configuration to save
+   * one instruction.
+   */
+  auto InitialValue = ClonedInputValues.back();
+  if (auto ConstantInitialValue =
+          llvm::dyn_cast<llvm::Constant>(InitialValue)) {
+    if (ConstantInitialValue->isZeroValue()) {
+      SS->StaticStreamInfo.mutable_compute_info()->set_reduce_from_zero(true);
+      ClonedInputValues.pop_back();
+    }
+  }
+  /**
+   * If the TripCount is fixed, we also put it as part of the configuration.
+   */
+  if (SS->StaticStreamInfo.is_trip_count_fixed()) {
+    for (auto Loop = ClonedInnerMostLoop; ClonedConfigureLoop->contains(Loop);
+         Loop = Loop->getParentLoop()) {
+      auto TripCountSCEV = LoopUtils::getTripCountSCEV(ClonedSE, Loop);
+      if (llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) ||
+          !ClonedSE->isLoopInvariant(TripCountSCEV, ClonedConfigureLoop)) {
+        llvm::errs() << "This is not FixedTripCount.\n";
+      }
+
+      this->addStreamInputSCEV(TripCountSCEV, false /* Signed */, InsertBefore,
+                               ClonedSEExpander, ClonedInputValues,
+                               ProtoConfiguration);
+    }
+  }
+  // Any additional input values from the reduction function.
+  for (auto Input : SS->getReduceFuncInputValues()) {
+    ClonedInputValues.push_back(this->getClonedValue(Input));
+  }
 }
 
 void StreamExecutionTransformer::generateAddRecStreamConfiguration(
