@@ -102,9 +102,9 @@ int main(int argc, char *argv[]) {
   Value *c = b + N + (OFFSET_BYTES / sizeof(Value));
 
 #ifdef GEM_FORGE
-  m5_stream_nuca_region("gfm.omp_vec_add_avx.a", a, sizeof(a[0]), N);
-  m5_stream_nuca_region("gfm.omp_vec_add_avx.b", b, sizeof(b[0]), N);
-  m5_stream_nuca_region("gfm.omp_vec_add_avx.c", c, sizeof(c[0]), N);
+  m5_stream_nuca_region("gfm.vec_add.a", a, sizeof(a[0]), N);
+  m5_stream_nuca_region("gfm.vec_add.b", b, sizeof(b[0]), N);
+  m5_stream_nuca_region("gfm.vec_add.c", c, sizeof(c[0]), N);
   m5_stream_nuca_align(a, c, 0);
   m5_stream_nuca_align(b, c, 0);
   m5_stream_nuca_remap();
@@ -136,10 +136,10 @@ int main(int argc, char *argv[]) {
   }
 #ifndef NO_OPENMP
 #pragma omp parallel for schedule(static) firstprivate(pp)
-#endif
   for (int tid = 0; tid < numThreads; ++tid) {
     volatile Value x = *pp;
   }
+#endif
 
   gf_reset_stats();
   volatile Value computed = foo(a, b, c, N);
