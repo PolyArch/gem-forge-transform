@@ -196,9 +196,9 @@ bool StreamLoopEliminator::canLoopBeEliminated(
 
   if (auto ExitBB = ClonedLoop->getExitBlock()) {
     if (!ExitBB->getSinglePredecessor()) {
-      // 3b.
-      LLVM_DEBUG({ llvm::dbgs() << "[LoopEliminate] No Dedicate ExitBB.\n"; });
-      return false;
+      // // 3b.
+      // LLVM_DEBUG({ llvm::dbgs() << "[LoopEliminate] No Dedicate ExitBB.\n";
+      // }); return false;
     }
   } else {
     // 3b.

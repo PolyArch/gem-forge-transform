@@ -215,18 +215,28 @@ void StreamExecutionTransformer::transformStreamRegion(
   });
 
   /**
-   * BFS to iterate all loops and configure them.
+   * DFS to iterate all loops and configure them.
    * ! This must be done at the end as UpgradeUpdate may add more inputs.
+   * ! We use DFS so that StreamConfig instrinsics are always at the end of the
+   * ! Preheader BB. This is to avoid a bug in NestStreamBuilder when the
+   * ! NestStreamInput is not dominated by the source instruction.
    */
-  std::queue<llvm::Loop *> LoopQueue;
-  LoopQueue.push(TopLoop);
-  while (!LoopQueue.empty()) {
-    auto CurrentLoop = LoopQueue.front();
-    LoopQueue.pop();
-    for (auto &SubLoop : CurrentLoop->getSubLoops()) {
-      LoopQueue.push(SubLoop);
+  std::vector<std::pair<llvm::Loop *, int>> LoopStack;
+  LoopStack.emplace_back(TopLoop, 0);
+  while (!LoopStack.empty()) {
+    auto &CurrentEntry = LoopStack.back();
+    auto CurrentLoop = CurrentEntry.first;
+    if (CurrentEntry.second == 0) {
+      // First time.
+      CurrentEntry.second = 1;
+      for (auto &SubLoop : CurrentLoop->getSubLoops()) {
+        LoopStack.emplace_back(SubLoop, 0);
+      }
+    } else {
+      // Second time.
+      this->configureStreamsAtLoop(Analyzer, CurrentLoop);
+      LoopStack.pop_back();
     }
-    this->configureStreamsAtLoop(Analyzer, CurrentLoop);
 
     LLVM_DEBUG({
       if (llvm::verifyModule(*this->ClonedModule, &llvm::dbgs())) {
@@ -898,8 +908,13 @@ void StreamExecutionTransformer::addStreamInput(llvm::IRBuilder<> &Builder,
                                       StreamInputType),
       StreamInputArgs);
 
-  assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
-         "Module broken after inserting StreamInput.");
+  if (llvm::verifyModule(*this->ClonedModule, &llvm::errs())) {
+    auto InsertBB = Builder.GetInsertBlock();
+    llvm::errs() << "Module broken after inserting StreamInput. BB: "
+                 << InsertBB->getName();
+    InsertBB->getParent()->print(llvm::errs());
+    assert(false && "Module broken after inserting StreamInput.");
+  }
 }
 
 void StreamExecutionTransformer::transformStoreInst(
