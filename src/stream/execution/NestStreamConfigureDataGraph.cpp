@@ -15,7 +15,6 @@ NestStreamConfigureDataGraph::NestStreamConfigureDataGraph(
 }
 
 void NestStreamConfigureDataGraph::constructDataGraph() {
-  // Start bfs on the conditional value to construct the datagraph.
   LLVM_DEBUG(llvm::dbgs() << "[Nest] Construct for " << this->FuncName
                           << ".\n";);
   std::list<const llvm::Value *> Queue;
@@ -53,8 +52,7 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
     auto Inst = llvm::dyn_cast<llvm::Instruction>(Value);
     if (!Inst) {
       // This is not an instruction, should be an input value unless it's
-      // an
-      // constant data.
+      // an constant data.
       if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Value)) {
         this->ConstantValues.insert(ConstantData);
       } else if (auto ConstantVec =
@@ -142,6 +140,7 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
      * Generate the sorted inputs list, (actually just
      * get a fixed order).
      */
+    this->hoistInputToCompute(UnsortedInputs);
     this->Inputs.insert(this->Inputs.end(), UnsortedInputs.begin(),
                         UnsortedInputs.end());
     this->HasCircle = this->detectCircle();
@@ -150,5 +149,85 @@ void NestStreamConfigureDataGraph::constructDataGraph() {
     this->IsValid = false;
     this->ComputeInsts.clear();
     this->ResultValues.clear();
+  }
+}
+
+void NestStreamConfigureDataGraph::hoistInputToCompute(
+    std::unordered_set<const llvm::Value *> &UnsortedInputs) {
+
+  while (true) {
+
+    std::unordered_set<const llvm::Instruction *> PendingRemoveInputs;
+
+    for (auto Input : UnsortedInputs) {
+      auto Inst = llvm::dyn_cast<llvm::Instruction>(Input);
+      if (!Inst || OuterLoop->contains(Inst)) {
+        // This is not an instruction or not from outside of OuterLoop.
+        continue;
+      }
+      /**
+       * For now we only apply this optimization to simple arithmetic inst.
+       */
+
+      LLVM_DEBUG({
+        llvm::dbgs() << "[Nest] Check CanHoist ";
+        Inst->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
+      auto InstOp = Inst->getOpcode();
+      if (InstOp != llvm::Instruction::Add &&
+          InstOp != llvm::Instruction::Shl) {
+        LLVM_DEBUG(llvm::dbgs() << "[Nest] NotHoist InvalidOp.\n");
+        continue;
+      }
+      // Check that all operand are either constant or already another input.
+      bool CanHoist = true;
+      for (auto Operand : Inst->operand_values()) {
+        if (UnsortedInputs.count(Operand)) {
+          continue;
+        }
+        // This is not an input, should be an input value unless it's
+        // an constant data.
+        if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Operand)) {
+          continue;
+        } else if (auto ConstantVec =
+                       llvm::dyn_cast<llvm::ConstantVector>(Operand)) {
+          continue;
+        } else {
+          LLVM_DEBUG(llvm::dbgs() << "[Nest] NotHoist NotConstant Operand.\n");
+          CanHoist = false;
+          break;
+        }
+      }
+
+      if (!CanHoist) {
+        continue;
+      }
+
+      // Remove the input from UnsortedInputs.
+      LLVM_DEBUG(llvm::dbgs() << "[Nest] CanHoist.\n");
+      PendingRemoveInputs.insert(Inst);
+    }
+
+    if (PendingRemoveInputs.empty()) {
+      break;
+    }
+    for (auto Inst : PendingRemoveInputs) {
+      // Try to remove the input.
+      for (auto Operand : Inst->operand_values()) {
+        // This is not an instruction, should be an input value unless it's
+        // an constant data.
+        if (auto ConstantData = llvm::dyn_cast<llvm::ConstantData>(Operand)) {
+          this->ConstantValues.insert(ConstantData);
+        } else if (auto ConstantVec =
+                       llvm::dyn_cast<llvm::ConstantVector>(Operand)) {
+          this->ConstantValues.insert(ConstantVec);
+        }
+      }
+
+      // Add the input as one of the compute.
+      this->ComputeInsts.insert(Inst);
+      UnsortedInputs.erase(Inst);
+    }
   }
 }

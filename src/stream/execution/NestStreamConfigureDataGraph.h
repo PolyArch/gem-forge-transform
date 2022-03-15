@@ -24,6 +24,17 @@ private:
   bool IsValid = false;
 
   void constructDataGraph();
+
+  /**
+   * To reduce the number of inputs, we apply a simple peephole optimization
+   * to remove an out-of-loop instruction as input if all of its operands are
+   * either constant or already an inputs. We mark this instruction as a
+   * ComputeInst.
+   *
+   * We iterate until we found no such input instructions.
+   */
+  void
+  hoistInputToCompute(std::unordered_set<const llvm::Value *> &UnsortedInputs);
 };
 
 #endif
