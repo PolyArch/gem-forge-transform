@@ -230,4 +230,55 @@ void NestStreamConfigureDataGraph::hoistInputToCompute(
       UnsortedInputs.erase(Inst);
     }
   }
+
+  /**
+   * Another try to expand all support instructions until they reach unreducible
+   * value, and check if have a smaller number of inputs.
+   */
+  std::unordered_set<const llvm::Value *> IrreducibleInputs;
+  std::vector<const llvm::Instruction *> ReducibleInputs;
+  InstSet ReducedComputeInsts;
+  std::unordered_set<const llvm::Value *> ReducedConstantValues;
+  auto TryReduceInput = [&](const llvm::Value *Input) -> void {
+    LLVM_DEBUG({
+      llvm::dbgs() << "[Nest] TryReduce ";
+      Input->print(llvm::dbgs());
+      llvm::dbgs() << '\n';
+    });
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Input)) {
+      auto InstOp = Inst->getOpcode();
+      if (InstOp == llvm::Instruction::Add ||
+          InstOp == llvm::Instruction::Shl ||
+          InstOp == llvm::Instruction::GetElementPtr ||
+          InstOp == llvm::Instruction::BitCast) {
+        LLVM_DEBUG(llvm::dbgs() << "[Nest] CanReduce.\n");
+        ReducibleInputs.push_back(Inst);
+        return;
+      }
+    }
+    if (llvm::isa<llvm::ConstantData>(Input) ||
+        llvm::isa<llvm::ConstantVector>(Input)) {
+      ReducedConstantValues.insert(Input);
+      return;
+    }
+    IrreducibleInputs.insert(Input);
+  };
+  for (auto &Input : UnsortedInputs) {
+    TryReduceInput(Input);
+  }
+  while (!ReducibleInputs.empty()) {
+    auto Inst = ReducibleInputs.back();
+    ReducibleInputs.pop_back();
+    ReducedComputeInsts.insert(Inst);
+    for (auto Operand : Inst->operand_values()) {
+      TryReduceInput(Operand);
+    }
+  }
+  if (IrreducibleInputs.size() < UnsortedInputs.size()) {
+    this->ConstantValues.insert(ReducedConstantValues.begin(),
+                                ReducedConstantValues.end());
+    this->ComputeInsts.insert(ReducedComputeInsts.begin(),
+                              ReducedComputeInsts.end());
+    UnsortedInputs = IrreducibleInputs;
+  }
 }
