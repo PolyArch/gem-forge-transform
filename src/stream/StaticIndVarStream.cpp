@@ -636,7 +636,7 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   }
   // All the base streams are qualified, and thus know their StepPattern. We
   // can check the constraints on static mapping.
-  if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
+  if (!this->checkStaticMapToBaseStreamsInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
     LLVM_DEBUG(llvm::dbgs() << "  [Unqualified] No StaticMapping.\n");

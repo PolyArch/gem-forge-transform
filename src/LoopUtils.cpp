@@ -169,6 +169,42 @@ int LoopUtils::countPossiblePathFromBB(
   return Count;
 }
 
+bool LoopUtils::hasLoopInvariantTripCountBetween(llvm::ScalarEvolution *SE,
+                                                 const llvm::Loop *ConfigLoop,
+                                                 const llvm::Loop *InnerLoop,
+                                                 const llvm::Loop *OuterLoop) {
+
+  assert(OuterLoop->contains(InnerLoop) &&
+         "OuterLoop should contain InnerLoop.");
+  assert(ConfigLoop->contains(OuterLoop) &&
+         "ConfigLoop should contain OuterLoop.");
+  auto CurrentLoop = InnerLoop;
+  while (CurrentLoop != OuterLoop) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "Checking " << LoopUtils::getLoopId(CurrentLoop) << '\n');
+    if (!SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
+      LLVM_DEBUG(llvm::dbgs() << "No loop invariant backedge count.\n");
+      return false;
+    }
+    auto TripCountSCEV = LoopUtils::getTripCountSCEV(SE, CurrentLoop);
+    if (llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV)) {
+      LLVM_DEBUG(llvm::dbgs() << "No computable backedge count.\n");
+      return false;
+    }
+    // The back edge should be invariant at ConfigureLoop.
+    if (!SE->isLoopInvariant(TripCountSCEV, ConfigLoop)) {
+      LLVM_DEBUG(llvm::dbgs() << "No computable at configure loop.\n");
+      return false;
+    }
+    /**
+     * TODO: We should also check that this loop is guaranteed to entry.
+     */
+    CurrentLoop = CurrentLoop->getParentLoop();
+    assert(CurrentLoop != nullptr && "Should have a parent loop.");
+  }
+  return true;
+}
+
 llvm::Instruction *LoopUtils::getUnrollableTerminator(llvm::Loop *Loop) {
 
   // Basically copies from LoopUnroll.cpp
@@ -213,7 +249,7 @@ const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
 
   if (SE->hasLoopInvariantBackedgeTakenCount(Loop)) {
     LLVM_DEBUG(llvm::dbgs()
-               << "[LoopTripCount] LoopVariantBackedgeTakenCount for "
+               << "[LoopTripCount] LoopInvariantBackedgeTakenCount for "
                << LoopUtils::getLoopId(Loop) << "\n");
     BackEdgeTakenSCEV = SE->getBackedgeTakenCount(Loop);
     LLVM_DEBUG({
@@ -281,6 +317,10 @@ const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
         assert(false);
       }
     }
+    LLVM_DEBUG({
+      llvm::dbgs() << "[LoopTripCount] FinalTripCount ";
+      TripCount->dump();
+    });
     return TripCount;
   } else {
     return BackEdgeTakenSCEV;

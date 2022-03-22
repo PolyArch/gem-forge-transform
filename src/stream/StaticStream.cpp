@@ -440,12 +440,11 @@ bool StaticStream::checkBaseStreamInnerMostLoopContainsMine() const {
   return true;
 }
 
-bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
+bool StaticStream::checkStaticMapToBaseStreamsInParentLoop() const {
   // No need to worry about back edge base streams, cause they are guaranteed
   // to be not in a parent loop.
   assert(this->isCandidate() &&
          "Should not check static mapping for non-candidate stream.");
-  auto MyStpPattern = this->computeStepPattern();
   for (const auto &BaseStream : this->BaseStreams) {
     assert(BaseStream->isQualified() && "Can not check static mapping when "
                                         "base streams are not qualified yet.");
@@ -458,45 +457,37 @@ bool StaticStream::checkStaticMapFromBaseStreamInParentLoop() const {
       continue;
     }
     // Parent loop base stream.
-    auto BaseStpPattern = BaseStream->StaticStreamInfo.stp_pattern();
-    if (BaseStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
-        BaseStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
-      // Illegal base stream step pattern.
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Illegal BaseStream StepPattern " << BaseStpPattern
-                 << " from " << BaseStream->getStreamName() << '\n');
+    if (!this->checkStaticMapToStreamInParentLoop(BaseStream)) {
       return false;
     }
-    // Check my step pattern.
-    if (MyStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
-        MyStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
-      return false;
-    }
-    // Most difficult part, check step count ratio is static.
-    auto CurrentLoop = this->InnerMostLoop;
-    while (CurrentLoop != BaseStream->InnerMostLoop) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Checking " << LoopUtils::getLoopId(CurrentLoop) << '\n');
-      if (!this->SE->hasLoopInvariantBackedgeTakenCount(CurrentLoop)) {
-        LLVM_DEBUG(llvm::dbgs() << "No loop invariant backedge count.\n");
-        return false;
-      }
-      auto TripCountSCEV = LoopUtils::getTripCountSCEV(this->SE, CurrentLoop);
-      if (llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV)) {
-        LLVM_DEBUG(llvm::dbgs() << "No computable backedge count.\n");
-        return false;
-      }
-      // The back edge should be invariant at ConfigureLoop.
-      if (!this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
-        LLVM_DEBUG(llvm::dbgs() << "No computable at configure loop.\n");
-        return false;
-      }
-      /**
-       * TODO: We should also check that this loop is guaranteed to entry.
-       */
-      CurrentLoop = CurrentLoop->getParentLoop();
-      assert(CurrentLoop != nullptr && "Should have a parent loop.");
-    }
+  }
+  return true;
+}
+
+bool StaticStream::checkStaticMapToStreamInParentLoop(
+    const StaticStream *BaseStream) const {
+  // Parent loop base stream.
+  auto BaseStpPattern = BaseStream->StaticStreamInfo.stp_pattern();
+  if (BaseStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
+      BaseStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
+    // Illegal base stream step pattern.
+    LLVM_DEBUG(llvm::dbgs()
+               << "Illegal BaseStream StepPattern " << BaseStpPattern
+               << " from " << BaseStream->getStreamName() << '\n');
+    return false;
+  }
+  // Check my step pattern.
+  // NOTE: My StepPattern may not be set until I am marked qualifed.
+  auto MyStpPattern = this->computeStepPattern();
+  if (MyStpPattern != LLVM::TDG::StreamStepPattern::UNCONDITIONAL &&
+      MyStpPattern != LLVM::TDG::StreamStepPattern::NEVER) {
+    return false;
+  }
+  // Most difficult part, check step count ratio is static.
+  if (!LoopUtils::hasLoopInvariantTripCountBetween(
+          this->SE, this->ConfigureLoop, this->InnerMostLoop,
+          BaseStream->InnerMostLoop)) {
+    return false;
   }
   return true;
 }
@@ -550,6 +541,8 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
    *      and is a temporary solution to support an OuterLoopStream
    *      using the InnerLoopStream's exit value, when the
    *      InnerLoopStream can not be configured at outer loop.
+   *  - non-spec: This stream should be executed non-speculatively,
+   *      e.g., not offloaded until committed.
    */
   auto SlashPos = SSName.find('/');
   auto FirstSlashPos = SlashPos;

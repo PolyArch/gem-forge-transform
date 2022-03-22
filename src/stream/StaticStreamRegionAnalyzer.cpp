@@ -205,9 +205,18 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
    */
   LLVM_DEBUG(llvm::dbgs() << "== SSRA: Mark Update Relationship for "
                           << LoadSS->getStreamName() << '\n');
-  if (LoadSS->StaticStreamInfo.is_cond_access() ||
-      !LoadSS->StaticStreamInfo.is_trip_count_fixed()) {
-    LLVM_DEBUG(llvm::dbgs() << "==== ConditalAccess or VariableTripCount "
+  // The current CondAccess analysis is very conservative.
+  // It basically complains all stream configured at outer loop is conditional
+  // access.
+  // ! Here I disable it.
+  // if (LoadSS->StaticStreamInfo.is_cond_access())
+  // {
+  //   LLVM_DEBUG(llvm::dbgs() << "[No Update] ConditalAccess "
+  //                           << LoadSS->getStreamName() << '\n');
+  //   return;
+  // }
+  if (!LoadSS->StaticStreamInfo.is_trip_count_fixed()) {
+    LLVM_DEBUG(llvm::dbgs() << "[No Update] VariableTripCount "
                             << LoadSS->getStreamName() << '\n');
     return;
   }
@@ -219,8 +228,8 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
   }
   StaticStream *CandidateSS = nullptr;
   for (auto AliasSS : AliasBaseSS->AliasedStreams) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "==== Check AliasStream " << AliasSS->getStreamName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "==== Check AliasStream "
+                            << AliasSS->getStreamName() << '\n');
     if (AliasSS->AliasOffset != LoadSS->AliasOffset)
       continue;
     if (AliasSS->Inst->getOpcode() != llvm::Instruction::Store)
@@ -231,8 +240,8 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
       // Multiple candidates.
       return;
     } else {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "==== Select candidate " << AliasSS->getStreamName() << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "==== Select candidate "
+                              << AliasSS->getStreamName() << '\n');
       CandidateSS = AliasSS;
     }
   }
@@ -300,9 +309,9 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
         continue;
       }
       LLVM_DEBUG(llvm::dbgs()
-                 << "Add predicated relation " << PredLoadStream->getStreamName()
-                 << " -- " << PredicatedTrue << " --> "
-                 << TargetStream->getStreamName() << '\n');
+                 << "Add predicated relation "
+                 << PredLoadStream->getStreamName() << " -- " << PredicatedTrue
+                 << " --> " << TargetStream->getStreamName() << '\n');
       if (PredicatedTrue) {
         PredLoadStream->PredicatedTrueStreams.insert(TargetStream);
       } else {
@@ -358,8 +367,8 @@ void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
   };
   for (auto &InstStream : this->InstStaticStreamMap) {
     for (auto &S : InstStream.second) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "== SSRA: Construct Graph for " << S->getStreamName() << '\n');
+      LLVM_DEBUG(llvm::dbgs() << "== SSRA: Construct Graph for "
+                              << S->getStreamName() << '\n');
       S->constructGraph(GetStream);
     }
   }
@@ -446,8 +455,8 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
             continue;
           }
           // Check the scev.
-          LLVM_DEBUG(llvm::dbgs()
-                     << "== TargetStream: " << TargetS->getStreamName() << '\n');
+          LLVM_DEBUG(llvm::dbgs() << "== TargetStream: "
+                                  << TargetS->getStreamName() << '\n');
           LLVM_DEBUG(llvm::dbgs() << "== TargetAddrSCEV: ";
                      TargetAddrSCEV->dump());
           auto MinusSCEV = this->SE->getMinusSCEV(AddrSCEV, TargetAddrSCEV);
@@ -574,8 +583,8 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
    * 2. ValueDG should only have Load/LoopInvariant inputs, at most 8
    * inputs. Notice that 3D stencil takes 8 inputs. This is to avoid
    * using stack to pass in parameters for the ValueDG.
-   * 3. All the load inputs should be within the same BB of this store.
-   * 4. All the load and the store should have the same step root stream.
+   * 3. Should have static map to all load inputs. This enables the
+   * stream to use outer loop streams value.
    */
   if (ValueDG->hasCircle()) {
     LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Has Circle.\n");
@@ -620,17 +629,12 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   }
   StaticStream::StreamVec LoadInputStreams;
   for (auto LoadInput : LoadInputs) {
-    if (LoadInput->getParent() != StoreS->Inst->getParent()) {
-      // Not same BB.
-      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Not same BB: "
-                              << Utils::formatLLVMInst(LoadInput) << '\n');
-      return;
-    }
     auto LoadS =
         this->getStreamByInstAndConfigureLoop(LoadInput, StoreS->ConfigureLoop);
-    if (LoadS->BaseStepRootStreams != StoreS->BaseStepRootStreams) {
-      // They are not stepped by the same stream.
-      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Not same StepRoot: "
+    if (!LoopUtils::hasLoopInvariantTripCountBetween(
+            this->SE, StoreS->ConfigureLoop, StoreS->InnerMostLoop,
+            LoadS->InnerMostLoop)) {
+      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] No StaticMap: "
                               << LoadS->getStreamName() << '\n');
       return;
     }
@@ -902,8 +906,8 @@ void StaticStreamRegionAnalyzer::buildTransformPlan() {
     auto &SelfInst = InstChosenStream.first;
     auto &S = InstChosenStream.second;
 
-    LLVM_DEBUG(llvm::dbgs()
-               << "make transform plan for stream " << S->getStreamName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "make transform plan for stream "
+                            << S->getStreamName() << '\n');
 
     // Handle all the step instructions.
     for (const auto &StepInst : S->getStepInsts()) {

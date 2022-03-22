@@ -67,6 +67,15 @@ public:
   static int countPossiblePath(const llvm::Loop *Loop);
 
   /**
+   * Check that TripCount from InnerLoop to OuterLoop is Invariant under
+   * ConfigLoop.
+   */
+  static bool hasLoopInvariantTripCountBetween(llvm::ScalarEvolution *SE,
+                                               const llvm::Loop *ConfigLoop,
+                                               const llvm::Loop *InnerLoop,
+                                               const llvm::Loop *OuterLoop);
+
+  /**
    * Print an static instruction.
    */
   static size_t getLLVMInstPosInBB(const llvm::Instruction *Inst);

@@ -430,7 +430,8 @@ protected:
    * Notice that this should only be checked when all the base streams are
    * qualified, because only qualified streams knows the StepPattern.
    */
-  bool checkStaticMapFromBaseStreamInParentLoop() const;
+  bool checkStaticMapToBaseStreamsInParentLoop() const;
+  bool checkStaticMapToStreamInParentLoop(const StaticStream *BaseStream) const;
 
   /**
    * Compute the step pattern. Should only be called when all base streams are

@@ -333,7 +333,7 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
   }
   // All the base streams are qualified, and thus know their StepPattern. We can
   // check the constraints on static mapping.
-  if (!this->checkStaticMapFromBaseStreamInParentLoop()) {
+  if (!this->checkStaticMapToBaseStreamsInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
     LLVM_DEBUG(llvm::dbgs() << "  [UnQualify] NoStaticMap.\n");
@@ -360,9 +360,8 @@ LLVM::TDG::StreamStepPattern StaticMemStream::computeStepPattern() const {
     auto StepRootStream = *(this->BaseStepRootStreams.begin());
     auto StepRootStreamStpPattern =
         StepRootStream->StaticStreamInfo.stp_pattern();
-    LLVM_DEBUG(llvm::dbgs()
-               << "Computed step pattern " << StepRootStreamStpPattern
-               << " for " << this->getStreamName() << '\n');
+    LLVM_DEBUG(llvm::dbgs() << "[StepPat] " << StepRootStreamStpPattern
+                            << " for " << this->getStreamName() << '\n');
     return StepRootStreamStpPattern;
   }
 }

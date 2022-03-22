@@ -236,16 +236,15 @@ void StreamExecutionTransformer::transformStreamRegion(
       // Second time.
       this->configureStreamsAtLoop(Analyzer, CurrentLoop);
       LoopStack.pop_back();
+      LLVM_DEBUG({
+        if (llvm::verifyModule(*this->ClonedModule, &llvm::dbgs())) {
+          llvm::errs() << "Module broken after configuring streams.\n";
+          assert(false && "Module broken.");
+        }
+      });
+
+      Analyzer->coalesceStreamsAtLoop(CurrentLoop);
     }
-
-    LLVM_DEBUG({
-      if (llvm::verifyModule(*this->ClonedModule, &llvm::dbgs())) {
-        llvm::errs() << "Module broken after configuring streams.\n";
-        assert(false && "Module broken.");
-      }
-    });
-
-    Analyzer->coalesceStreamsAtLoop(CurrentLoop);
   }
 
   /**
@@ -281,6 +280,14 @@ void StreamExecutionTransformer::transformStreamRegion(
 
 void StreamExecutionTransformer::configureStreamsAtLoop(
     StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop) {
+
+  /**
+   * For simplicity, we always make sure the Loop has a Preheader,
+   * even when there are no streams to configure at this level.
+   * This eases the pain in StreamLoopEliminator.
+   */
+  this->getOrCreateLoopPreheaderInClonedModule(Loop);
+
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   if (ConfigureInfo.getSortedStreams().empty()) {
     // No stream configured at this loop.
