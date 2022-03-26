@@ -102,9 +102,9 @@ int main(int argc, char *argv[]) {
   Value *c = b + N + (OFFSET_BYTES / sizeof(Value));
 
 #ifdef GEM_FORGE
-  m5_stream_nuca_region("gfm.vec_add.a", a, sizeof(a[0]), N);
-  m5_stream_nuca_region("gfm.vec_add.b", b, sizeof(b[0]), N);
-  m5_stream_nuca_region("gfm.vec_add.c", c, sizeof(c[0]), N);
+  gf_stream_nuca_region("gfm.vec_add.a", a, sizeof(a[0]), N);
+  gf_stream_nuca_region("gfm.vec_add.b", b, sizeof(b[0]), N);
+  gf_stream_nuca_region("gfm.vec_add.c", c, sizeof(c[0]), N);
   m5_stream_nuca_align(a, c, 0);
   m5_stream_nuca_align(b, c, 0);
   m5_stream_nuca_remap();

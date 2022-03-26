@@ -40,8 +40,18 @@ uint8_t *LOAD_BIN_ARRAY_FROM_FILE(uint64_t *size, FILE *f) {
 #define gf_reset_stats() m5_reset_stats(0, 0)
 #define gf_dump_stats() m5_dump_stats(0, 0)
 #define gf_panic() m5_panic()
-#define gf_stream_nuca_region(name, start, elementSize, numElement)            \
-  m5_stream_nuca_region(name, start, elementSize, numElement)
+
+#define gf_stream_nuca_region1d(name, start, elementSize, dim1)                \
+  m5_stream_nuca_region(name, start, elementSize, dim1, 0, 0)
+#define gf_stream_nuca_region2d(name, start, elementSize, dim1, dim2)          \
+  m5_stream_nuca_region(name, start, elementSize, dim1, dim2, 0)
+#define gf_stream_nuca_region3d(name, start, elementSize, dim1, dim2, dim3)    \
+  m5_stream_nuca_region(name, start, elementSize, dim1, dim2, dim3)
+#define get_4th_arg(name, start, elemSize, arg1, arg2, arg3, arg4, ...) arg4
+#define gf_stream_nuca_region(...)                                             \
+  get_4th_arg(__VA_ARGS__, gf_stream_nuca_region3d, gf_stream_nuca_region2d,   \
+              gf_stream_nuca_region1d)(__VA_ARGS__)
+
 #define gf_stream_nuca_align(A, B, elementOffset)                              \
   m5_stream_nuca_align(A, B, elementOffset)
 #define gf_stream_nuca_remap() m5_stream_nuca_remap()

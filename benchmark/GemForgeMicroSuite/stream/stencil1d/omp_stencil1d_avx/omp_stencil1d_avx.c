@@ -10,6 +10,10 @@
 #include "immintrin.h"
 
 typedef float Value;
+const int ValueVecLen = 16;
+typedef struct {
+  float vs[ValueVecLen];
+} ValueVec;
 
 #define STRIDE 1
 
@@ -26,32 +30,40 @@ typedef float Value;
 #define OFFSET_BYTES 0
 #endif
 
-__attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
+__attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t N) {
+
+  ValueVec *va0 = (ValueVec *)(a);
+  ValueVec *va1 = (ValueVec *)(a + 1);
+  ValueVec *va2 = (ValueVec *)(a + 2);
+  ValueVec *vb = (ValueVec *)(b);
+  ValueVec *vc = (ValueVec *)(c);
+  int64_t vN = (N - ValueVecLen - 2) / ValueVecLen;
 
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static) firstprivate(a, b, c)
+#pragma omp parallel for schedule(static)                                      \
+    firstprivate(va0, va1, va2, vb, vc, vN)
 #else
 #pragma clang loop unroll(disable)
 #endif
-  for (int i = 0; i + 16 < N; i += 16) {
+  for (int64_t i = 0; i < vN; i++) {
 
 #pragma ss stream_name "gfm.stencil1d.A0.ld"
-    __m512 valA0 = _mm512_load_ps(a + i);
+    __m512 valA0 = _mm512_load_ps(va0 + i);
 
 #pragma ss stream_name "gfm.stencil1d.A1.ld"
-    __m512 valA1 = _mm512_load_ps(a + i + 1);
+    __m512 valA1 = _mm512_load_ps(va1 + i);
 
 #pragma ss stream_name "gfm.stencil1d.A2.ld"
-    __m512 valA2 = _mm512_load_ps(a + i + 2);
+    __m512 valA2 = _mm512_load_ps(va2 + i);
 
 #pragma ss stream_name "gfm.stencil1d.B.ld"
-    __m512 valB = _mm512_load_ps(b + i + 1);
+    __m512 valB = _mm512_load_ps(vb + i);
 
     __m512 valA = _mm512_sub_ps(_mm512_add_ps(valA0, valA2), valA1);
     __m512 valM = _mm512_add_ps(valA, valB);
 
 #pragma ss stream_name "gfm.stencil1d.C.st"
-    _mm512_store_ps(c + i + 1, valM);
+    _mm512_store_ps(vc + i, valM);
   }
   return 0;
 }
@@ -63,6 +75,9 @@ int main(int argc, char *argv[]) {
   int check = 0;
   int warm = 0;
   int argx = 2;
+
+  assert(sizeof(ValueVec) == sizeof(Value) * ValueVecLen &&
+         "Mismatch ValueVec Size.");
 
   if (argc >= argx) {
     numThreads = atoi(argv[argx - 1]);
@@ -106,13 +121,13 @@ int main(int argc, char *argv[]) {
   Value *c = b + N + (OFFSET_BYTES / sizeof(Value));
 
 #ifdef GEM_FORGE
-  m5_stream_nuca_region("gfm.stencil1d.a", a, sizeof(a[0]), N);
-  m5_stream_nuca_region("gfm.stencil1d.b", b, sizeof(b[0]), N);
-  m5_stream_nuca_region("gfm.stencil1d.c", c, sizeof(c[0]), N);
-  m5_stream_nuca_align(a, c, 0);
-  m5_stream_nuca_align(b, c, 0);
-  m5_stream_nuca_align(b, c, 1);
-  m5_stream_nuca_remap();
+  gf_stream_nuca_region("gfm.stencil1d.a", a, sizeof(a[0]), N);
+  gf_stream_nuca_region("gfm.stencil1d.b", b, sizeof(b[0]), N);
+  gf_stream_nuca_region("gfm.stencil1d.c", c, sizeof(c[0]), N);
+  gf_stream_nuca_align(a, c, 0);
+  gf_stream_nuca_align(b, c, 0);
+  gf_stream_nuca_align(c, c, 1);
+  gf_stream_nuca_remap();
 #endif
 
   if (check) {
