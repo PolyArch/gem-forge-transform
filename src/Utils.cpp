@@ -2,6 +2,7 @@
 
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/Intrinsics.h" // For some x86 intrinsic ids.
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
 
@@ -21,6 +22,83 @@ std::unordered_map<const llvm::Instruction *, const llvm::Instruction *>
     Utils::MemorizedStaticNextNonPHIInstMap;
 
 InstructionUIDMap Utils::InstUIDMap;
+
+bool Utils::isStoreInst(const llvm::Instruction *Inst) {
+  if (llvm::isa<llvm::StoreInst>(Inst)) {
+    return true;
+  }
+  if (llvm::isa<llvm::CallInst>(Inst)) {
+    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
+        llvm::Intrinsic::masked_store) {
+      return true;
+    }
+  }
+  return false;
+}
+
+llvm::Value *Utils::getStoreValue(const llvm::Instruction *Inst) {
+  assert(Utils::isStoreInst(Inst) && "This is not StoreInst.");
+  if (llvm::isa<llvm::StoreInst>(Inst)) {
+    return Inst->getOperand(0);
+  }
+  if (llvm::isa<llvm::CallInst>(Inst)) {
+    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
+        llvm::Intrinsic::masked_store) {
+      return Utils::getArgOperand(Inst, 0);
+    }
+  }
+  llvm_unreachable("Failed to get StoreValue.");
+}
+
+bool Utils::isMemAccessInst(const llvm::Instruction *Inst) {
+  switch (Inst->getOpcode()) {
+  case llvm::Instruction::Load:
+  case llvm::Instruction::Store:
+  case llvm::Instruction::AtomicRMW:
+  case llvm::Instruction::AtomicCmpXchg:
+    return true;
+  default:
+    break;
+  }
+
+  if (Utils::isCallOrInvokeInst(Inst)) {
+    // Check if this is a masked store with constant mask.
+    auto Callee = Utils::getCalledFunction(Inst);
+    if (Callee && Callee->getIntrinsicID() == llvm::Intrinsic::masked_store) {
+      auto Mask = Utils::getArgOperand(Inst, 3);
+      if (llvm::isa<llvm::ConstantVector>(Mask)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+llvm::Value *Utils::getMemAddrValue(const llvm::Instruction *Inst) {
+  assert(
+      Utils::isMemAccessInst(Inst) &&
+      "This is not a memory access instruction to get memory address value.");
+  switch (Inst->getOpcode()) {
+  case llvm::Instruction::Load:
+  case llvm::Instruction::AtomicRMW:
+  case llvm::Instruction::AtomicCmpXchg:
+    return Inst->getOperand(0);
+  case llvm::Instruction::Store:
+    return Inst->getOperand(1);
+  case llvm::Instruction::Call: {
+    // Store or Call to MaskedStore.
+    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
+        llvm::Intrinsic::masked_store) {
+      return Utils::getArgOperand(Inst, 1);
+    }
+    break;
+  }
+  default:
+    break;
+  }
+  llvm_unreachable("This is not a MemAccessInst.");
+}
 
 const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
   auto MemorizedIter = Utils::MemorizedDemangledFunctionNames.find(Func);

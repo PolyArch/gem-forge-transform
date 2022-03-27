@@ -78,7 +78,7 @@ private:
   void transformLoadInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *LoadInst);
   void transformStoreInst(StaticStreamRegionAnalyzer *Analyzer,
-                          llvm::StoreInst *StoreInst);
+                          llvm::Instruction *StoreInst);
   void transformAtomicRMWInst(StaticStreamRegionAnalyzer *Analyzer,
                               llvm::AtomicRMWInst *AtomicRMW);
   void transformAtomicCmpXchgInst(StaticStreamRegionAnalyzer *Analyzer,

@@ -230,12 +230,15 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
   for (auto AliasSS : AliasBaseSS->AliasedStreams) {
     LLVM_DEBUG(llvm::dbgs() << "==== Check AliasStream "
                             << AliasSS->getStreamName() << '\n');
-    if (AliasSS->AliasOffset != LoadSS->AliasOffset)
+    if (AliasSS->AliasOffset != LoadSS->AliasOffset) {
       continue;
-    if (AliasSS->Inst->getOpcode() != llvm::Instruction::Store)
+    }
+    if (!Utils::isStoreInst(AliasSS->Inst)) {
       continue;
-    if (Utils::getMemElementType(AliasSS->Inst) != LoadType)
+    }
+    if (Utils::getMemElementType(AliasSS->Inst) != LoadType) {
       continue;
+    }
     if (CandidateSS) {
       // Multiple candidates.
       return;
@@ -516,7 +519,7 @@ void StaticStreamRegionAnalyzer::buildStreamValueDepGraph() {
   }
   for (auto &InstStream : this->InstStaticStreamMap) {
     auto Inst = InstStream.first;
-    if (Inst->getOpcode() == llvm::Instruction::Store ||
+    if (Utils::isStoreInst(Inst) ||
         Inst->getOpcode() == llvm::Instruction::AtomicRMW ||
         Inst->getOpcode() == llvm::Instruction::AtomicCmpXchg) {
       for (auto &S : InstStream.second) {
@@ -562,18 +565,19 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
    */
   auto IsIndVarStream = [](const llvm::PHINode *PHI) -> bool { return true; };
   llvm::Value *StoreValue = nullptr;
-  switch (StreamOpcode) {
-  default:
-    llvm_unreachable("Invalid StoreStream Opcode.");
-  case llvm::Instruction::Store:
-    StoreValue = StoreS->Inst->getOperand(0);
-    break;
-  case llvm::Instruction::AtomicRMW:
-    StoreValue = StoreS->Inst->getOperand(1);
-    break;
-  case llvm::Instruction::AtomicCmpXchg:
-    StoreValue = StoreS->Inst->getOperand(2);
-    break;
+  if (Utils::isStoreInst(StoreS->Inst)) {
+    StoreValue = Utils::getStoreValue(StoreS->Inst);
+  } else {
+    switch (StreamOpcode) {
+    default:
+      llvm_unreachable("Invalid StoreStream Opcode.");
+    case llvm::Instruction::AtomicRMW:
+      StoreValue = StoreS->Inst->getOperand(1);
+      break;
+    case llvm::Instruction::AtomicCmpXchg:
+      StoreValue = StoreS->Inst->getOperand(2);
+      break;
+    }
   }
   auto ValueDG = std::make_unique<StreamDataGraph>(StoreS->ConfigureLoop,
                                                    StoreValue, IsIndVarStream);

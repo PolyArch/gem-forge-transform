@@ -176,7 +176,11 @@ void StreamExecutionTransformer::transformStreamRegion(
        * So far UserDefinedMemStream is treated as a special load.
        */
       if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
-        this->transformLoadInst(Analyzer, CallInst);
+        if (Utils::isStoreInst(Inst)) {
+          this->transformStoreInst(Analyzer, Inst);
+        } else {
+          this->transformLoadInst(Analyzer, CallInst);
+        }
       }
 
       /**
@@ -925,7 +929,7 @@ void StreamExecutionTransformer::addStreamInput(llvm::IRBuilder<> &Builder,
 }
 
 void StreamExecutionTransformer::transformStoreInst(
-    StaticStreamRegionAnalyzer *Analyzer, llvm::StoreInst *StoreInst) {
+    StaticStreamRegionAnalyzer *Analyzer, llvm::Instruction *StoreInst) {
   auto S = Analyzer->getChosenStreamByInst(StoreInst);
   if (S == nullptr) {
     // This is not a chosen stream.
@@ -1193,7 +1197,7 @@ void StreamExecutionTransformer::handleValueDG(
     ClonedFinalValueInst = ClonedFusedOp;
   }
 
-  if (llvm::isa<llvm::StoreInst>(SS->Inst)) {
+  if (Utils::isStoreInst(SS->Inst)) {
     if (SS->UpdateStream) {
       this->addStreamStore(SS->UpdateStream, ClonedSSInst,
                            &ClonedSSInst->getDebugLoc());

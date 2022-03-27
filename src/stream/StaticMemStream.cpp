@@ -70,7 +70,8 @@ void StaticMemStream::analyzeIsCandidate() {
    * So far only look at inner most loop.
    * Ignore streams in remainder/epilogue loop.
    */
-  if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop)) {
+  if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop) &&
+      !StreamPassEnableLoopRemainderOrEpilogue) {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::IN_LOOP_REMAINDER_OR_EPILOGUE);
@@ -125,7 +126,7 @@ void StaticMemStream::analyzeIsCandidate() {
   /**
    * For store stream, ignore update streams.
    */
-  if (llvm::isa<llvm::StoreInst>(this->Inst)) {
+  if (Utils::isStoreInst(this->Inst)) {
     if (!StreamPassEnableStore) {
       this->IsCandidate = false;
       LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Store Disabled "

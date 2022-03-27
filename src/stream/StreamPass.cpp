@@ -106,7 +106,8 @@ void StreamPass::popLoopStack(LoopStackT &LoopStack) {
 
 bool StreamPass::isLoopCandidate(const llvm::Loop *Loop) {
   return LoopUtils::isLoopContinuous(Loop) &&
-         !LoopUtils::isLoopRemainderOrEpilogue(Loop);
+         (!LoopUtils::isLoopRemainderOrEpilogue(Loop) ||
+          StreamPassEnableLoopRemainderOrEpilogue);
 }
 
 void StreamPass::analyzeStream() {
@@ -243,7 +244,8 @@ void StreamPass::pushLoopStackAndConfigureStreams(
   for (auto &SS : SortedStreams) {
     auto S = this->CurrentStreamAnalyzer->getDynStreamByStaticStream(SS);
     // Inform the stream engine.
-    LLVM_DEBUG(llvm::dbgs() << "Configure stream " << S->getStreamName() << '\n');
+    LLVM_DEBUG(llvm::dbgs()
+               << "Configure stream " << S->getStreamName() << '\n');
     this->CurrentStreamAnalyzer->getFuncSE()->configure(S, this->Trace);
 
     auto Inst = S->getInst();

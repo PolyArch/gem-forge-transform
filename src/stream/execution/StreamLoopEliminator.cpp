@@ -83,11 +83,20 @@ void StreamLoopEliminator::eliminateLoop(StaticStreamRegionAnalyzer *Analyzer,
   });
   ClonedPreheaderBr->setSuccessor(0, ClonedSingleExitBB);
 
-  auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
-  ConfigureInfo.setLoopEliminated(true);
-  for (auto S : ConfigureInfo.getSortedStreams()) {
-    // Eliminated Loop has no core users.
-    S->StaticStreamInfo.set_no_core_user(true);
+  /**
+   * Remember LoopEliminated for all streams at this loop level.
+   */
+  Analyzer->getConfigureLoopInfo(Loop).setLoopEliminated(true);
+  for (auto BB : Loop->blocks()) {
+    for (const auto &Inst : *BB) {
+      if (auto ChosenS = Analyzer->getChosenStreamByInst(&Inst)) {
+        LLVM_DEBUG({
+          llvm::dbgs() << "[LoopEliminate] Mark LoopEliminated for "
+                       << ChosenS->getStreamName() << '\n';
+        });
+        ChosenS->setLoopEliminated(true);
+      }
+    }
   }
 
   LLVM_DEBUG({

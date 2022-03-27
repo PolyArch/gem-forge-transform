@@ -61,8 +61,10 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
       }
       LLVM_DEBUG(llvm::dbgs()
                  << "Processing loop " << LoopUtils::getLoopId(Loop) << '\n');
-      if (LoopUtils::isLoopContinuous(Loop) &&
-          !LoopUtils::isLoopRemainderOrEpilogue(Loop)) {
+      bool ShouldProcessLoop = LoopUtils::isLoopContinuous(Loop) &&
+                               (!LoopUtils::isLoopRemainderOrEpilogue(Loop) ||
+                                StreamPassEnableLoopRemainderOrEpilogue);
+      if (ShouldProcessLoop) {
         // Check if loop is continuous.
         auto Analyzer = new StaticStreamRegionAnalyzer(
             Loop, this->DataLayout, this->CachedLI, this->CachedPDF,
@@ -77,7 +79,7 @@ StreamExecutionStaticPass::selectStreamRegionAnalyzers() {
 
         PrevAnalyzedLoop = Loop;
       } else {
-        LLVM_DEBUG(llvm::dbgs() << "Loop not continuous "
+        LLVM_DEBUG(llvm::dbgs() << "Loop not continuous or epilogue/remainder "
                                 << LoopUtils::getLoopId(Loop) << '\n');
       }
     }

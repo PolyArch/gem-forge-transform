@@ -296,6 +296,8 @@ public:
   translateToProtobufDataType(llvm::DataLayout *DataLayout, llvm::Type *Type);
 
   void setLoopEliminated(bool LoopEliminated) {
+    // LoopEliminated Stream always has no core user.
+    this->StaticStreamInfo.set_no_core_user(true);
     this->StaticStreamInfo.set_loop_eliminated(LoopEliminated);
   }
   bool isLoopEliminated() const {

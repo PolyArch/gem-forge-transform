@@ -67,3 +67,7 @@ llvm::cl::opt<bool> StreamPassEnableLoopElimination(
 llvm::cl::opt<bool> StreamPassEnableIncompleteReduction(
     "stream-pass-enable-incomplete-reduction", llvm::cl::init(false),
     llvm::cl::desc("Enable reduction with in-loop user."));
+
+llvm::cl::opt<bool> StreamPassEnableLoopRemainderOrEpilogue(
+    "stream-pass-enable-loop-remainder-or-epilogue", llvm::cl::init(false),
+    llvm::cl::desc("Enable streams in remainder or epilogue loop."));

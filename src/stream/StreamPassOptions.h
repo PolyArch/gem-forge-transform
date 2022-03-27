@@ -25,5 +25,6 @@ extern llvm::cl::opt<bool> StreamPassEnableNestStream;
 extern llvm::cl::opt<bool> StreamPassEnableLoopBoundPredication;
 extern llvm::cl::opt<bool> StreamPassEnableLoopElimination;
 extern llvm::cl::opt<bool> StreamPassEnableIncompleteReduction;
+extern llvm::cl::opt<bool> StreamPassEnableLoopRemainderOrEpilogue;
 
 #endif

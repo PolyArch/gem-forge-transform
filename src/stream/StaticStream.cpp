@@ -124,7 +124,6 @@ llvm::Type *StaticStream::getMemElementType() const {
   switch (this->Inst->getOpcode()) {
   case llvm::Instruction::PHI:
   case llvm::Instruction::Load:
-  case llvm::Instruction::Call:
   case llvm::Instruction::AtomicRMW:
     return this->Inst->getType();
   case llvm::Instruction::AtomicCmpXchg:
@@ -132,6 +131,17 @@ llvm::Type *StaticStream::getMemElementType() const {
     auto AddrType = Utils::getMemAddrValue(this->Inst)->getType();
     auto ElementType = AddrType->getPointerElementType();
     return ElementType;
+  }
+  case llvm::Instruction::Call: {
+    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
+        llvm::Intrinsic::masked_store) {
+      auto AddrType = Utils::getMemAddrValue(this->Inst)->getType();
+      auto ElementType = AddrType->getPointerElementType();
+      return ElementType;
+    } else {
+      // This should be some atomic operation.
+      return this->Inst->getType();
+    }
   }
   default:
     llvm_unreachable("Unsupported StreamType.");
@@ -556,7 +566,14 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
 
     SlashPos = NextSlashPos;
   }
-  return SSName.substr(0, FirstSlashPos).str();
+  auto Ret = SSName.substr(0, FirstSlashPos).str();
+
+  // Append the epilogue suffix.
+  if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop)) {
+    Ret += "-ep";
+  }
+
+  return Ret;
 }
 
 std::string StaticStream::generateStreamName() {
@@ -602,7 +619,9 @@ std::string StaticStream::generateStreamName() {
   }
   std::stringstream SS;
   SS << "(" << Utils::formatLLVMFunc(this->Inst->getFunction()) << " " << Line
-     << " " << this->ConfigureLoop->getHeader()->getName().str() << " "
+     << " " << this->ConfigureLoop->getHeader()->getName().str()
+     << (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop) ? "-ep "
+                                                                   : " ")
      << Utils::formatLLVMInstWithoutFunc(this->Inst) << ")";
   LLVM_DEBUG(llvm::dbgs() << "[StreamName] Using Generated Name " << SS.str()
                           << ".\n");
@@ -685,7 +704,7 @@ void StaticStream::generateValueFunction(
           true /* IsLoad */);
     }
   }
-  // Special case for update stream. The store stream will be chosen,
+  // Special case for update stream. The store stream will be not chosen,
   // so we have to call it directly.
   if (this->Inst->getOpcode() == llvm::Instruction::Load &&
       this->UpdateStream &&
@@ -991,7 +1010,6 @@ void StaticStream::fillProtobufStreamInfo(
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
     break;
   case llvm::Instruction::Load:
-  case llvm::Instruction::Call:
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
     break;
   case llvm::Instruction::Store:
@@ -1001,6 +1019,15 @@ void StaticStream::fillProtobufStreamInfo(
   case llvm::Instruction::AtomicCmpXchg:
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
     break;
+  case llvm::Instruction::Call: {
+    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
+        llvm::Intrinsic::masked_store) {
+      ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_ST);
+    } else {
+      ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
+    }
+    break;
+  }
   default:
     llvm::errs() << "Invalid stream type " << this->getStreamName() << '\n';
     break;

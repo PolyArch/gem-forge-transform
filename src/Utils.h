@@ -20,34 +20,8 @@ public:
     return Addr & CacheLineMask;
   }
 
-  static bool isMemAccessInst(const llvm::Instruction *Inst) {
-    switch (Inst->getOpcode()) {
-    case llvm::Instruction::Load:
-    case llvm::Instruction::Store:
-    case llvm::Instruction::AtomicRMW:
-    case llvm::Instruction::AtomicCmpXchg:
-      return true;
-    default:
-      return false;
-    }
-  }
-
-  static llvm::Value *getMemAddrValue(const llvm::Instruction *Inst) {
-    assert(
-        Utils::isMemAccessInst(Inst) &&
-        "This is not a memory access instruction to get memory address value.");
-    switch (Inst->getOpcode()) {
-    case llvm::Instruction::Load:
-    case llvm::Instruction::AtomicRMW:
-    case llvm::Instruction::AtomicCmpXchg:
-      return Inst->getOperand(0);
-    case llvm::Instruction::Store:
-      return Inst->getOperand(1);
-    default:
-      llvm_unreachable("This is not a MemAccessInst.");
-    }
-  }
-
+  static bool isMemAccessInst(const llvm::Instruction *Inst);
+  static llvm::Value *getMemAddrValue(const llvm::Instruction *Inst);
   static llvm::Value *getMemAddrValue(const llvm::LoadInst *Inst) {
     return Inst->getOperand(0);
   }
@@ -60,6 +34,8 @@ public:
   static llvm::Value *getMemAddrValue(const llvm::StoreInst *Inst) {
     return Inst->getOperand(1);
   }
+  static bool isStoreInst(const llvm::Instruction *Inst);
+  static llvm::Value *getStoreValue(const llvm::Instruction *Inst);
 
   static llvm::Type *getMemElementType(const llvm::Instruction *Inst) {
     auto MemAddrType = Utils::getMemAddrValue(Inst)->getType();
@@ -110,7 +86,8 @@ public:
     return llvm::dyn_cast<llvm::Function>(Utils::getCalledValue(Inst));
   }
 
-  static llvm::Value *getArgOperand(llvm::Instruction *Inst, unsigned Idx) {
+  static llvm::Value *getArgOperand(const llvm::Instruction *Inst,
+                                    unsigned Idx) {
     if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {
       return CallInst->getArgOperand(Idx);
     } else if (auto InvokeInst = llvm::dyn_cast<llvm::InvokeInst>(Inst)) {

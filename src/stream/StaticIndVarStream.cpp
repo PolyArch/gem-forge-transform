@@ -479,7 +479,8 @@ void StaticIndVarStream::analyzeIsCandidate() {
   }
 
   // 5.
-  if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop)) {
+  if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop) &&
+      !StreamPassEnableLoopRemainderOrEpilogue) {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::IN_LOOP_REMAINDER_OR_EPILOGUE);

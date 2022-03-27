@@ -73,7 +73,4 @@ void StreamConfigureLoopInfo::addLoopBoundDG(
 
 void StreamConfigureLoopInfo::setLoopEliminated(bool LoopEliminated) {
   this->LoopEliminated = LoopEliminated;
-  for (auto S : this->getSortedStreams()) {
-    S->setLoopEliminated(LoopEliminated);
-  }
 }
