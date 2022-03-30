@@ -135,6 +135,9 @@ bool StaticIndVarStream::checkReduceDGComplete() {
    * This stream has the Reduce pattern. However, we don't try to configure
    * it if we cann't completely remove the computation from the loop, i.e.
    * there are other users within the loop.
+   *
+   * So far we only allow reduction in one loop level (inner-most loop), but
+   * may be configured at outer loop.
    */
   if (StreamPassEnableIncompleteReduction) {
     return true;
@@ -144,15 +147,15 @@ bool StaticIndVarStream::checkReduceDGComplete() {
     InstSet.insert(ComputeInst);
   }
   bool IsComplete = true;
-  for (auto ClonedInst : InstSet) {
-    for (auto User : ClonedInst->users()) {
+  for (auto Inst : InstSet) {
+    for (auto User : Inst->users()) {
       if (auto UserInst = llvm::dyn_cast<llvm::Instruction>(User)) {
         if (!InstSet.count(UserInst) &&
-            this->ConfigureLoop->contains(UserInst)) {
+            this->InnerMostLoop->contains(UserInst)) {
           LLVM_DEBUG(llvm::dbgs()
                      << "ReduceDG for " << this->getStreamName()
                      << " is incomplete due to user " << UserInst->getName()
-                     << " of ComputeInst " << ClonedInst->getName() << '\n');
+                     << " of ComputeInst " << Inst->getName() << '\n');
           IsComplete = false;
           break;
         }
@@ -227,12 +230,7 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
     LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] Myself Not as Input\n");
     return false;
   }
-  if (this->ConfigureLoop != this->InnerMostLoop) {
-    // Only consider inner most loop.
-    LLVM_DEBUG(llvm::dbgs()
-               << "==== [NotReduction] Configured at Outer Loop\n");
-    return false;
-  }
+  // We try to allow ReductionStream configured at outer loop.
   auto FinalInst =
       llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
   if (!FinalInst) {

@@ -399,7 +399,7 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
     StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
     llvm::Constant *ConfigIdxValue) {
   /**
-   * 1. Format dedicated exit block.
+   * 1. Form dedicated exit block.
    * 2. Insert StreamEnd at every exit block.
    */
   auto ClonedLoop = this->getOrCreateLoopInClonedModule(Loop);
@@ -437,10 +437,12 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
    * Handle streams with user on the exit value.
    * * So far this only works for reduction stream and IV stream.
    * * Only do this after we create dedicated exit blocks and insert StreamEnd.
+   * NOTE: Here we only support reduction over one loop-level. So we should
+   * insert StreamExitValueUser at InnerMostLoop.
    */
   const auto &ConfigureInfo = Analyzer->getConfigureLoopInfo(Loop);
   for (auto S : ConfigureInfo.getSortedStreams()) {
-    this->insertStreamExitValueUserAtLoop(Analyzer, Loop, S);
+    this->insertStreamExitValueUserAtLoop(Analyzer, S->InnerMostLoop, S);
   }
 
   /**
@@ -458,7 +460,7 @@ void StreamExecutionTransformer::insertStreamEndAtLoop(
 }
 
 void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
-    StaticStreamRegionAnalyzer *Analyzer, llvm::Loop *Loop,
+    StaticStreamRegionAnalyzer *Analyzer, const llvm::Loop *Loop,
     StaticStream *ExitSS) {
 
   /**
@@ -480,15 +482,6 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
   }
 
   auto ClonedLoop = this->getOrCreateLoopInClonedModule(Loop);
-
-  /**
-   * Let's only handle one exit block so far.
-   * Try to replace out-of-loop user.
-   */
-  auto ClonedExitBB = ClonedLoop->getExitBlock();
-  if (!ClonedExitBB) {
-    return;
-  }
 
   LLVM_DEBUG({
     llvm::dbgs() << "[ExitValueS] Working on " << ExitSS->getStreamName()
@@ -582,7 +575,23 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
     // There is no user of ExitValue.
     return;
   }
-  auto ClonedReducedValue = this->addStreamLoadOrAtomic(
+
+  /**
+   * We need one DedicateExitBB.
+   * Try to replace out-of-loop user.
+   */
+  auto ClonedFunc = ClonedLoop->getHeader()->getParent();
+  auto ClonedLI = this->ClonedCachedLI->getLoopInfo(ClonedFunc);
+  auto ClonedDT = this->ClonedCachedLI->getDominatorTree(ClonedFunc);
+  llvm::formDedicatedExitBlocks(ClonedLoop, ClonedDT, ClonedLI, nullptr, false);
+  auto ClonedExitBB = ClonedLoop->getExitBlock();
+  assert(ClonedExitBB && "Failed to GetExitBB.");
+  LLVM_DEBUG({
+    llvm::dbgs() << "[ExitValueS]   DedicatedExitBB " << ClonedExitBB->getName()
+                 << ".\n";
+  });
+
+  auto ClonedExitValue = this->addStreamLoadOrAtomic(
       ExitSS, ClonedExitInst->getType(), ClonedExitBB->getFirstNonPHI());
   if (IsLastValue) {
     SSInfo.set_core_need_final_value(true);
@@ -591,7 +600,17 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
   }
   for (auto ClonedUserInst : OutOfLoopClonedExitInstUsers) {
     // This is an outside user, replace it.
-    ClonedUserInst->replaceUsesOfWith(ClonedExitInst, ClonedReducedValue);
+    LLVM_DEBUG({
+      llvm::dbgs() << "[ExitValueS]   Replace User ";
+      ClonedUserInst->print(llvm::dbgs());
+      llvm::dbgs() << "\n";
+    });
+    ClonedUserInst->replaceUsesOfWith(ClonedExitInst, ClonedExitValue);
+    LLVM_DEBUG({
+      llvm::dbgs() << "[ExitValueS]   After Replaced User ";
+      ClonedUserInst->print(llvm::dbgs());
+      llvm::dbgs() << "\n";
+    });
   }
   /**
    * * So far we only do this for ReduceStream, as IVStream has no ReduceDG.
@@ -1749,13 +1768,26 @@ void StreamExecutionTransformer::generateReduceAndPtrChaseStreamConfiguration(
        Idx < NumIncoming; ++Idx) {
     auto IncomingBB = PHINode->getIncomingBlock(Idx);
     auto IncomingValue = PHINode->getIncomingValue(Idx);
-    if (!SS->ConfigureLoop->contains(IncomingBB)) {
+    if (!SS->InnerMostLoop->contains(IncomingBB)) {
       NumInitialValues++;
       ClonedInputValues.push_back(this->getClonedValue(IncomingValue));
+      if (auto IncomingInst =
+              llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+        if (SS->ConfigureLoop->contains(IncomingInst)) {
+          llvm::errs() << SS->getStreamName()
+                       << " InitValue inside ConfigLoop:\n";
+          IncomingInst->print(llvm::errs());
+          llvm_unreachable("Reduce/PtrChase InitValue inside ConfigLoop.");
+        }
+      }
     }
   }
-  assert(NumInitialValues == 1 &&
-         "Multiple initial values for Reduce/PtrChase stream.");
+
+  if (NumInitialValues != 1) {
+    llvm::errs() << "Stream " << SS->getStreamName()
+                 << " NonSingle NumInitValues " << NumInitialValues << '\n';
+    assert(false && "Multiple initial values for Reduce/PtrChase stream.");
+  }
   /**
    * If the initial value is zero, we encode it in the configuration to save
    * one instruction.

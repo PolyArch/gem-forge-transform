@@ -840,11 +840,31 @@ void StaticStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
          * TODO: Fully check all dependent streams.
          */
         int NumQualifiedDepStreams = 0;
+        std::vector<StaticStream *> Stack;
+        std::set<StaticStream *> QualifiedDepStreams;
         for (auto DepSS : S->DependentStreams) {
+          Stack.push_back(DepSS);
+        }
+        for (auto DepSS : S->BackIVDependentStreams) {
+          Stack.push_back(DepSS);
+        }
+        while (!Stack.empty()) {
+          auto DepSS = Stack.back();
+          Stack.pop_back();
+          if (QualifiedDepStreams.count(DepSS)) {
+            continue;
+          }
           if (DepSS->isQualified()) {
             NumQualifiedDepStreams++;
+            QualifiedDepStreams.insert(DepSS);
             LLVM_DEBUG(llvm::dbgs() << "====== Qualified DepS "
                                     << DepSS->getStreamName() << '\n');
+            for (auto DDS : DepSS->DependentStreams) {
+              Stack.push_back(DDS);
+            }
+            for (auto BDS : DepSS->BackIVDependentStreams) {
+              Stack.push_back(BDS);
+            }
           }
         }
         LLVM_DEBUG(llvm::dbgs()

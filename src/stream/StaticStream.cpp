@@ -569,6 +569,7 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
   auto Ret = SSName.substr(0, FirstSlashPos).str();
 
   // Append the epilogue suffix.
+  Ret = (this->ConfigureLoop->getHeader()->getName() + "-").str() + Ret;
   if (LoopUtils::isLoopRemainderOrEpilogue(this->InnerMostLoop)) {
     Ret += "-ep";
   }
