@@ -6,6 +6,96 @@
 
 #define DEBUG_TYPE "StaticIndVarStream"
 
+void StaticIndVarStream::constructMetaGraph(GetStreamFuncT GetStream) {
+  StaticStream::constructMetaGraph(GetStream);
+
+  // Initialize to RANDOM pattern.
+  this->StaticStreamInfo.set_val_pattern(LLVM::TDG::StreamValuePattern::RANDOM);
+
+  // After we construct MetaGraph, we can analyze ComputePath.
+  for (const auto &ComputeMNode : this->ComputeMetaNodes) {
+    if (ComputeMNode.PHIMetaNodes.size() > 1) {
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::MULTI_PHIMNODE_FOR_COMPUTEMNODE);
+      return;
+    }
+  }
+
+  this->AllComputePaths = this->constructComputePath();
+
+  this->EmptyComputePathFound = false;
+  LLVM_DEBUG(llvm::dbgs() << "[ComputePath] Analyze " << this->getStreamName()
+                          << '\n');
+  for (const auto &Path : AllComputePaths) {
+    LLVM_DEBUG(Path.debug());
+    if (Path.isEmpty()) {
+      this->EmptyComputePathFound = true;
+      continue;
+    }
+    if (this->NonEmptyComputePath == nullptr) {
+      this->NonEmptyComputePath = &Path;
+      LLVM_DEBUG(llvm::dbgs() << "  Set as NonEmptyComputePath.\n");
+    } else {
+      // We have to make sure that these two compute path are the same.
+      if (!this->NonEmptyComputePath->isIdenticalTo(&Path)) {
+        LLVM_DEBUG(llvm::dbgs() << "  Different NonEmptyComputePath.\n");
+        this->NonEmptyComputePath = nullptr;
+        this->StaticStreamInfo.set_not_stream_reason(
+            LLVM::TDG::StaticStreamInfo::MULTI_NON_EMPTY_COMPUTE_PATH);
+        break;
+      } else {
+        LLVM_DEBUG(llvm::dbgs() << "  Identical NonEmptyComputePath.\n");
+      }
+    }
+  }
+
+  /**
+   * Set the step pattern by looking at empty compute path.
+   */
+  if (this->EmptyComputePathFound) {
+    this->StaticStreamInfo.set_stp_pattern(
+        LLVM::TDG::StreamStepPattern::CONDITIONAL);
+  } else {
+    this->StaticStreamInfo.set_stp_pattern(
+        LLVM::TDG::StreamStepPattern::UNCONDITIONAL);
+  }
+
+  if (!this->NonEmptyComputePath) {
+    // There is no computation assocated with this PHI node.
+    // We do not take it as IndVarStream.
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::NO_NON_EMPTY_COMPUTE_PATH);
+    LLVM_DEBUG(llvm::dbgs() << "  Missing NonEmptyComputePath.\n");
+    return;
+  }
+
+  // 4a. Check the ValuePattern from the first non-empty SCEV.
+  const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
+  for (const auto &ComputeMNode : this->NonEmptyComputePath->ComputeMetaNodes) {
+    if (ComputeMNode->isEmpty()) {
+      continue;
+    }
+    FirstNonEmptyComputeMNode = ComputeMNode;
+    break;
+  }
+  LLVM_DEBUG({
+    llvm::dbgs() << "  FirstNonEmpty Value: "
+                 << FirstNonEmptyComputeMNode->RootValue->getName()
+                 << " SCEV: ";
+    if (FirstNonEmptyComputeMNode->SCEV) {
+      FirstNonEmptyComputeMNode->SCEV->dump();
+    } else {
+      llvm::dbgs() << "None\n";
+    }
+  });
+  this->StaticStreamInfo.set_val_pattern(
+      this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
+  LLVM_DEBUG(llvm::dbgs() << "  Value pattern "
+                          << ::LLVM::TDG::StreamValuePattern_Name(
+                                 this->StaticStreamInfo.val_pattern())
+                          << '\n');
+}
+
 LLVM::TDG::StreamValuePattern
 StaticIndVarStream::analyzeValuePatternFromComputePath(
     const ComputeMetaNode *FirstNonEmptyComputeMNode) {
@@ -378,81 +468,10 @@ void StaticIndVarStream::analyzeIsCandidate() {
     return;
   }
 
-  // 2.
-  for (const auto &ComputeMNode : this->ComputeMetaNodes) {
-    if (ComputeMNode.PHIMetaNodes.size() > 1) {
-      this->IsCandidate = false;
-      this->StaticStreamInfo.set_not_stream_reason(
-          LLVM::TDG::StaticStreamInfo::MULTI_PHIMNODE_FOR_COMPUTEMNODE);
-      return;
-    }
-  }
-
-  // 3.
-  this->AllComputePaths = this->constructComputePath();
-
-  auto EmptyPathFound = false;
-  LLVM_DEBUG(llvm::dbgs() << "Analyzing ComputePath of "
-                          << this->getStreamName() << '\n');
-  for (const auto &Path : AllComputePaths) {
-    LLVM_DEBUG(Path.debug());
-    if (Path.isEmpty()) {
-      EmptyPathFound = true;
-      continue;
-    }
-    if (this->NonEmptyComputePath == nullptr) {
-      this->NonEmptyComputePath = &Path;
-      LLVM_DEBUG(llvm::dbgs() << "Set as NonEmptyComputePath.\n");
-    } else {
-      // We have to make sure that these two compute path are the same.
-      if (!this->NonEmptyComputePath->isIdenticalTo(&Path)) {
-        LLVM_DEBUG(llvm::dbgs() << "Different NonEmptyComputePath.\n");
-        this->NonEmptyComputePath = nullptr;
-        this->IsCandidate = false;
-        this->StaticStreamInfo.set_not_stream_reason(
-            LLVM::TDG::StaticStreamInfo::MULTI_NON_EMPTY_COMPUTE_PATH);
-        return;
-      } else {
-        LLVM_DEBUG(llvm::dbgs() << "Identical NonEmptyComputePath.\n");
-      }
-    }
-  }
-
-  if (!this->NonEmptyComputePath) {
-    // There is no computation assocated with this PHI node.
-    // We do not take it as IndVarStream.
-    this->IsCandidate = false;
-    this->StaticStreamInfo.set_not_stream_reason(
-        LLVM::TDG::StaticStreamInfo::NO_NON_EMPTY_COMPUTE_PATH);
-    LLVM_DEBUG(llvm::dbgs() << "Missing NonEmptyComputePath.\n");
-    return;
-  }
-
-  // 4a. Check the ValuePattern from the first non-empty SCEV.
-  const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
-  for (const auto &ComputeMNode : this->NonEmptyComputePath->ComputeMetaNodes) {
-    if (ComputeMNode->isEmpty()) {
-      continue;
-    }
-    FirstNonEmptyComputeMNode = ComputeMNode;
-    break;
-  }
-  LLVM_DEBUG({
-    llvm::dbgs() << "StaticIVStream: FirstNonEmpty Value: "
-                 << FirstNonEmptyComputeMNode->RootValue->getName()
-                 << " SCEV: ";
-    if (FirstNonEmptyComputeMNode->SCEV) {
-      FirstNonEmptyComputeMNode->SCEV->dump();
-    } else {
-      llvm::dbgs() << "None\n";
-    }
-  });
-  this->StaticStreamInfo.set_val_pattern(
-      this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
-  LLVM_DEBUG(llvm::dbgs() << this->getStreamName() << ": Value pattern "
-                          << ::LLVM::TDG::StreamValuePattern_Name(
-                                 this->StaticStreamInfo.val_pattern())
-                          << '\n');
+  /**
+   * 2-4. Now we just check if we already have the ValuePattern and StepPattern.
+   * As they are now collected after constructing MetaGraph.
+   */
 
   if (this->StaticStreamInfo.val_pattern() ==
       LLVM::TDG::StreamValuePattern::RANDOM) {
@@ -464,16 +483,12 @@ void StaticIndVarStream::analyzeIsCandidate() {
   /**
    * Set the access pattern by looking at empty compute path.
    */
-  if (EmptyPathFound) {
-    this->StaticStreamInfo.set_stp_pattern(
-        LLVM::TDG::StreamStepPattern::CONDITIONAL);
+  if (this->StaticStreamInfo.stp_pattern() ==
+      LLVM::TDG::StreamStepPattern::CONDITIONAL) {
     if (!StreamPassEnableConditionalStep) {
       this->IsCandidate = false;
       return;
     }
-  } else {
-    this->StaticStreamInfo.set_stp_pattern(
-        LLVM::TDG::StreamStepPattern::UNCONDITIONAL);
   }
 
   // 5.

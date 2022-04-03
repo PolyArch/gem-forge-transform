@@ -409,7 +409,7 @@ protected:
       ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) = 0;
 
-  void constructMetaGraph(GetStreamFuncT GetStream);
+  virtual void constructMetaGraph(GetStreamFuncT GetStream);
   void constructStreamGraph();
 
   /**

@@ -63,10 +63,13 @@ private:
       ConstructedPHIMetaNodeMapT &ConstructedPHIMetaNodeMap,
       ConstructedComputeMetaNodeMapT &ConstructedComputeMetaNodeMap) override;
 
+  void constructMetaGraph(GetStreamFuncT GetStream) override;
+
   void analyzeIsCandidate() override;
 
   std::list<ComputePath> AllComputePaths;
   const ComputePath *NonEmptyComputePath;
+  bool EmptyComputePathFound = false;
 
   InstSet ComputeInsts;
 
