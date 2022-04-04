@@ -10,8 +10,6 @@
 
 class StaticStreamRegionAnalyzer {
 public:
-  using InstStaticStreamMapT =
-      std::unordered_map<const llvm::Instruction *, std::list<StaticStream *>>;
   StaticStreamRegionAnalyzer(llvm::Loop *_TopLoop,
                              llvm::DataLayout *_DataLayout,
                              CachedLoopInfo *_CachedLI,
@@ -19,10 +17,6 @@ public:
                              CachedBBBranchDataGraph *_CachedBBBranchDG,
                              uint64_t _RegionIdx, const std::string &_RootPath);
   ~StaticStreamRegionAnalyzer();
-
-  InstStaticStreamMapT &getInstStaticStreamMap() {
-    return this->InstStaticStreamMap;
-  }
 
   CachedBBBranchDataGraph *getBBBranchDG() { return this->CachedBBBranchDG; }
   const llvm::PostDominatorTree *getPostDominatorTree() { return this->PDT; }
@@ -112,7 +106,14 @@ protected:
    * Key data structure, map from instruction to the list of streams.
    * Starting from the inner-most loop.
    */
+  using InstStaticStreamMapT =
+      std::unordered_map<const llvm::Instruction *, std::list<StaticStream *>>;
   InstStaticStreamMapT InstStaticStreamMap;
+  InstStaticStreamMapT ReduceFinalInstStaticStreamMap;
+  StaticStream *
+  getStreamInMapByInstAndConfigureLoop(const InstStaticStreamMapT &Map,
+                                       const llvm::Instruction *Inst,
+                                       const llvm::Loop *ConfigureLoop) const;
 
   /**
    * Map from an instruction to its chosen stream.
@@ -148,12 +149,16 @@ protected:
   StaticStream *
   getStreamByInstAndConfigureLoop(const llvm::Instruction *Inst,
                                   const llvm::Loop *ConfigureLoop) const;
+  StaticStream *
+  getStreamWithPlaceholderInst(const llvm::Instruction *Inst,
+                               const llvm::Loop *ConfigureLoop) const;
 
   void initializeStreams();
   void initializeStreamForAllLoops(llvm::Instruction *StreamInst);
   void markUpdateRelationship();
   void markUpdateRelationshipForLoadStream(StaticStream *LoadSS);
   void buildStreamAddrDepGraph();
+  void collectReduceFinalInsts();
   void markAliasRelationship();
   void markAliasRelationshipForLoopBB(const llvm::Loop *Loop);
   void buildStreamValueDepGraph();

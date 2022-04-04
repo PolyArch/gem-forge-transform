@@ -16,11 +16,13 @@ StaticMemStream::StaticMemStream(const llvm::Instruction *_Inst,
                    _DataLayout) {
   // We initialize the AddrDG, assuming all PHI nodes in loop head are IV
   // streams.
-  auto IsInductionVar = [this](const llvm::PHINode *PHINode) -> bool {
-    auto BB = PHINode->getParent();
-    for (auto Loop : this->ConfigureLoop->getLoopsInPreorder()) {
-      if (Loop->getHeader() == BB) {
-        return true;
+  auto IsInductionVar = [this](const llvm::Instruction *Inst) -> bool {
+    if (auto PHINode = llvm::dyn_cast<llvm::Instruction>(Inst)) {
+      auto BB = PHINode->getParent();
+      for (auto Loop : this->ConfigureLoop->getLoopsInPreorder()) {
+        if (Loop->getHeader() == BB) {
+          return true;
+        }
       }
     }
     return false;

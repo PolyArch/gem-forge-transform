@@ -571,7 +571,24 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
   std::unordered_set<llvm::Instruction *> OutOfLoopClonedExitInstUsers =
       FindOutOfLoopClonedExitInstUsers(ClonedExitInst);
 
-  if (OutOfLoopClonedExitInstUsers.empty()) {
+  /**
+   * Check if that there is no out-of-loop user or all the users are pending to be removed.
+   * A possible scenario is:
+   * for i
+   *   s = 0;
+   *   for j: s += A[i][j];
+   *   B[i] = s;
+   * Where B[i] is also configured as a stream.
+   */
+  bool NoRealOutOfLoopClonedExitInstUsers = true;
+  for (auto UserInst : OutOfLoopClonedExitInstUsers) {
+    if (!this->PendingRemovedInsts.count(UserInst)) {
+      NoRealOutOfLoopClonedExitInstUsers = false;
+      break;
+    }
+  }
+
+  if (NoRealOutOfLoopClonedExitInstUsers) {
     // There is no user of ExitValue.
     return;
   }
@@ -1146,7 +1163,7 @@ void StreamExecutionTransformer::handleValueDG(
   }
   /**
    * We enable the ValueDG as:
-   * 1. Check that all the load input streams are chosen.
+   * 1. Check that all the input streams are chosen.
    * 2. Remember the value dependence.
    * 3. Enable the store func in the store stream.
    */

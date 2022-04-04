@@ -995,7 +995,7 @@ void StaticStream::fuseLoadOps() {
   if (this->Inst->getOpcode() == llvm::Instruction::Load) {
     this->ValueDG = std::make_unique<StreamDataGraph>(
         this->ConfigureLoop, this->FusedLoadOps.back(),
-        [](const llvm::PHINode *) -> bool { return false; });
+        [](const llvm::Instruction *) -> bool { return false; });
   }
 }
 
@@ -1194,19 +1194,23 @@ void StaticStream::fillProtobufValueDGFuncInfoImpl(
   };
   for (const auto &Input :
        this->ValueDG->getInputsWithFusedOp(this->LoadStoreBaseStreams)) {
-    const StaticStream *InputStream = nullptr;
+    const StaticStream *InputS = nullptr;
     // Search in the LoadStoreBaseStreams.
-    for (auto IS : this->LoadStoreBaseStreams) {
-      if (IS->getFinalFusedLoadInst() == Input) {
-        InputStream = IS;
+    for (auto S : this->LoadStoreBaseStreams) {
+      if (S->getFinalFusedLoadInst() == Input) {
+        InputS = S;
+        break;
+      }
+      if (S->ReduceDG && S->ReduceDG->getSingleResultValue() == Input) {
+        InputS = S;
         break;
       }
     }
     // ! Be careful, ourself is still Inst, not FinalFusedLoadInst.
     if (this->Inst == Input) {
-      InputStream = this;
+      InputS = this;
     }
-    AddArg(Input->getType(), InputStream);
+    AddArg(Input->getType(), InputS);
   }
 
   // Finally handle tail AtomicRMWInst, with myself as the last input.
@@ -1237,19 +1241,23 @@ StaticStream::InputValueList StaticStream::getValueDGInputValues() const {
   InputValueList InputValues;
   for (const auto &Input :
        this->ValueDG->getInputsWithFusedOp(this->LoadStoreBaseStreams)) {
-    const StaticStream *InputStream = nullptr;
+    const StaticStream *InputS = nullptr;
     // Search in the LoadStoreBaseStreams and myself.
-    for (auto IS : this->LoadStoreBaseStreams) {
-      if (IS->getFinalFusedLoadInst() == Input) {
-        InputStream = IS;
+    for (auto S : this->LoadStoreBaseStreams) {
+      if (S->getFinalFusedLoadInst() == Input) {
+        InputS = S;
+        break;
+      }
+      if (S->ReduceDG && S->ReduceDG->getSingleResultValue() == Input) {
+        InputS = S;
         break;
       }
     }
     // ! Be careful, ourself is still Inst, not FinalFusedLoadInst.
     if (this->Inst == Input) {
-      InputStream = this;
+      InputS = this;
     }
-    if (InputStream) {
+    if (InputS) {
       // This comes from the base stream at runtime.
     } else {
       // This is an input value.

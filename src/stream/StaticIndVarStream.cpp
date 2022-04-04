@@ -202,14 +202,16 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
 void StaticIndVarStream::buildReduceDG(
     const ComputeMetaNode *FirstNonEmptyComputeMNode) {
   // The only IndVarStream should be myself.
-  auto IsIndVarStream = [this](const llvm::PHINode *PHI) -> bool {
-    if (PHI == this->Inst) {
-      return true;
-    }
-    // Otherwise, search in our IVBaseStream.
-    for (auto IVBaseS : this->IndVarBaseStreams) {
-      if (IVBaseS->Inst == PHI) {
+  auto IsIndVarStream = [this](const llvm::Instruction *Inst) -> bool {
+    if (auto PHI = llvm::dyn_cast<llvm::Instruction>(Inst)) {
+      if (PHI == this->Inst) {
         return true;
+      }
+      // Otherwise, search in our IVBaseStream.
+      for (auto IVBaseS : this->IndVarBaseStreams) {
+        if (IVBaseS->Inst == PHI) {
+          return true;
+        }
       }
     }
     return false;

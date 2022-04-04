@@ -8,8 +8,9 @@
 class StaticStream;
 class StreamDataGraph : public ExecutionDataGraph {
 public:
+  using IsIndVarFuncT = std::function<bool(const llvm::Instruction *)>;
   StreamDataGraph(const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
-                  std::function<bool(const llvm::PHINode *)> IsInductionVar);
+                  IsIndVarFuncT IsInductionVar);
 
   StreamDataGraph(const StreamDataGraph &Other) = delete;
   StreamDataGraph(StreamDataGraph &&Other) = delete;
@@ -61,13 +62,10 @@ public:
 
 private:
   const llvm::Loop *Loop;
-  std::unordered_set<const llvm::PHINode *> BaseIVs;
-  std::unordered_set<const llvm::LoadInst *> BaseLoads;
   bool HasPHINodeInComputeInsts;
   bool HasCallInstInComputeInsts;
 
-  void
-  constructDataGraph(std::function<bool(const llvm::PHINode *)> IsInductionVar);
+  void constructDataGraph(IsIndVarFuncT IsInductionVar);
 };
 
 #endif

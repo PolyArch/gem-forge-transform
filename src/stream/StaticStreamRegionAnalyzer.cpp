@@ -47,12 +47,24 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   this->markPredicateRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark predicate relationship done.\n");
   this->buildStreamAddrDepGraph();
-  LLVM_DEBUG(llvm::dbgs() << "Building StreamAddrDepGraph done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Build StreamAddrDepGraph done.\n");
+  /**
+   * After building AddrDepGraph, IVStream should have constructed MetaGraph and
+   * analyzed ValPattern.
+   * Now we collect ReductionFinalInst and mark them as PlaceholderInst for
+   * the ReduceStream in the InstStaticStreamMap.
+   * This information is used in buildStreamValueDepGraph() to correctly
+   * recognize UserStream of the ReduceStream.
+   */
+  this->collectReduceFinalInsts();
+  LLVM_DEBUG(llvm::dbgs() << "Collect ReduceFinalInsts done.\n");
   this->markAliasRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark alias relationship done.\n");
   this->buildStreamValueDepGraph();
-  LLVM_DEBUG(llvm::dbgs() << "Building StreamValueDepGraph done.\n");
-  // Update relationship must be after alias relationship.
+  LLVM_DEBUG(llvm::dbgs() << "Build StreamValueDepGraph done.\n");
+  /**
+   * Update relationship must be after alias relationship.
+   */
   this->markUpdateRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark update relationship done.\n");
   this->analyzeIsCandidate();
@@ -66,6 +78,10 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
 }
 
 StaticStreamRegionAnalyzer::~StaticStreamRegionAnalyzer() {
+  this->InstChosenStreamMap.clear();
+  // First clear all PlaceHolder Inst.
+  this->ReduceFinalInstStaticStreamMap.clear();
+  // Now clear real streams.
   for (auto &InstStreams : this->InstStaticStreamMap) {
     for (auto &Stream : InstStreams.second) {
       delete Stream;
@@ -156,10 +172,11 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
   } while (this->TopLoop->contains(ConfigureLoop));
 }
 
-StaticStream *StaticStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
-    const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const {
-  auto Iter = this->InstStaticStreamMap.find(Inst);
-  if (Iter == this->InstStaticStreamMap.end()) {
+StaticStream *StaticStreamRegionAnalyzer::getStreamInMapByInstAndConfigureLoop(
+    const InstStaticStreamMapT &Map, const llvm::Instruction *Inst,
+    const llvm::Loop *ConfigureLoop) const {
+  auto Iter = Map.find(Inst);
+  if (Iter == Map.end()) {
     return nullptr;
   }
   const auto &Streams = Iter->second;
@@ -168,7 +185,23 @@ StaticStream *StaticStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
       return S;
     }
   }
-  llvm_unreachable("Failed to find the stream at specified loop level.");
+  return nullptr;
+}
+
+StaticStream *StaticStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
+    const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const {
+  return this->getStreamInMapByInstAndConfigureLoop(this->InstStaticStreamMap,
+                                                    Inst, ConfigureLoop);
+}
+
+StaticStream *StaticStreamRegionAnalyzer::getStreamWithPlaceholderInst(
+    const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const {
+  if (auto S = this->getStreamByInstAndConfigureLoop(Inst, ConfigureLoop)) {
+    return S;
+  }
+  // Check in the Placeholder map.
+  return this->getStreamInMapByInstAndConfigureLoop(
+      this->ReduceFinalInstStaticStreamMap, Inst, ConfigureLoop);
 }
 
 void StaticStreamRegionAnalyzer::markUpdateRelationship() {
@@ -392,6 +425,29 @@ void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
   LLVM_DEBUG(llvm::dbgs() << "==== SSRA: computeBaseStepRootStreams done.\n");
 }
 
+void StaticStreamRegionAnalyzer::collectReduceFinalInsts() {
+
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      if (S->ReduceDG) {
+        auto ReduceFinalInst = llvm::dyn_cast<llvm::Instruction>(
+            S->ReduceDG->getSingleResultValue());
+        assert(ReduceFinalInst && "ReduceFinalValue is not Instruction.");
+        LLVM_DEBUG(llvm::dbgs()
+                   << "== SSRA: Collect ReduceInst "
+                   << Utils::formatLLVMInstWithoutFunc(ReduceFinalInst)
+                   << " from " << S->getStreamName() << '\n');
+
+        this->ReduceFinalInstStaticStreamMap
+            .emplace(std::piecewise_construct,
+                     std::forward_as_tuple(ReduceFinalInst),
+                     std::forward_as_tuple())
+            .first->second.push_back(S);
+      }
+    }
+  }
+}
+
 void StaticStreamRegionAnalyzer::markAliasRelationship() {
   /**
    * After construct basic stream dependence graph, we can analyze the coalesce
@@ -559,11 +615,18 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   }
 
   /**
-   * Let's try to construct the ValueDG.
-   * So far we will first simply take every PHINode as an induction variable
-   * and later enforce all the constraints.
+   * Let's try to construct the ValueDG:
+   * 1. Every PHINode as an induction variable and later enforce all the
+   * constraints.
+   * 2. We also check directly check if its ReduceFinalInst of some
+   * ReduceStream.
    */
-  auto IsIndVarStream = [](const llvm::PHINode *PHI) -> bool { return true; };
+  auto IsIndVarStream = [this](const llvm::Instruction *Inst) -> bool {
+    if (llvm::isa<llvm::PHINode>(Inst)) {
+      return true;
+    }
+    return this->ReduceFinalInstStaticStreamMap.count(Inst);
+  };
   llvm::Value *StoreValue = nullptr;
   if (Utils::isStoreInst(StoreS->Inst)) {
     StoreValue = Utils::getStoreValue(StoreS->Inst);
@@ -607,7 +670,7 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
                             << ValueDG->getInputs().size() << '\n');
     return;
   }
-  std::unordered_set<const llvm::LoadInst *> LoadInputs;
+  std::unordered_set<const llvm::Instruction *> LoopVariantInputInsts;
   for (auto Input : ValueDG->getInputs()) {
     if (!this->isLegalValueDepInput(Input)) {
       // This is not a supported input type.
@@ -620,36 +683,41 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
         // This is an input for the configuration.
         continue;
       }
-      if (auto LoadInput = llvm::dyn_cast<llvm::LoadInst>(InputInst)) {
-        // This is a LoadInput.
-        LoadInputs.insert(LoadInput);
-      } else if (StoreS->ConfigureLoop->contains(InputInst)) {
-        // Found LoopVariant input.
-        LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] LoopVariant Input: "
-                                << Utils::formatLLVMInst(InputInst) << '\n');
-        return;
-      }
+      LoopVariantInputInsts.insert(InputInst);
     }
   }
-  StaticStream::StreamVec LoadInputStreams;
-  for (auto LoadInput : LoadInputs) {
-    auto LoadS =
-        this->getStreamByInstAndConfigureLoop(LoadInput, StoreS->ConfigureLoop);
-    if (!LoopUtils::hasLoopInvariantTripCountBetween(
-            this->SE, StoreS->ConfigureLoop, StoreS->InnerMostLoop,
-            LoadS->InnerMostLoop)) {
-      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] No StaticMap: "
-                              << LoadS->getStreamName() << '\n');
+  StaticStream::StreamVec InputStrams;
+  for (auto InputInst : LoopVariantInputInsts) {
+    auto InputS =
+        this->getStreamWithPlaceholderInst(InputInst, StoreS->ConfigureLoop);
+    if (!InputS) {
+      // This is not a Stream.
+      LLVM_DEBUG(llvm::dbgs()
+                 << "[NoValueDG] LoopVariantInput Not Stream "
+                 << Utils::formatLLVMInstWithoutFunc(InputInst) << '\n');
       return;
     }
-    LoadInputStreams.push_back(LoadS);
+    auto InnerLoop = StoreS->InnerMostLoop;
+    auto OuterLoop = InputS->InnerMostLoop;
+    if (StoreS->InnerMostLoop->contains(InputS->InnerMostLoop)) {
+      // The opposite way, e.g., using final reduced value.
+      InnerLoop = InputS->InnerMostLoop;
+      OuterLoop = StoreS->InnerMostLoop;
+    }
+    if (!LoopUtils::hasLoopInvariantTripCountBetween(
+            this->SE, StoreS->ConfigureLoop, InnerLoop, OuterLoop)) {
+      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] No StaticMap: "
+                              << InputS->getStreamName() << '\n');
+      return;
+    }
+    InputStrams.push_back(InputS);
   }
   /**
    * We passed all checks, we remember this relationship.
    */
-  for (auto LoadS : LoadInputStreams) {
-    LoadS->LoadStoreDepStreams.insert(StoreS);
-    StoreS->LoadStoreBaseStreams.insert(LoadS);
+  for (auto InputS : InputStrams) {
+    InputS->LoadStoreDepStreams.insert(StoreS);
+    StoreS->LoadStoreBaseStreams.insert(InputS);
   }
   /**
    * Extend the ValueDG with the final atomic operation.

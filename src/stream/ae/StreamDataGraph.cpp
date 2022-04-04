@@ -10,9 +10,9 @@
 #include <list>
 #include <vector>
 
-StreamDataGraph::StreamDataGraph(
-    const llvm::Loop *_Loop, const llvm::Value *_AddrValue,
-    std::function<bool(const llvm::PHINode *)> IsInductionVar)
+StreamDataGraph::StreamDataGraph(const llvm::Loop *_Loop,
+                                 const llvm::Value *_AddrValue,
+                                 IsIndVarFuncT IsInductionVar)
     : ExecutionDataGraph(_AddrValue), Loop(_Loop),
       HasPHINodeInComputeInsts(false), HasCallInstInComputeInsts(false) {
   this->constructDataGraph(IsInductionVar);
@@ -28,8 +28,7 @@ StreamDataGraph::StreamDataGraph(
   }
 }
 
-void StreamDataGraph::constructDataGraph(
-    std::function<bool(const llvm::PHINode *)> IsInductionVar) {
+void StreamDataGraph::constructDataGraph(IsIndVarFuncT IsInductionVar) {
   std::list<const llvm::Value *> Queue;
   Queue.emplace_back(this->getSingleResultValue());
 
@@ -63,19 +62,15 @@ void StreamDataGraph::constructDataGraph(
       continue;
     }
 
-    if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
-      if (IsInductionVar(PHINode)) {
-        // This is an induction variable stream, should also be an input value.
-        UnsortedInputs.insert(PHINode);
-        this->BaseIVs.insert(PHINode);
-        continue;
-      }
+    if (IsInductionVar(Inst)) {
+      // This is an induction variable stream, should also be an input value.
+      UnsortedInputs.insert(Inst);
+      continue;
     }
 
     if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(Inst)) {
       // This is a load stream, should also be an input value.
       UnsortedInputs.insert(LoadInst);
-      this->BaseLoads.insert(LoadInst);
       continue;
     }
 
