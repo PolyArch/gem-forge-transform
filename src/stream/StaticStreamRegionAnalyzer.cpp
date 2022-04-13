@@ -60,6 +60,15 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   LLVM_DEBUG(llvm::dbgs() << "Collect ReduceFinalInsts done.\n");
   this->markAliasRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark alias relationship done.\n");
+  /**
+   * After marking Alias relationship, we try to fuse load ops. This is done
+   * here because we want to use a heuristic to fuse load ops using multiple
+   * load streams with small AliasOffset.
+   *
+   * Similar to FinalReduceResult, the FinalInst now points to the LoadStream.
+   */
+  this->fuseLoadOps();
+  LLVM_DEBUG(llvm::dbgs() << "Fuse LoadOps done.\n");
   this->buildStreamValueDepGraph();
   LLVM_DEBUG(llvm::dbgs() << "Build StreamValueDepGraph done.\n");
   /**
@@ -80,7 +89,7 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
 StaticStreamRegionAnalyzer::~StaticStreamRegionAnalyzer() {
   this->InstChosenStreamMap.clear();
   // First clear all PlaceHolder Inst.
-  this->ReduceFinalInstStaticStreamMap.clear();
+  this->FinalInstStaticStreamMap.clear();
   // Now clear real streams.
   for (auto &InstStreams : this->InstStaticStreamMap) {
     for (auto &Stream : InstStreams.second) {
@@ -201,7 +210,7 @@ StaticStream *StaticStreamRegionAnalyzer::getStreamWithPlaceholderInst(
   }
   // Check in the Placeholder map.
   return this->getStreamInMapByInstAndConfigureLoop(
-      this->ReduceFinalInstStaticStreamMap, Inst, ConfigureLoop);
+      this->FinalInstStaticStreamMap, Inst, ConfigureLoop);
 }
 
 void StaticStreamRegionAnalyzer::markUpdateRelationship() {
@@ -438,7 +447,7 @@ void StaticStreamRegionAnalyzer::collectReduceFinalInsts() {
                    << Utils::formatLLVMInstWithoutFunc(ReduceFinalInst)
                    << " from " << S->getStreamName() << '\n');
 
-        this->ReduceFinalInstStaticStreamMap
+        this->FinalInstStaticStreamMap
             .emplace(std::piecewise_construct,
                      std::forward_as_tuple(ReduceFinalInst),
                      std::forward_as_tuple())
@@ -564,6 +573,30 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
   }
 }
 
+void StaticStreamRegionAnalyzer::fuseLoadOps() {
+  if (!StreamPassEnableFuseLoadOp) {
+    return;
+  }
+  // So far only use this for the AtomicCmpXchg/Load
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    auto Inst = InstStream.first;
+    if (Inst->getOpcode() == llvm::Instruction::AtomicCmpXchg ||
+        Inst->getOpcode() == llvm::Instruction::Load) {
+      for (auto S : InstStream.second) {
+        S->fuseLoadOps();
+        if (S->ValueDG) {
+          // Place this into the FinalInstMap.
+          this->FinalInstStaticStreamMap
+              .emplace(std::piecewise_construct,
+                       std::forward_as_tuple(S->ValueDG->getSingleResultInst()),
+                       std::forward_as_tuple())
+              .first->second.push_back(S);
+        }
+      }
+    }
+  }
+}
+
 void StaticStreamRegionAnalyzer::buildStreamValueDepGraph() {
   /**
    * After construct addr dependence graph, we can analyze the
@@ -625,7 +658,7 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     if (llvm::isa<llvm::PHINode>(Inst)) {
       return true;
     }
-    return this->ReduceFinalInstStaticStreamMap.count(Inst);
+    return this->FinalInstStaticStreamMap.count(Inst);
   };
   llvm::Value *StoreValue = nullptr;
   if (Utils::isStoreInst(StoreS->Inst)) {

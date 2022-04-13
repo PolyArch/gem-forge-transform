@@ -42,8 +42,6 @@ StaticStream::StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
       this->ConfigureLoop->getLoopDepth());
   this->StaticStreamInfo.set_is_inner_most_loop(
       this->InnerMostLoop->getSubLoops().empty());
-
-  this->fuseLoadOps();
 }
 
 ::LLVM::TDG::DataType
@@ -774,14 +772,6 @@ bool StaticStream::ComputeMetaNode::isIdenticalTo(
 }
 
 void StaticStream::fuseLoadOps() {
-  if (!StreamPassEnableFuseLoadOp) {
-    return;
-  }
-  // So far only use this for the AtomicCmpXchg/Load
-  if (this->Inst->getOpcode() != llvm::Instruction::AtomicCmpXchg &&
-      this->Inst->getOpcode() != llvm::Instruction::Load) {
-    return;
-  }
   LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOps for " << this->getStreamName()
                           << '\n');
   /**
@@ -797,6 +787,12 @@ void StaticStream::fuseLoadOps() {
    *    Load, Store, AtomicRMW, AtomicCmpXchg, Phi, Invoke,
    *    Call (except some intrinsics).
    * 4. The user has data type size <= My data type size.
+   *
+   * We start with all streams with a small AliasOffset to this stream, as
+   * these streams are likely to be fused into a single stream. Also as a
+   * heuristic, we only try to fuse for the stream with AliasOffset in the
+   * middle. This is helpful to make the result aligned with consuming streams,
+   * e.g., 2D convolution.
    *
    * During this process, we mark candidate final value if the current frontier
    * has only one instruction and the current fused instructions has no outside
@@ -896,10 +892,52 @@ void StaticStream::fuseLoadOps() {
            this->getMemElementSize();
   };
 
-  FusedOps.push_back(this->Inst);
-  FusedOpsSet.insert(this->Inst);
-  Frontier.insert(this->Inst);
+  /**
+   * Collect streams with small AliasOffset to myself.
+   */
+  assert(this->AliasBaseStream && "FuseLoadOp Require Alias Relationship.");
+  StreamVec NearbyStreams;
+  for (auto S : this->AliasBaseStream->AliasedStreams) {
+    const int64_t MaxAliasOffset = 16;
+    auto AliasOffset = std::abs(S->AliasOffset - this->AliasOffset);
+    if (AliasOffset <= MaxAliasOffset &&
+        S->Inst->getOpcode() == this->Inst->getOpcode()) {
+      NearbyStreams.push_back(S);
+    }
+  }
+  std::sort(NearbyStreams.begin(), NearbyStreams.end(),
+            [](const StaticStream *S1, const StaticStream *S2) -> bool {
+              return S1->AliasOffset < S2->AliasOffset;
+            });
+
+  LLVM_DEBUG({
+    for (auto S : NearbyStreams) {
+      llvm::dbgs() << "[FuseLoadOps] Add NearBy Stream " << S->getStreamName()
+                   << " AliasOffset " << S->AliasOffset << '\n';
+    }
+  });
+
+  if (NearbyStreams.at(NearbyStreams.size() / 2) != this) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[FuseLoadOps] No fusing as I am not the MiddleOne.\n");
+    return;
+  }
+
+  auto NearbyMemSize = this->getMemElementSize();
+  for (auto S : NearbyStreams) {
+    FusedOps.push_back(S->Inst);
+    FusedOpsSet.insert(S->Inst);
+    Frontier.insert(S->Inst);
+    int AliasMemSize = S->getMemElementSize() + S->AliasOffset -
+                       NearbyStreams.front()->AliasOffset;
+    NearbyMemSize = std::max(NearbyMemSize, AliasMemSize);
+  }
+
   while (!Frontier.empty()) {
+
+    LLVM_DEBUG(llvm::dbgs()
+                   << "[FuseLoadOps] ===== Start Processing Frontier.\n";);
+
     for (auto *CurInst : Frontier) {
       LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] Process frontier inst "
                               << Utils::formatLLVMInst(CurInst) << '\n');
@@ -944,6 +982,12 @@ void StaticStream::fuseLoadOps() {
      */
     if (NextFrontier.size() == 1) {
       auto CandidateFinalInst = *NextFrontier.begin();
+
+      LLVM_DEBUG({
+        llvm::dbgs() << "[FuseLoadOps] ===== CandidateFinalInst "
+                     << Utils::formatLLVMInst(CandidateFinalInst) << "\n";
+      });
+
       bool FormClosure = true;
       for (auto FusedInst : FusedOps) {
         bool AllUserFused = true;
@@ -951,6 +995,11 @@ void StaticStream::fuseLoadOps() {
           auto UserInst = llvm::dyn_cast<llvm::Instruction>(User);
           assert(UserInst && "User should always be an instruction.");
           if (!FusedOpsSet.count(UserInst) && UserInst != CandidateFinalInst) {
+            LLVM_DEBUG({
+              llvm::dbgs() << "[FuseLoadOps] Outside User "
+                           << Utils::formatLLVMInst(FusedInst) << " -> "
+                           << Utils::formatLLVMInst(UserInst) << "\n";
+            });
             AllUserFused = false;
             break;
           }
@@ -960,9 +1009,8 @@ void StaticStream::fuseLoadOps() {
           break;
         }
       }
-      if (FormClosure &&
-          this->DataLayout->getTypeStoreSize(CandidateFinalInst->getType()) <
-              this->getMemElementSize()) {
+      if (FormClosure && this->DataLayout->getTypeStoreSize(
+                             CandidateFinalInst->getType()) < NearbyMemSize) {
         // We found one closure.
         // Notice that we have to skip the first MyInst and add the
         // CandidateFinalInst
@@ -990,6 +1038,16 @@ void StaticStream::fuseLoadOps() {
   if (this->FusedLoadOps.empty()) {
     return;
   }
+
+  // Remember the ValueDep.
+  for (auto S : NearbyStreams) {
+    if (S == this) {
+      continue;
+    }
+    S->LoadStoreDepStreams.insert(this);
+    this->LoadStoreBaseStreams.insert(S);
+  }
+
   // Create the ValueDG if this is a LoadStream.
   // ValueDG for AtomicStream will be created by StaticStreamRegionAnalyzer.
   if (this->Inst->getOpcode() == llvm::Instruction::Load) {

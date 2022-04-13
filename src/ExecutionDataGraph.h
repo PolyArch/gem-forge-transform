@@ -33,6 +33,11 @@ public:
     assert(this->ResultValues.size() == 1 && "No single result value");
     return this->ResultValues.back();
   }
+  const llvm::Instruction *getSingleResultInst() const {
+    auto Ret = llvm::dyn_cast<llvm::Instruction>(this->getSingleResultValue());
+    assert(Ret && "SingleResultValue not Inst.");
+    return Ret;
+  }
   bool hasSingleResult() const { return this->ResultValues.size() == 1; }
   bool hasMultipleResult() const { return this->ResultValues.size() > 1; }
   const ValueList &getInputs() const { return this->Inputs; }

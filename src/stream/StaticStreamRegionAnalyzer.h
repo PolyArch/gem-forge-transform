@@ -109,7 +109,7 @@ protected:
   using InstStaticStreamMapT =
       std::unordered_map<const llvm::Instruction *, std::list<StaticStream *>>;
   InstStaticStreamMapT InstStaticStreamMap;
-  InstStaticStreamMapT ReduceFinalInstStaticStreamMap;
+  InstStaticStreamMapT FinalInstStaticStreamMap;
   StaticStream *
   getStreamInMapByInstAndConfigureLoop(const InstStaticStreamMapT &Map,
                                        const llvm::Instruction *Inst,
@@ -161,6 +161,7 @@ protected:
   void collectReduceFinalInsts();
   void markAliasRelationship();
   void markAliasRelationshipForLoopBB(const llvm::Loop *Loop);
+  void fuseLoadOps();
   void buildStreamValueDepGraph();
   void buildValueDepForStoreOrAtomic(StaticStream *StoreS);
   bool isLegalValueDepInput(const llvm::Value *Value) const;

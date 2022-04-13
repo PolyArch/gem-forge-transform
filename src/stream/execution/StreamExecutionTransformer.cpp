@@ -572,13 +572,9 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
       FindOutOfLoopClonedExitInstUsers(ClonedExitInst);
 
   /**
-   * Check if that there is no out-of-loop user or all the users are pending to be removed.
-   * A possible scenario is:
-   * for i
-   *   s = 0;
-   *   for j: s += A[i][j];
-   *   B[i] = s;
-   * Where B[i] is also configured as a stream.
+   * Check if that there is no out-of-loop user or all the users are pending to
+   * be removed. A possible scenario is: for i s = 0; for j: s += A[i][j]; B[i]
+   * = s; Where B[i] is also configured as a stream.
    */
   bool NoRealOutOfLoopClonedExitInstUsers = true;
   for (auto UserInst : OutOfLoopClonedExitInstUsers) {
@@ -1052,8 +1048,7 @@ void StreamExecutionTransformer::handleFusedLoadOpsForLoadStream(
   if (!LoadSS->ValueDG) {
     return;
   }
-  if (!LoadSS->ChosenDependentStreams.empty() ||
-      !LoadSS->LoadStoreBaseStreams.empty()) {
+  if (!LoadSS->ChosenDependentStreams.empty()) {
     llvm::errs() << "FusedLoadOps with other dependence: "
                  << LoadSS->getStreamName() << '\n';
     assert(false);
@@ -1061,6 +1056,17 @@ void StreamExecutionTransformer::handleFusedLoadOpsForLoadStream(
   auto SSProtoComputeInfo = LoadSS->StaticStreamInfo.mutable_compute_info();
   // Enable the load func.
   SSProtoComputeInfo->set_enabled_load_func(true);
+  // Record the dependence.
+  for (auto S : LoadSS->LoadStoreBaseStreams) {
+    auto Proto = LoadSS->StaticStreamInfo.mutable_compute_info()
+                     ->add_value_base_streams();
+    Proto->set_id(S->StreamId);
+    Proto->set_name(S->getStreamName());
+    auto SProto =
+        S->StaticStreamInfo.mutable_compute_info()->add_value_dep_streams();
+    SProto->set_id(LoadSS->StreamId);
+    SProto->set_name(LoadSS->getStreamName());
+  }
 }
 
 void StreamExecutionTransformer::upgradeLoadToUpdateStream(
