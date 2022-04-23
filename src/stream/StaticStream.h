@@ -53,6 +53,13 @@ public:
   bool UserParamInnerDep = false;
 
   /**
+   * User specified LoadCompute stream params.
+   */
+  constexpr static int UserInvalidLoadComputeGroupIdx = -1;
+  int UserLoadComputeGroupIdx = UserInvalidLoadComputeGroupIdx;
+  bool UserLoadComputeResult = false;
+
+  /**
    * The constructor just creates the object and does not perform any analysis.
    *
    * After creating all the streams, the manager should call constructGraph() to
@@ -266,7 +273,6 @@ public:
   // So far only used for AtomicCmpXchg.
   using InstVec = std::vector<const llvm::Instruction *>;
   InstVec FusedLoadOps;
-  void fuseLoadOps();
   const llvm::Instruction *getFinalFusedLoadInst() const {
     if (this->FusedLoadOps.empty()) {
       return this->Inst;

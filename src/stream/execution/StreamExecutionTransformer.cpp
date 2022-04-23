@@ -1187,8 +1187,6 @@ void StreamExecutionTransformer::handleValueDG(
           ? SS->UpdateStream->StaticStreamInfo.mutable_compute_info()
           : nullptr;
   for (auto LoadSS : SS->LoadStoreBaseStreams) {
-    auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
-                         ->add_value_dep_streams();
     if (SS->UpdateStream) {
       /**
        * If this is an update stream, we remember the information in the
@@ -1196,13 +1194,19 @@ void StreamExecutionTransformer::handleValueDG(
        * itself, therefore we should avoid adding the circular dependence here.
        */
       if (LoadSS != SS->UpdateStream) {
+        auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
+                             ->add_value_dep_streams();
         LoadProto->set_id(SS->UpdateStream->StreamId);
         LoadProto->set_name(SS->UpdateStream->getStreamName());
         auto SSProto = UpdateProtoComputeInfo->add_value_base_streams();
         SSProto->set_id(LoadSS->StreamId);
         SSProto->set_name(LoadSS->getStreamName());
+      } else {
+        // Do not add self dependence.
       }
     } else {
+      auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
+                           ->add_value_dep_streams();
       LoadProto->set_id(SS->StreamId);
       LoadProto->set_name(SS->getStreamName());
       auto SSProto =

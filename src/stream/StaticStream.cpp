@@ -2,7 +2,6 @@
 
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/IntrinsicsX86.h" // For some x86 intrinsic ids.
 #include "llvm/Support/raw_ostream.h"
 
 #include <sstream>
@@ -551,6 +550,8 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
    *      InnerLoopStream can not be configured at outer loop.
    *  - non-spec: This stream should be executed non-speculatively,
    *      e.g., not offloaded until committed.
+   *  - ld-cmp=group_id: Specify the group of LoadCompute input streams.
+   *  - ld-cmp-result: This is the stream with LoadComputeResult.
    */
   auto SlashPos = SSName.find('/');
   auto FirstSlashPos = SlashPos;
@@ -558,8 +559,18 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
     auto NextSlashPos = SSName.find('/', SlashPos + 1);
     auto Param = SSName.substr(SlashPos + 1, NextSlashPos).str();
     this->StaticStreamInfo.add_user_param(Param);
-    if (Param == "inner-dep") {
+
+    auto EqualPos = Param.find('=');
+    auto ParamName = Param.substr(0, EqualPos);
+
+    if (ParamName == "inner-dep") {
       this->UserParamInnerDep = true;
+    } else if (ParamName == "ld-cmp") {
+      assert(EqualPos != Param.npos && "Missing LoadCompute GroupIdx.");
+      this->UserLoadComputeGroupIdx = std::stoi(Param.substr(EqualPos + 1));
+    } else if (ParamName == "ld-cmp-result") {
+      assert(this->UserLoadComputeGroupIdx != UserInvalidLoadComputeGroupIdx);
+      this->UserLoadComputeResult = true;
     }
 
     SlashPos = NextSlashPos;
@@ -769,292 +780,6 @@ bool StaticStream::ComputeMetaNode::isIdenticalTo(
   }
 
   return true;
-}
-
-void StaticStream::fuseLoadOps() {
-  LLVM_DEBUG(llvm::dbgs() << "==== FuseLoadOps for " << this->getStreamName()
-                          << '\n');
-  /**
-   * We maintain two sets:
-   * 1. The set of instructions we have fused (visited).
-   * 2. The current frontier instructions.
-   * While processing a frontier instruction, we add its user to the next
-   * frontier iff.
-   * 1. All users from the same BB.
-   * 2. The user only takes input from fused instructions or outside the
-   * configure loop.
-   * 3. The user is not one of these types:
-   *    Load, Store, AtomicRMW, AtomicCmpXchg, Phi, Invoke,
-   *    Call (except some intrinsics).
-   * 4. The user has data type size <= My data type size.
-   *
-   * We start with all streams with a small AliasOffset to this stream, as
-   * these streams are likely to be fused into a single stream. Also as a
-   * heuristic, we only try to fuse for the stream with AliasOffset in the
-   * middle. This is helpful to make the result aligned with consuming streams,
-   * e.g., 2D convolution.
-   *
-   * During this process, we mark candidate final value if the current frontier
-   * has only one instruction and the current fused instructions has no outside
-   * users (except the one in the frontier).
-   *
-   * Terminate when the frontier is empty.
-   */
-
-  // Also check that my size > 4 so that it is benefitial to fuse.
-  if (this->getMemElementSize() <= 4 &&
-      this->Inst->getOpcode() == llvm::Instruction::Load) {
-    LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as MyMemElementSize "
-                            << this->getMemElementSize() << " too small.\n");
-    return;
-  }
-
-  // Helper fundtion to check all users are instructions from the same BB.
-  auto AreUserInstsFromSameBB = [this](const llvm::Instruction *Inst) -> bool {
-    for (auto User : Inst->users()) {
-      auto UserInst = llvm::dyn_cast<llvm::Instruction>(User);
-      if (!UserInst) {
-        // User is not even an instruction.
-        return false;
-      }
-      if (UserInst->getParent() != this->Inst->getParent()) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  if (!AreUserInstsFromSameBB(this->Inst)) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "[FuseLoadOps] No fusing as user not in the same BB.\n");
-    return;
-  }
-
-  InstVec FusedOps;
-  InstSet FusedOpsSet;
-  InstSet Frontier;
-  InstSet NextFrontier;
-
-  // Helper function to check all operands are used.
-  auto AreUsedInstsFusedOrInvariant =
-      [this, &FusedOpsSet](const llvm::Instruction *Inst) -> bool {
-    for (auto OperandIdx = 0; OperandIdx < Inst->getNumOperands();
-         ++OperandIdx) {
-      auto Operand = Inst->getOperand(OperandIdx);
-      if (auto OperandInst = llvm::dyn_cast<llvm::Instruction>(Operand)) {
-        if (!this->ConfigureLoop->contains(OperandInst)) {
-          // From outside the ConfigureLoop.
-          continue;
-        }
-        if (FusedOpsSet.count(OperandInst)) {
-          // Already fused.
-          continue;
-        }
-        return false;
-      }
-    }
-    return true;
-  };
-
-  // Helper function to check if the instruction type can be fused.
-  auto CanInstTypeBeFused = [](const llvm::Instruction *Inst) -> bool {
-    if (Inst->isTerminator()) {
-      return false;
-    }
-    switch (Inst->getOpcode()) {
-    default:
-      return true;
-    case llvm::Instruction::Load:
-    case llvm::Instruction::Store:
-    case llvm::Instruction::PHI:
-    case llvm::Instruction::Invoke:
-    case llvm::Instruction::AtomicRMW:
-    case llvm::Instruction::AtomicCmpXchg:
-      return false;
-    case llvm::Instruction::Call: {
-      // With exception to some intrinsic.
-      auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst);
-      auto IntrinsicID = CallInst->getIntrinsicID();
-      switch (IntrinsicID) {
-      default:
-        return false;
-      case llvm::Intrinsic::x86_avx2_packusdw:
-      case llvm::Intrinsic::x86_sse2_packuswb_128:
-        return true;
-      }
-    }
-    }
-  };
-
-  // Helper function to check the instruction's data type size <= mine.
-  auto HasDataSizeLEMine = [this](const llvm::Instruction *Inst) -> bool {
-    return this->DataLayout->getTypeStoreSize(Inst->getType()) <=
-           this->getMemElementSize();
-  };
-
-  /**
-   * Collect streams with small AliasOffset to myself.
-   */
-  assert(this->AliasBaseStream && "FuseLoadOp Require Alias Relationship.");
-  StreamVec NearbyStreams;
-  for (auto S : this->AliasBaseStream->AliasedStreams) {
-    const int64_t MaxAliasOffset = 16;
-    auto AliasOffset = std::abs(S->AliasOffset - this->AliasOffset);
-    if (AliasOffset <= MaxAliasOffset &&
-        S->Inst->getOpcode() == this->Inst->getOpcode()) {
-      NearbyStreams.push_back(S);
-    }
-  }
-  std::sort(NearbyStreams.begin(), NearbyStreams.end(),
-            [](const StaticStream *S1, const StaticStream *S2) -> bool {
-              return S1->AliasOffset < S2->AliasOffset;
-            });
-
-  LLVM_DEBUG({
-    for (auto S : NearbyStreams) {
-      llvm::dbgs() << "[FuseLoadOps] Add NearBy Stream " << S->getStreamName()
-                   << " AliasOffset " << S->AliasOffset << '\n';
-    }
-  });
-
-  if (NearbyStreams.at(NearbyStreams.size() / 2) != this) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "[FuseLoadOps] No fusing as I am not the MiddleOne.\n");
-    return;
-  }
-
-  auto NearbyMemSize = this->getMemElementSize();
-  for (auto S : NearbyStreams) {
-    FusedOps.push_back(S->Inst);
-    FusedOpsSet.insert(S->Inst);
-    Frontier.insert(S->Inst);
-    int AliasMemSize = S->getMemElementSize() + S->AliasOffset -
-                       NearbyStreams.front()->AliasOffset;
-    NearbyMemSize = std::max(NearbyMemSize, AliasMemSize);
-  }
-
-  while (!Frontier.empty()) {
-
-    LLVM_DEBUG(llvm::dbgs()
-                   << "[FuseLoadOps] ===== Start Processing Frontier.\n";);
-
-    for (auto *CurInst : Frontier) {
-      LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] Process frontier inst "
-                              << Utils::formatLLVMInst(CurInst) << '\n');
-      for (auto User : CurInst->users()) {
-        auto UserInst = llvm::dyn_cast<llvm::Instruction>(User);
-        assert(UserInst && "User should always be an instruction.");
-        if (!AreUserInstsFromSameBB(UserInst)) {
-          LLVM_DEBUG(llvm::dbgs()
-                     << "[FuseLoadOps] Not fuse !AreUserInstsFromSameBB "
-                     << Utils::formatLLVMInst(UserInst) << '\n');
-          continue;
-        }
-        if (!AreUsedInstsFusedOrInvariant(UserInst)) {
-          LLVM_DEBUG(llvm::dbgs()
-                     << "[FuseLoadOps] Not fuse !AreUsedInstsFusedOrInvariant "
-                     << Utils::formatLLVMInst(UserInst) << '\n');
-          continue;
-        }
-        if (!CanInstTypeBeFused(UserInst)) {
-          LLVM_DEBUG(llvm::dbgs()
-                     << "[FuseLoadOps] Not fuse !CanInstTypeBeFused "
-                     << Utils::formatLLVMInst(UserInst) << '\n');
-          continue;
-        }
-        if (!HasDataSizeLEMine(UserInst)) {
-          LLVM_DEBUG(llvm::dbgs()
-                     << "[FuseLoadOps] Not fuse !HasDataSizeLEMine "
-                     << Utils::formatLLVMInst(UserInst) << '\n');
-          continue;
-        }
-        // We passed all the test, try to add to next frontier.
-        LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] Fused "
-                                << Utils::formatLLVMInst(UserInst) << '\n');
-        NextFrontier.insert(UserInst);
-      }
-    }
-
-    /**
-     * Check if we found a candidate final inst.
-     * NOTE: For now we require the final inst has smaller data type size to be
-     * NOTE: profitable.
-     */
-    if (NextFrontier.size() == 1) {
-      auto CandidateFinalInst = *NextFrontier.begin();
-
-      LLVM_DEBUG({
-        llvm::dbgs() << "[FuseLoadOps] ===== CandidateFinalInst "
-                     << Utils::formatLLVMInst(CandidateFinalInst) << "\n";
-      });
-
-      bool FormClosure = true;
-      for (auto FusedInst : FusedOps) {
-        bool AllUserFused = true;
-        for (auto User : FusedInst->users()) {
-          auto UserInst = llvm::dyn_cast<llvm::Instruction>(User);
-          assert(UserInst && "User should always be an instruction.");
-          if (!FusedOpsSet.count(UserInst) && UserInst != CandidateFinalInst) {
-            LLVM_DEBUG({
-              llvm::dbgs() << "[FuseLoadOps] Outside User "
-                           << Utils::formatLLVMInst(FusedInst) << " -> "
-                           << Utils::formatLLVMInst(UserInst) << "\n";
-            });
-            AllUserFused = false;
-            break;
-          }
-        }
-        if (!AllUserFused) {
-          FormClosure = false;
-          break;
-        }
-      }
-      if (FormClosure && this->DataLayout->getTypeStoreSize(
-                             CandidateFinalInst->getType()) < NearbyMemSize) {
-        // We found one closure.
-        // Notice that we have to skip the first MyInst and add the
-        // CandidateFinalInst
-        this->FusedLoadOps.clear();
-        this->FusedLoadOps.insert(this->FusedLoadOps.end(),
-                                  FusedOps.begin() + 1, FusedOps.end());
-        this->FusedLoadOps.push_back(CandidateFinalInst);
-        LLVM_DEBUG({
-          llvm::dbgs() << "[FuseLoadOps] ===== Found Closure.\n";
-          for (auto Inst : this->FusedLoadOps) {
-            llvm::dbgs() << "[FuseLoadOps] == " << Utils::formatLLVMInst(Inst)
-                         << '\n';
-          }
-        });
-      }
-    }
-
-    FusedOps.insert(FusedOps.end(), NextFrontier.begin(), NextFrontier.end());
-    FusedOpsSet.insert(NextFrontier.begin(), NextFrontier.end());
-
-    Frontier = NextFrontier;
-    NextFrontier.clear();
-  }
-
-  if (this->FusedLoadOps.empty()) {
-    return;
-  }
-
-  // Remember the ValueDep.
-  for (auto S : NearbyStreams) {
-    if (S == this) {
-      continue;
-    }
-    S->LoadStoreDepStreams.insert(this);
-    this->LoadStoreBaseStreams.insert(S);
-  }
-
-  // Create the ValueDG if this is a LoadStream.
-  // ValueDG for AtomicStream will be created by StaticStreamRegionAnalyzer.
-  if (this->Inst->getOpcode() == llvm::Instruction::Load) {
-    this->ValueDG = std::make_unique<StreamDataGraph>(
-        this->ConfigureLoop, this->FusedLoadOps.back(),
-        [](const llvm::Instruction *) -> bool { return false; });
-  }
 }
 
 void StaticStream::fillProtobufStreamInfo(

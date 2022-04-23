@@ -162,6 +162,7 @@ protected:
   void markAliasRelationship();
   void markAliasRelationshipForLoopBB(const llvm::Loop *Loop);
   void fuseLoadOps();
+  void fuseLoadOps(StaticStream *S);
   void buildStreamValueDepGraph();
   void buildValueDepForStoreOrAtomic(StaticStream *StoreS);
   bool isLegalValueDepInput(const llvm::Value *Value) const;
