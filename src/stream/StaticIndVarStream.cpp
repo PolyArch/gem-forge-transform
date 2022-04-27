@@ -446,6 +446,20 @@ void StaticIndVarStream::analyzeIsCandidate() {
   LLVM_DEBUG(llvm::dbgs() << "====== AnalyzeIsCandidate() - "
                           << this->getStreamName() << '\n');
 
+  if (this->UserNestLoopLevel != UserInvalidNestLoopLevel) {
+    auto NestLoopLevel = this->InnerMostLoop->getLoopDepth() -
+                         this->ConfigureLoop->getLoopDepth() + 1;
+    if (NestLoopLevel != this->UserNestLoopLevel) {
+      LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: UserNestLoopLevel "
+                              << this->UserNestLoopLevel << " Mine "
+                              << NestLoopLevel << '\n');
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::USER_NEST_LOOP_LEVEL);
+      this->IsCandidate = false;
+      return;
+    }
+  }
+
   if (!this->checkBaseStreamInnerMostLoopContainsMine()) {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(

@@ -31,9 +31,9 @@ typedef struct {
 #endif
 
 __attribute__((noinline)) Value foo(Value *A, Value *X, Value *B, int64_t M,
-                                    int64_t N) {
+                                    int64_t N, int64_t P) {
 
-  for (int64_t k = 0; k < M - 1; ++k) {
+  for (int64_t k = 0; k < P - 1; ++k) {
 
 #pragma ss stream_name "gfm.gaussian_elim.akk.ld"
     Value akk = A[k * N + k];
@@ -92,6 +92,7 @@ int main(int argc, char *argv[]) {
   int numThreads = 1;
   uint64_t M = 4 * 1024 / sizeof(Value);
   uint64_t N = 4 * 1024 / sizeof(Value);
+  uint64_t P = M;
   int check = 0;
   int warm = 0;
   int argx = 2;
@@ -112,6 +113,10 @@ int main(int argc, char *argv[]) {
   }
   argx++;
   if (argc >= argx) {
+    P = atoll(argv[argx - 1]);
+  }
+  argx++;
+  if (argc >= argx) {
     check = atoi(argv[argx - 1]);
   }
   argx++;
@@ -122,6 +127,7 @@ int main(int argc, char *argv[]) {
   uint64_t T = M * N;
   printf("Number of Threads: %d.\n", numThreads);
   printf("Data size %lukB.\n", T * sizeof(Value) / 1024);
+  assert(P >= 1 && P <= M);
 
 #ifndef NO_OPENMP
   omp_set_dynamic(0);
@@ -149,6 +155,7 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_region("gfm.gaussian.a", a, sizeof(a[0]), M, N);
   gf_stream_nuca_region("gfm.gaussian.b", b, sizeof(b[0]), M);
   gf_stream_nuca_region("gfm.gaussian.x", x, sizeof(x[0]), N);
+  gf_stream_nuca_align(a, a, 1);
   gf_stream_nuca_align(a, a, N);
   gf_stream_nuca_remap();
 #endif
@@ -170,7 +177,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  volatile Value computed = foo(a, b, x, M, N);
+  volatile Value computed = foo(a, b, x, M, N, P);
   gf_detail_sim_end();
 
   return 0;

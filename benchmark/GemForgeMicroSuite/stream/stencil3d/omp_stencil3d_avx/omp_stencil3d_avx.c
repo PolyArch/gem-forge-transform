@@ -143,7 +143,9 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_region("gfm.stencil2d.c", c, sizeof(c[0]), N, M, L);
   gf_stream_nuca_align(a, c, 0);
   gf_stream_nuca_align(b, c, 0);
+  gf_stream_nuca_align(c, c, 1);
   gf_stream_nuca_align(c, c, N);
+  gf_stream_nuca_align(c, c, N * M);
   gf_stream_nuca_remap();
 #endif
 

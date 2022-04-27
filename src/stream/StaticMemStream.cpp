@@ -61,6 +61,24 @@ void StaticMemStream::analyzeIsCandidate() {
    * TODO: Find a better place to do this.
    */
 
+  LLVM_DEBUG(llvm::dbgs() << "====== AnalyzeIsCandidate() - "
+                          << this->getStreamName() << '\n');
+
+  if (this->UserNestLoopLevel != UserInvalidNestLoopLevel) {
+    auto NestLoopLevel = this->InnerMostLoop->getLoopDepth() -
+                         this->ConfigureLoop->getLoopDepth() + 1;
+    if (NestLoopLevel != this->UserNestLoopLevel) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "[NotCandidate]: UserNestLoopLevel "
+                 << this->UserNestLoopLevel << " Mine " << NestLoopLevel << " "
+                 << this->getStreamName() << '\n');
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::USER_NEST_LOOP_LEVEL);
+      this->IsCandidate = false;
+      return;
+    }
+  }
+
   if (llvm::isa<llvm::AtomicCmpXchgInst>(this->Inst) ||
       llvm::isa<llvm::AtomicRMWInst>(this->Inst)) {
     if (!this->ValueDG) {
@@ -200,10 +218,23 @@ void StaticMemStream::analyzeIsCandidate() {
   if (this->isDirectMemStream()) {
     // For direct MemStream we want to enforce AddRecSCEV.
     if (!llvm::isa<llvm::SCEVAddRecExpr>(SCEV)) {
-      LLVM_DEBUG(llvm::dbgs()
-                     << "[NotCandidate]: DirectMemStream Requires AddRecSCEV "
+      LLVM_DEBUG({
+        llvm::dbgs() << "[NotCandidate]: DirectMemStream Requires AddRecSCEV "
                      << this->getStreamName() << " SCEV: ";
-                 SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
+        SCEV->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
+      this->IsCandidate = false;
+      return;
+    }
+    if (!this->validateAddRecSCEV(SCEV)) {
+      LLVM_DEBUG({
+        llvm::dbgs()
+            << "[NotCandidate]: DirectMemStream but Invalid AddRecSCEV "
+            << this->getStreamName() << " SCEV: ";
+        SCEV->print(llvm::dbgs());
+        llvm::dbgs() << '\n';
+      });
       this->IsCandidate = false;
       return;
     }
@@ -313,6 +344,71 @@ bool StaticMemStream::validateSCEVAsStreamDG(
     LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEV in StreamDG "
                             << this->getStreamName() << " SCEV: ";
                SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
+    return false;
+  }
+  return true;
+}
+
+bool StaticMemStream::validateAddRecSCEV(const llvm::SCEV *SCEV) {
+
+  int RecurLevel = 0;
+  const llvm::Loop *CurrentLoop = this->InnerMostLoop;
+  const llvm::SCEV *CurrentSCEV = SCEV;
+  // Peeling up nested loops.
+  while (this->ConfigureLoop->contains(CurrentLoop)) {
+    RecurLevel++;
+    LLVM_DEBUG({
+      llvm::dbgs() << "Peeling LoopHeader " << CurrentLoop->getName() << ' ';
+      CurrentSCEV->dump();
+    });
+    if (!this->SE->isLoopInvariant(CurrentSCEV, CurrentLoop)) {
+      // We only allow AddRec for LoopVariant SCEV.
+      if (auto AddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(CurrentSCEV)) {
+        assert(AddRecSCEV->isAffine() && "Cannot handle Quadratic AddRecSCEV.");
+        auto StrideSCEV = AddRecSCEV->getOperand(1);
+        assert(this->SE->isLoopInvariant(StrideSCEV, this->ConfigureLoop) &&
+               "LoopVariant stride.");
+        auto StartSCEV = AddRecSCEV->getStart();
+        CurrentSCEV = StartSCEV;
+      } else {
+        LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Not AddrRecSCEV "
+                                << this->getStreamName() << " SCEV: ";
+                   CurrentSCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
+        return false;
+      }
+    } else {
+      /**
+       * If this is LoopInvariant, we treat it as 0 stride and do not update
+       * the SCEV.
+       */
+    }
+    // We need the back-edge taken times if this is not ConfigureLoop.
+    // Otherwise it's optional.
+    auto TripCountSCEV = LoopUtils::getTripCountSCEV(this->SE, CurrentLoop);
+    LLVM_DEBUG({
+      llvm::dbgs() << " -- TripCount ";
+      TripCountSCEV->dump();
+    });
+    if (!llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) &&
+        this->SE->isLoopInvariant(TripCountSCEV, this->ConfigureLoop)) {
+      // This is LoopInvariant trip count.
+    } else {
+      if (CurrentLoop != this->ConfigureLoop) {
+        LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: No FixTripCount at Loop "
+                                << CurrentLoop->getName() << '\n');
+        return false;
+      }
+    }
+    CurrentLoop = CurrentLoop->getParentLoop();
+  }
+  // Finally we should be left with the start value.
+  LLVM_DEBUG({
+    llvm::dbgs() << " -- StartSCEV ";
+    CurrentSCEV->dump();
+    llvm::dbgs() << '\n';
+  });
+  if (!this->SE->isLoopInvariant(CurrentSCEV, this->ConfigureLoop)) {
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: LoopVariante StartValue.\n");
     return false;
   }
   return true;

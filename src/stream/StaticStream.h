@@ -60,6 +60,12 @@ public:
   bool UserLoadComputeResult = false;
 
   /**
+   * User specified how many loop levels should the stream nest.
+   */
+  constexpr static int UserInvalidNestLoopLevel = -1;
+  int UserNestLoopLevel = UserInvalidNestLoopLevel;
+
+  /**
    * The constructor just creates the object and does not perform any analysis.
    *
    * After creating all the streams, the manager should call constructGraph() to

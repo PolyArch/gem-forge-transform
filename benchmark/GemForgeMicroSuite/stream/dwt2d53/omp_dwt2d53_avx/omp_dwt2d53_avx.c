@@ -308,9 +308,10 @@ int main(int argc, char *argv[]) {
   Value *b = a + T + (OFFSET_BYTES / sizeof(Value));
 
 #ifdef GEM_FORGE
-  gf_stream_nuca_region("gfm.dwt2d53.a", a, sizeof(a[0]), M, N);
-  gf_stream_nuca_region("gfm.dwt2d53.b", b, sizeof(b[0]), M, N);
+  gf_stream_nuca_region("gfm.dwt2d53.a", a, sizeof(a[0]), N, M);
+  gf_stream_nuca_region("gfm.dwt2d53.b", b, sizeof(b[0]), N, M);
   gf_stream_nuca_align(a, a, N);
+  gf_stream_nuca_align(a, a, 1);
   gf_stream_nuca_align(b, a, 0);
   gf_stream_nuca_remap();
 #endif

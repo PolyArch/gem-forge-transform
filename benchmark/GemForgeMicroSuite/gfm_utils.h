@@ -40,6 +40,8 @@ uint8_t *LOAD_BIN_ARRAY_FROM_FILE(uint64_t *size, FILE *f) {
 #define gf_reset_stats() m5_reset_stats(0, 0)
 #define gf_dump_stats() m5_dump_stats(0, 0)
 #define gf_panic() m5_panic()
+#define gf_work_begin(x) m5_work_begin(x, 0)
+#define gf_work_end(x) m5_work_end(x, 0)
 
 #define gf_stream_nuca_region1d(name, start, elementSize, dim1)                \
   m5_stream_nuca_region(name, start, elementSize, dim1, 0, 0)
@@ -78,6 +80,8 @@ void gf_warm_array(const char *name, void *buffer, uint64_t totalBytes) {
 #define gf_stream_nuca_region(args...)
 #define gf_stream_nuca_align(args...)
 #define gf_stream_nuca_remap()
+#define gf_work_begin(x)
+#define gf_work_end(x)
 
 void gf_warm_array(const char *name, void *buffer, uint64_t totalBytes) {
   printf("[GF_WARM] Region %s TotalBytes %lu WarmAll.\n", name, totalBytes);

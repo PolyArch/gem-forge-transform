@@ -167,6 +167,10 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
     LLVM_DEBUG(llvm::dbgs() << "[Nest] At least one StreamLoad input.\n");
     return false;
   }
+  if (InputValues.size() + InputStreams.size() > 15) {
+    LLVM_DEBUG(llvm::dbgs() << "[Nest] Too many arguments.\n");
+    return false;
+  }
 
   /**
    * We still need to check the conditional branch.

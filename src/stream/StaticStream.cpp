@@ -552,6 +552,9 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
    *      e.g., not offloaded until committed.
    *  - ld-cmp=group_id: Specify the group of LoadCompute input streams.
    *  - ld-cmp-result: This is the stream with LoadComputeResult.
+   *  - nest=loop-level: Specify how many loop level this stream should be
+   *      configured at, e.g., 2 will configure the stream at the second outer
+   *      loop counting from the inner-most loop.
    */
   auto SlashPos = SSName.find('/');
   auto FirstSlashPos = SlashPos;
@@ -571,6 +574,9 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
     } else if (ParamName == "ld-cmp-result") {
       assert(this->UserLoadComputeGroupIdx != UserInvalidLoadComputeGroupIdx);
       this->UserLoadComputeResult = true;
+    } else if (ParamName == "nest") {
+      assert(EqualPos != Param.npos && "Missing NestLoopLevel GroupIdx.");
+      this->UserNestLoopLevel = std::stoi(Param.substr(EqualPos + 1));
     }
 
     SlashPos = NextSlashPos;

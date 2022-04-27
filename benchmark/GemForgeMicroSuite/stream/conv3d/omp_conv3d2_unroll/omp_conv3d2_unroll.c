@@ -34,15 +34,6 @@ typedef float Value;
 #define BxPad (Bx + Px)
 #define ByPad (By + Py)
 
-float hsum_ps_sse1(__m128 v) { // v = [ D C | B A ]
-  __m128 shuf = _mm_shuffle_ps(v, v, _MM_SHUFFLE(2, 3, 0, 1)); // [ C D | A B ]
-  __m128 sums = _mm_add_ps(v, shuf); // sums = [ D+C C+D | B+A A+B ]
-  shuf = _mm_movehl_ps(shuf, sums);  //  [   C   D | D+C C+D ]  // let the
-                                     //  compiler avoid a mov by reusing shuf
-  sums = _mm_add_ss(sums, shuf);
-  return _mm_cvtss_f32(sums);
-}
-
 __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
 
 // #pragma clang loop vectorize(disable)
@@ -111,8 +102,7 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
           }
         }
 
-        // Write back (no activation so far as we are faking with integer
-        // type).
+        // Write back (no activation so far).
         for (uint64_t y = 0; y < ByPad; ++y) {
           for (uint64_t x = 0; x < BxPad; ++x) {
             const uint64_t idxO =

@@ -161,6 +161,7 @@ message StaticStreamInfo {
     IV_NO_MEM_DEPENDENT = 12;
     USER_NOT_OUT_MOST = 13;
     IN_LOOP_REDUCTION_USER = 14;
+    USER_NEST_LOOP_LEVEL = 15;
     // Not Qualified Reason.
     BASE_STREAM_NOT_QUALIFIED = 20;
     NO_STATIC_MAPPING = 21;

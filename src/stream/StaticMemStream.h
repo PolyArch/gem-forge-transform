@@ -48,6 +48,11 @@ private:
       const llvm::SCEV *SCEV,
       const std::unordered_set<const llvm::SCEV *> &InputSCEVs);
 
+  /**
+   * Helper function to check that AddRecSCEV is valid at ConfigureLoop.
+   */
+  bool validateAddRecSCEV(const llvm::SCEV *SCEV);
+
   LLVM::TDG::StreamStepPattern computeStepPattern() const override;
 
   /**
