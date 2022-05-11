@@ -201,8 +201,8 @@ int main(int argc, char *argv[]) {
 
   gf_detail_sim_start();
   if (warm) {
-    WARM_UP_ARRAY(a, M * N);
-    WARM_UP_ARRAY(b, M * N);
+    gf_warm_array("gfm.conv2d.a", a, sizeof(a[0]) * N * M);
+    gf_warm_array("gfm.conv2d.b", b, sizeof(b[0]) * N * M);
   }
 
 #ifndef NO_OPENMP

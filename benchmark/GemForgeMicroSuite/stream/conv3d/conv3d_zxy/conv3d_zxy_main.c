@@ -100,9 +100,9 @@ int main(int argc, char *argv[]) {
   gf_detail_sim_start();
 
   if (warm) {
-    WARM_UP_ARRAY(K, Kx * Ky * Ni * Nn);
-    WARM_UP_ARRAY(I, Nx * Ny * Ni);
-    WARM_UP_ARRAY(O, Nx * Ny * Nn);
+    gf_warm_array("gfm.conv3d.i", I, sizeof(I[0]) * Ni * Nx * Ny);
+    gf_warm_array("gfm.conv3d.o", O, sizeof(O[0]) * Nn * Nx * Ny);
+    gf_warm_array("gfm.conv3d.k", K, sizeof(K[0]) * Ni * Kx * Ky * Nn);
   }
 
 #ifndef NO_OPENMP

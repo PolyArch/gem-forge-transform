@@ -147,9 +147,9 @@ int main(int argc, char *argv[]) {
 
   gf_detail_sim_start();
   if (warm) {
-    WARM_UP_ARRAY(a, N);
-    WARM_UP_ARRAY(b, N);
-    WARM_UP_ARRAY(c, N);
+    gf_warm_array("gfm.stencil1d.a", a, sizeof(a[0]) * N);
+    gf_warm_array("gfm.stencil1d.b", b, sizeof(b[0]) * N);
+    gf_warm_array("gfm.stencil1d.c", c, sizeof(c[0]) * N);
   }
 
 #ifndef NO_OPENMP

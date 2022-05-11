@@ -138,9 +138,9 @@ int main(int argc, char *argv[]) {
   Value *c = b + T + (OFFSET_BYTES / sizeof(Value));
 
 #ifdef GEM_FORGE
-  gf_stream_nuca_region("gfm.stencil2d.a", a, sizeof(a[0]), N, M, L);
-  gf_stream_nuca_region("gfm.stencil2d.b", b, sizeof(b[0]), N, M, L);
-  gf_stream_nuca_region("gfm.stencil2d.c", c, sizeof(c[0]), N, M, L);
+  gf_stream_nuca_region("gfm.stencil3d.a", a, sizeof(a[0]), N, M, L);
+  gf_stream_nuca_region("gfm.stencil3d.b", b, sizeof(b[0]), N, M, L);
+  gf_stream_nuca_region("gfm.stencil3d.c", c, sizeof(c[0]), N, M, L);
   gf_stream_nuca_align(a, c, 0);
   gf_stream_nuca_align(b, c, 0);
   gf_stream_nuca_align(c, c, 1);
@@ -166,9 +166,9 @@ int main(int argc, char *argv[]) {
 
   gf_detail_sim_start();
   if (warm) {
-    WARM_UP_ARRAY(a, T);
-    WARM_UP_ARRAY(b, T);
-    WARM_UP_ARRAY(c, T);
+    gf_warm_array("gfm.stencil3d.a", a, sizeof(a[0]) * T);
+    gf_warm_array("gfm.stencil3d.b", b, sizeof(b[0]) * T);
+    gf_warm_array("gfm.stencil3d.c", c, sizeof(c[0]) * T);
   }
 
 #ifndef NO_OPENMP
