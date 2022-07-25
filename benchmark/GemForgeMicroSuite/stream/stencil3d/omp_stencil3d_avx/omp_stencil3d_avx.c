@@ -29,47 +29,61 @@ typedef float Value;
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t L,
                                     int64_t M, int64_t N) {
 
+/**
+ * Usually L is quite small. To get enough parallelism, if we use OpenMP,
+ * we swap the i,j loop.
+ */
 #ifndef NO_OPENMP
 #pragma omp parallel for schedule(static) firstprivate(a, b, c, L, M, N)
+  for (int64_t j = 0; j < M - 2; j++) {
+#pragma clang loop unroll(disable)
+    for (int64_t i = 0; i < L - 2; i++) {
 #else
 #pragma clang loop unroll(disable)
-#endif
   for (int64_t i = 0; i < L - 2; i++) {
+#pragma clang loop unroll(disable)
     for (int64_t j = 0; j < M - 2; j++) {
-      for (int64_t k = 0; k < N - 18; k += 16) {
+#endif
+
+#ifndef NO_AVX
+#pragma clang loop unroll(disable) vectorize_width(16) interleave(disable)
+#else
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+#endif
+      for (int64_t k = 0; k < N - 2; k++) {
 
         int64_t idx = i * M * N + j * N + k + M * N + N + 1;
 
-#pragma ss stream_name "gfm.stencil2d.Aw.ld"
-        __m512 valAw = _mm512_load_ps(a + idx - 1);
+#pragma ss stream_name "gfm.stencil3d.Aw.ld"
+        Value valAw = a[idx - 1];
 
-#pragma ss stream_name "gfm.stencil2d.Ac.ld"
-        __m512 valAc = _mm512_load_ps(a + idx);
+#pragma ss stream_name "gfm.stencil3d.Ac.ld"
+        Value valAc = a[idx];
 
-#pragma ss stream_name "gfm.stencil2d.Ae.ld"
-        __m512 valAe = _mm512_load_ps(a + idx + 1);
+#pragma ss stream_name "gfm.stencil3d.Ae.ld"
+        Value valAe = a[idx + 1];
 
-#pragma ss stream_name "gfm.stencil2d.An.ld"
-        __m512 valAn = _mm512_load_ps(a + idx - N);
+#pragma ss stream_name "gfm.stencil3d.An.ld"
+        Value valAn = a[idx - N];
 
-#pragma ss stream_name "gfm.stencil2d.As.ld"
-        __m512 valAs = _mm512_load_ps(a + idx + N);
+#pragma ss stream_name "gfm.stencil3d.As.ld"
+        Value valAs = a[idx + N];
 
-#pragma ss stream_name "gfm.stencil2d.Af.ld"
-        __m512 valAf = _mm512_load_ps(a + idx - N * M);
+#pragma ss stream_name "gfm.stencil3d.Af.ld"
+        Value valAf = a[idx - N * N];
 
-#pragma ss stream_name "gfm.stencil2d.Ab.ld"
-        __m512 valAb = _mm512_load_ps(a + idx + N * M);
+#pragma ss stream_name "gfm.stencil3d.Ab.ld"
+        Value valAb = a[idx + N * N];
 
-#pragma ss stream_name "gfm.stencil2d.B.ld"
-        __m512 valB = _mm512_load_ps(b + idx);
+#pragma ss stream_name "gfm.stencil3d.B.ld"
+        Value valB = b[idx];
 
-        __m512 valAh = _mm512_sub_ps(_mm512_add_ps(valAw, valAe), valAc);
-        __m512 valAv = _mm512_sub_ps(_mm512_add_ps(valAn, valAs), valAc);
-        __m512 valM = _mm512_add_ps(_mm512_add_ps(valAh, valAv), valB);
+        Value valAh = (valAw + valAe) - valAc;
+        Value valAv = (valAn + valAs) - valAc;
+        Value valM = (valAh + valAv) + valB;
 
-#pragma ss stream_name "gfm.stencil2d.C.st"
-        _mm512_store_ps(c + idx, valM);
+#pragma ss stream_name "gfm.stencil3d.C.st"
+        c[idx] = valM;
       }
     }
   }
@@ -82,6 +96,7 @@ int main(int argc, char *argv[]) {
   uint64_t M = 512;
   uint64_t N = 512;
   uint64_t L = 16;
+  int rounds = 1;
   int check = 0;
   int warm = 0;
   int argx = 2;
@@ -103,6 +118,10 @@ int main(int argc, char *argv[]) {
   }
   argx++;
   if (argc >= argx) {
+    rounds = atoi(argv[argx - 1]);
+  }
+  argx++;
+  if (argc >= argx) {
     check = atoi(argv[argx - 1]);
   }
   argx++;
@@ -110,7 +129,7 @@ int main(int argc, char *argv[]) {
     warm = atoi(argv[argx - 1]);
   }
   argx++;
-  printf("Number of Threads: %d.\n", numThreads);
+  printf("Threads: %d. Rounds: %d.\n", numThreads, rounds);
   printf("Data size %lukB.\n", M * N * L * sizeof(Value) / 1024);
 
 #ifndef NO_OPENMP
@@ -179,7 +198,16 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  volatile Value computed = foo(a, b, c, L, M, N);
+  {
+    Value *x = a;
+    Value *y = b;
+    for (int i = 0; i < rounds; i++) {
+      volatile Value computed = foo(x, b, y, L, M, N);
+      Value *t = x;
+      x = y;
+      y = t;
+    }
+  }
   gf_detail_sim_end();
 
   if (check) {

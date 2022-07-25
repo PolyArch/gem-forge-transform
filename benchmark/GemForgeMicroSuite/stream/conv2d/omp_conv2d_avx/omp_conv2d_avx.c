@@ -162,7 +162,7 @@ int main(int argc, char *argv[]) {
   }
   argx++;
   printf("Number of Threads: %d.\n", numThreads);
-  printf("Data size %lukB.\n", M * N * sizeof(Value) / 1024);
+  printf("Data size %lukB. Warm %d\n", M * N * sizeof(Value) / 1024, warm);
 
 #ifndef NO_OPENMP
   omp_set_dynamic(0);

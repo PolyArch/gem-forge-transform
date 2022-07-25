@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
   assert(L >= 64);
   assert(M >= 64);
   assert(N >= 64);
-  assert(P >= 64);
+  assert(P >= 1);
   uint64_t T = 2 * M * N + L * N + L * M;
   printf("Number of Threads: %d.\n", numThreads);
   printf("Data size %lukB.\n", T * sizeof(Value) / 1024);

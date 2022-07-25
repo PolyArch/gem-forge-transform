@@ -130,9 +130,9 @@ int main(int argc, char *argv[]) {
 
   gf_detail_sim_start();
   if (warm) {
-    WARM_UP_ARRAY(a, N);
-    WARM_UP_ARRAY(b, N);
-    WARM_UP_ARRAY(c, N);
+    gf_warm_array("gfm.vec_add.a", a, sizeof(a[0]) * N);
+    gf_warm_array("gfm.vec_add.b", b, sizeof(b[0]) * N);
+    gf_warm_array("gfm.vec_add.c", c, sizeof(c[0]) * N);
   }
 #ifndef NO_OPENMP
 #pragma omp parallel for schedule(static) firstprivate(pp)

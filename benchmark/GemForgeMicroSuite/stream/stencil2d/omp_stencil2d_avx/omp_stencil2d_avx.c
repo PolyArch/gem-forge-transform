@@ -29,42 +29,95 @@ typedef float Value;
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
                                     int N) {
 
+#if defined(TILE_ROW) && defined(TILE_COL)
+
 #ifndef NO_OPENMP
 #pragma omp parallel for schedule(static) firstprivate(a, b, c, M, N)
 #else
 #pragma clang loop unroll(disable)
 #endif
-  for (int i = 1; i < M - 1; i++) {
-    for (int j = 0; j + 16 < N; j += 16) {
+  for (int64_t ii = 1; ii < M - 1; ii += TILE_ROW) {
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+    for (int64_t jj = 1; jj < N - 1; jj += TILE_COL) {
 
-      int idx = i * N + j;
+      int64_t iEnd = (ii + TILE_ROW) < (M - 1) ? (ii + TILE_ROW) : (M - 1);
+      int64_t jEnd = (jj + TILE_COL) < (N - 1) ? (jj + TILE_COL) : (N - 1);
 
-#pragma ss stream_name "gfm.stencil2d.Aw.ld"
-      __m512 valAw = _mm512_load_ps(a + idx);
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+      for (int64_t i = ii; i < iEnd; ++i) {
 
-#pragma ss stream_name "gfm.stencil2d.Ac.ld"
-      __m512 valAc = _mm512_load_ps(a + idx + 1);
+#ifndef NO_AVX
+#pragma clang loop unroll(disable) vectorize_width(16) interleave(disable)
+#else
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+#endif
+        for (int64_t j = jj; j < jEnd; ++j) {
 
-#pragma ss stream_name "gfm.stencil2d.Ae.ld"
-      __m512 valAe = _mm512_load_ps(a + idx + 2);
+          int64_t idx = i * N + j;
 
-#pragma ss stream_name "gfm.stencil2d.An.ld"
-      __m512 valAn = _mm512_load_ps(a + idx - N + 1);
+          Value valAw = a[idx - 1];
+          Value valAc = a[idx];
+          Value valAe = a[idx + 1];
+          Value valAn = a[idx - N];
+          Value valAs = a[idx + N];
+          Value valB = b[idx];
 
-#pragma ss stream_name "gfm.stencil2d.As.ld"
-      __m512 valAs = _mm512_load_ps(a + idx + N + 1);
+          Value valAh = (valAw + valAe) - valAc;
+          Value valAv = (valAn + valAs) - valAc;
+          Value valM = (valAh + valAv) - valB;
 
-#pragma ss stream_name "gfm.stencil2d.B.ld"
-      __m512 valB = _mm512_load_ps(b + idx + 1);
-
-      __m512 valAh = _mm512_sub_ps(_mm512_add_ps(valAw, valAe), valAc);
-      __m512 valAv = _mm512_sub_ps(_mm512_add_ps(valAn, valAs), valAc);
-      __m512 valM = _mm512_add_ps(_mm512_add_ps(valAh, valAv), valB);
-
-#pragma ss stream_name "gfm.stencil2d.C.st"
-      _mm512_store_ps(c + idx + 1, valM);
+          c[idx] = valM;
+        }
+      }
     }
   }
+
+#else
+
+#ifndef NO_OPENMP
+#pragma omp parallel for schedule(static) firstprivate(a, b, c, M, N)
+#else
+#pragma clang loop unroll(disable)
+#endif
+  for (int64_t i = 1; i < M - 1; i++) {
+
+#ifndef NO_AVX
+#pragma clang loop unroll(disable) vectorize_width(16) interleave(disable)
+#else
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+#endif
+    for (int64_t j = 1; j < N - 1; j++) {
+
+      int64_t idx = i * N + j;
+
+#pragma ss stream_name "gfm.stencil2d.Aw.ld"
+      Value valAw = a[idx - 1];
+
+#pragma ss stream_name "gfm.stencil2d.Ac.ld"
+      Value valAc = a[idx];
+
+#pragma ss stream_name "gfm.stencil2d.Ae.ld"
+      Value valAe = a[idx + 1];
+
+#pragma ss stream_name "gfm.stencil2d.An.ld"
+      Value valAn = a[idx - N];
+
+#pragma ss stream_name "gfm.stencil2d.As.ld"
+      Value valAs = a[idx + N];
+
+#pragma ss stream_name "gfm.stencil2d.B.ld"
+      Value valB = b[idx];
+
+      Value valAh = (valAw + valAe) - valAc;
+      Value valAv = (valAn + valAs) - valAc;
+      Value valM = (valAh + valAv) - valB;
+
+#pragma ss stream_name "gfm.stencil2d.C.st"
+      c[idx] = valM;
+    }
+  }
+
+#endif
   return 0;
 }
 
@@ -73,6 +126,7 @@ int main(int argc, char *argv[]) {
   int numThreads = 1;
   uint64_t M = 2 * 1024;
   uint64_t N = 2 * 1024;
+  int rounds = 1;
   int check = 0;
   int warm = 0;
   int argx = 2;
@@ -90,6 +144,10 @@ int main(int argc, char *argv[]) {
   }
   argx++;
   if (argc >= argx) {
+    rounds = atoi(argv[argx - 1]);
+  }
+  argx++;
+  if (argc >= argx) {
     check = atoi(argv[argx - 1]);
   }
   argx++;
@@ -97,7 +155,7 @@ int main(int argc, char *argv[]) {
     warm = atoi(argv[argx - 1]);
   }
   argx++;
-  printf("Number of Threads: %d.\n", numThreads);
+  printf("Threads: %d. Rounds: %d.\n", numThreads, rounds);
   printf("Data size %lukB.\n", M * N * sizeof(Value) / 1024);
 
 #ifndef NO_OPENMP
@@ -163,7 +221,17 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  volatile Value computed = foo(a, b, c, M, N);
+  {
+    Value *x = a;
+    Value *y = c;
+    for (int i = 0; i < rounds; ++i) {
+      volatile Value computed = foo(x, b, y, M, N);
+      // Swap x and y.
+      Value *t = y;
+      y = x;
+      x = t;
+    }
+  }
   gf_detail_sim_end();
 
   if (check) {

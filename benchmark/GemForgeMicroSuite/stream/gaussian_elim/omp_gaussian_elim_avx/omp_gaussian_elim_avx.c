@@ -31,59 +31,62 @@ typedef struct {
 #endif
 
 __attribute__((noinline)) Value foo(Value *A, Value *X, Value *B, int64_t M,
-                                    int64_t N, int64_t P) {
+                                    int64_t N, int64_t k) {
 
-  for (int64_t k = 0; k < P - 1; ++k) {
-
-#pragma ss stream_name "gfm.gaussian_elim.akk.ld"
-    Value akk = A[k * N + k];
-
-#pragma ss stream_name "gfm.gaussian_elim.bk.ld"
-    Value bk = B[k];
+  Value akk = A[k * N + k];
+  Value bk = B[k];
 
 // Here I have to be careful to avoid k + 1.
 #ifndef NO_OPENMP
 #pragma omp parallel for schedule(static)                                      \
     firstprivate(A, X, B, M, N, k, akk, bk)
 #endif
-    for (int64_t i = k; i < M - 1; ++i) {
+  for (int64_t i = k; i < M - 1; ++i) {
 
-      int64_t ik = i * N + k;
+    int64_t ik = i * N + k;
 
 #pragma ss stream_name "gfm.gaussian_elim.aik.ld"
-      Value aik = A[ik + N];
+    Value aik = A[ik + N];
 
-      Value multiplier = aik / akk;
+    Value multiplier = aik / akk;
 
-      Value *pbi = B + i;
+    Value *pbi = B + i;
 
 #pragma ss stream_name "gfm.gaussian_elim.bi.ld"
-      Value bi = pbi[1];
+    Value bi = pbi[1];
 
 #pragma ss stream_name "gfm.gaussian_elim.bi.st"
-      pbi[1] = bi - bk * multiplier;
+    pbi[1] = bi - bk * multiplier;
 
 #ifndef NO_AVX
 #pragma clang loop vectorize(enable)
 #endif
-      for (int64_t j = k; j < N - 1; ++j) {
+    for (int64_t j = k; j < N - 1; ++j) {
 
-        Value *pakj = A + (k * N + j);
+      Value *pakj = A + (k * N + j);
 
 #pragma ss stream_name "gfm.gaussian_elim.akj.ld"
-        Value akj = pakj[1];
+      Value akj = pakj[1];
 
-        int64_t ij = i * N + j + N + 1;
+      int64_t ij = i * N + j + N + 1;
 
 #pragma ss stream_name "gfm.gaussian_elim.aij.ld"
-        Value aij = A[ij];
+      Value aij = A[ij];
 
 #pragma ss stream_name "gfm.gaussian_elim.aij.st"
-        A[ij] -= akj * multiplier;
-      }
+      A[ij] -= akj * multiplier;
     }
   }
 
+  return 0;
+}
+
+__attribute__((noinline)) Value driver(Value *A, Value *X, Value *B, int64_t M,
+                                       int64_t N, int64_t P) {
+
+  for (int64_t k = 0; k < P - 1; ++k) {
+    foo(A, X, B, M, N, k);
+  }
   return 0;
 }
 
@@ -125,7 +128,7 @@ int main(int argc, char *argv[]) {
   }
   argx++;
   uint64_t T = M * N;
-  printf("Number of Threads: %d.\n", numThreads);
+  printf("Threads: %d. P %lu.\n", numThreads, P);
   printf("Data size %lukB.\n", T * sizeof(Value) / 1024);
   assert(P >= 1 && P <= M);
 
@@ -177,7 +180,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  volatile Value computed = foo(a, b, x, M, N, P);
+  volatile Value computed = driver(a, b, x, M, N, P);
   gf_detail_sim_end();
 
   return 0;

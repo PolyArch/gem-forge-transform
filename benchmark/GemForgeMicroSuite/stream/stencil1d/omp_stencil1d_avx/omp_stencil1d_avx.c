@@ -32,6 +32,8 @@ typedef struct {
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t N) {
 
+#ifndef NO_AVX
+
   ValueVec *va0 = (ValueVec *)(a);
   ValueVec *va1 = (ValueVec *)(a + 1);
   ValueVec *va2 = (ValueVec *)(a + 2);
@@ -43,7 +45,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t N) {
 #pragma omp parallel for schedule(static)                                      \
     firstprivate(va0, va1, va2, vb, vc, vN)
 #else
-#pragma clang loop unroll(disable)
+#pragma clang loop unroll(disable) vectorize(disable)
 #endif
   for (int64_t i = 0; i < vN; i++) {
 
@@ -65,6 +67,55 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t N) {
 #pragma ss stream_name "gfm.stencil1d.C.st"
     _mm512_store_ps(vc + i, valM);
   }
+
+  // Handling remain iterations.
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+  for (int64_t i = vN * ValueVecLen; i < N - 2; ++i) {
+    Value *vA = a + i;
+
+    Value valA0 = vA[0];
+    Value valA1 = vA[1];
+    Value valA2 = vA[2];
+
+    Value valB = b[i];
+    Value valA = valA0 + valA2 - valA1;
+    Value valM = valA + valB;
+
+    c[i] = valM;
+  }
+
+#else
+
+#ifndef NO_OPENMP
+#pragma omp parallel for schedule(static) firstprivate(a, b, c, N)
+#else
+#pragma clang loop unroll(disable) vectorize(disable)
+#endif
+  for (int64_t i = 0; i < N - 2; i++) {
+
+    Value *vA = a + i;
+
+#pragma ss stream_name "gfm.stencil1d.A0.ld"
+    Value valA0 = vA[0];
+
+#pragma ss stream_name "gfm.stencil1d.A1.ld"
+    Value valA1 = vA[1];
+
+#pragma ss stream_name "gfm.stencil1d.A2.ld"
+    Value valA2 = vA[2];
+
+#pragma ss stream_name "gfm.stencil1d.B.ld"
+    Value valB = b[i];
+
+    Value valA = valA0 + valA2 - valA1;
+
+    Value valM = valA + valB;
+
+#pragma ss stream_name "gfm.stencil1d.C.st"
+    c[i] = valM;
+  }
+
+#endif
   return 0;
 }
 
@@ -72,6 +123,7 @@ int main(int argc, char *argv[]) {
 
   int numThreads = 1;
   uint64_t N = 16 * 1024 * 1024 / sizeof(Value);
+  int rounds = 1;
   int check = 0;
   int warm = 0;
   int argx = 2;
@@ -88,6 +140,10 @@ int main(int argc, char *argv[]) {
   }
   argx++;
   if (argc >= argx) {
+    rounds = atoi(argv[argx - 1]);
+  }
+  argx++;
+  if (argc >= argx) {
     check = atoi(argv[argx - 1]);
   }
   argx++;
@@ -95,7 +151,7 @@ int main(int argc, char *argv[]) {
     warm = atoi(argv[argx - 1]);
   }
   argx++;
-  printf("Number of Threads: %d.\n", numThreads);
+  printf("Threads: %d. Rounds: %d.\n", numThreads, rounds);
   printf("Data size %lukB.\n", N * sizeof(Value) / 1024);
 
 #ifndef NO_OPENMP
@@ -160,7 +216,16 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  volatile Value computed = foo(a, b, c, N);
+  {
+    Value *x = a;
+    Value *y = c;
+    for (int i = 0; i < rounds; ++i) {
+      volatile Value computed = foo(x, b, y, N);
+      Value *t = y;
+      y = x;
+      x = t;
+    }
+  }
   gf_detail_sim_end();
 
   if (check) {
