@@ -55,6 +55,29 @@ void StreamLoopEliminator::eliminateLoop(StaticStreamRegionAnalyzer *Analyzer,
     this->EliminatedBBs.insert(ClonedBB);
   }
 
+  // Clear any ExitValueUser for streams.
+  for (auto ClonedBB : ClonedLoop->blocks()) {
+    auto InsertedExitValueUsers =
+        this->Transformer->ClonedBBToInsertedExitValueUsers.equal_range(
+            ClonedBB);
+
+    for (auto Iter = InsertedExitValueUsers.first;
+         Iter != InsertedExitValueUsers.second; ++Iter) {
+      const auto &InsertedExitValueUser = Iter->second;
+      auto ExitSS = InsertedExitValueUser.S;
+      auto &SSInfo = ExitSS->StaticStreamInfo;
+      if (InsertedExitValueUser.NeedFinalValue) {
+        SSInfo.set_core_need_final_value(false);
+      }
+      if (InsertedExitValueUser.NeedSecondFinalValue) {
+        SSInfo.set_core_need_second_final_value(false);
+      }
+    }
+
+    this->Transformer->ClonedBBToInsertedExitValueUsers.erase(
+        InsertedExitValueUsers.first, InsertedExitValueUsers.second);
+  }
+
   this->Transformer->CachedLI->clearFuncAnalysis(ClonedFunc);
 
   auto ClonedPreheaderTerminator = ClonedPreheaderBB->getTerminator();

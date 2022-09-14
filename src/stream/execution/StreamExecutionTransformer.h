@@ -55,6 +55,22 @@ private:
   // Instructions waiting to be removed at the end.
   std::unordered_set<llvm::Instruction *> PendingRemovedInsts;
 
+  /**
+   * Inserted ExitValueUser. This is used to revert the flag of
+   * CoreNeedFinalValue/CoreNeedSecondFinalValue if Loop is eliminated.
+   */
+  struct InsertedExitValueUser {
+    StaticStream *S;
+    bool NeedFinalValue;
+    bool NeedSecondFinalValue;
+    InsertedExitValueUser(StaticStream *_S, bool _NeedFinalValue,
+                          bool _NeedSecondFinalValue)
+        : S(_S), NeedFinalValue(_NeedFinalValue),
+          NeedSecondFinalValue(_NeedSecondFinalValue) {}
+  };
+  std::multimap<const llvm::BasicBlock *, InsertedExitValueUser>
+      ClonedBBToInsertedExitValueUsers;
+
   // All transformed functions.
   std::unordered_set<const llvm::Function *> TransformedFunctions;
 

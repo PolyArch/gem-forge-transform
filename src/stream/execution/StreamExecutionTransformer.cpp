@@ -611,6 +611,9 @@ void StreamExecutionTransformer::insertStreamExitValueUserAtLoop(
   } else {
     SSInfo.set_core_need_second_final_value(true);
   }
+  this->ClonedBBToInsertedExitValueUsers.emplace(
+      std::piecewise_construct, std::forward_as_tuple(ClonedExitBB),
+      std::forward_as_tuple(ExitSS, IsLastValue, !IsLastValue));
   for (auto ClonedUserInst : OutOfLoopClonedExitInstUsers) {
     // This is an outside user, replace it.
     LLVM_DEBUG({
