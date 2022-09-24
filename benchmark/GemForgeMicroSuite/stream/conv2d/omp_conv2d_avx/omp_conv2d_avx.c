@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 
@@ -46,46 +46,46 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, int64_t M, int64_t N) {
 
 // First row.
 #pragma ss stream_name "gfm.conv2d.A00.ld"
-      __m512 valA00 = _mm512_load_ps(a + idx - N - 1);
+      ValueAVX valA00 = ValueAVXLoad(a + idx - N - 1);
 #pragma ss stream_name "gfm.conv2d.A01.ld"
-      __m512 valA01 = _mm512_load_ps(a + idx - N);
+      ValueAVX valA01 = ValueAVXLoad(a + idx - N);
 #pragma ss stream_name "gfm.conv2d.A02.ld"
-      __m512 valA02 = _mm512_load_ps(a + idx - N + 1);
+      ValueAVX valA02 = ValueAVXLoad(a + idx - N + 1);
 
 // Second row.
 #pragma ss stream_name "gfm.conv2d.A10.ld"
-      __m512 valA10 = _mm512_load_ps(a + idx - 1);
+      ValueAVX valA10 = ValueAVXLoad(a + idx - 1);
 #pragma ss stream_name "gfm.conv2d.A11.ld"
-      __m512 valA11 = _mm512_load_ps(a + idx);
+      ValueAVX valA11 = ValueAVXLoad(a + idx);
 #pragma ss stream_name "gfm.conv2d.A12.ld"
-      __m512 valA12 = _mm512_load_ps(a + idx + 1);
+      ValueAVX valA12 = ValueAVXLoad(a + idx + 1);
 
 // Third row.
 #pragma ss stream_name "gfm.conv2d.A20.ld"
-      __m512 valA20 = _mm512_load_ps(a + idx + N - 1);
+      ValueAVX valA20 = ValueAVXLoad(a + idx + N - 1);
 #pragma ss stream_name "gfm.conv2d.A21.ld"
-      __m512 valA21 = _mm512_load_ps(a + idx + N);
+      ValueAVX valA21 = ValueAVXLoad(a + idx + N);
 #pragma ss stream_name "gfm.conv2d.A22.ld"
-      __m512 valA22 = _mm512_load_ps(a + idx + N + 1);
+      ValueAVX valA22 = ValueAVXLoad(a + idx + N + 1);
 
-      __m512 coef0 = _mm512_set1_ps(0.0751f);
-      __m512 coef1 = _mm512_set1_ps(0.1238f);
-      __m512 coef2 = _mm512_set1_ps(0.2042f);
+      ValueAVX coef0 = ValueAVXSet1(0.0751f);
+      ValueAVX coef1 = ValueAVXSet1(0.1238f);
+      ValueAVX coef2 = ValueAVXSet1(0.2042f);
 
-      __m512 valA0 = _mm512_add_ps(_mm512_add_ps(_mm512_mul_ps(coef0, valA00),
-                                                 _mm512_mul_ps(coef0, valA02)),
-                                   _mm512_mul_ps(coef1, valA01));
-      __m512 valA1 = _mm512_add_ps(_mm512_add_ps(_mm512_mul_ps(coef1, valA10),
-                                                 _mm512_mul_ps(coef1, valA12)),
-                                   _mm512_mul_ps(coef2, valA11));
-      __m512 valA2 = _mm512_add_ps(_mm512_add_ps(_mm512_mul_ps(coef0, valA20),
-                                                 _mm512_mul_ps(coef0, valA22)),
-                                   _mm512_mul_ps(coef1, valA21));
+      ValueAVX valA0 = ValueAVXAdd(ValueAVXAdd(ValueAVXMul(coef0, valA00),
+                                                 ValueAVXMul(coef0, valA02)),
+                                   ValueAVXMul(coef1, valA01));
+      ValueAVX valA1 = ValueAVXAdd(ValueAVXAdd(ValueAVXMul(coef1, valA10),
+                                                 ValueAVXMul(coef1, valA12)),
+                                   ValueAVXMul(coef2, valA11));
+      ValueAVX valA2 = ValueAVXAdd(ValueAVXAdd(ValueAVXMul(coef0, valA20),
+                                                 ValueAVXMul(coef0, valA22)),
+                                   ValueAVXMul(coef1, valA21));
 
-      __m512 valA = _mm512_add_ps(_mm512_add_ps(valA0, valA1), valA2);
+      ValueAVX valA = ValueAVXAdd(ValueAVXAdd(valA0, valA1), valA2);
 
 #pragma ss stream_name "gfm.conv2d.B.st"
-      _mm512_store_ps(b + idx, valA);
+      ValueAVXStore(b + idx, valA);
     }
 #else
 

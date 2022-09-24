@@ -14,12 +14,12 @@ typedef int Value;
 #define WARM_CACHE
 
 __attribute__((noinline)) Value foo(Value *a, int N, int M) {
-  __m512 valS = _mm512_set1_epi32(0.0f);
+  ValueAVX valS = ValueAVXSet1(0.0f);
   for (int i = 0; i < N; i += 16) {
-    __m512 valA = _mm512_load_epi32(a + i);
-    valS = _mm512_add_epi32(valA, valS);
+    ValueAVX valA = ValueAVXLoad(a + i);
+    valS = ValueAVXAdd(valA, valS);
   }
-  Value sum = _mm512_reduce_add_epi32(valS);
+  Value sum = ValueAVXReduceAdd(valS);
   return sum;
 }
 

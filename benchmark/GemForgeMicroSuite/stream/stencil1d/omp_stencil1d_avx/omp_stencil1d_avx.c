@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 const int ValueVecLen = 16;
 typedef struct {
   float vs[ValueVecLen];
@@ -50,22 +50,22 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t N) {
   for (int64_t i = 0; i < vN; i++) {
 
 #pragma ss stream_name "gfm.stencil1d.A0.ld"
-    __m512 valA0 = _mm512_load_ps(va0 + i);
+    ValueAVX valA0 = ValueAVXLoad(va0 + i);
 
 #pragma ss stream_name "gfm.stencil1d.A1.ld"
-    __m512 valA1 = _mm512_load_ps(va1 + i);
+    ValueAVX valA1 = ValueAVXLoad(va1 + i);
 
 #pragma ss stream_name "gfm.stencil1d.A2.ld"
-    __m512 valA2 = _mm512_load_ps(va2 + i);
+    ValueAVX valA2 = ValueAVXLoad(va2 + i);
 
 #pragma ss stream_name "gfm.stencil1d.B.ld"
-    __m512 valB = _mm512_load_ps(vb + i);
+    ValueAVX valB = ValueAVXLoad(vb + i);
 
-    __m512 valA = _mm512_sub_ps(_mm512_add_ps(valA0, valA2), valA1);
-    __m512 valM = _mm512_add_ps(valA, valB);
+    ValueAVX valA = ValueAVXSub(ValueAVXAdd(valA0, valA2), valA1);
+    ValueAVX valM = ValueAVXAdd(valA, valB);
 
 #pragma ss stream_name "gfm.stencil1d.C.st"
-    _mm512_store_ps(vc + i, valM);
+    ValueAVXStore(vc + i, valM);
   }
 
   // Handling remain iterations.

@@ -16,9 +16,9 @@ typedef int Value;
 __attribute__((noinline)) Value foo(Value *a, uint64_t *histogram, int N) {
   for (int64_t i = 0; i < N; i += CACHE_LINE_SIZE / sizeof(*a)) {
     // Load the value.
-    __m512i val = _mm512_load_epi32(a + i);
+    ValueAVX val = ValueAVXLoad(a + i);
     // Zero-extend shift right to get the highest byte.
-    __m512i shifted = _mm512_srli_epi32(val, 24);
+    ValueAVX shifted = _mm512_srli_epi32(val, 24);
     // Split into two.
     __m256i upper = _mm512_extracti32x8_epi32(shifted, 1);
     __m256i lower = _mm512_castsi512_si256(shifted);

@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 const int ValueVecLen = 16;
 typedef struct {
   float vs[ValueVecLen];
@@ -158,6 +158,12 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_region("gfm.gaussian.a", a, sizeof(a[0]), M, N);
   gf_stream_nuca_region("gfm.gaussian.b", b, sizeof(b[0]), M);
   gf_stream_nuca_region("gfm.gaussian.x", x, sizeof(x[0]), N);
+
+  gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
+  gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE, 32);
+
+  gf_stream_nuca_set_property(x, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
+
   gf_stream_nuca_align(a, a, 1);
   gf_stream_nuca_align(a, a, N);
   gf_stream_nuca_remap();

@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 // #define CHECK
@@ -18,10 +18,10 @@ typedef float Value;
 __attribute__((noinline)) Value foo(Value *a, int N) {
 #pragma omp parallel firstprivate(a)
   {
-    __m512 valS = _mm512_set1_ps(2.0f);
+    ValueAVX valS = ValueAVXSet1(2.0f);
 #pragma omp for schedule(static)
     for (int i = 0; i < N; i += 16) {
-      _mm512_store_ps(a + i, valS);
+      ValueAVXStore(a + i, valS);
     }
   }
   return 0;

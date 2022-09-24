@@ -1,9 +1,7 @@
 /**
  * Simple array sum.
  */
-#ifdef GEM_FORGE
-#include "gem5/m5ops.h"
-#endif
+#include "gfm_utils.h"
 
 #include <malloc.h>
 #include <omp.h>
@@ -13,7 +11,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 #define CHECK
@@ -58,7 +56,7 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
 #if Ni == 4
             __m128 valI = _mm_load_ps(I + idxI);
 #elif Ni == 16
-            __m512 valI = _mm512_load_ps(I + idxI);
+            ValueAVX valI = ValueAVXLoad(I + idxI);
 #endif
 #pragma clang loop unroll(disable) interleave(disable)
             for (uint64_t ky = 0; ky < Ky; ++ky) {
@@ -72,12 +70,12 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
                 __m128 valR = _mm_add_ps(valM, valS);
                 _mm_store_ps(localSum[y + Py - ky][x + Px - kx], valR);
 #elif Ni == 16
-                __m512 valK = _mm512_load_ps(K + idxK);
-                __m512 valS =
-                    _mm512_load_ps(localSum[y + Py - ky][x + Px - kx]);
-                __m512 valM = _mm512_mul_ps(valK, valI);
-                __m512 valR = _mm512_add_ps(valM, valS);
-                _mm512_store_ps(localSum[y + Py - ky][x + Px - kx], valR);
+                ValueAVX valK = ValueAVXLoad(K + idxK);
+                ValueAVX valS =
+                    ValueAVXLoad(localSum[y + Py - ky][x + Px - kx]);
+                ValueAVX valM = ValueAVXMul(valK, valI);
+                ValueAVX valR = ValueAVXAdd(valM, valS);
+                ValueAVXStore(localSum[y + Py - ky][x + Px - kx], valR);
 #endif
               }
             }
@@ -94,8 +92,8 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
             __m128 valS = _mm_load_ps(localSum[y][x]);
             Value sum = hsum_ps_sse1(valS);
 #elif Ni == 16
-            __m512 valS = _mm512_load_ps(localSum[y][x]);
-            Value sum = _mm512_reduce_add_ps(valS);
+            ValueAVX valS = ValueAVXLoad(localSum[y][x]);
+            Value sum = ValueAVXReduceAdd(valS);
 #endif
             O[idxO] = sum;
           }

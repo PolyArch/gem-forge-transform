@@ -1,9 +1,7 @@
 /**
  * Simple array sum.
  */
-#ifdef GEM_FORGE
-#include "gem5/m5ops.h"
-#endif
+#include "gfm_utils.h"
 
 #include <malloc.h>
 #include <omp.h>
@@ -13,7 +11,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 #define CHECK
@@ -26,17 +24,17 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C) {
 // #pragma clang loop vectorize(disable)
 #pragma omp parallel for schedule(static)
   for (uint64_t i = 0; i < N; ++i) {
-    __m512 valS = _mm512_set1_ps(0.0f);
+    ValueAVX valS = ValueAVXSet1(0.0f);
 #pragma clang loop unroll(disable) interleave(disable)
     for (uint64_t j = 0; j < M; j += 16) {
       const uint64_t a_idx = i * M + j;
       const uint64_t b_idx = j;
-      __m512 valA = _mm512_load_ps(A + a_idx);
-      __m512 valB = _mm512_load_ps(B + b_idx);
-      __m512 valM = _mm512_mul_ps(valA, valB);
-      valS = _mm512_add_ps(valM, valS);
+      ValueAVX valA = ValueAVXLoad(A + a_idx);
+      ValueAVX valB = ValueAVXLoad(B + b_idx);
+      ValueAVX valM = ValueAVXMul(valA, valB);
+      valS = ValueAVXAdd(valM, valS);
     }
-    Value sum = _mm512_reduce_add_ps(valS);
+    Value sum = ValueAVXReduceAdd(valS);
     C[i] = sum;
   }
   return 0.0f;

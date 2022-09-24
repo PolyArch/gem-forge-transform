@@ -11,7 +11,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 #define CHECK
@@ -26,15 +26,15 @@ __attribute__((noinline)) Value foo(Value *A) {
   Value ret = 0.0f;
 #pragma omp parallel
   {
-    // __m512 valS = _mm512_set1_ps(0.0f);
+    // ValueAVX valS = ValueAVXSet1(0.0f);
     Value sum = 0.0f;
 #pragma omp for schedule(static)
     for (uint64_t i = 0; i < N; i += 16) {
-      // __m512 valA = _mm512_load_ps(A + i);
-      // valS = _mm512_add_ps(valA, valS);
+      // ValueAVX valA = ValueAVXLoad(A + i);
+      // valS = ValueAVXAdd(valA, valS);
       sum += A[i];
     }
-    // Value sum = _mm512_reduce_add_ps(valS);
+    // Value sum = ValueAVXReduceAdd(valS);
     __atomic_fetch_fadd(&ret, sum, __ATOMIC_RELAXED);
   }
   return ret;

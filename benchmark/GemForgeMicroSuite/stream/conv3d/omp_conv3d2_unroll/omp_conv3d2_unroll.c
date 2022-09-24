@@ -13,7 +13,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 #define CHECK
@@ -40,15 +40,15 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
 #pragma omp parallel for schedule(static)
   for (uint64_t n = 0; n < Nn; ++n) {
 #define idxK(kx, ky) (n * Kx * Ky * Ni + kx * Kx * Ni + ky * Ni)
-    __m512 valK_0_0 = _mm512_load_ps(K + idxK(0, 0));
-    __m512 valK_0_1 = _mm512_load_ps(K + idxK(0, 1));
-    __m512 valK_0_2 = _mm512_load_ps(K + idxK(0, 2));
-    __m512 valK_1_0 = _mm512_load_ps(K + idxK(1, 0));
-    __m512 valK_1_1 = _mm512_load_ps(K + idxK(1, 1));
-    __m512 valK_1_2 = _mm512_load_ps(K + idxK(1, 2));
-    __m512 valK_2_0 = _mm512_load_ps(K + idxK(2, 0));
-    __m512 valK_2_1 = _mm512_load_ps(K + idxK(2, 1));
-    __m512 valK_2_2 = _mm512_load_ps(K + idxK(2, 2));
+    ValueAVX valK_0_0 = ValueAVXLoad(K + idxK(0, 0));
+    ValueAVX valK_0_1 = ValueAVXLoad(K + idxK(0, 1));
+    ValueAVX valK_0_2 = ValueAVXLoad(K + idxK(0, 2));
+    ValueAVX valK_1_0 = ValueAVXLoad(K + idxK(1, 0));
+    ValueAVX valK_1_1 = ValueAVXLoad(K + idxK(1, 1));
+    ValueAVX valK_1_2 = ValueAVXLoad(K + idxK(1, 2));
+    ValueAVX valK_2_0 = ValueAVXLoad(K + idxK(2, 0));
+    ValueAVX valK_2_1 = ValueAVXLoad(K + idxK(2, 1));
+    ValueAVX valK_2_2 = ValueAVXLoad(K + idxK(2, 2));
 #pragma clang loop unroll(disable) interleave(disable)
     // for (uint64_t yy = 0; yy < Ny; yy += By) {
     for (uint64_t yy = 0; yy < By * 4; yy += By) {
@@ -60,45 +60,45 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
           for (uint64_t x = 0; x < Bx; ++x) {
 
             const uint64_t idxI = (yy + y) * Nx * Ni + (xx + x) * Ni;
-            __m512 valI = _mm512_load_ps(I + idxI);
+            ValueAVX valI = ValueAVXLoad(I + idxI);
 
 #define localSumPtr(kx, ky) localSum[y + Py - ky][x + Px - kx]
-            __m512 valS_0_0 = _mm512_load_ps(localSumPtr(0, 0));
-            __m512 valM_0_0 = _mm512_mul_ps(valK_0_0, valI);
-            __m512 valR_0_0 = _mm512_add_ps(valM_0_0, valS_0_0);
-            _mm512_store_ps(localSumPtr(0, 0), valR_0_0);
-            __m512 valS_0_1 = _mm512_load_ps(localSumPtr(0, 1));
-            __m512 valM_0_1 = _mm512_mul_ps(valK_0_1, valI);
-            __m512 valR_0_1 = _mm512_add_ps(valM_0_1, valS_0_1);
-            _mm512_store_ps(localSumPtr(0, 1), valR_0_1);
-            __m512 valS_0_2 = _mm512_load_ps(localSumPtr(0, 2));
-            __m512 valM_0_2 = _mm512_mul_ps(valK_0_2, valI);
-            __m512 valR_0_2 = _mm512_add_ps(valM_0_2, valS_0_2);
-            _mm512_store_ps(localSumPtr(0, 2), valR_0_2);
-            __m512 valS_1_0 = _mm512_load_ps(localSumPtr(1, 0));
-            __m512 valM_1_0 = _mm512_mul_ps(valK_1_0, valI);
-            __m512 valR_1_0 = _mm512_add_ps(valM_1_0, valS_1_0);
-            _mm512_store_ps(localSumPtr(1, 0), valR_1_0);
-            __m512 valS_1_1 = _mm512_load_ps(localSumPtr(1, 1));
-            __m512 valM_1_1 = _mm512_mul_ps(valK_1_1, valI);
-            __m512 valR_1_1 = _mm512_add_ps(valM_1_1, valS_1_1);
-            _mm512_store_ps(localSumPtr(1, 1), valR_1_1);
-            __m512 valS_1_2 = _mm512_load_ps(localSumPtr(1, 2));
-            __m512 valM_1_2 = _mm512_mul_ps(valK_1_2, valI);
-            __m512 valR_1_2 = _mm512_add_ps(valM_1_2, valS_1_2);
-            _mm512_store_ps(localSumPtr(1, 2), valR_1_2);
-            __m512 valS_2_0 = _mm512_load_ps(localSumPtr(2, 0));
-            __m512 valM_2_0 = _mm512_mul_ps(valK_2_0, valI);
-            __m512 valR_2_0 = _mm512_add_ps(valM_2_0, valS_2_0);
-            _mm512_store_ps(localSumPtr(2, 0), valR_2_0);
-            __m512 valS_2_1 = _mm512_load_ps(localSumPtr(2, 1));
-            __m512 valM_2_1 = _mm512_mul_ps(valK_2_1, valI);
-            __m512 valR_2_1 = _mm512_add_ps(valM_2_1, valS_2_1);
-            _mm512_store_ps(localSumPtr(2, 1), valR_2_1);
-            __m512 valS_2_2 = _mm512_load_ps(localSumPtr(2, 2));
-            __m512 valM_2_2 = _mm512_mul_ps(valK_2_2, valI);
-            __m512 valR_2_2 = _mm512_add_ps(valM_2_2, valS_2_2);
-            _mm512_store_ps(localSumPtr(2, 2), valR_2_2);
+            ValueAVX valS_0_0 = ValueAVXLoad(localSumPtr(0, 0));
+            ValueAVX valM_0_0 = ValueAVXMul(valK_0_0, valI);
+            ValueAVX valR_0_0 = ValueAVXAdd(valM_0_0, valS_0_0);
+            ValueAVXStore(localSumPtr(0, 0), valR_0_0);
+            ValueAVX valS_0_1 = ValueAVXLoad(localSumPtr(0, 1));
+            ValueAVX valM_0_1 = ValueAVXMul(valK_0_1, valI);
+            ValueAVX valR_0_1 = ValueAVXAdd(valM_0_1, valS_0_1);
+            ValueAVXStore(localSumPtr(0, 1), valR_0_1);
+            ValueAVX valS_0_2 = ValueAVXLoad(localSumPtr(0, 2));
+            ValueAVX valM_0_2 = ValueAVXMul(valK_0_2, valI);
+            ValueAVX valR_0_2 = ValueAVXAdd(valM_0_2, valS_0_2);
+            ValueAVXStore(localSumPtr(0, 2), valR_0_2);
+            ValueAVX valS_1_0 = ValueAVXLoad(localSumPtr(1, 0));
+            ValueAVX valM_1_0 = ValueAVXMul(valK_1_0, valI);
+            ValueAVX valR_1_0 = ValueAVXAdd(valM_1_0, valS_1_0);
+            ValueAVXStore(localSumPtr(1, 0), valR_1_0);
+            ValueAVX valS_1_1 = ValueAVXLoad(localSumPtr(1, 1));
+            ValueAVX valM_1_1 = ValueAVXMul(valK_1_1, valI);
+            ValueAVX valR_1_1 = ValueAVXAdd(valM_1_1, valS_1_1);
+            ValueAVXStore(localSumPtr(1, 1), valR_1_1);
+            ValueAVX valS_1_2 = ValueAVXLoad(localSumPtr(1, 2));
+            ValueAVX valM_1_2 = ValueAVXMul(valK_1_2, valI);
+            ValueAVX valR_1_2 = ValueAVXAdd(valM_1_2, valS_1_2);
+            ValueAVXStore(localSumPtr(1, 2), valR_1_2);
+            ValueAVX valS_2_0 = ValueAVXLoad(localSumPtr(2, 0));
+            ValueAVX valM_2_0 = ValueAVXMul(valK_2_0, valI);
+            ValueAVX valR_2_0 = ValueAVXAdd(valM_2_0, valS_2_0);
+            ValueAVXStore(localSumPtr(2, 0), valR_2_0);
+            ValueAVX valS_2_1 = ValueAVXLoad(localSumPtr(2, 1));
+            ValueAVX valM_2_1 = ValueAVXMul(valK_2_1, valI);
+            ValueAVX valR_2_1 = ValueAVXAdd(valM_2_1, valS_2_1);
+            ValueAVXStore(localSumPtr(2, 1), valR_2_1);
+            ValueAVX valS_2_2 = ValueAVXLoad(localSumPtr(2, 2));
+            ValueAVX valM_2_2 = ValueAVXMul(valK_2_2, valI);
+            ValueAVX valR_2_2 = ValueAVXAdd(valM_2_2, valS_2_2);
+            ValueAVXStore(localSumPtr(2, 2), valR_2_2);
           }
         }
 
@@ -107,8 +107,8 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O) {
           for (uint64_t x = 0; x < BxPad; ++x) {
             const uint64_t idxO =
                 n * NyPad * NxPad + (yy + y) * NxPad + (xx + x);
-            __m512 valS = _mm512_load_ps(localSum[y][x]);
-            Value sum = _mm512_reduce_add_ps(valS);
+            ValueAVX valS = ValueAVXLoad(localSum[y][x]);
+            Value sum = ValueAVXReduceAdd(valS);
             O[idxO] = sum;
           }
         }

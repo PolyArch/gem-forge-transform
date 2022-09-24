@@ -7,9 +7,16 @@
 #include <omp.h>
 #endif
 
+#define LOOP_LNM 1
+#define LOOP_NLM 2
+
+#ifndef LOOP_ORDER
+#define LOOP_ORDER LOOP_LNM
+#endif
+
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 const int ValueVecLen = 16;
 typedef struct {
   float vs[ValueVecLen];
@@ -73,8 +80,21 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
 #ifndef NO_OPENMP
 #pragma omp parallel for schedule(static) firstprivate(A, Bt, C, L, M, N, P)
 #endif
+
+#if LOOP_ORDER == LOOP_LNM
+
   for (int64_t l = 0; l < P; ++l) {
     for (int64_t n = 0; n < N; ++n) {
+
+#elif LOOP_ORDER == LOOP_NLM
+
+  for (int64_t n = 0; n < P; ++n) {
+    for (int64_t l = 0; l < L; ++l) {
+
+#else
+#error "Unkown LoopOrder"
+#endif
+
       Value s = 0;
 
 #ifndef NO_AVX
@@ -84,10 +104,18 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
 #endif
       for (int64_t m = 0; m < M; ++m) {
 
-#pragma ss stream_name "gfm.mm_inner.A.ld"
+#if LOOP_ORDER == LOOP_LNM
+#pragma ss stream_name "gfm.mm_inner_lnm.A.ld"
+#else
+#pragma ss stream_name "gfm.mm_inner_nlm.A.ld"
+#endif
         Value a = A[l * M + m];
 
-#pragma ss stream_name "gfm.mm_inner.Bt.ld"
+#if LOOP_ORDER == LOOP_LNM
+#pragma ss stream_name "gfm.mm_inner_lnm.Bt.ld"
+#else
+#pragma ss stream_name "gfm.mm_inner_nlm.Bt.ld"
+#endif
         Value b = Bt[n * M + m];
 
         s += a * b;
@@ -186,6 +214,16 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(c, a, 0);
   gf_stream_nuca_align(a, a, 1);
   gf_stream_nuca_align(a, a, M);
+  gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
+#ifdef PUM_TILE_DIM0_ELEMS
+  gf_stream_nuca_set_property(a, STREAM_NUCA_REGION_PROPERTY_PUM_TILE_SIZE_DIM0,
+                              PUM_TILE_DIM0_ELEMS);
+  gf_stream_nuca_set_property(
+      bt, STREAM_NUCA_REGION_PROPERTY_PUM_TILE_SIZE_DIM0, PUM_TILE_DIM0_ELEMS);
+  gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_TILE_SIZE_DIM0,
+                              PUM_TILE_DIM0_ELEMS);
+#endif
+  // gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
   gf_stream_nuca_remap();
 #endif
 

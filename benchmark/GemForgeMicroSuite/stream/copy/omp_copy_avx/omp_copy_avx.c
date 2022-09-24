@@ -16,8 +16,8 @@ typedef int Value;
 __attribute__((noinline)) Value foo(Value *a, Value *b, int N) {
 #pragma omp parallel for schedule(static) firstprivate(a, b)
   for (int i = 0; i < N; i += 16) {
-    __m512i val = _mm512_load_epi32(a + i);
-    _mm512_store_epi32(b + i, val);
+    ValueAVX val = ValueAVXLoad(a + i);
+    ValueAVXStore(b + i, val);
   }
   return 0;
 }

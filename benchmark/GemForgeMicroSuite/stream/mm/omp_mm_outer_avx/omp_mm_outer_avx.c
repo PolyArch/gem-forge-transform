@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 const int ValueVecLen = 16;
 typedef struct {
   float vs[ValueVecLen];
@@ -69,17 +69,17 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C, int64_t L,
     for (int64_t n = 0; n < N - (vElem - 1); n += vElem) {
 
 #pragma ss stream_name "gfm.mm_outer.B.ld"
-      __m512 vb = _mm512_load_ps(B + m * N + n);
+      ValueAVX vb = ValueAVXLoad(B + m * N + n);
 
 #pragma ss stream_name "gfm.mm_outer.C.ld"
-      __m512 vc = _mm512_load_ps(C + l * N + n);
+      ValueAVX vc = ValueAVXLoad(C + l * N + n);
 
-      __m512 va = _mm512_set1_ps(a);
+      ValueAVX va = ValueAVXSet1(a);
 
-      __m512 v = _mm512_add_ps(vc, _mm512_mul_ps(va, vb));
+      ValueAVX v = ValueAVXAdd(vc, ValueAVXMul(va, vb));
 
 #pragma ss stream_name "gfm.mm_outer.C.st"
-      _mm512_store_ps(C + l * N + n, v);
+      ValueAVXStore(C + l * N + n, v);
     }
 
     const int64_t remain = (N / vElem) * vElem;

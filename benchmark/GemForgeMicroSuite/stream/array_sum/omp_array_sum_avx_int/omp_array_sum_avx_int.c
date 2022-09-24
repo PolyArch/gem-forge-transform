@@ -27,13 +27,13 @@ __attribute__((noinline)) Value foo(Value *A) {
   Value ret = 0.0f;
 #pragma omp parallel
   {
-    __m512i valS = _mm512_set1_epi32(0);
+    ValueAVX valS = ValueAVXSet1(0);
 #pragma omp for schedule(static)
     for (uint64_t i = 0; i < N; i += 16) {
-      __m512i valA = _mm512_load_epi32(A + i);
-      valS = _mm512_add_epi32(valA, valS);
+      ValueAVX valA = ValueAVXLoad(A + i);
+      valS = ValueAVXAdd(valA, valS);
     }
-    Value sum = _mm512_reduce_add_epi32(valS);
+    Value sum = ValueAVXReduceAdd(valS);
     __atomic_fetch_add(&ret, sum, __ATOMIC_RELAXED);
   }
   return ret;

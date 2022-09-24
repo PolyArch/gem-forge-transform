@@ -1,6 +1,4 @@
-#ifdef GEM_FORGE
-#include "gem5/m5ops.h"
-#endif
+#include "gfm_utils.h"
 
 #include <malloc.h>
 #include <omp.h>
@@ -10,7 +8,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 #define CHECK
@@ -38,18 +36,18 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C) {
     Value localSum[By][Bx] = {0};
     for (uint64_t j = 0; j < M; j += Bx) {
 #if Bx == 16
-      __m512 valB = _mm512_load_ps(B + j);
+      ValueAVX valB = ValueAVXLoad(B + j);
 #elif Bx == 4
       __m128 valB = _mm_load_ps(B + j);
 #endif
       for (uint64_t by = 0; by < By; ++by) {
         uint64_t idxA = (i + by) * M + j;
 #if Bx == 16
-        __m512 valA = _mm512_load_ps(A + idxA);
-        __m512 valC = _mm512_load_ps(localSum[by]);
-        __m512 valM = _mm512_mul_ps(valA, valB);
-        __m512 valS = _mm512_add_ps(valM, valC);
-        _mm512_store_ps(localSum[by], valS);
+        ValueAVX valA = ValueAVXLoad(A + idxA);
+        ValueAVX valC = ValueAVXLoad(localSum[by]);
+        ValueAVX valM = ValueAVXMul(valA, valB);
+        ValueAVX valS = ValueAVXAdd(valM, valC);
+        ValueAVXStore(localSum[by], valS);
 #elif Bx == 4
         __m128 valA = _mm_load_ps(A + idxA);
         __m128 valC = _mm_load_ps(localSum[by]);
@@ -61,8 +59,8 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C) {
     }
     for (uint64_t by = 0; by < By; ++by) {
 #if Bx == 16
-      __m512 valS = _mm512_load_ps(localSum[by]);
-      Value sum = _mm512_reduce_add_ps(valS);
+      ValueAVX valS = ValueAVXLoad(localSum[by]);
+      Value sum = ValueAVXReduceAdd(valS);
 #elif Bx == 4
       __m128 valS = _mm_load_ps(localSum[by]);
       Value sum = hsum_ps_sse1(valS);

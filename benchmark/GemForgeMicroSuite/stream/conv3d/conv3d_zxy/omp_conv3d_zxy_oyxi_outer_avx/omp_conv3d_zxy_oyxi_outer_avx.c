@@ -15,7 +15,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
                                     int64_t Ny, int64_t Ni, int64_t Nn,

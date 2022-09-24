@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 
@@ -40,15 +40,15 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
   for (int64_t i = 0; i < N; i += 16) {
 
 #pragma ss stream_name "gfm.vec_add.A.ld"
-    __m512 valA = _mm512_load_ps(a + i);
+    ValueAVX valA = ValueAVXLoad(a + i);
 
 #pragma ss stream_name "gfm.vec_add.B.ld"
-    __m512 valB = _mm512_load_ps(b + i);
+    ValueAVX valB = ValueAVXLoad(b + i);
 
-    __m512 valM = _mm512_add_ps(valA, valB);
+    ValueAVX valM = ValueAVXAdd(valA, valB);
 
 #pragma ss stream_name "gfm.vec_add.C.st"
-    _mm512_store_ps(c + i, valM);
+    ValueAVXStore(c + i, valM);
   }
   return 0;
 }

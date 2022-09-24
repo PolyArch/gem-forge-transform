@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 const int ValueVecLen = 16;
 typedef struct {
   float vs[ValueVecLen];
@@ -46,17 +46,23 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     const int64_t vElem = 64 / sizeof(Value);
     for (int64_t j = 0; j < N - (vElem - 1); j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a1.ld"
-      __m512 a1 = _mm512_load_ps(A + (i - 1) * N + j);
+      ValueAVX a1 = ValueAVXLoad(A + (i - 1) * N + j);
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a2.ld"
-      __m512 a2 = _mm512_load_ps(A + (i + 1) * N + j);
+      ValueAVX a2 = ValueAVXLoad(A + (i + 1) * N + j);
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a.ld"
-      __m512 a = _mm512_load_ps(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * N + j);
 
-      __m512 d = _mm512_set1_ps(2.0f);
-      __m512 v = _mm512_sub_ps(a, _mm512_div_ps(_mm512_add_ps(a1, a2), d));
+      ValueAVX s = ValueAVXAdd(a1, a2);
+#if VALUE_TYPE == VALUE_TYPE_INT
+      ValueAVX div = _mm512_shrdi_epi32(s, ValueAVXSet1(0), 1);
+#else
+      ValueAVX d = ValueAVXSet1(2.0f);
+      ValueAVX div = ValueAVXDiv(s, d);
+#endif
+      ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a.st"
-      _mm512_store_ps(A + i * N + j, v);
+      ValueAVXStore(A + i * N + j, v);
     }
 
 #ifndef NO_EPILOGUE
@@ -96,19 +102,26 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     const int64_t vElem = 64 / sizeof(Value);
     for (int64_t j = 0; j < N - (vElem - 1); j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.update_row.a1.ld"
-      __m512 a1 = _mm512_load_ps(A + (i - 1) * N + j);
+      ValueAVX a1 = ValueAVXLoad(A + (i - 1) * N + j);
 #pragma ss stream_name "gfm.dwt2d53.update_row.a2.ld"
-      __m512 a2 = _mm512_load_ps(A + (i + 1) * N + j);
+      ValueAVX a2 = ValueAVXLoad(A + (i + 1) * N + j);
 #pragma ss stream_name "gfm.dwt2d53.update_row.a.ld"
-      __m512 a = _mm512_load_ps(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * N + j);
 
-      __m512 d = _mm512_set1_ps(4.0f);
-      __m512 o = _mm512_set1_ps(2.0f);
-      __m512 v = _mm512_add_ps(
-          a, _mm512_div_ps(_mm512_add_ps(_mm512_add_ps(a1, a2), o), d));
+      ValueAVX o = ValueAVXSet1(2.0f);
+
+      ValueAVX s = ValueAVXAdd(a1, a2);
+      ValueAVX so = ValueAVXAdd(s, o);
+#if VALUE_TYPE == VALUE_TYPE_INT
+      ValueAVX div = _mm512_shrdi_epi32(so, ValueAVXSet1(0), 2);
+#else
+      ValueAVX d = ValueAVXSet1(4.0f);
+      ValueAVX div = ValueAVXDiv(so, d);
+#endif
+      ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.update_row.a.st"
-      _mm512_store_ps(A + i * N + j, v);
+      ValueAVXStore(A + i * N + j, v);
     }
 
 #ifndef NO_EPILOGUE
@@ -153,17 +166,23 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // Vectorized version.
     for (int64_t j = 1; j < N - vElem; j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a1.ld"
-      __m512 a1 = _mm512_load_ps(A + i * N + j - 1);
+      ValueAVX a1 = ValueAVXLoad(A + i * N + j - 1);
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a2.ld"
-      __m512 a2 = _mm512_load_ps(A + i * N + j + 1);
+      ValueAVX a2 = ValueAVXLoad(A + i * N + j + 1);
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a.ld"
-      __m512 a = _mm512_load_ps(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * N + j);
 
-      __m512 d = _mm512_set1_ps(2.0f);
-      __m512 v = _mm512_sub_ps(a, _mm512_div_ps(_mm512_add_ps(a1, a2), d));
+      ValueAVX s = ValueAVXAdd(a1, a2);
+#if VALUE_TYPE == VALUE_TYPE_INT
+      ValueAVX div = _mm512_shrdi_epi32(s, ValueAVXSet1(0), 1);
+#else
+      ValueAVX d = ValueAVXSet1(2.0f);
+      ValueAVX div = ValueAVXDiv(s, d);
+#endif
+      ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a.st"
-      _mm512_mask_store_ps(A + i * N + j, 0x5555, v);
+      ValueAVXMaskStore(A + i * N + j, 0x5555, v);
     }
 
 // Epilogue for remaining iterations.
@@ -204,19 +223,26 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // Vectorized version.
     for (int64_t j = 2; j < N - vElem; j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.update_col.a1.ld"
-      __m512 a1 = _mm512_load_ps(A + i * N + j - 1);
+      ValueAVX a1 = ValueAVXLoad(A + i * N + j - 1);
 #pragma ss stream_name "gfm.dwt2d53.update_col.a2.ld"
-      __m512 a2 = _mm512_load_ps(A + i * N + j + 1);
+      ValueAVX a2 = ValueAVXLoad(A + i * N + j + 1);
 #pragma ss stream_name "gfm.dwt2d53.update_col.a.ld"
-      __m512 a = _mm512_load_ps(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * N + j);
 
-      __m512 o = _mm512_set1_ps(2.0f);
-      __m512 d = _mm512_set1_ps(4.0f);
-      __m512 v = _mm512_add_ps(
-          a, _mm512_div_ps(_mm512_add_ps(_mm512_add_ps(a1, a2), o), d));
+      ValueAVX o = ValueAVXSet1(2.0f);
+
+      ValueAVX s = ValueAVXAdd(a1, a2);
+      ValueAVX so = ValueAVXAdd(s, o);
+#if VALUE_TYPE == VALUE_TYPE_INT
+      ValueAVX div = _mm512_shrdi_epi32(so, ValueAVXSet1(0), 2);
+#else
+      ValueAVX d = ValueAVXSet1(4.0f);
+      ValueAVX div = ValueAVXDiv(so, d);
+#endif
+      ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.update_col.a.st"
-      _mm512_mask_store_ps(A + i * N + j, 0x5555, v);
+      ValueAVXMaskStore(A + i * N + j, 0x5555, v);
     }
 
     // Epilogue for remaining iterations.

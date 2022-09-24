@@ -9,7 +9,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 
@@ -49,8 +49,8 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
 #pragma clang loop unroll(disable) vectorize(disable)
       for (int64_t k = 0; k < reuseSize; ++k) {
 #pragma ss stream_name "gfm.linear_reuse.A.ld"
-        __m512 valA = _mm512_load_ps(a + i + k);
-        Value sum = _mm512_reduce_add_ps(valA);
+        ValueAVX valA = ValueAVXLoad(a + i + k);
+        Value sum = ValueAVXReduceAdd(valA);
         ret += sum;
       }
     }

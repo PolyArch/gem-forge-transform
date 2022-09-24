@@ -14,7 +14,7 @@
 
 #include "immintrin.h"
 
-typedef float Value;
+typedef ValueT Value;
 
 #define NO_OPENMP
 

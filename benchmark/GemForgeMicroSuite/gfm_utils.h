@@ -1,6 +1,46 @@
 #ifndef GEM_FORGE_MICRO_SUITE_UTILS_H
 #define GEM_FORGE_MICRO_SUITE_UTILS_H
 
+#define VALUE_TYPE_FLOAT 1
+#define VALUE_TYPE_INT 2
+
+#ifndef VALUE_TYPE
+#define VALUE_TYPE VALUE_TYPE_FLOAT
+#endif
+
+#if VALUE_TYPE == VALUE_TYPE_FLOAT
+
+#define ValueT float
+#define ValueAVX __m512
+#define ValueAVXLoad _mm512_load_ps
+#define ValueAVXStore _mm512_store_ps
+#define ValueAVXMaskStore _mm512_mask_store_ps
+#define ValueAVXAdd _mm512_add_ps
+#define ValueAVXSub _mm512_sub_ps
+#define ValueAVXMul _mm512_mul_ps
+#define ValueAVXDiv _mm512_div_ps
+#define ValueAVXReduceAdd _mm512_reduce_add_ps
+#define ValueAVXSet1 _mm512_set1_ps
+
+#elif VALUE_TYPE == VALUE_TYPE_INT
+
+#define ValueT int32_t
+#define ValueAVX __m512i
+#define ValueAVXLoad _mm512_load_epi32
+#define ValueAVXStore _mm512_store_epi32
+#define ValueAVXMaskStore _mm512_mask_store_epi32
+#define ValueAVXAdd _mm512_add_epi32
+#define ValueAVXSub _mm512_sub_epi32
+#define ValueAVXMul _mm512_mul_epi32
+#define ValueAVXReduceAdd _mm512_reduce_add_epi32
+#define ValueAVXSet1 _mm512_set1_epi32
+// There is no integer div :(
+
+#else
+#error "Unkown ValueT"
+
+#endif
+
 #ifdef GEM_FORGE
 #include "gem5/m5ops.h"
 #else
@@ -34,6 +74,13 @@ uint8_t *LOAD_BIN_ARRAY_FROM_FILE(uint64_t *size, FILE *f) {
   return buffer;
 }
 
+void LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(int64_t size, char *buffer,
+                                        const char *fn) {
+  FILE *f = fopen(fn, "rb");
+  fread(buffer, sizeof(char), size, (f));
+  fclose(f);
+}
+
 #ifdef GEM_FORGE
 #define gf_detail_sim_start() m5_detail_sim_start()
 #define gf_detail_sim_end() m5_detail_sim_end()
@@ -56,6 +103,8 @@ uint8_t *LOAD_BIN_ARRAY_FROM_FILE(uint64_t *size, FILE *f) {
 
 #define gf_stream_nuca_align(A, B, elementOffset)                              \
   m5_stream_nuca_align(A, B, elementOffset)
+#define gf_stream_nuca_set_property(start, property, value)                    \
+  m5_stream_nuca_set_property(start, property, value)
 #define gf_stream_nuca_remap() m5_stream_nuca_remap()
 
 void gf_warm_array(const char *name, void *buffer, uint64_t totalBytes) {
@@ -79,6 +128,7 @@ void gf_warm_array(const char *name, void *buffer, uint64_t totalBytes) {
 #define gf_panic() assert(0 && "gf_panic")
 #define gf_stream_nuca_region(args...)
 #define gf_stream_nuca_align(args...)
+#define gf_stream_nuca_set_property(args...)
 #define gf_stream_nuca_remap()
 #define gf_work_begin(x)
 #define gf_work_end(x)

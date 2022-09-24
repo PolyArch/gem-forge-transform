@@ -1,10 +1,10 @@
 /**
  * Simple array sum.
  */
-#include "gem5/m5ops.h"
+#include "gfm_utils.h"
 #include <stdio.h>
 
-typedef float Value;
+typedef ValueT Value;
 
 #define STRIDE 1
 #define CHECK
