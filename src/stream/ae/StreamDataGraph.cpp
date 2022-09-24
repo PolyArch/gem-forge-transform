@@ -23,6 +23,16 @@ StreamDataGraph::StreamDataGraph(const llvm::Loop *_Loop,
       this->HasPHINodeInComputeInsts = true;
     }
     if (Utils::isCallOrInvokeInst(ComputeInst)) {
+      // Unless it's some supported intrinsics.
+      if (auto Callee = Utils::getCalledFunction(ComputeInst)) {
+        if (Callee->isIntrinsic()) {
+          auto IntrinsicId = Callee->getIntrinsicID();
+          if (IntrinsicId == llvm::Intrinsic::maxnum) {
+            continue;
+          }
+        }
+      }
+
       this->HasCallInstInComputeInsts = true;
     }
   }

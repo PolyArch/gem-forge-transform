@@ -501,6 +501,9 @@ void StaticStreamRegionAnalyzer::markAliasRelationshipForLoopBB(
       }
       if (S->Type == StaticStream::TypeT::IV ||
           S->BaseStepRootStreams.size() != 1) {
+        LLVM_DEBUG(llvm::dbgs() << "====== Skip coalesce stream: "
+                                << S->getStreamName() << " BaseStepRoots "
+                                << S->BaseStepRootStreams.size() << '\n');
         continue;
       }
       LLVM_DEBUG(llvm::dbgs() << "====== Try to coalesce stream: "
@@ -649,6 +652,12 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
     return;
   }
 
+  if (!S->AliasBaseStream) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[FuseLoadOps] No fusing as no AliasBaseS.\n");
+    return;
+  }
+
   StaticStream::InstVec FusedOps;
   StaticStream::InstSet FusedOpsSet;
   StaticStream::InstSet Frontier;
@@ -714,7 +723,6 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
   /**
    * Collect streams with small AliasOffset to myself.
    */
-  assert(S->AliasBaseStream && "FuseLoadOp Require Alias Relationship.");
   StaticStream::StreamVec NearbyStreams;
   for (auto AliasS : S->AliasBaseStream->AliasedStreams) {
     const int64_t MaxAliasOffset = 16;

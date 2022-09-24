@@ -179,7 +179,8 @@ bool StreamLoopEliminator::canLoopBeEliminated(
             (Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_load ||
              Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_step ||
              Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_atomic ||
-             Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_store)) {
+             Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_store ||
+             Callee->getIntrinsicID() == llvm::Intrinsic::maxnum)) {
           // This is Okay.
         } else {
           LLVM_DEBUG({
