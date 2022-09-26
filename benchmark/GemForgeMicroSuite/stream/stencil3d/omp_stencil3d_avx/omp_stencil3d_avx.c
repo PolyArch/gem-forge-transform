@@ -78,9 +78,10 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t L,
 #pragma ss stream_name "gfm.stencil3d.B.ld"
         Value valB = b[idx];
 
-        Value valAh = (valAw + valAe) - valAc;
-        Value valAv = (valAn + valAs) - valAc;
-        Value valM = (valAh + valAv) + valB;
+        Value valAx = (valAw + valAe) - valAc;
+        Value valAy = (valAn + valAs) - valAc;
+        Value valAz = (valAf + valAb) - valAc;
+        Value valM = (valAx + valAy + valAz) + valB;
 
 #pragma ss stream_name "gfm.stencil3d.C.st"
         c[idx] = valM;
