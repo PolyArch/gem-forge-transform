@@ -72,15 +72,15 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, int64_t M, int64_t N) {
       ValueAVX coef1 = ValueAVXSet1(0.1238f);
       ValueAVX coef2 = ValueAVXSet1(0.2042f);
 
-      ValueAVX valA0 = ValueAVXAdd(ValueAVXAdd(ValueAVXMul(coef0, valA00),
-                                                 ValueAVXMul(coef0, valA02)),
-                                   ValueAVXMul(coef1, valA01));
-      ValueAVX valA1 = ValueAVXAdd(ValueAVXAdd(ValueAVXMul(coef1, valA10),
-                                                 ValueAVXMul(coef1, valA12)),
-                                   ValueAVXMul(coef2, valA11));
-      ValueAVX valA2 = ValueAVXAdd(ValueAVXAdd(ValueAVXMul(coef0, valA20),
-                                                 ValueAVXMul(coef0, valA22)),
-                                   ValueAVXMul(coef1, valA21));
+      ValueAVX valA0 = ValueAVXAdd(
+          ValueAVXAdd(ValueAVXMul(coef0, valA00), ValueAVXMul(coef0, valA02)),
+          ValueAVXMul(coef1, valA01));
+      ValueAVX valA1 = ValueAVXAdd(
+          ValueAVXAdd(ValueAVXMul(coef1, valA10), ValueAVXMul(coef1, valA12)),
+          ValueAVXMul(coef2, valA11));
+      ValueAVX valA2 = ValueAVXAdd(
+          ValueAVXAdd(ValueAVXMul(coef0, valA20), ValueAVXMul(coef0, valA22)),
+          ValueAVXMul(coef1, valA21));
 
       ValueAVX valA = ValueAVXAdd(ValueAVXAdd(valA0, valA1), valA2);
 
