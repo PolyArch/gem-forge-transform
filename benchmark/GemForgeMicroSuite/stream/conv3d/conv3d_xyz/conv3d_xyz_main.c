@@ -92,6 +92,7 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(O, O, 1);
   gf_stream_nuca_align(O, O, Nx);
   gf_stream_nuca_align(O, O, Ny * Nx);
+  gf_stream_nuca_set_property(O, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
   gf_stream_nuca_remap();
 
   gf_detail_sim_start();

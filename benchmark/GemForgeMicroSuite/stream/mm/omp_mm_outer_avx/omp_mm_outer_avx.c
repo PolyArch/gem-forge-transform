@@ -198,11 +198,11 @@ int main(int argc, char *argv[]) {
   Value *c = b + M * N + (OFFSET_BYTES / sizeof(Value));
 
 #ifdef GEM_FORGE
-  gf_stream_nuca_region("gfm.mm_outer.a", a, sizeof(a[0]), L, M);
-  gf_stream_nuca_region("gfm.mm_outer.b", b, sizeof(b[0]), M, N);
-  gf_stream_nuca_region("gfm.mm_outer.c", c, sizeof(c[0]), L, N);
+  gf_stream_nuca_region("gfm.mm_outer.a", a, sizeof(a[0]), M, L);
+  gf_stream_nuca_region("gfm.mm_outer.b", b, sizeof(b[0]), N, M);
+  gf_stream_nuca_region("gfm.mm_outer.c", c, sizeof(c[0]), N, L);
   gf_stream_nuca_align(a, a, 1);
-  gf_stream_nuca_align(a, a, L);
+  gf_stream_nuca_align(a, a, M);
   gf_stream_nuca_align(b, a, 0);
   gf_stream_nuca_align(c, a, 0);
   gf_stream_nuca_remap();

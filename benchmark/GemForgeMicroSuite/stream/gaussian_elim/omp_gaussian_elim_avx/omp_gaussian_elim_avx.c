@@ -155,12 +155,13 @@ int main(int argc, char *argv[]) {
   Value *x = b + M + (OFFSET_BYTES / sizeof(Value));
 
 #ifdef GEM_FORGE
-  gf_stream_nuca_region("gfm.gaussian.a", a, sizeof(a[0]), M, N);
+  gf_stream_nuca_region("gfm.gaussian.a", a, sizeof(a[0]), N, M);
   gf_stream_nuca_region("gfm.gaussian.b", b, sizeof(b[0]), M);
   gf_stream_nuca_region("gfm.gaussian.x", x, sizeof(x[0]), N);
 
   gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
-  gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE, 32);
+  gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE,
+                              M / 64);
 
   gf_stream_nuca_set_property(x, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
 
@@ -186,7 +187,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  volatile Value computed = driver(a, b, x, M, N, P);
+  volatile Value computed = driver(a, x, b, M, N, P);
   gf_detail_sim_end();
 
   return 0;

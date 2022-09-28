@@ -77,6 +77,55 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
 
   gf_work_begin(1);
 
+/**********************************************
+ * Tiled implementation.
+ **********************************************/
+#if defined(TILE_L) && defined(TILE_N) && defined(TILE_M)
+
+#if LOOP_ORDER != LOOP_LNM
+#error "LOOP_ORDER should be LNM when tiled."
+#endif
+
+#ifndef NO_OPENMP
+#pragma omp parallel for schedule(static) firstprivate(A, Bt, C, L, M, N, P)
+#endif
+
+  for (int64_t ll = 0; ll < P * TILE_L; ll += TILE_L) {
+
+    for (int64_t nn = 0; nn < N; nn += TILE_N) {
+
+      for (int64_t mm = 0; mm < M; mm += TILE_M) {
+
+        for (int64_t l = 0; l < TILE_L; ++l) {
+
+          for (int64_t n = 0; n < TILE_N; ++n) {
+
+            Value s = 0;
+
+#ifndef NO_AVX
+#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
+#else
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+#endif
+            for (int64_t m = 0; m < TILE_M; ++m) {
+
+              Value a = A[(ll + l) * M + mm + m];
+              Value b = Bt[(nn + n) * M + mm + m];
+              s += a * b;
+            }
+
+            C[(ll + l) * N + nn + n] += s;
+          }
+        }
+      }
+    }
+  }
+
+/**********************************************
+ * Non-Tiled implementation.
+ **********************************************/
+#else
+
 #ifndef NO_OPENMP
 #pragma omp parallel for schedule(static) firstprivate(A, Bt, C, L, M, N, P)
 #endif
@@ -125,6 +174,8 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
       C[l * N + n] = s;
     }
   }
+
+#endif
 
   gf_work_end(1);
 

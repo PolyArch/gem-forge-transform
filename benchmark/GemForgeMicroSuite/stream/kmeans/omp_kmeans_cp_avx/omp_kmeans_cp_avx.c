@@ -331,6 +331,10 @@ int main(int argc, char *argv[]) {
     LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(nPoints * nDims * sizeof(Value),
                                        (char *)features,
                                        "../kmeans.float.32768.128.data");
+  } else if (nPoints == 65536 && nDims == 128) {
+    LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(nPoints * nDims * sizeof(Value),
+                                       (char *)features,
+                                       "../kmeans.float.65536.128.data");
   } else if (nPoints == 2048 && nDims == 128) {
     LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(nPoints * nDims * sizeof(Value),
                                        (char *)features,

@@ -190,6 +190,7 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(a, b, 0);
   gf_stream_nuca_align(b, b, 1);
   gf_stream_nuca_align(b, b, N);
+  gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
   gf_stream_nuca_remap();
 
   if (check) {

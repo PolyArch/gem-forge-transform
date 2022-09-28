@@ -319,6 +319,10 @@ int main(int argc, char *argv[]) {
     LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(nFeatures * nDims * sizeof(Value),
                                        (char *)features,
                                        "../features.float.4096.128.data");
+  } else if (nFeatures == 8192 && nDims == 128) {
+    LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(nFeatures * nDims * sizeof(Value),
+                                       (char *)features,
+                                       "../features.float.8192.128.data");
   } else {
     assert(0 && "No features.");
   }
