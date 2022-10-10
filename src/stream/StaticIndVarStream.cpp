@@ -304,6 +304,8 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
   LLVM_DEBUG(llvm::dbgs() << "==== Analyze IsReduction "
                           << this->getStreamName() << '\n');
   if (!this->NonEmptyComputePath) {
+    LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] No NonEmpty ComputePath: "
+                            << this->AllComputePaths.size() << '\n');
     return false;
   }
   if (this->AllComputePaths.size() != 1) {
@@ -349,19 +351,7 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
       return false;
     }
   }
-  // Search for any other possible IVBaseS.
-  for (auto IVBaseS : this->IndVarBaseStreams) {
-    if (IVBaseS == this) {
-      // Ignore myself.
-      continue;
-    }
-    // We only allow additional step root of the LoadStream,
-    // as it's likely this is the IV of the loop.
-    if (!FirstLoadBaseS->BaseStepRootStreams.count(IVBaseS)) {
-      return false;
-    }
-  }
-
+  LLVM_DEBUG(llvm::dbgs() << "==== [IsReduction]\n");
   return true;
 }
 
@@ -476,6 +466,9 @@ void StaticIndVarStream::analyzeIsCandidate() {
    * 4. In this unique non-empty compute path:
    *   a. The non-empty ComputePath must be a recognizable ValuePattern.
    * 5. Not from remainder/epilogue loop.
+   * 6. If this is reduction pattern, make sure that any IndVarBaseS is
+   *   the StepRootS of the LoadBaseS. This is separated from analyzeIsReduction
+   *   because at that moment, the StepRoot relationship is not built yet.
    */
 
   // 1.
@@ -523,6 +516,30 @@ void StaticIndVarStream::analyzeIsCandidate() {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::IV_NO_MEM_DEPENDENT);
     return;
+  }
+
+  if (this->StaticStreamInfo.val_pattern() ==
+      ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+    auto FirstLoadBaseS = *(this->LoadBaseStreams.begin());
+    // Search for any other possible IVBaseS.
+    for (auto IVBaseS : this->IndVarBaseStreams) {
+      if (IVBaseS == this) {
+        // Ignore myself.
+        continue;
+      }
+      // We only allow additional step root of the LoadStream,
+      // as it's likely this is the IV of the loop.
+      if (!FirstLoadBaseS->BaseStepRootStreams.count(IVBaseS)) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "==== [NotReduction] IVBaseS " << IVBaseS->getStreamName()
+                   << " Not StepRootS of " << FirstLoadBaseS->getStreamName()
+                   << '\n');
+        this->IsCandidate = false;
+        this->StaticStreamInfo.set_not_stream_reason(
+            ::LLVM::TDG::StaticStreamInfo::MULTI_STEP_ROOT);
+        return;
+      }
+    }
   }
 
   this->IsCandidate = true;

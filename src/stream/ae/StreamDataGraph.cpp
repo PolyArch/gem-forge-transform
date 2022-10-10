@@ -29,6 +29,9 @@ StreamDataGraph::StreamDataGraph(const llvm::Loop *_Loop,
           auto IntrinsicId = Callee->getIntrinsicID();
           if (IntrinsicId == llvm::Intrinsic::maxnum) {
             continue;
+          } else if (IntrinsicId ==
+                     llvm::Intrinsic::experimental_vector_reduce_v2_fadd) {
+            continue;
           }
         }
       }
