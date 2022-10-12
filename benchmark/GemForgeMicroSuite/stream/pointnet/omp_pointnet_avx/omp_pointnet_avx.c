@@ -19,8 +19,11 @@ typedef struct {
 
 /**
  * Parameters:
- * STATIC_CHUNK_SIZE: OpenMP static scheduling chunk size.
- * OFFSET_BYTES:      Offset between arrays.
+ * NO_OPENMP
+ * IS_PUM
+ * NO_GATHER
+ * MLP_INNER/MLP_OUTER
+ * TRANSPOSE_MATRIX
  */
 #ifndef STATIC_CHUNK_SIZE
 #define STATIC_CHUNK_SIZE 0
@@ -53,12 +56,21 @@ gather(Value *restrict results,         // [nPoints][nDims]
     for (int64_t dim = 0; dim < nDims; dim += 16) {
       ValueAVX v = ValueAVXLoad(features + index * nDims + dim);
       ValueAVXStore(results + point * nDims + dim, v);
+
+#ifdef FUSE_GATHER_TRANSPOSE
+#error "Can not fuse vectorized gather with transpose"
+#endif
     }
 #else // Scalar version.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
     for (int64_t dim = 0; dim < nDims; ++dim) {
-      Value v = myFeatures[index * nDims + dim];
+      Value v = features[index * nDims + dim];
+
+#ifdef FUSE_GATHER_TRANSEPOSE
+      results[dim * nPoints + point] = v;
+#else
       results[point * nDims + dim] = v;
+#endif
     }
 #endif
   }
@@ -105,45 +117,78 @@ layer_inner(const Value *restrict input,   // [nPoints][nDims]
   return 0;
 }
 
-__attribute__((noinline)) Value
-layer_outer(const Value *restrict input,   // [nPoints][nDims]
-            const Value *restrict weights, // [nDims][nDims]
-            Value *restrict output,        // [nPoints][nDims]
-            int64_t nPoints, int64_t nDims) {
-
-  __builtin_assume(nDims >= 16);
-  __builtin_assume(nDims % 16 == 0);
-
-  // Apply one layer of MLP. Inner-Prod version.
-  for (int64_t k = 0; k < nDims; ++k) {
+__attribute__((noinline)) Value transpose_row(const Value *restrict a,
+                                              Value *restrict at, int64_t M,
+                                              int64_t N) {
 
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-    for (int64_t row = 0; row < nPoints; ++row) {
+  for (int64_t i = 0; i < M; ++i) {
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+    for (int64_t j = 0; j < N; ++j) {
+      at[j * M + i] = a[i * N + j];
+    }
+  }
 
-      Value a = input[row * nDims + k];
+  return 0;
+}
+
+__attribute__((noinline)) Value transpose_col(const Value *restrict a,
+                                              Value *restrict at, int64_t M,
+                                              int64_t N) {
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+  for (int64_t j = 0; j < N; ++j) {
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+    for (int64_t i = 0; i < M; ++i) {
+      at[j * M + i] = a[i * N + j];
+    }
+  }
+
+  return 0;
+}
+
+__attribute__((noinline)) Value layer_outer(const Value *restrict A, // [M][K]
+                                            const Value *restrict B, // [K][N]
+                                            Value *restrict C,       // [M][N]
+                                            int64_t M, int64_t N, int64_t K) {
+
+  __builtin_assume(N >= 16);
+  __builtin_assume(N % 16 == 0);
+  __builtin_assume(K >= 16);
+  __builtin_assume(K % 16 == 0);
+  __builtin_assume(M >= 16);
+  __builtin_assume(M % 16 == 0);
+
+  // Apply one layer of MLP. Outer-Prod version.
+  for (int64_t k = 0; k < K; ++k) {
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+    for (int64_t row = 0; row < M; ++row) {
+
+      Value a = A[row * K + k];
 
 #if !defined(NO_AVX) && !defined(IS_PUM) // Vectorize version.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-      for (int64_t col = 0; col < nDims; col += 16) {
+      for (int64_t col = 0; col < N; col += 16) {
 
-        ValueAVX vw = ValueAVXLoad(weights + k * nDims + col);
-        ValueAVX vo = ValueAVXLoad(output + row * nDims + col);
+        ValueAVX vw = ValueAVXLoad(B + k * N + col);
+        ValueAVX vo = ValueAVXLoad(C + row * N + col);
 
         ValueAVX va = ValueAVXSet1(a);
 
         ValueAVX s = ValueAVXAdd(vo, ValueAVXMul(va, vw));
 
-        ValueAVXStore(output + row * nDims + col, s);
+        ValueAVXStore(C + row * N + col, s);
       }
 #else // Scalar version.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-      for (int64_t col = 0; col < nDims; ++col) {
+      for (int64_t col = 0; col < N; ++col) {
 
-        Value w = weights[k * nDims + col];
-        Value o = output[row * nDims + col];
+        Value w = B[k * N + col];
+        Value o = C[row * N + col];
 
         Value s = o + a * w;
-        output[row * nDims + col] = s;
+        C[row * N + col] = s;
       }
 #endif
     }
@@ -151,17 +196,17 @@ layer_outer(const Value *restrict input,   // [nPoints][nDims]
 
   // Apply the final relu.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-  for (int64_t row = 0; row < nPoints; ++row) {
+  for (int64_t row = 0; row < M; ++row) {
 
 #ifndef NO_AVX // Vectorize version.
 #pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
 #else // Scalar version.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
 #endif
-    for (int64_t col = 0; col < nDims; ++col) {
-      Value v = output[row * nDims + col];
+    for (int64_t col = 0; col < N; ++col) {
+      Value v = C[row * N + col];
       Value relu = (v > 0) ? v : 0;
-      output[row * nDims + col] = relu;
+      C[row * N + col] = relu;
     }
   }
 
@@ -189,16 +234,47 @@ foo(Value *restrict results,         // [nPoints][nDims]
 
 // MLP.
 #ifndef NO_MLP
+
+#ifdef TRANSPOSE_MATRIX
+  gf_work_begin(2);
+
+#ifdef TRANSPOSE_MATRIX_ROW
+  transpose_row(t1, t2, nPoints, nDims);
+#else
+  transpose_col(t1, t2, nPoints, nDims);
+#endif
+
+  gf_work_end(2);
+  {
+    Value *t = t1;
+    t1 = t2;
+    t2 = t;
+  }
+#endif
+
   for (int64_t layer = 0; layer < nLayers; ++layer) {
 
     const Value *restrict layerWeights = weights + layer * nDims * nDims;
 
     gf_work_begin(1);
 #ifdef MLP_OUTER
-    layer_outer(t1, layerWeights, t2, nPoints, nDims);
+
+#ifdef TRANSPOSE_MATRIX
+    // We assume weight is already transposed.
+    layer_outer(layerWeights, t1, t2, nDims, nPoints, nDims);
+#else
+    layer_outer(t1, layerWeights, t2, nPoints, nDims, nDims);
+#endif
+
+#else
+
+#ifdef TRANSPOSE_MATRIX
+#error "TRANSPOSE_MATRIX not compatible with MLP_INNER"
 #else
     // Inner-Prod assumes weights are transposed.
     layer_inner(t1, layerWeights, t2, nPoints, nDims);
+#endif
+
 #endif
     gf_work_end(1);
 
@@ -207,6 +283,19 @@ foo(Value *restrict results,         // [nPoints][nDims]
     t1 = t2;
     t2 = t;
   }
+
+#ifdef TRANSPOSE_MATRIX
+  gf_work_begin(3);
+
+#ifdef TRANSPOSE_MATRIX_REV_ROW
+  transpose_row(t1, t2, nDims, nPoints);
+#else
+  transpose_col(t1, t2, nDims, nPoints);
+#endif
+
+  gf_work_end(3);
+#endif
+
 #endif
 
   // No need to writeback anything.
@@ -321,9 +410,17 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_region("gfm.pointnet.neighbors", neighbors, sizeof(Index), 1,
                         nPoints);
   gf_stream_nuca_region("gfm.pointnet.weights", weights, sizeof(Value), nDims,
-                        nDims, nLayers);
+                        nDims * nLayers);
   gf_stream_nuca_region("gfm.pointnet.temp", temp, sizeof(Value), nDims,
                         nPoints);
+
+#ifdef MLP_OUTER
+  gf_stream_nuca_align(results, results, 1);
+  gf_stream_nuca_align(results, results, nDims);
+  gf_stream_nuca_align(temp, results, 0);
+  gf_stream_nuca_align(weights, weights, 1);
+  gf_stream_nuca_align(weights, weights, nDims);
+#endif
 
   gf_stream_nuca_set_property(results, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT,
                               1);

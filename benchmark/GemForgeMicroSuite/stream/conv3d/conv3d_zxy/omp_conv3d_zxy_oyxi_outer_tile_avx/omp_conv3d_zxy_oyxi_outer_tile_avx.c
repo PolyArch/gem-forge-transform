@@ -3,8 +3,6 @@
  *  Z (channel) is the inner-most dimension.
  *  Y is the inner-most dimension,
  *
- * This version is optimized for PUM, in which we:
- * 1. Unroll Kx, Ky.
  */
 #include "gfm_utils.h"
 
@@ -17,12 +15,23 @@
 
 typedef ValueT Value;
 
+#ifndef Bx
 #define Bx 32
 #define By 32
+#endif
+
 #define Px 2
 #define Py 2
 #define BxPad (Bx + Px)
 #define ByPad (By + Py)
+
+#define LOOP_ORDER_BY_BX_O_Y_X_I 0
+#define LOOP_ORDER_BYBX_O_Y_X_I 1
+#define LOOP_ORDER_O_BY_BX_Y_X_I 1
+
+#ifndef LOOP_ORDER
+#define LOOP_ORDER LOOP_ORDER_BY_BX_O_Y_X_I
+#endif
 
 __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
                                     int64_t Ny, int64_t Ni, int64_t Nn,
@@ -34,6 +43,9 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
 #else
 #pragma clang loop unroll(disable) interleave(disable)
 #endif
+
+#if LOOP_ORDER == LOOP_ORDER_BY_BX_O_Y_X_I
+
   for (int64_t yy = 0; yy < Ny - By + 1; yy += By) {
 
     // Move these assumption inside the loop so that OpenMP can capture it.
@@ -48,6 +60,43 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
 
 #pragma clang loop unroll(disable) interleave(disable)
       for (int64_t o = 0; o < Nn; ++o) {
+
+#elif LOOP_ORDER == LOOP_ORDER_BYBX_O_Y_X_I
+
+  for (int64_t yyxx = 0; yyxx < (Ny / By) * (Nx / Bx); yyxx++) {
+
+    int64_t yy = (yyxx / (Nx / Bx)) * By;
+    int64_t xx = (yyxx % (Nx / Bx)) * Bx;
+
+    // Move these assumption inside the loop so that OpenMP can capture it.
+    __builtin_assume(Nn > 0);
+    __builtin_assume(Ny > 3);
+    __builtin_assume(Nx > 3);
+    __builtin_assume(Ni >= 16);
+    __builtin_assume(Ni % 16 == 0);
+
+#pragma clang loop unroll(disable) interleave(disable)
+    for (int64_t o = 0; o < Nn; ++o) {
+
+#elif LOOP_ORDER == LOOP_ORDER_O_BY_BX_Y_X_I
+  for (int64_t o = 0; o < Nn; ++o) {
+
+    // Move these assumption inside the loop so that OpenMP can capture it.
+    __builtin_assume(Nn > 0);
+    __builtin_assume(Ny > 3);
+    __builtin_assume(Nx > 3);
+    __builtin_assume(Ni >= 16);
+    __builtin_assume(Ni % 16 == 0);
+
+#pragma clang loop unroll(disable) interleave(disable)
+    for (int64_t yy = 0; yy < Ny - By + 1; yy += By) {
+
+#pragma clang loop unroll(disable) interleave(disable)
+      for (int64_t xx = 0; xx < Nx - Bx + 1; xx += Bx) {
+
+#else
+#error "Unknown LOOP_ORDER"
+#endif
 
 #ifdef NO_AVX
 #error "Tiling requires AVX-512 for vectorization."
@@ -142,9 +191,15 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
             O[idxO] = sum;
           }
         }
+
+#if LOOP_ORDER != LOOP_ORDER_BYBX_O_Y_X_I
       }
     }
   }
+#else
+    }
+  }
+#endif
 
   return 0;
 }

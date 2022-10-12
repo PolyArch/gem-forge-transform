@@ -9,6 +9,7 @@
 
 #define LOOP_LNM 1
 #define LOOP_NLM 2
+#define LOOP_LMN 3
 
 #ifndef LOOP_ORDER
 #define LOOP_ORDER LOOP_LNM
@@ -130,19 +131,37 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
 #pragma omp parallel for schedule(static) firstprivate(A, Bt, C, L, M, N, P)
 #endif
 
-#if LOOP_ORDER == LOOP_LNM
+#if LOOP_ORDER == LOOP_LMN
+
+  for (int64_t l = 0; l < P; ++l) {
+    for (int64_t m = 0; m < M; ++m) {
+
+#pragma ss stream_name "gfm.mm_lmn.A.ld"
+      Value a = A[l * M + m];
+
+#ifndef NO_AVX
+#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
+#else
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+#endif
+      for (int64_t n = 0; n < N; ++n) {
+
+#pragma ss stream_name "gfm.mm_lmn.B.ld"
+        Value b = B[m * N + n];
+
+#pragma ss stream_name "gfm.mm_lmn.C.ld"
+        Value c = C[l * N + n];
+
+#pragma ss stream_name "gfm.mm_lmn.C.st"
+        C[l * N + n] = c + a * b;
+      }
+    }
+  }
+
+#elif LOOP_ORDER == LOOP_LNM
 
   for (int64_t l = 0; l < P; ++l) {
     for (int64_t n = 0; n < N; ++n) {
-
-#elif LOOP_ORDER == LOOP_NLM
-
-  for (int64_t n = 0; n < P; ++n) {
-    for (int64_t l = 0; l < L; ++l) {
-
-#else
-#error "Unkown LoopOrder"
-#endif
 
       Value s = 0;
 
@@ -153,18 +172,37 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
 #endif
       for (int64_t m = 0; m < M; ++m) {
 
-#if LOOP_ORDER == LOOP_LNM
 #pragma ss stream_name "gfm.mm_inner_lnm.A.ld"
-#else
-#pragma ss stream_name "gfm.mm_inner_nlm.A.ld"
-#endif
         Value a = A[l * M + m];
 
-#if LOOP_ORDER == LOOP_LNM
 #pragma ss stream_name "gfm.mm_inner_lnm.Bt.ld"
+        Value b = Bt[n * M + m];
+
+        s += a * b;
+      }
+#pragma ss stream_name "gfm.mm_inner.C.st"
+      C[l * N + n] = s;
+    }
+  }
+
+#elif LOOP_ORDER == LOOP_NLM
+
+  for (int64_t n = 0; n < P; ++n) {
+    for (int64_t l = 0; l < L; ++l) {
+
+      Value s = 0;
+
+#ifndef NO_AVX
+#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
 #else
-#pragma ss stream_name "gfm.mm_inner_nlm.Bt.ld"
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
 #endif
+      for (int64_t m = 0; m < M; ++m) {
+
+#pragma ss stream_name "gfm.mm_inner_nlm.A.ld"
+        Value a = A[l * M + m];
+
+#pragma ss stream_name "gfm.mm_inner_nlm.Bt.ld"
         Value b = Bt[n * M + m];
 
         s += a * b;
@@ -174,6 +212,10 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
       C[l * N + n] = s;
     }
   }
+
+#else
+#error "Unkown LoopOrder"
+#endif
 
 #endif
 
@@ -266,6 +308,17 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(a, a, 1);
   gf_stream_nuca_align(a, a, M);
   gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
+
+  assert(L == M && L == N && "Can only handle square MM.");
+
+  /**
+   * Fakely set all region to reduce over inner dimension to ensure all regions
+   * picked the same tiling pattern.
+   */
+  gf_stream_nuca_set_property(bt, STREAM_NUCA_REGION_PROPERTY_REDUCE_DIM, 0);
+  gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_REDUCE_DIM, 0);
+  gf_stream_nuca_set_property(a, STREAM_NUCA_REGION_PROPERTY_REDUCE_DIM, 0);
+
 #ifdef PUM_TILE_DIM0_ELEMS
   gf_stream_nuca_set_property(a, STREAM_NUCA_REGION_PROPERTY_PUM_TILE_SIZE_DIM0,
                               PUM_TILE_DIM0_ELEMS);

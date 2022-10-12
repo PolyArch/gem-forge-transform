@@ -26,10 +26,10 @@ typedef struct {
 
 /**
  * Parameters:
- * STATIC_CHUNK_SIZE: OpenMP static scheduling chunk size.
- * OFFSET_BYTES:      Offset between arrays.
  *
  * SPLIT_MIN_DIST_CENTER: Avoid the scatter for CPU baseline.
+ * IS_PUM: Avoid vectorize the matrix outer-product loop.
+ * TRANSPOSE_MATRIX: Transpose features/centers so that inner dim is longer.
  */
 #ifndef STATIC_CHUNK_SIZE
 #define STATIC_CHUNK_SIZE 0
@@ -49,56 +49,70 @@ struct MinCenter {
   };
 };
 
-__attribute__((noinline)) Value
-computeDist(Value *restrict features, // [nPoints][nDims]
-            Value *restrict centers,  // [nDims][nCenters]
+__attribute__((noinline)) Value computeDist(Value *restrict A, // [M][K]
+                                            Value *restrict B, // [K][N]
 #ifdef SPLIT_MIN_DIST_CENTER
-            Value *restrict distances, // [nPoints][nCenters]
+                                            Value *restrict C, // [M][N]
 #else
-            struct MinCenter *restrict distances, // [nPoints][nCenters]
+                                            struct MinCenter
+                                                *restrict C, // [M][N]
 #endif
 
-            int64_t nPoints, int64_t nDims, int64_t nCenters) {
+                                            int64_t M, int64_t K, int64_t N) {
 
-  __builtin_assume(nDims >= 16);
-  __builtin_assume(nDims % 16 == 0);
-  __builtin_assume(nCenters >= 16);
-  __builtin_assume(nCenters % 16 == 0);
+  __builtin_assume(K >= 16);
+  __builtin_assume(K % 16 == 0);
+  __builtin_assume(N >= 16);
+  __builtin_assume(N % 16 == 0);
 
-  for (int64_t dim = 0; dim < nDims; ++dim) {
+  for (int64_t k = 0; k < K; ++k) {
 
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static)                                      \
-    firstprivate(features, centers, distances, nPoints, nDims, nCenters, dim)
+#pragma omp parallel for schedule(static) firstprivate(A, B, C, M, K, N, k)
 #else
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
 #endif
-    for (int64_t point = 0; point < nPoints; ++point) {
+    for (int64_t m = 0; m < M; ++m) {
 
-#pragma ss stream_name "gfm.kmeans.feature.ld"
-      Value a = features[point * nDims + dim];
+#pragma ss stream_name "gfm.kmeans.A.ld"
+      Value a = A[m * K + k];
 
 #if !defined(NO_AVX) && !defined(IS_PUM) // Vectorize version.
 #pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
 #else // Scalar version.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
 #endif
-      for (int64_t center = 0; center < nCenters; ++center) {
+      for (int64_t n = 0; n < N; ++n) {
 
-#pragma ss stream_name "gfm.kmeans.center.ld"
-        Value b = centers[dim * nCenters + center];
+#pragma ss stream_name "gfm.kmeans.B.ld"
+        Value b = B[k * N + n];
 
         Value diff = (a - b);
         Value diff2 = diff * diff;
 
 #ifdef SPLIT_MIN_DIST_CENTER
-        distances[point * nCenters + center] += diff2;
+        C[m * N + n] += diff2;
 #else
-        distances[point * nCenters + center].distance += diff2;
+        C[m * N + n].distance += diff2;
 #endif
       }
     }
   }
+  return 0;
+}
+
+__attribute__((noinline)) Value transpose_row(const Value *restrict a,
+                                              Value *restrict at, int64_t M,
+                                              int64_t N) {
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+  for (int64_t i = 0; i < M; ++i) {
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+    for (int64_t j = 0; j < N; ++j) {
+      at[j * M + i] = a[i * N + j];
+    }
+  }
+
   return 0;
 }
 
@@ -129,26 +143,6 @@ __attribute__((noinline)) Value findMinCenter(
     __builtin_assume(nCenters >= 16);
     __builtin_assume(nCenters % 16 == 0);
 
-#ifdef SPLIT_MIN_DIST_CENTER
-
-    Value curMinDist = 1e8;
-    Index curMinCenter = 0;
-
-    for (int64_t center = 0; center < nCenters; ++center) {
-
-      // Update the distance and center for this point.
-      // Crazy bit operation to force LLVM generating one Load/Store for this.
-      Value dist = distances[point * nCenters + center];
-
-      int smaller = dist < curMinDist;
-      curMinDist = smaller ? dist : curMinDist;
-      curMinCenter = smaller ? center : curMinCenter;
-    }
-
-    minCenters[point * nCenters].center = curMinCenter;
-
-#else
-
     int64_t curMinCenter = initMinCenterV;
 
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
@@ -156,11 +150,20 @@ __attribute__((noinline)) Value findMinCenter(
 
       // Update the distance and center for this point.
       // Crazy bit operation to force LLVM generating one Load/Store for this.
+#ifdef SPLIT_MIN_DIST_CENTER
+
+      Value dist = distances[point * nCenters + center];
+      int64_t raw = (*(int32_t *)&dist) | (center << 32);
+
+#else
+
       int64_t *pm = (int64_t *)(minCenters + point * nCenters + center);
 
       int64_t raw = pm[0];
       int32_t x = raw & 0xffffffff;
       float dist = *(Value *)(&x);
+
+#endif
 
       int32_t y = curMinCenter & 0xffffffff;
       float curMinDist = *(Value *)(&y);
@@ -171,8 +174,6 @@ __attribute__((noinline)) Value findMinCenter(
 
     int64_t *po = (int64_t *)(minCenters + point * nCenters);
     *po = curMinCenter;
-
-#endif
   }
 
   return 0;
@@ -297,13 +298,46 @@ normCenter(Value *restrict newCenters,  // [nThreads][nCenters][nDims]
 __attribute__((noinline)) Value
 driver(Value *restrict features, // [nPoints][nDims]
        Value *restrict centers,  // [nDims][nCenters]
+       Value *restrict centersT, // [nCenters][nDims]
 #ifdef SPLIT_MIN_DIST_CENTER
-       Value *restrict distances, // [nPoints][nCenters]
+       Value *restrict distances,  // [nPoints][nCenters]
+       Value *restrict distancesT, // [nCenters][nPoints]
 #endif
        struct MinCenter *restrict memberships, // [nPoints][nCenters]
        Value *restrict newCenters,             // [nThreads][nCenters][nDims]
        Index *restrict clusterSize,            // [nThreads][nCenters]
        int64_t nPoints, int64_t nDims, int64_t nCenters, int64_t nThreads) {
+
+  /**
+   * For now, if we are going to enable TRANSPOSE_MATRIX:
+   *
+   * We assume we have both normal/transposed features prepared.
+   * And charge these overheads:
+   * 1. Transpose centers before computeDist.
+   * 2. Transpose distances back after computeDist.
+   * 3. NOTE: Transpose only works with SPLIT_MIN_DIST_CENTER.
+   *
+   */
+
+#ifdef TRANSPOSE_MATRIX
+
+#ifndef SPLIT_MIN_DIST_CENTER
+#error "TRANSPOSE_MATRIX only works with SPLIT_MIN_DIST_CENTER"
+#endif
+
+  gf_work_begin(5);
+  transpose_row(centers, centersT, nDims, nCenters);
+  gf_work_end(5);
+
+  gf_work_begin(0);
+  computeDist(centersT, features, distancesT, nCenters, nDims, nPoints);
+  gf_work_end(0);
+
+  gf_work_begin(6);
+  transpose_row(distancesT, distances, nCenters, nPoints);
+  gf_work_end(6);
+
+#else
 
   gf_work_begin(0);
 #ifdef SPLIT_MIN_DIST_CENTER
@@ -312,6 +346,8 @@ driver(Value *restrict features, // [nPoints][nDims]
   computeDist(features, centers, memberships, nPoints, nDims, nCenters);
 #endif
   gf_work_end(0);
+
+#endif
 
   gf_work_begin(1);
 #ifdef SPLIT_MIN_DIST_CENTER
@@ -388,13 +424,13 @@ int main(int argc, char *argv[]) {
 
   uint64_t totalBytes =
       T * sizeof(Value)                               // features
+      + nPoints * nCenters * sizeof(Value)            // distances
+      + nPoints * nCenters * sizeof(Value)            // distancesT
       + nCenters * nDims * sizeof(Value)              // centers
+      + nCenters * nDims * sizeof(Value)              // centersT
       + nPoints * nCenters * sizeof(struct MinCenter) // memberships
       + numThreads * nCenters * nDims * sizeof(Value) // newCenters
       + numThreads * nCenters * sizeof(Index)         // clusterSize
-#ifdef SPLIT_MIN_DIST_CENTER
-      + nPoints * nCenters * sizeof(Value) // distances
-#endif
       ;
 
   uint64_t numPages = (totalBytes + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -408,14 +444,14 @@ int main(int argc, char *argv[]) {
   }
 
   Value *features = buffer;
-  Value *centers = features + T;
+  Value *distances = features + nPoints * nDims;
+  Value *distancesT = distances + nPoints * nCenters;
+  Value *centers = distancesT + nPoints * nCenters;
+  Value *centersT = centers + nCenters * nDims;
   struct MinCenter *memberships =
-      (struct MinCenter *)(centers + nCenters * nDims);
+      (struct MinCenter *)(centersT + nCenters * nDims);
   Value *newCenters = (Value *)(memberships + nPoints * nCenters);
   Index *clusterSize = (Index *)(newCenters + numThreads * nCenters * nDims);
-#ifdef SPLIT_MIN_DIST_CENTER
-  Value *distances = (Value *)(clusterSize + numThreads * nCenters);
-#endif
 
   // Initialize the array.
   printf("Try to load data.\n");
@@ -458,9 +494,8 @@ int main(int argc, char *argv[]) {
     for (int64_t j = 0; j < nCenters; ++j) {
       memberships[i * nCenters + j].center = j;
       memberships[i * nCenters + j].distance = 1e8;
-#ifdef SPLIT_MIN_DIST_CENTER
       distances[i * nCenters + j] = 0;
-#endif
+      distancesT[i * nCenters + j] = 0;
     }
   }
 
@@ -473,18 +508,22 @@ int main(int argc, char *argv[]) {
                         nDims, nPoints);
   gf_stream_nuca_region("gfm.kmeans.centers", centers, sizeof(centers[0]),
                         nCenters, nDims);
+  gf_stream_nuca_region("gfm.kmeans.centersT", centersT, sizeof(centersT[0]),
+                        nDims, nCenters);
   gf_stream_nuca_region("gfm.kmeans.memberships", memberships,
                         sizeof(memberships[0]), nCenters, nPoints);
   gf_stream_nuca_region("gfm.kmeans.new_centers", newCenters, sizeof(Value),
                         nDims, nCenters, numThreads);
   gf_stream_nuca_region("gfm.kmeans.cluster_size", clusterSize, sizeof(Index),
                         1, nCenters, numThreads);
-#ifdef SPLIT_MIN_DIST_CENTER
   gf_stream_nuca_region("gfm.kmeans.distances", distances, sizeof(distances[0]),
                         nCenters, nPoints);
-#endif
+  gf_stream_nuca_region("gfm.kmeans.distancesT", distancesT,
+                        sizeof(distancesT[0]), nPoints, nCenters);
   gf_stream_nuca_align(centers, features, 0);
   gf_stream_nuca_align(memberships, features, 0);
+  gf_stream_nuca_align(features, features, 1);
+  gf_stream_nuca_align(features, features, nDims);
 
 #ifndef NEW_CENTER_INTERLEAVE
 #define NEW_CENTER_INTERLEAVE (nCenters * nDims)
@@ -525,6 +564,12 @@ int main(int argc, char *argv[]) {
     gf_warm_array("gfm.kmeans.distances", distances,
                   nPoints * nCenters * sizeof(Value));
 #endif
+#ifdef TRANSPOSE_MATRIX
+    gf_warm_array("gfm.kmeans.centersT", centersT,
+                  nDims * nCenters * sizeof(Value));
+    gf_warm_array("gfm.kmeans.distancesT", distancesT,
+                  nCenters * nPoints * sizeof(Value));
+#endif
   }
 
 #ifndef NO_OPENMP
@@ -535,9 +580,9 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  driver(features, centers,
+  driver(features, centers, centersT,
 #ifdef SPLIT_MIN_DIST_CENTER
-         distances,
+         distances, distancesT,
 #endif
          memberships, newCenters, clusterSize, nPoints, nDims, nCenters,
          numThreads);
