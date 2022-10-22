@@ -590,6 +590,11 @@ void StaticStreamRegionAnalyzer::fuseLoadOps() {
         this->fuseLoadOps(S);
         if (S->ValueDG) {
           // Place this into the FinalInstMap.
+          LLVM_DEBUG(llvm::dbgs() << "  Fused LoadOp for " << S->getStreamName()
+                                  << " Final Inst "
+                                  << Utils::formatLLVMInstWithoutFunc(
+                                         S->ValueDG->getSingleResultInst())
+                                  << "\n");
           this->FinalInstStaticStreamMap
               .emplace(std::piecewise_construct,
                        std::forward_as_tuple(S->ValueDG->getSingleResultInst()),
@@ -653,8 +658,7 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
   }
 
   if (!S->AliasBaseStream) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "[FuseLoadOps] No fusing as no AliasBaseS.\n");
+    LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as no AliasBaseS.\n");
     return;
   }
 
@@ -763,7 +767,7 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
   }
 
   // Also check that my size > 4 so that it is benefitial to fuse.
-  if (NearbyMemSize <= 4 && S->Inst->getOpcode() == llvm::Instruction::Load) {
+  if (NearbyMemSize <= 2 && S->Inst->getOpcode() == llvm::Instruction::Load) {
     LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as MyMemElementSize "
                             << S->getMemElementSize() << " too small.\n");
     return;
