@@ -101,7 +101,7 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
 #ifdef NO_AVX
 #error "Tiling requires AVX-512 for vectorization."
 #endif
-        const int64_t vElem = 16;
+        const int64_t vElem = 64 / sizeof(Value);
         Value localSum[ByPad][BxPad][vElem];
         for (int64_t y = 0; y < ByPad; ++y) {
           for (int64_t x = 0; x < BxPad; ++x) {

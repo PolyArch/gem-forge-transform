@@ -10,10 +10,6 @@
 #include "immintrin.h"
 
 typedef ValueT Value;
-const int ValueVecLen = 16;
-typedef struct {
-  float vs[ValueVecLen];
-} ValueVec;
 
 #define STRIDE 1
 
@@ -144,9 +140,6 @@ int main(int argc, char *argv[]) {
   int warm = 0;
   int argx = 2;
 
-  assert(sizeof(ValueVec) == sizeof(Value) * ValueVecLen &&
-         "Mismatch ValueVec Size.");
-
   if (argc >= argx) {
     numThreads = atoi(argv[argx - 1]);
   }
@@ -205,6 +198,9 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(a, a, M);
   gf_stream_nuca_align(b, a, 0);
   gf_stream_nuca_align(c, a, 0);
+  gf_stream_nuca_set_property(a, STREAM_NUCA_REGION_PROPERTY_BROADCAST_DIM, 0);
+  gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_BROADCAST_DIM, 0);
+  gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_BROADCAST_DIM, 0);
   gf_stream_nuca_remap();
 #endif
 

@@ -18,7 +18,14 @@ typedef ValueT Value;
 
 #define NO_OPENMP
 
-__attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
+#if VALUE_TYPE == VALUE_TYPE_FLOAT
+__attribute__((noinline))
+#else
+// We have to disable reassoc expr to make sure computation is correctly
+// associated with load stream.
+__attribute__((noinline, noreassocexpr))
+#endif
+Value foo(Value *I, Value *K, Value *O, int64_t Nx,
                                     int64_t Ny, int64_t Ni, int64_t Nn,
                                     int64_t Kx, int64_t Ky) {
 

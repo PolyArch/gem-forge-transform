@@ -2,7 +2,9 @@
 #define GEM_FORGE_MICRO_SUITE_UTILS_H
 
 #define VALUE_TYPE_FLOAT 1
-#define VALUE_TYPE_INT 2
+#define VALUE_TYPE_INT32 2
+#define VALUE_TYPE_INT16 3
+#define VALUE_TYPE_INT8 4
 
 #ifndef VALUE_TYPE
 #define VALUE_TYPE VALUE_TYPE_FLOAT
@@ -22,7 +24,7 @@
 #define ValueAVXReduceAdd _mm512_reduce_add_ps
 #define ValueAVXSet1 _mm512_set1_ps
 
-#elif VALUE_TYPE == VALUE_TYPE_INT
+#elif VALUE_TYPE == VALUE_TYPE_INT32
 
 #define ValueT int32_t
 #define ValueAVX __m512i
@@ -35,6 +37,38 @@
 #define ValueAVXReduceAdd _mm512_reduce_add_epi32
 #define ValueAVXSet1 _mm512_set1_epi32
 // There is no integer div :(
+
+#elif VALUE_TYPE == VALUE_TYPE_INT16
+
+#define ValueT int16_t
+#define ValueAVX __m512i
+#define ValueAVXLoad _mm512_loadu_epi16
+#define ValueAVXStore _mm512_storeu_epi16
+#define ValueAVXMaskStore _mm512_mask_store_epi16
+#define ValueAVXAdd _mm512_adds_epi16
+#define ValueAVXSub _mm512_subs_epi16
+#define ValueAVXMul _mm512_mullo_epi16
+// ! There are no reduce_add_epi16, faked with epi32.
+#define ValueAVXReduceAdd _mm512_reduce_add_epi32
+#define ValueAVXSet1 _mm512_set1_epi16
+// There is no integer div :(
+
+#elif VALUE_TYPE == VALUE_TYPE_INT8
+
+#define ValueT int8_t
+#define ValueAVX __m512i
+#define ValueAVXLoad _mm512_loadu_epi8
+#define ValueAVXStore _mm512_storeu_epi8
+#define ValueAVXMaskStore _mm512_mask_store_epi8
+#define ValueAVXAdd _mm512_adds_epi8
+#define ValueAVXSub _mm512_subs_epi8
+// ! There are no mul_epi8, faked with epi32.
+#define ValueAVXMul _mm512_mul_epi32
+// ! There are no reduce_add_epi16, faked with epi32.
+#define ValueAVXReduceAdd _mm512_reduce_add_epi32
+#define ValueAVXSet1 _mm512_set1_epi8
+// There is no integer div :(
+
 
 #else
 #error "Unkown ValueT"
