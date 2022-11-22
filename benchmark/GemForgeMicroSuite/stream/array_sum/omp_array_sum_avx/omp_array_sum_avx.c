@@ -95,8 +95,8 @@ __attribute__((noinline)) Value foo(Value *A, uint64_t N) {
 #else // Scalar version.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
 #endif
-  for (int64_t i = 0; i < elemsPerThread; ++i) {
-    ret += A[t * elemsPerThread + i];
+  for (int64_t i = 0; i < N; ++i) {
+    ret += A[i];
   }
 
 #endif

@@ -38,28 +38,35 @@ __attribute__((noinline)) Value foo(struct Node **heads, int64_t numLists,
                                     Value terminateValue) {
 
   Value ret = 0;
-#pragma omp parallel for schedule(static) firstprivate(heads, terminateValue)
-  for (int64_t i = 0; i < numLists; ++i) {
-    struct Node *head = heads[i];
-    Value val = 0;
-    Value sum = 0;
-    if (head) {
-      /**
-       * This helps us getting a single BB loop body, with simple condition.
-       */
-      do {
+#pragma omp parallel
+  {
+    Value localRet = 0;
+#pragma omp for nowait schedule(static) firstprivate(heads, terminateValue)
+    for (int64_t i = 0; i < numLists; ++i) {
+      struct Node *head = heads[i];
+      Value val = 0;
+      Value sum = 0;
+      if (head) {
+        /**
+         * This helps us getting a single BB loop body, with simple condition.
+         */
+        do {
 #pragma ss stream_name "gfm.link_list.val.ld"
-        Value v = head->val;
+          Value v = head->val;
 
 #pragma ss stream_name "gfm.link_list.next.ld"
-        struct Node *next = head->next;
+          struct Node *next = head->next;
 
-        val = v;
-        head = next;
-        sum += val;
-      } while (val != terminateValue && head != NULL);
+          val = v;
+          head = next;
+          sum += val;
+        } while (val != terminateValue && head != NULL);
+      }
+
+      localRet += sum;
     }
-    __atomic_fetch_add(&ret, sum, __ATOMIC_RELAXED);
+
+    __atomic_fetch_add(&ret, localRet, __ATOMIC_RELAXED);
   }
   return ret;
 }

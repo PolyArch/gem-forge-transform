@@ -69,7 +69,6 @@
 #define ValueAVXSet1 _mm512_set1_epi8
 // There is no integer div :(
 
-
 #else
 #error "Unkown ValueT"
 
@@ -88,10 +87,10 @@
 // Used to readin an array and warm up the cache.
 #define CACHE_LINE_SIZE 64
 #define PAGE_SIZE 4096
-// #define WARM_UP_ARRAY(a, n)                                                    \
-//   for (int i = 0; i < sizeof(*(a)) * (n); i += CACHE_LINE_SIZE) {              \
-//     volatile char x = ((char *)(a))[i];                                        \
-//   }
+#define WARM_UP_ARRAY(a, n)                                                    \
+  for (int i = 0; i < sizeof(*(a)) * (n); i += CACHE_LINE_SIZE) {              \
+    volatile char x = ((char *)(a))[i];                                        \
+  }
 #define DUMP_BIN_ARRAY_TO_FILE(a, n, f)                                        \
   {                                                                            \
     uint64_t s = sizeof(*(a)) * (n);                                           \

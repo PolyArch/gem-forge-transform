@@ -115,15 +115,25 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
           for (int64_t x = 0; x < Bx; ++x) {
 
 #define localSumPtr(kx, ky) localSum[y + Py - ky][x + Px - kx]
-            ValueAVX valS00 = ValueAVXLoad(localSumPtr(0, 0));
-            ValueAVX valS01 = ValueAVXLoad(localSumPtr(0, 1));
-            ValueAVX valS02 = ValueAVXLoad(localSumPtr(0, 2));
-            ValueAVX valS10 = ValueAVXLoad(localSumPtr(1, 0));
-            ValueAVX valS11 = ValueAVXLoad(localSumPtr(1, 1));
-            ValueAVX valS12 = ValueAVXLoad(localSumPtr(1, 2));
-            ValueAVX valS20 = ValueAVXLoad(localSumPtr(2, 0));
-            ValueAVX valS21 = ValueAVXLoad(localSumPtr(2, 1));
-            ValueAVX valS22 = ValueAVXLoad(localSumPtr(2, 2));
+
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld00/no-stream"
+            ValueAVX valS00 = *(ValueAVX *)localSumPtr(0, 0);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld01/no-stream"
+            ValueAVX valS01 = *(ValueAVX *)localSumPtr(0, 1);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld02/no-stream"
+            ValueAVX valS02 = *(ValueAVX *)localSumPtr(0, 2);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld10/no-stream"
+            ValueAVX valS10 = *(ValueAVX *)localSumPtr(1, 0);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld11/no-stream"
+            ValueAVX valS11 = *(ValueAVX *)localSumPtr(1, 1);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld12/no-stream"
+            ValueAVX valS12 = *(ValueAVX *)localSumPtr(1, 2);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld20/no-stream"
+            ValueAVX valS20 = *(ValueAVX *)localSumPtr(2, 0);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld21/no-stream"
+            ValueAVX valS21 = *(ValueAVX *)localSumPtr(2, 1);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.ld22/no-stream"
+            ValueAVX valS22 = *(ValueAVX *)localSumPtr(2, 2);
 
             for (int64_t i = 0; i < Ni; i += vElem) {
 
@@ -163,15 +173,24 @@ __attribute__((noinline)) Value foo(Value *I, Value *K, Value *O, int64_t Nx,
               valS21 = ValueAVXAdd(valM21, valS21);
               valS22 = ValueAVXAdd(valM22, valS22);
             }
-            ValueAVXStore(localSumPtr(0, 0), valS00);
-            ValueAVXStore(localSumPtr(0, 1), valS01);
-            ValueAVXStore(localSumPtr(0, 2), valS02);
-            ValueAVXStore(localSumPtr(1, 0), valS10);
-            ValueAVXStore(localSumPtr(1, 1), valS11);
-            ValueAVXStore(localSumPtr(1, 2), valS12);
-            ValueAVXStore(localSumPtr(2, 0), valS20);
-            ValueAVXStore(localSumPtr(2, 1), valS21);
-            ValueAVXStore(localSumPtr(2, 2), valS22);
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st00/no-stream"
+            *(ValueAVX *)localSumPtr(0, 0) = (ValueAVX)valS00;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st01/no-stream"
+            *(ValueAVX *)localSumPtr(0, 1) = (ValueAVX)valS01;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st02/no-stream"
+            *(ValueAVX *)localSumPtr(0, 2) = (ValueAVX)valS02;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st10/no-stream"
+            *(ValueAVX *)localSumPtr(1, 0) = (ValueAVX)valS10;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st11/no-stream"
+            *(ValueAVX *)localSumPtr(1, 1) = (ValueAVX)valS11;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st12/no-stream"
+            *(ValueAVX *)localSumPtr(1, 2) = (ValueAVX)valS12;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st20/no-stream"
+            *(ValueAVX *)localSumPtr(2, 0) = (ValueAVX)valS20;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st21/no-stream"
+            *(ValueAVX *)localSumPtr(2, 1) = (ValueAVX)valS21;
+#pragma ss stream_name "gfm.conv3d_zxy_outer_tile.local.st22/no-stream"
+            *(ValueAVX *)localSumPtr(2, 2) = (ValueAVX)valS22;
           }
         }
 

@@ -30,14 +30,15 @@ typedef struct {
 #define OFFSET_BYTES 0
 #endif
 
-__attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
+__attribute__((noinline)) Value foo(Value *A, int64_t M, int64_t N,
+                                    int64_t SN) {
 
   /**
    * TODO: Handle the mirroring boundary case.
    */
 
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static) firstprivate(A, B, M, N)
+#pragma omp parallel for schedule(static) firstprivate(A, M, N)
 #endif
   for (int64_t i = 1; i < M - 1; i += 2) {
 
@@ -46,11 +47,11 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     const int64_t vElem = 64 / sizeof(Value);
     for (int64_t j = 0; j < N - (vElem - 1); j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a1.ld"
-      ValueAVX a1 = ValueAVXLoad(A + (i - 1) * N + j);
+      ValueAVX a1 = ValueAVXLoad(A + (i - 1) * SN + j);
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a2.ld"
-      ValueAVX a2 = ValueAVXLoad(A + (i + 1) * N + j);
+      ValueAVX a2 = ValueAVXLoad(A + (i + 1) * SN + j);
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a.ld"
-      ValueAVX a = ValueAVXLoad(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * SN + j);
 
       ValueAVX s = ValueAVXAdd(a1, a2);
 #if VALUE_TYPE == VALUE_TYPE_INT
@@ -62,17 +63,17 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
       ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a.st"
-      ValueAVXStore(A + i * N + j, v);
+      ValueAVXStore(A + i * SN + j, v);
     }
 
 #ifndef NO_EPILOGUE
     const int64_t remain = (N / vElem) * vElem;
 #pragma clang loop vectorize(disable)
     for (int64_t j = remain; j < N; j++) {
-      Value a1 = A[(i - 1) * N + j];
-      Value a2 = A[(i + 1) * N + j];
-      Value a = A[i * N + j];
-      A[i * N + j] = a - (a1 + a2) / 2;
+      Value a1 = A[(i - 1) * SN + j];
+      Value a2 = A[(i + 1) * SN + j];
+      Value a = A[i * SN + j];
+      A[i * SN + j] = a - (a1 + a2) / 2;
     }
 #endif
 
@@ -80,19 +81,19 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // Scalar version.
     for (int64_t j = 0; j < N; ++j) {
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a1.ld"
-      Value a1 = A[(i - 1) * N + j];
+      Value a1 = A[(i - 1) * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a2.ld"
-      Value a2 = A[(i + 1) * N + j];
+      Value a2 = A[(i + 1) * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a.ld"
-      Value a = A[i * N + j];
+      Value a = A[i * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.pred_row.a.st"
-      A[i * N + j] = a - (a1 + a2) / 2;
+      A[i * SN + j] = a - (a1 + a2) / 2;
     }
 #endif
   }
 
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static) firstprivate(A, B, M, N)
+#pragma omp parallel for schedule(static) firstprivate(A, M, N)
 #endif
   for (int64_t i = 2; i < M - 1; i += 2) {
 
@@ -102,11 +103,11 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     const int64_t vElem = 64 / sizeof(Value);
     for (int64_t j = 0; j < N - (vElem - 1); j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.update_row.a1.ld"
-      ValueAVX a1 = ValueAVXLoad(A + (i - 1) * N + j);
+      ValueAVX a1 = ValueAVXLoad(A + (i - 1) * SN + j);
 #pragma ss stream_name "gfm.dwt2d53.update_row.a2.ld"
-      ValueAVX a2 = ValueAVXLoad(A + (i + 1) * N + j);
+      ValueAVX a2 = ValueAVXLoad(A + (i + 1) * SN + j);
 #pragma ss stream_name "gfm.dwt2d53.update_row.a.ld"
-      ValueAVX a = ValueAVXLoad(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * SN + j);
 
       ValueAVX o = ValueAVXSet1(2.0f);
 
@@ -121,17 +122,17 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
       ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.update_row.a.st"
-      ValueAVXStore(A + i * N + j, v);
+      ValueAVXStore(A + i * SN + j, v);
     }
 
 #ifndef NO_EPILOGUE
     const int64_t remain = (N / vElem) * vElem;
 #pragma clang loop vectorize(disable)
     for (int64_t j = remain; j < N; j++) {
-      Value a1 = A[(i - 1) * N + j];
-      Value a2 = A[(i + 1) * N + j];
-      Value a = A[i * N + j];
-      A[i * N + j] = a + (a1 + a2 + 2.0f) / 4.0f;
+      Value a1 = A[(i - 1) * SN + j];
+      Value a2 = A[(i + 1) * SN + j];
+      Value a = A[i * SN + j];
+      A[i * SN + j] = a + (a1 + a2 + 2.0f) / 4.0f;
     }
 #endif
 
@@ -139,13 +140,13 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // #pragma clang loop vectorize_width(16)
     for (int64_t j = 0; j < N; ++j) {
 #pragma ss stream_name "gfm.dwt2d53.update_row.a1.ld"
-      Value a1 = A[(i - 1) * N + j];
+      Value a1 = A[(i - 1) * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.update_row.a2.ld"
-      Value a2 = A[(i + 1) * N + j];
+      Value a2 = A[(i + 1) * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.update_row.a.ld"
-      Value a = A[i * N + j];
+      Value a = A[i * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.update_row.a.st"
-      A[i * N + j] = a + (a1 + a2 + 2) / 4;
+      A[i * SN + j] = a + (a1 + a2 + 2) / 4;
     }
 #endif
   }
@@ -157,7 +158,7 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
    * ! TODO: MaskedStore requires aligned to cache line.
    */
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static) firstprivate(A, B, M, N)
+#pragma omp parallel for schedule(static) firstprivate(A, M, N)
 #endif
   for (int64_t i = 0; i < M; i++) {
 
@@ -166,11 +167,11 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // Vectorized version.
     for (int64_t j = 1; j < N - vElem; j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a1.ld"
-      ValueAVX a1 = ValueAVXLoad(A + i * N + j - 1);
+      ValueAVX a1 = ValueAVXLoad(A + i * SN + j - 1);
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a2.ld"
-      ValueAVX a2 = ValueAVXLoad(A + i * N + j + 1);
+      ValueAVX a2 = ValueAVXLoad(A + i * SN + j + 1);
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a.ld"
-      ValueAVX a = ValueAVXLoad(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * SN + j);
 
       ValueAVX s = ValueAVXAdd(a1, a2);
 #if VALUE_TYPE == VALUE_TYPE_INT
@@ -182,7 +183,7 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
       ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a.st"
-      ValueAVXMaskStore(A + i * N + j, 0x5555, v);
+      ValueAVXMaskStore(A + i * SN + j, 0x5555, v);
     }
 
 // Epilogue for remaining iterations.
@@ -190,10 +191,10 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     const int64_t remain = ((N - 2) / vElem) * vElem + 1;
 #pragma clang loop vectorize(disable)
     for (int64_t j = remain; j < N - 1; j += 2) {
-      Value a1 = A[i * N + j - 1];
-      Value a2 = A[i * N + j + 1];
-      Value a = A[i * N + j];
-      A[i * N + j] = a - (a1 + a2) / 2;
+      Value a1 = A[i * SN + j - 1];
+      Value a2 = A[i * SN + j + 1];
+      Value a = A[i * SN + j];
+      A[i * SN + j] = a - (a1 + a2) / 2;
     }
 #endif
 
@@ -202,19 +203,19 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // #pragma clang loop vectorize_width(8)
     for (int64_t j = 1; j < N - 1; j += 2) {
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a1.ld"
-      Value a1 = A[i * N + j - 1];
+      Value a1 = A[i * SN + j - 1];
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a2.ld"
-      Value a2 = A[i * N + j + 1];
+      Value a2 = A[i * SN + j + 1];
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a.ld"
-      Value a = A[i * N + j];
+      Value a = A[i * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.pred_col.a.st"
-      A[i * N + j] = a - (a1 + a2) / 2;
+      A[i * SN + j] = a - (a1 + a2) / 2;
     }
 #endif
   }
 
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static) firstprivate(A, B, M, N)
+#pragma omp parallel for schedule(static) firstprivate(A, M, N)
 #endif
   for (int64_t i = 0; i < M; i++) {
 
@@ -223,11 +224,11 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // Vectorized version.
     for (int64_t j = 2; j < N - vElem; j += vElem) {
 #pragma ss stream_name "gfm.dwt2d53.update_col.a1.ld"
-      ValueAVX a1 = ValueAVXLoad(A + i * N + j - 1);
+      ValueAVX a1 = ValueAVXLoad(A + i * SN + j - 1);
 #pragma ss stream_name "gfm.dwt2d53.update_col.a2.ld"
-      ValueAVX a2 = ValueAVXLoad(A + i * N + j + 1);
+      ValueAVX a2 = ValueAVXLoad(A + i * SN + j + 1);
 #pragma ss stream_name "gfm.dwt2d53.update_col.a.ld"
-      ValueAVX a = ValueAVXLoad(A + i * N + j);
+      ValueAVX a = ValueAVXLoad(A + i * SN + j);
 
       ValueAVX o = ValueAVXSet1(2.0f);
 
@@ -242,7 +243,7 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
       ValueAVX v = ValueAVXSub(a, div);
 
 #pragma ss stream_name "gfm.dwt2d53.update_col.a.st"
-      ValueAVXMaskStore(A + i * N + j, 0x5555, v);
+      ValueAVXMaskStore(A + i * SN + j, 0x5555, v);
     }
 
     // Epilogue for remaining iterations.
@@ -250,10 +251,10 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     const int64_t remain = ((N - 3) / vElem) * vElem + 2;
 #pragma clang loop vectorize(disable)
     for (int64_t j = remain; j < N - 1; j += 2) {
-      Value a1 = A[i * N + j - 1];
-      Value a2 = A[i * N + j + 1];
-      Value a = A[i * N + j];
-      A[i * N + j] = a + (a1 + a2 + 2.0f) / 4.0f;
+      Value a1 = A[i * SN + j - 1];
+      Value a2 = A[i * SN + j + 1];
+      Value a = A[i * SN + j];
+      A[i * SN + j] = a + (a1 + a2 + 2.0f) / 4.0f;
     }
 #endif
 
@@ -262,15 +263,39 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, int64_t M, int64_t N) {
     // #pragma clang loop vectorize_width(8)
     for (int64_t j = 2; j < N - 1; j += 2) {
 #pragma ss stream_name "gfm.dwt2d53.update_col.a1.ld"
-      Value a1 = A[i * N + j - 1];
+      Value a1 = A[i * SN + j - 1];
 #pragma ss stream_name "gfm.dwt2d53.update_col.a2.ld"
-      Value a2 = A[i * N + j + 1];
+      Value a2 = A[i * SN + j + 1];
 #pragma ss stream_name "gfm.dwt2d53.update_col.a.ld"
-      Value a = A[i * N + j];
+      Value a = A[i * SN + j];
 #pragma ss stream_name "gfm.dwt2d53.update_col.a.st"
-      A[i * N + j] = a + (a1 + a2 + 2) / 4;
+      A[i * SN + j] = a + (a1 + a2 + 2) / 4;
     }
 #endif
+  }
+
+  return 0;
+}
+
+__attribute__((noinline)) Value repack(Value *A, Value *B, int64_t M, int64_t N,
+                                       int64_t SN) {
+  int64_t halfM = M / 2;
+  int64_t halfN = N / 2;
+  int64_t halfS = halfM * halfN;
+
+  Value *LL = B;
+  Value *LH = B + halfN;
+  Value *HL = B + halfM * SN;
+  Value *HH = B + halfM * SN + halfN;
+
+  for (int64_t i = 0; i < M / 2; ++i) {
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+    for (int64_t j = 0; j < N / 2; ++j) {
+      LL[i * SN + j] = A[(i * 2 + 0) * SN + (j * 2 + 0)];
+      LH[i * SN + j] = A[(i * 2 + 0) * SN + (j * 2 + 1)];
+      HL[i * SN + j] = A[(i * 2 + 1) * SN + (j * 2 + 0)];
+      HH[i * SN + j] = A[(i * 2 + 1) * SN + (j * 2 + 1)];
+    }
   }
 
   return 0;
@@ -281,6 +306,7 @@ int main(int argc, char *argv[]) {
   int numThreads = 1;
   uint64_t M = 4 * 1024 / sizeof(Value);
   uint64_t N = 4 * 1024 / sizeof(Value);
+  int level = 1;
   int check = 0;
   int warm = 0;
   int argx = 2;
@@ -301,6 +327,10 @@ int main(int argc, char *argv[]) {
   }
   argx++;
   if (argc >= argx) {
+    level = atoi(argv[argx - 1]);
+  }
+  argx++;
+  if (argc >= argx) {
     check = atoi(argv[argx - 1]);
   }
   argx++;
@@ -310,7 +340,7 @@ int main(int argc, char *argv[]) {
   argx++;
   uint64_t T = M * N;
   printf("Number of Threads: %d.\n", numThreads);
-  printf("Data size %lukB.\n", T * sizeof(Value) / 1024);
+  printf("Data size %lukB. Level %d.\n", T * sizeof(Value) / 1024, level);
 
 #ifndef NO_OPENMP
   omp_set_dynamic(0);
@@ -358,7 +388,26 @@ int main(int argc, char *argv[]) {
 #endif
 
   gf_reset_stats();
-  volatile Value computed = foo(a, b, M, N);
+  {
+    const int64_t SN = N;
+    int64_t curM = M;
+    int64_t curN = N;
+    Value *curA = a;
+    Value *curB = b;
+    for (int i = 0; i < level; ++i) {
+
+      volatile Value computed = foo(curA, curM, curN, SN);
+
+      volatile Value r = repack(curA, curB, curM, curN, SN);
+
+      curM /= 2;
+      curN /= 2;
+
+      Value *tmp = curA;
+      curA = curB;
+      curB = tmp;
+    }
+  }
   gf_detail_sim_end();
 
   return 0;

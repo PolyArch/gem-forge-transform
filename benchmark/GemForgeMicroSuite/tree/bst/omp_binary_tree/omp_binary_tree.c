@@ -64,6 +64,7 @@ int main(int argc, char *argv[]) {
   uint64_t totalElements = 512 * 1024;
   uint64_t totalKeys = 8 * 1024 * 1024;
   uint64_t hitRatio = 8;
+  int warm = 1;
   int check = 1;
   if (argc >= 2) {
     numThreads = atoi(argv[1]);
@@ -79,6 +80,9 @@ int main(int argc, char *argv[]) {
   }
   if (argc >= 6) {
     check = atoi(argv[5]);
+  }
+  if (argc >= 7) {
+    warm = atoi(argv[6]);
   }
 
   Value keyMax = totalElements * hitRatio;
@@ -114,27 +118,24 @@ int main(int argc, char *argv[]) {
   // Allocated the matched results.
   uint8_t *matched = aligned_alloc(64, sizeof(uint8_t) * totalKeys);
 
-#ifdef GEM_FORGE
-  m5_stream_nuca_region("gfm.bin_tree.tree", tree.array, sizeof(tree.array[0]),
+  gf_stream_nuca_region("gfm.bin_tree.tree", tree.array, sizeof(tree.array[0]),
                         totalElements);
-  m5_stream_nuca_region("gfm.bin_tree.keys", keys, sizeof(keys[0]), totalKeys);
-  m5_stream_nuca_region("gfm.bin_tree.match", matched, sizeof(matched[0]),
+  gf_stream_nuca_region("gfm.bin_tree.keys", keys, sizeof(keys[0]), totalKeys);
+  gf_stream_nuca_region("gfm.bin_tree.match", matched, sizeof(matched[0]),
                         totalKeys);
-  m5_stream_nuca_remap();
-#endif
+  gf_stream_nuca_remap();
 
   gf_detail_sim_start();
 
-#ifdef WARM_CACHE
-  gf_warm_array("tree", tree.array, totalElements * sizeof(tree.array[0]));
-  gf_warm_array("keys", keys, totalKeys * sizeof(keys[0]));
-  gf_warm_array("match", matched, totalKeys * sizeof(matched[0]));
+  if (warm) {
+    gf_warm_array("tree", tree.array, totalElements * sizeof(tree.array[0]));
+    gf_warm_array("keys", keys, totalKeys * sizeof(keys[0]));
+    gf_warm_array("match", matched, totalKeys * sizeof(matched[0]));
+  }
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {
     volatile Value x = keys[tid];
   }
-
-#endif
 
   gf_reset_stats();
   foo(tree.root, keys, totalKeys, matched);

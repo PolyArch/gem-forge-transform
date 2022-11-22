@@ -196,9 +196,6 @@ struct DataArrays generateData(struct InputArgs args) {
 
   {
     struct DataArrays data = loadData(args, fileName);
-#ifdef GEM_FORGE
-    assert(data.nodes != NULL && "Failed to load data.");
-#endif
     if (data.nodes != NULL) {
       return data;
     }
@@ -293,15 +290,13 @@ int main(int argc, char *argv[]) {
   // Allocated the matched results.
   uint8_t *matched = aligned_alloc(64, sizeof(uint8_t) * args.totalKeys);
 
-#ifdef GEM_FORGE
-  m5_stream_nuca_region("gfm.hash_join.nodes", data.nodes,
+  gf_stream_nuca_region("gfm.hash_join.nodes", data.nodes,
                         sizeof(data.nodes[0]), args.totalElements);
-  m5_stream_nuca_region("gfm.hash_join.keys", data.keys, sizeof(data.keys[0]),
+  gf_stream_nuca_region("gfm.hash_join.keys", data.keys, sizeof(data.keys[0]),
                         args.totalKeys);
-  m5_stream_nuca_region("gfm.hash_join.match", matched, sizeof(matched[0]),
+  gf_stream_nuca_region("gfm.hash_join.match", matched, sizeof(matched[0]),
                         args.totalKeys);
-  m5_stream_nuca_remap();
-#endif
+  gf_stream_nuca_remap();
 
   gf_detail_sim_start();
   if (args.warm) {

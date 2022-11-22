@@ -105,7 +105,11 @@ foo(Value *features,           // [nPoints][nDims]
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
 #endif
       for (int64_t dim = 0; dim < nDims; ++dim) {
-        myNewCenters[dim] += features[point * nDims + dim];
+        Value v = features[point * nDims + dim];
+#pragma ss stream_name "gfm.kmeans.new_center.ld/no-stream"
+        Value s = myNewCenters[minCenter * nDims + dim];
+#pragma ss stream_name "gfm.kmeans.new_center.st/no-stream"
+        myNewCenters[minCenter * nDims + dim] = s + v;
       }
     }
 
