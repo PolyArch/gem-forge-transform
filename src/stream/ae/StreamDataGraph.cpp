@@ -12,10 +12,10 @@
 
 StreamDataGraph::StreamDataGraph(const llvm::Loop *_Loop,
                                  const llvm::Value *_AddrValue,
-                                 IsIndVarFuncT IsInductionVar)
+                                 IsIndOrCmpVarFuncT IsIndOrCmpVar)
     : ExecutionDataGraph(_AddrValue), Loop(_Loop),
       HasPHINodeInComputeInsts(false), HasCallInstInComputeInsts(false) {
-  this->constructDataGraph(IsInductionVar);
+  this->constructDataGraph(IsIndOrCmpVar);
   this->HasCircle = this->detectCircle();
 
   for (const auto &ComputeInst : this->ComputeInsts) {
@@ -41,7 +41,7 @@ StreamDataGraph::StreamDataGraph(const llvm::Loop *_Loop,
   }
 }
 
-void StreamDataGraph::constructDataGraph(IsIndVarFuncT IsInductionVar) {
+void StreamDataGraph::constructDataGraph(IsIndOrCmpVarFuncT IsIndOrCmpVar) {
   std::list<const llvm::Value *> Queue;
   Queue.emplace_back(this->getSingleResultValue());
 
@@ -75,7 +75,7 @@ void StreamDataGraph::constructDataGraph(IsIndVarFuncT IsInductionVar) {
       continue;
     }
 
-    if (IsInductionVar(Inst)) {
+    if (IsIndOrCmpVar(Inst)) {
       // This is an induction variable stream, should also be an input value.
       UnsortedInputs.insert(Inst);
       continue;

@@ -12,8 +12,9 @@
 
 class BBBranchDataGraph : public ExecutionDataGraph {
 public:
+  using IsInputFuncT = std::function<bool(const llvm::Instruction *)>;
   BBBranchDataGraph(const llvm::Loop *_Loop, const llvm::BasicBlock *_BB,
-                    const std::string _Suffix = "_br");
+                    IsInputFuncT _IsInput, const std::string _Suffix = "_br");
   BBBranchDataGraph(const BBBranchDataGraph &Other) = delete;
   BBBranchDataGraph(BBBranchDataGraph &&Other) = delete;
   BBBranchDataGraph &operator=(const BBBranchDataGraph &Other) = delete;
@@ -26,8 +27,8 @@ public:
   bool isValid() const { return this->IsValid; }
   const llvm::BasicBlock *getTrueBB() const { return this->TrueBB; }
   const llvm::BasicBlock *getFalseBB() const { return this->FalseBB; }
-  const std::unordered_set<const llvm::LoadInst *> &getInputLoads() const {
-    return this->InputLoads;
+  const std::unordered_set<const llvm::Instruction *> &getInLoopInputs() const {
+    return this->InLoopInputs;
   }
 
   /******************************************************************
@@ -88,10 +89,9 @@ protected:
   bool IsValid = false;
   const llvm::BasicBlock *TrueBB = nullptr;
   const llvm::BasicBlock *FalseBB = nullptr;
-  std::unordered_set<const llvm::LoadInst *> InputLoads;
-  std::unordered_set<const llvm::PHINode *> InputPHIs;
+  std::unordered_set<const llvm::Instruction *> InLoopInputs;
 
-  void constructDataGraph();
+  void constructDataGraph(IsInputFuncT IsInput);
   void clear();
 };
 
@@ -105,8 +105,10 @@ public:
   CachedBBBranchDataGraph &operator=(CachedBBBranchDataGraph &&Other) = delete;
   ~CachedBBBranchDataGraph();
 
+  using IsInputFuncT = BBBranchDataGraph::IsInputFuncT;
   BBBranchDataGraph *getBBBranchDataGraph(const llvm::Loop *Loop,
-                                          const llvm::BasicBlock *BB);
+                                          const llvm::BasicBlock *BB,
+                                          IsInputFuncT IsInput);
   BBBranchDataGraph *tryBBBranchDataGraph(const llvm::Loop *Loop,
                                           const llvm::BasicBlock *BB);
 

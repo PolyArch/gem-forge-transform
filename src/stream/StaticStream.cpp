@@ -577,6 +577,8 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
     } else if (ParamName == "nest") {
       assert(EqualPos != Param.npos && "Missing NestLoopLevel GroupIdx.");
       this->UserNestLoopLevel = std::stoi(Param.substr(EqualPos + 1));
+    } else if (ParamName == "no-stream") {
+      this->UserNoStream = true;
     }
 
     SlashPos = NextSlashPos;

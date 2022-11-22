@@ -35,8 +35,11 @@ void StaticStreamLoopBoundBuilder::buildStreamLoopBoundForLoop(
     return;
   }
   // This is the single latch.
-  auto LatchBBBranchDG =
-      Analyzer->getBBBranchDG()->getBBBranchDataGraph(Loop, LatchBB);
+  auto IsStreamInst = [Analyzer](const llvm::Instruction *Inst) -> bool {
+    return Analyzer->isStreamInst(Inst);
+  };
+  auto LatchBBBranchDG = Analyzer->getBBBranchDG()->getBBBranchDataGraph(
+      Loop, LatchBB, IsStreamInst);
   if (!this->isStreamLoopBound(Analyzer, Loop, LatchBBBranchDG)) {
     LLVM_DEBUG(llvm::dbgs() << "[LoopBound] Not StreamLoopBound.\n");
     return;
@@ -66,7 +69,8 @@ void StaticStreamLoopBoundBuilder::buildStreamLoopBoundForLoop(
       ClonedInputValues.push_back(this->Transformer->getClonedValue(Input));
       continue;
     }
-    auto S = Analyzer->getChosenStreamByInst(Inst);
+    auto S = Analyzer->getChosenStreamWithPlaceholderInst(Inst);
+    assert(S && "Failed to get LoopBoundInputS.");
     FuncArg->set_is_stream(true);
     FuncArg->set_stream_id(S->StreamId);
     FuncArg->set_type(StaticStream::translateToProtobufDataType(
@@ -86,13 +90,13 @@ bool StaticStreamLoopBoundBuilder::isStreamLoopBound(
   /**
    * We add the LoopBoundDG to ConfigureInfo iff.
    * 1. This is a valid LoopBoundPredicate.
-   * 2. All the input loads are chosen streams configured at this loop.
+   * 2. All the input streams are chosen streams configured at this loop.
    */
   if (!LatchBBBranchDG->isValidLoopBoundPredicate()) {
     return false;
   }
-  for (auto InputLoad : LatchBBBranchDG->getInputLoads()) {
-    auto S = Analyzer->getChosenStreamByInst(InputLoad);
+  for (auto Input : LatchBBBranchDG->getInLoopInputs()) {
+    auto S = Analyzer->getChosenStreamWithPlaceholderInst(Input);
     if (!S) {
       return false;
     }

@@ -43,17 +43,10 @@ public:
   /**
    * Query for the analysis results.
    */
-  StaticStream *getChosenStreamByInst(const llvm::Instruction *Inst) {
-    if (!this->TopLoop->contains(Inst)) {
-      return nullptr;
-    }
-    auto Iter = this->InstChosenStreamMap.find(Inst);
-    if (Iter == this->InstChosenStreamMap.end()) {
-      return nullptr;
-    } else {
-      return Iter->second;
-    }
-  }
+  StaticStream *getChosenStreamByInst(const llvm::Instruction *Inst) const;
+
+  StaticStream *
+  getChosenStreamWithPlaceholderInst(const llvm::Instruction *Inst) const;
 
   using InstTransformPlanMapT =
       std::unordered_map<const llvm::Instruction *, StreamTransformPlan>;
@@ -88,6 +81,11 @@ public:
                       std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
                       bool PredicateRet);
 
+  /**
+   * Check if an instruction represents a stream.
+   */
+  bool isStreamInst(const llvm::Instruction *Inst) const;
+
 protected:
   llvm::Loop *TopLoop;
   llvm::DataLayout *DataLayout;
@@ -114,6 +112,8 @@ protected:
   getStreamInMapByInstAndConfigureLoop(const InstStaticStreamMapT &Map,
                                        const llvm::Instruction *Inst,
                                        const llvm::Loop *ConfigureLoop) const;
+  StaticStream *getFirstStreamInMapByInst(const InstStaticStreamMapT &Map,
+                                          const llvm::Instruction *Inst) const;
 
   /**
    * Map from an instruction to its chosen stream.

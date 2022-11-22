@@ -39,7 +39,7 @@ const std::list<std::pair<std::string, std::string>>
         {"sssp_inline.cc", ".omp_outlined..22"},
         // From GapGraph BFS_PUSH
         {"bfs_push.cc", ".omp_outlined..15"},
-        {"bfs_push_check.cc", ".omp_outlined."},
+        {"bfs_push_check.cc", ".omp_outlined..15"},
     };
 
 std::unordered_map<const llvm::Loop *, bool>

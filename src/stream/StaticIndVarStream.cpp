@@ -68,8 +68,13 @@ void StaticIndVarStream::constructMetaGraph(GetStreamFuncT GetStream) {
     LLVM_DEBUG(llvm::dbgs() << "  Missing NonEmptyComputePath.\n");
     return;
   }
+}
 
+void StaticIndVarStream::analyzeValuePattern() {
   // 4a. Check the ValuePattern from the first non-empty SCEV.
+  if (!this->NonEmptyComputePath) {
+    return;
+  }
   const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
   for (const auto &ComputeMNode : this->NonEmptyComputePath->ComputeMetaNodes) {
     if (ComputeMNode->isEmpty()) {
@@ -396,9 +401,15 @@ bool StaticIndVarStream::analyzeIsPointerChaseFromComputePath(
       return false;
     }
     if (LoadBaseS->BaseStepRootStreams.size() != 1) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "==== [NotPtrChase] Multi StepRoot for LoadBaseS: "
-                 << LoadBaseS->getStreamName() << '\n');
+      LLVM_DEBUG({
+        llvm::dbgs() << "==== [NotPtrChase] #StepRoot = "
+                     << LoadBaseS->BaseStepRootStreams.size()
+                     << " for LoadBaseS: " << LoadBaseS->getStreamName()
+                     << '\n';
+        for (auto BaseStepRootS : LoadBaseS->BaseStepRootStreams) {
+          llvm::dbgs() << "   " << BaseStepRootS->getStreamName() << '\n';
+        }
+      });
       return false;
     }
     if (LoadBaseS->BaseStepRootStreams.count(
@@ -448,6 +459,14 @@ void StaticIndVarStream::analyzeIsCandidate() {
       this->IsCandidate = false;
       return;
     }
+  }
+
+  if (this->UserNoStream) {
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: UserNoStream.\n");
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::USER_NO_STREAM);
+    this->IsCandidate = false;
+    return;
   }
 
   if (!this->checkBaseStreamInnerMostLoopContainsMine()) {

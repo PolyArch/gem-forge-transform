@@ -65,6 +65,8 @@ private:
 
   void constructMetaGraph(GetStreamFuncT GetStream) override;
 
+  void analyzeValuePattern() override;
+
   void analyzeIsCandidate() override;
 
   std::list<ComputePath> AllComputePaths;

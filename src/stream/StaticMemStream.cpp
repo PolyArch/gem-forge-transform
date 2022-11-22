@@ -79,6 +79,14 @@ void StaticMemStream::analyzeIsCandidate() {
     }
   }
 
+  if (this->UserNoStream) {
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: UserNoStream.\n");
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::USER_NO_STREAM);
+    this->IsCandidate = false;
+    return;
+  }
+
   if (llvm::isa<llvm::AtomicCmpXchgInst>(this->Inst) ||
       llvm::isa<llvm::AtomicRMWInst>(this->Inst)) {
     if (!this->ValueDG) {
