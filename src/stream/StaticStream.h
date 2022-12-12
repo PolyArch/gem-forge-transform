@@ -259,6 +259,7 @@ public:
   BBBranchDataGraph *BBPredDG = nullptr;
   StreamSet PredicatedTrueStreams;
   StreamSet PredicatedFalseStreams;
+  StaticStream *PredicatedByStream = nullptr;
 
   // AddrDG for MemStream.
   std::unique_ptr<StreamDataGraph> AddrDG = nullptr;

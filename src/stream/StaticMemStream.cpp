@@ -309,8 +309,9 @@ bool StaticMemStream::validateSCEVAsStreamDG(
        * care of them.
        */
       if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-        if (Inst->getOpcode() == llvm::Instruction::And) {
-          llvm::dbgs() << "[And]" << '\n';
+        if (Inst->getOpcode() == llvm::Instruction::And ||
+            Inst->getOpcode() == llvm::Instruction::AShr) {
+          llvm::dbgs() << "[And/Shift]" << '\n';
           const llvm::SCEV *LoopVariantSCEV = nullptr;
           for (size_t OperandIdx = 0, NumOperands = Inst->getNumOperands();
                OperandIdx < NumOperands; ++OperandIdx) {

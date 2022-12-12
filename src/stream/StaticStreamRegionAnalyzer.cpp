@@ -68,13 +68,17 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
    */
   this->fuseLoadOps();
   LLVM_DEBUG(llvm::dbgs() << "Fuse LoadOps done.\n");
-  this->buildStreamValueDepGraph();
-  LLVM_DEBUG(llvm::dbgs() << "Build StreamValueDepGraph done.\n");
   /**
    * Predicate relationship must be after fuseLoadOps to get the FinalInst.
    */
   this->markPredicateRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark predicate relationship done.\n");
+  /**
+   * ValueDG should be built after marking predication, to decide whether
+   * conditional store/atomics can be hoisted as near-stream computation.
+   */
+  this->buildStreamValueDepGraph();
+  LLVM_DEBUG(llvm::dbgs() << "Build StreamValueDepGraph done.\n");
   /**
    * Update relationship must be after alias relationship.
    */
@@ -408,6 +412,8 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
       } else {
         PredStream->PredicatedFalseStreams.insert(TargetStream);
       }
+      assert(!TargetStream->PredicatedByStream && "Already Predicated.");
+      TargetStream->PredicatedByStream = PredStream;
     }
   };
   if (auto TrueBB = BBPredDG->getPredicateBB(true)) {
@@ -1053,8 +1059,10 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   {
     auto StoreBB = StoreS->Inst->getParent();
     auto HeaderBB = StoreS->InnerMostLoop->getHeader();
-    if (!this->PDT->dominates(StoreBB, HeaderBB)) {
-      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Conditional Access.\n");
+    if (!this->PDT->dominates(StoreBB, HeaderBB) &&
+        !StoreS->PredicatedByStream) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "[NoValueDG] Conditional (not Predicated) Access.\n");
       return;
     }
   }

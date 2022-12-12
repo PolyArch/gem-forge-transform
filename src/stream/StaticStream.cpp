@@ -174,7 +174,8 @@ void StaticStream::handleFirstTimeComputeNode(
 
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(DNode.Value)) {
     if (this->ConfigureLoop->contains(Inst)) {
-      if (llvm::isa<llvm::LoadInst>(Inst)) {
+      if (llvm::isa<llvm::LoadInst>(Inst) ||
+          llvm::isa<llvm::AtomicRMWInst>(Inst)) {
         // LoadBaseStream.
         auto LoadBaseStream = GetStream(Inst, this->ConfigureLoop);
         if (!LoadBaseStream) {
