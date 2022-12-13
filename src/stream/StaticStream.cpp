@@ -69,6 +69,9 @@ StaticStream::translateToProtobufDataType(llvm::DataLayout *DataLayout,
       llvm_unreachable("Invalid Vector BitWidth.\n");
     }
   }
+  llvm::errs() << "Invalid DataType: ";
+  Type->print(llvm::errs());
+  llvm::errs() << "\n";
   llvm_unreachable("Invalid DataType.\n");
 }
 
@@ -867,6 +870,10 @@ StaticStream::getExecFuncInputStream(const llvm::Value *Value) const {
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
     if (Inst == this->Inst) {
       // The input is myself. Only for PredFunc.
+      return this;
+    }
+    if (!this->FusedLoadOps.empty() && Inst == this->FusedLoadOps.back()) {
+      // The input is my fused load op. Only for PredFunc.
       return this;
     }
     for (auto BaseStream : this->ChosenBaseStreams) {

@@ -670,16 +670,17 @@ void StaticStreamRegionAnalyzer::fuseLoadOps() {
         Inst->getOpcode() == llvm::Instruction::Load) {
       for (auto S : InstStream.second) {
         this->fuseLoadOps(S);
-        if (S->ValueDG) {
+        if (!S->FusedLoadOps.empty()) {
           // Place this into the FinalInstMap.
-          LLVM_DEBUG(llvm::dbgs() << "  Fused LoadOp for " << S->getStreamName()
-                                  << " Final Inst "
-                                  << Utils::formatLLVMInstWithoutFunc(
-                                         S->ValueDG->getSingleResultInst())
-                                  << "\n");
+          auto FusedFinalInst = S->FusedLoadOps.back();
+          LLVM_DEBUG(llvm::dbgs()
+                     << "  Fused LoadOp for " << S->getStreamName()
+                     << " Final Inst "
+                     << Utils::formatLLVMInstWithoutFunc(FusedFinalInst)
+                     << "\n");
           this->FinalInstStaticStreamMap
               .emplace(std::piecewise_construct,
-                       std::forward_as_tuple(S->ValueDG->getSingleResultInst()),
+                       std::forward_as_tuple(FusedFinalInst),
                        std::forward_as_tuple())
               .first->second.push_back(S);
         }
@@ -1967,11 +1968,13 @@ void StaticStreamRegionAnalyzer::nestRegionInto(
 
 bool StaticStreamRegionAnalyzer::isStreamInst(
     const llvm::Instruction *Inst) const {
-  if (llvm::isa<llvm::PHINode>(Inst)) {
+  switch (Inst->getOpcode()) {
+  case llvm::Instruction::Load:
+  case llvm::Instruction::AtomicCmpXchg:
+  case llvm::Instruction::PHI:
     return true;
-  }
-  if (llvm::isa<llvm::LoadInst>(Inst)) {
-    return true;
+  default:
+    break;
   }
   return this->FinalInstStaticStreamMap.count(Inst);
 }
