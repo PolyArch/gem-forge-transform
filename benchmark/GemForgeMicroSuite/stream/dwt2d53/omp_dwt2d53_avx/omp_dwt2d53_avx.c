@@ -398,7 +398,7 @@ int main(int argc, char *argv[]) {
 
       volatile Value computed = foo(curA, curM, curN, SN);
 
-      volatile Value r = repack(curA, curB, curM, curN, SN);
+      // volatile Value r = repack(curA, curB, curM, curN, SN);
 
       curM /= 2;
       curN /= 2;

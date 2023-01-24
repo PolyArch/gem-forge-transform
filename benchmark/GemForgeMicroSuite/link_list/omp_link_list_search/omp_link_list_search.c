@@ -168,6 +168,13 @@ struct DataArrays loadData(struct InputArgs args, const char *fileName) {
     data.heads =
         aligned_alloc(PAGE_SIZE, sizeof(struct Node *) * args.numLists);
 
+    for (uint64_t i = 0; i < numNodes; ++i) {
+      data.nodes[i].next = NULL;
+    }
+    for (uint64_t i = 0; i < args.numLists; ++i) {
+      data.heads[i] = NULL;
+    }
+
     fread(data.nodes, sizeof(struct Node), numNodes, f);
     fread(data.heads, sizeof(struct Node *), args.numLists, f);
 
@@ -217,6 +224,9 @@ struct DataArrays generateData(struct InputArgs args) {
 
   for (uint64_t i = 0; i < totalNodes; ++i) {
     nodes[i].next = NULL;
+  }
+  for (uint64_t i = 0; i < args.numLists; ++i) {
+    heads[i] = NULL;
   }
 
   for (uint64_t i = 0; i < totalBulks; ++i) {
@@ -277,10 +287,25 @@ int main(int argc, char *argv[]) {
   uint64_t totalNodes = args.elementsPerList * args.numLists;
   Value terminateValue = totalNodes;
 
+  gf_stream_nuca_region("gfm.link_list.heads", data.heads,
+                        sizeof(data.heads[0]), args.numLists);
+  gf_stream_nuca_region("gfm.link_list.nodes", data.nodes,
+                        sizeof(data.nodes[0]), totalNodes);
+  {
+    const int64_t ptrOffset = (int64_t)(&(((struct Node *)0)->next));
+    const int64_t ptrSize = sizeof(((struct Node *)0)->next);
+    gf_stream_nuca_align(data.nodes, data.heads,
+                         m5_stream_nuca_encode_ptr_align(ptrOffset, ptrSize));
+  }
+  gf_stream_nuca_remap();
+
   gf_detail_sim_start();
 
   if (args.warm) {
-    WARM_UP_ARRAY(data.nodes, totalNodes);
+    gf_warm_array("gfm.link_list.nodes", data.nodes,
+                  totalNodes * sizeof(struct Node));
+    gf_warm_array("gfm.link_list.heads", data.heads,
+                  args.numLists * sizeof(data.heads[0]));
   }
 
 #pragma omp parallel for schedule(static)

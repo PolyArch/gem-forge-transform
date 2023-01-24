@@ -192,6 +192,11 @@ accCenter(Value *restrict features,               // [nPoints][nDims]
 
   const int64_t nPointsPerThread = nPoints / nThreads;
 
+#ifndef NO_OPENMP
+#pragma omp parallel for schedule(static)                                      \
+    firstprivate(features, memberships, newCenters, clusterSize, nPoints,      \
+                 nDims, nCenters, nThreads, nPointsPerThread)
+#endif
   for (int64_t thread = 0; thread < nThreads; ++thread) {
 
     for (int64_t p = 0; p < nPointsPerThread; ++p) {

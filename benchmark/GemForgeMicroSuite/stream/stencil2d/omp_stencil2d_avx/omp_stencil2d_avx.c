@@ -224,7 +224,6 @@ int main(int argc, char *argv[]) {
   Value *b = a + M * N + (OFFSET_BYTES / sizeof(Value));
   Value *c = b + M * N + (OFFSET_BYTES / sizeof(Value));
 
-#ifdef GEM_FORGE
   gf_stream_nuca_region("gfm.stencil2d.a", a, sizeof(a[0]), N, M);
   gf_stream_nuca_region("gfm.stencil2d.b", b, sizeof(b[0]), N, M);
   gf_stream_nuca_region("gfm.stencil2d.c", c, sizeof(c[0]), N, M);
@@ -234,7 +233,6 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(c, c, N);
   gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
   gf_stream_nuca_remap();
-#endif
 
   if (check) {
 #pragma clang loop vectorize(disable)
