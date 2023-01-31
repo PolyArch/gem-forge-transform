@@ -69,6 +69,9 @@ StaticStream::translateToProtobufDataType(llvm::DataLayout *DataLayout,
       llvm_unreachable("Invalid Vector BitWidth.\n");
     }
   }
+  llvm::errs() << "Invalid DataType: ";
+  Type->print(llvm::errs());
+  llvm::errs() << "\n";
   llvm_unreachable("Invalid DataType.\n");
 }
 
@@ -174,7 +177,8 @@ void StaticStream::handleFirstTimeComputeNode(
 
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(DNode.Value)) {
     if (this->ConfigureLoop->contains(Inst)) {
-      if (llvm::isa<llvm::LoadInst>(Inst)) {
+      if (llvm::isa<llvm::LoadInst>(Inst) ||
+          llvm::isa<llvm::AtomicRMWInst>(Inst)) {
         // LoadBaseStream.
         auto LoadBaseStream = GetStream(Inst, this->ConfigureLoop);
         if (!LoadBaseStream) {
@@ -577,6 +581,8 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
     } else if (ParamName == "nest") {
       assert(EqualPos != Param.npos && "Missing NestLoopLevel GroupIdx.");
       this->UserNestLoopLevel = std::stoi(Param.substr(EqualPos + 1));
+    } else if (ParamName == "no-stream") {
+      this->UserNoStream = true;
     }
 
     SlashPos = NextSlashPos;
@@ -864,6 +870,10 @@ StaticStream::getExecFuncInputStream(const llvm::Value *Value) const {
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
     if (Inst == this->Inst) {
       // The input is myself. Only for PredFunc.
+      return this;
+    }
+    if (!this->FusedLoadOps.empty() && Inst == this->FusedLoadOps.back()) {
+      // The input is my fused load op. Only for PredFunc.
       return this;
     }
     for (auto BaseStream : this->ChosenBaseStreams) {

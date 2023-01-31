@@ -78,10 +78,42 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t L,
 #pragma ss stream_name "gfm.stencil3d.B.ld"
         Value valB = b[idx];
 
+#ifdef RODINIA_HOTSPOT3D_KERNEL
+
+#if VALUE_TYPE == VALUE_TYPE_FLOAT
+        const Value localCC = 0.5;
+        const Value localCE = 0.6;
+        const Value localCW = 0.2;
+        const Value localCN = 0.3;
+        const Value localCS = 0.4;
+        const Value localCT = 0.8;
+        const Value localCB = 0.7;
+        const Value localdt = 0.1;
+        const Value localCap = 0.8;
+        const Value localAmb = 0.7;
+#else
+        const Value localCC = 2;
+        const Value localCE = 3;
+        const Value localCW = 5;
+        const Value localCN = 11;
+        const Value localCS = 7;
+        const Value localCT = 9;
+        const Value localCB = 6;
+        const Value localdt = 12;
+        const Value localCap = 13;
+        const Value localAmb = 88;
+#endif
+
+        Value valM = localCC * valAc + localCW * valAw + localCE * valAe +
+                     localCS * valAs + localCN * valAn + localCB * valAb +
+                     localCT * valAf + (localdt / localCap) * valB +
+                     localCT * localAmb;
+#else
         Value valAx = (valAw + valAe) - valAc;
         Value valAy = (valAn + valAs) - valAc;
         Value valAz = (valAf + valAb) - valAc;
         Value valM = (valAx + valAy + valAz) + valB;
+#endif
 
 #pragma ss stream_name "gfm.stencil3d.C.st"
         c[idx] = valM;
@@ -201,7 +233,7 @@ int main(int argc, char *argv[]) {
   gf_reset_stats();
   {
     Value *x = a;
-    Value *y = b;
+    Value *y = c;
     for (int i = 0; i < rounds; i++) {
       volatile Value computed = foo(x, b, y, L, M, N);
       Value *t = x;

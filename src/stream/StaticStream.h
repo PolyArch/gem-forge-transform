@@ -66,6 +66,11 @@ public:
   int UserNestLoopLevel = UserInvalidNestLoopLevel;
 
   /**
+   * User explicitly disabled this stream.
+   */
+  bool UserNoStream = false;
+
+  /**
    * The constructor just creates the object and does not perform any analysis.
    *
    * After creating all the streams, the manager should call constructGraph() to
@@ -140,6 +145,8 @@ public:
   void addBaseStream(StaticStream *Other);
   void addBackEdgeBaseStream(StaticStream *Other);
 
+  // Only implemented by IndVarStream.
+  virtual void analyzeValuePattern() {}
   void computeBaseStepRootStreams();
 
   /**
@@ -252,6 +259,7 @@ public:
   BBBranchDataGraph *BBPredDG = nullptr;
   StreamSet PredicatedTrueStreams;
   StreamSet PredicatedFalseStreams;
+  StaticStream *PredicatedByStream = nullptr;
 
   // AddrDG for MemStream.
   std::unique_ptr<StreamDataGraph> AddrDG = nullptr;

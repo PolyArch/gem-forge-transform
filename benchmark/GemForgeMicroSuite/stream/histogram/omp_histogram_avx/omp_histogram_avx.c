@@ -72,11 +72,15 @@ int main(int argc, char *argv[]) {
 
   int numThreads = 1;
   int64_t N = 48 * 1024 * 1024 / sizeof(Value);
+  int warm = 1;
   if (argc >= 2) {
     numThreads = atoi(argv[1]);
   }
   if (argc >= 3) {
     N = atoll(argv[2]);
+  }
+  if (argc >= 4) {
+    warm = atoi(argv[3]);
   }
   printf("Number of Threads: %d.\n", numThreads);
   printf("N: %lld.\n", N);
@@ -98,15 +102,15 @@ int main(int argc, char *argv[]) {
   }
 
   gf_detail_sim_start();
-#ifdef WARM_CACHE
-  WARM_UP_ARRAY(a, N);
-  WARM_UP_ARRAY(histogram, HistogramSize);
+  if (warm) {
+    WARM_UP_ARRAY(a, N);
+    WARM_UP_ARRAY(histogram, HistogramSize);
+  }
   // Start the threads.
 #pragma omp parallel for schedule(static)
   for (int tid = 0; tid < numThreads; ++tid) {
     volatile Value x = a[tid];
   }
-#endif
 
   gf_reset_stats();
   volatile Value c = foo(a, histogram, N);

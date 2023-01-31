@@ -1842,6 +1842,12 @@ void StreamExecutionTransformer::generateReduceAndPtrChaseStreamConfiguration(
         llvm::errs() << "This is not FixedTripCount.\n";
       }
 
+      LLVM_DEBUG({
+        llvm::dbgs() << "Stream " << SS->getStreamName()
+                     << " Add FixTripSCEV: ";
+        TripCountSCEV->dump();
+        llvm::dbgs() << ".\n";
+      });
       this->addStreamInputSCEV(TripCountSCEV, false /* Signed */, InsertBefore,
                                ClonedSEExpander, ClonedInputValues,
                                ProtoConfiguration);

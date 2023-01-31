@@ -62,9 +62,31 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
           Value valAs = a[idx + N];
           Value valB = b[idx];
 
+#ifdef RODINIA_HOTSPOT_KERNEL
+
+#if VALUE_TYPE == VALUE_TYPE_FLOAT
+          const Value Cap = 0.5;
+          const Value Rx = 1.5;
+          const Value Ry = 1.2;
+          const Value Rz = 0.7;
+          const Value ambTemp = 80.0;
+#else
+          const Value Cap = 3;
+          const Value Rx = 2;
+          const Value Ry = 2;
+          const Value Rz = 2;
+          const Value ambTemp = 80;
+#endif
+          Value delta = Cap * (valB + (valAs + valAn - 2.f * valAc) * Ry +
+                               (valAe + valAw - 2.f * valAc) * Rx +
+                               (ambTemp - valAc) * Rz);
+          Value valM = valAc + delta;
+
+#else
           Value valAh = (valAw + valAe) - valAc;
           Value valAv = (valAn + valAs) - valAc;
           Value valM = (valAh + valAv) - valB;
+#endif
 
           c[idx] = valM;
         }
@@ -108,9 +130,31 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
 #pragma ss stream_name "gfm.stencil2d.B.ld"
       Value valB = b[idx];
 
+#ifdef RODINIA_HOTSPOT_KERNEL
+
+#if VALUE_TYPE == VALUE_TYPE_FLOAT
+      const Value Cap = 0.5;
+      const Value Rx = 1.5;
+      const Value Ry = 1.2;
+      const Value Rz = 0.7;
+      const Value ambTemp = 80.0;
+#else
+      const Value Cap = 3;
+      const Value Rx = 2;
+      const Value Ry = 2;
+      const Value Rz = 2;
+      const Value ambTemp = 80;
+#endif
+      Value delta =
+          Cap * (valB + (valAs + valAn - 2.f * valAc) * Ry +
+                 (valAe + valAw - 2.f * valAc) * Rx + (ambTemp - valAc) * Rz);
+      Value valM = valAc + delta;
+
+#else
       Value valAh = (valAw + valAe) - valAc;
       Value valAv = (valAn + valAs) - valAc;
       Value valM = (valAh + valAv) - valB;
+#endif
 
 #pragma ss stream_name "gfm.stencil2d.C.st"
       c[idx] = valM;
@@ -180,7 +224,6 @@ int main(int argc, char *argv[]) {
   Value *b = a + M * N + (OFFSET_BYTES / sizeof(Value));
   Value *c = b + M * N + (OFFSET_BYTES / sizeof(Value));
 
-#ifdef GEM_FORGE
   gf_stream_nuca_region("gfm.stencil2d.a", a, sizeof(a[0]), N, M);
   gf_stream_nuca_region("gfm.stencil2d.b", b, sizeof(b[0]), N, M);
   gf_stream_nuca_region("gfm.stencil2d.c", c, sizeof(c[0]), N, M);
@@ -190,7 +233,6 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(c, c, N);
   gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
   gf_stream_nuca_remap();
-#endif
 
   if (check) {
 #pragma clang loop vectorize(disable)

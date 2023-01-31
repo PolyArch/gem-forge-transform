@@ -18,10 +18,6 @@
 #include "immintrin.h"
 
 typedef ValueT Value;
-const int ValueVecLen = 16;
-typedef struct {
-  float vs[ValueVecLen];
-} ValueVec;
 
 #define STRIDE 1
 
@@ -234,9 +230,6 @@ int main(int argc, char *argv[]) {
   int check = 0;
   int warm = 0;
   int argx = 2;
-
-  assert(sizeof(ValueVec) == sizeof(Value) * ValueVecLen &&
-         "Mismatch ValueVec Size.");
 
   if (argc >= argx) {
     numThreads = atoi(argv[argx - 1]);

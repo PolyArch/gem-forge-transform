@@ -45,8 +45,6 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
 
   this->initializeStreams();
   LLVM_DEBUG(llvm::dbgs() << "Initializing streams done.\n");
-  this->markPredicateRelationship();
-  LLVM_DEBUG(llvm::dbgs() << "Mark predicate relationship done.\n");
   this->buildStreamAddrDepGraph();
   LLVM_DEBUG(llvm::dbgs() << "Build StreamAddrDepGraph done.\n");
   /**
@@ -70,6 +68,15 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
    */
   this->fuseLoadOps();
   LLVM_DEBUG(llvm::dbgs() << "Fuse LoadOps done.\n");
+  /**
+   * Predicate relationship must be after fuseLoadOps to get the FinalInst.
+   */
+  this->markPredicateRelationship();
+  LLVM_DEBUG(llvm::dbgs() << "Mark predicate relationship done.\n");
+  /**
+   * ValueDG should be built after marking predication, to decide whether
+   * conditional store/atomics can be hoisted as near-stream computation.
+   */
   this->buildStreamValueDepGraph();
   LLVM_DEBUG(llvm::dbgs() << "Build StreamValueDepGraph done.\n");
   /**
@@ -198,6 +205,16 @@ StaticStream *StaticStreamRegionAnalyzer::getStreamInMapByInstAndConfigureLoop(
   return nullptr;
 }
 
+StaticStream *StaticStreamRegionAnalyzer::getFirstStreamInMapByInst(
+    const InstStaticStreamMapT &Map, const llvm::Instruction *Inst) const {
+  auto Iter = Map.find(Inst);
+  if (Iter == Map.end()) {
+    return nullptr;
+  }
+  const auto &Streams = Iter->second;
+  return Streams.front();
+}
+
 StaticStream *StaticStreamRegionAnalyzer::getStreamByInstAndConfigureLoop(
     const llvm::Instruction *Inst, const llvm::Loop *ConfigureLoop) const {
   return this->getStreamInMapByInstAndConfigureLoop(this->InstStaticStreamMap,
@@ -212,6 +229,33 @@ StaticStream *StaticStreamRegionAnalyzer::getStreamWithPlaceholderInst(
   // Check in the Placeholder map.
   return this->getStreamInMapByInstAndConfigureLoop(
       this->FinalInstStaticStreamMap, Inst, ConfigureLoop);
+}
+
+StaticStream *StaticStreamRegionAnalyzer::getChosenStreamByInst(
+    const llvm::Instruction *Inst) const {
+  if (!this->TopLoop->contains(Inst)) {
+    return nullptr;
+  }
+  auto Iter = this->InstChosenStreamMap.find(Inst);
+  if (Iter == this->InstChosenStreamMap.end()) {
+    return nullptr;
+  } else {
+    return Iter->second;
+  }
+}
+
+StaticStream *StaticStreamRegionAnalyzer::getChosenStreamWithPlaceholderInst(
+    const llvm::Instruction *Inst) const {
+  if (auto S = this->getChosenStreamByInst(Inst)) {
+    return S;
+  }
+  // Query the FinalInstMap.
+  auto FirstS =
+      this->getFirstStreamInMapByInst(this->FinalInstStaticStreamMap, Inst);
+  if (!FirstS) {
+    return nullptr;
+  }
+  return this->getChosenStreamByInst(FirstS->Inst);
 }
 
 void StaticStreamRegionAnalyzer::markUpdateRelationship() {
@@ -327,27 +371,32 @@ void StaticStreamRegionAnalyzer::markPredicateRelationship() {
 
 void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
     const llvm::Loop *Loop, const llvm::BasicBlock *BB) {
-  auto BBPredDG = this->CachedBBBranchDG->getBBBranchDataGraph(Loop, BB);
+
+  auto IsStreamInst = [this](const llvm::Instruction *Inst) -> bool {
+    return this->isStreamInst(Inst);
+  };
+
+  auto BBPredDG =
+      this->CachedBBBranchDG->getBBBranchDataGraph(Loop, BB, IsStreamInst);
   if (!BBPredDG->isValidPredicate()) {
     LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid " << BB->getName() << '\n');
     return;
   }
-  auto PredInputLoads = BBPredDG->getInputLoads();
-  if (PredInputLoads.size() != 1) {
+  auto PredInputs = BBPredDG->getInLoopInputs();
+  if (PredInputs.size() != 1) {
     // Complicate predicate is not supported.
     LLVM_DEBUG(llvm::dbgs()
-               << "BBPredDG Multiple Load Inputs " << BB->getName() << '\n');
+               << "BBPredDG Multiple InLoopInputs " << BB->getName() << '\n');
     return;
   }
-  auto PredLoadInst = *(PredInputLoads.begin());
-  auto PredLoadStream =
-      this->getStreamByInstAndConfigureLoop(PredLoadInst, Loop);
-  assert(PredLoadStream->BBPredDG == nullptr && "Multiple BBPredDG.");
-  PredLoadStream->BBPredDG = BBPredDG;
+  auto PredInst = *(PredInputs.begin());
+  auto PredStream = this->getStreamWithPlaceholderInst(PredInst, Loop);
+  assert(PredStream->BBPredDG == nullptr && "Multiple BBPredDG.");
+  PredStream->BBPredDG = BBPredDG;
 
-  auto MarkStreamInBB = [this, PredLoadStream](const llvm::BasicBlock *TargetBB,
-                                               bool PredicatedTrue) -> void {
-    auto ConfigureLoop = PredLoadStream->ConfigureLoop;
+  auto MarkStreamInBB = [this, PredStream](const llvm::BasicBlock *TargetBB,
+                                           bool PredicatedTrue) -> void {
+    auto ConfigureLoop = PredStream->ConfigureLoop;
     for (const auto &TargetInst : *TargetBB) {
       auto TargetStream =
           this->getStreamByInstAndConfigureLoop(&TargetInst, ConfigureLoop);
@@ -355,14 +404,16 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
         continue;
       }
       LLVM_DEBUG(llvm::dbgs()
-                 << "Add predicated relation "
-                 << PredLoadStream->getStreamName() << " -- " << PredicatedTrue
-                 << " --> " << TargetStream->getStreamName() << '\n');
+                 << "Add predicated relation " << PredStream->getStreamName()
+                 << " -- " << PredicatedTrue << " --> "
+                 << TargetStream->getStreamName() << '\n');
       if (PredicatedTrue) {
-        PredLoadStream->PredicatedTrueStreams.insert(TargetStream);
+        PredStream->PredicatedTrueStreams.insert(TargetStream);
       } else {
-        PredLoadStream->PredicatedFalseStreams.insert(TargetStream);
+        PredStream->PredicatedFalseStreams.insert(TargetStream);
       }
+      assert(!TargetStream->PredicatedByStream && "Already Predicated.");
+      TargetStream->PredicatedByStream = PredStream;
     }
   };
   if (auto TrueBB = BBPredDG->getPredicateBB(true)) {
@@ -433,6 +484,19 @@ void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
     }
   }
   LLVM_DEBUG(llvm::dbgs() << "==== SSRA: computeBaseStepRootStreams done.\n");
+  /**
+   * After generate all the step root streams, we finally analyze the
+   * ValuePattern for IV stream. This is delayed here as PtrChaseS need to know
+   * the StepRootS is itself.
+   */
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    for (auto &S : InstStream.second) {
+      LLVM_DEBUG(llvm::dbgs() << "== SSRA: AnalyzeValuePattern for "
+                              << S->getStreamName() << '\n');
+      S->analyzeValuePattern();
+    }
+  }
+  LLVM_DEBUG(llvm::dbgs() << "==== SSRA: analyzerValuePattern done.\n");
 }
 
 void StaticStreamRegionAnalyzer::collectReduceFinalInsts() {
@@ -447,6 +511,24 @@ void StaticStreamRegionAnalyzer::collectReduceFinalInsts() {
                    << "== SSRA: Collect ReduceInst "
                    << Utils::formatLLVMInstWithoutFunc(ReduceFinalInst)
                    << " from " << S->getStreamName() << '\n');
+
+        /**
+         * We have to introduce a hack here:
+         * For gfm.omp_binary_tree, the PtrChaseIVS set the select inst
+         * as the FinalInst, which is used by the LoopBoundFunc. However,
+         * this cause the LoopBoundFunc also depend on the PtrChaseIVS
+         * besides the PtrChaseLoadS, and could not be offloaded.
+         *
+         * As a hack here, I do not add that as the FinalInst.
+         */
+        if (S->getStreamName().find("omp_binary_tree.c") != std::string::npos &&
+            llvm::isa<llvm::SelectInst>(ReduceFinalInst)) {
+          LLVM_DEBUG(llvm::dbgs()
+                     << "== SSRA:   WARN! Skip ReduceInst as FinalInst "
+                     << Utils::formatLLVMInstWithoutFunc(ReduceFinalInst)
+                     << " from " << S->getStreamName() << '\n');
+          continue;
+        }
 
         this->FinalInstStaticStreamMap
             .emplace(std::piecewise_construct,
@@ -588,11 +670,17 @@ void StaticStreamRegionAnalyzer::fuseLoadOps() {
         Inst->getOpcode() == llvm::Instruction::Load) {
       for (auto S : InstStream.second) {
         this->fuseLoadOps(S);
-        if (S->ValueDG) {
+        if (!S->FusedLoadOps.empty()) {
           // Place this into the FinalInstMap.
+          auto FusedFinalInst = S->FusedLoadOps.back();
+          LLVM_DEBUG(llvm::dbgs()
+                     << "  Fused LoadOp for " << S->getStreamName()
+                     << " Final Inst "
+                     << Utils::formatLLVMInstWithoutFunc(FusedFinalInst)
+                     << "\n");
           this->FinalInstStaticStreamMap
               .emplace(std::piecewise_construct,
-                       std::forward_as_tuple(S->ValueDG->getSingleResultInst()),
+                       std::forward_as_tuple(FusedFinalInst),
                        std::forward_as_tuple())
               .first->second.push_back(S);
         }
@@ -653,8 +741,7 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
   }
 
   if (!S->AliasBaseStream) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "[FuseLoadOps] No fusing as no AliasBaseS.\n");
+    LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as no AliasBaseS.\n");
     return;
   }
 
@@ -763,7 +850,7 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
   }
 
   // Also check that my size > 4 so that it is benefitial to fuse.
-  if (NearbyMemSize <= 4 && S->Inst->getOpcode() == llvm::Instruction::Load) {
+  if (NearbyMemSize <= 2 && S->Inst->getOpcode() == llvm::Instruction::Load) {
     LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as MyMemElementSize "
                             << S->getMemElementSize() << " too small.\n");
     return;
@@ -973,8 +1060,10 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   {
     auto StoreBB = StoreS->Inst->getParent();
     auto HeaderBB = StoreS->InnerMostLoop->getHeader();
-    if (!this->PDT->dominates(StoreBB, HeaderBB)) {
-      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Conditional Access.\n");
+    if (!this->PDT->dominates(StoreBB, HeaderBB) &&
+        !StoreS->PredicatedByStream) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "[NoValueDG] Conditional (not Predicated) Access.\n");
       return;
     }
   }
@@ -983,14 +1072,11 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
    * Let's try to construct the ValueDG:
    * 1. Every PHINode as an induction variable and later enforce all the
    * constraints.
-   * 2. We also check directly check if its ReduceFinalInst of some
-   * ReduceStream.
+   * 2. We also check directly check if it's FinalInst of some Reduce or
+   * LoadComputeStream.
    */
-  auto IsIndVarStream = [this](const llvm::Instruction *Inst) -> bool {
-    if (llvm::isa<llvm::PHINode>(Inst)) {
-      return true;
-    }
-    return this->FinalInstStaticStreamMap.count(Inst);
+  auto IsStreamInst = [this](const llvm::Instruction *Inst) -> bool {
+    return this->isStreamInst(Inst);
   };
   llvm::Value *StoreValue = nullptr;
   if (Utils::isStoreInst(StoreS->Inst)) {
@@ -1008,7 +1094,7 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     }
   }
   auto ValueDG = std::make_unique<StreamDataGraph>(StoreS->ConfigureLoop,
-                                                   StoreValue, IsIndVarStream);
+                                                   StoreValue, IsStreamInst);
   /**
    * Enforce all the constraints.
    * 1. ValueDG should have no circle.
@@ -1878,4 +1964,17 @@ void StaticStreamRegionAnalyzer::nestRegionInto(
   OuterConfigInfo.addNestConfigureInfo(&InnerConfigInfo,
                                        std::move(ConfigFuncInfo),
                                        std::move(PredFuncInfo), PredicateRet);
+}
+
+bool StaticStreamRegionAnalyzer::isStreamInst(
+    const llvm::Instruction *Inst) const {
+  switch (Inst->getOpcode()) {
+  case llvm::Instruction::Load:
+  case llvm::Instruction::AtomicCmpXchg:
+  case llvm::Instruction::PHI:
+    return true;
+  default:
+    break;
+  }
+  return this->FinalInstStaticStreamMap.count(Inst);
 }

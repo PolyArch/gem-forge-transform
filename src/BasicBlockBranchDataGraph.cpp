@@ -6,16 +6,17 @@
 
 BBBranchDataGraph::BBBranchDataGraph(const llvm::Loop *_Loop,
                                      const llvm::BasicBlock *_BB,
+                                     IsInputFuncT _IsInput,
                                      const std::string _Suffix)
     : ExecutionDataGraph(), Loop(_Loop), BB(_BB),
       FuncName(llvm::Twine(_BB->getParent()->getName() + "_" +
                            _Loop->getHeader()->getName() + "_" +
                            _BB->getName() + _Suffix)
                    .str()) {
-  this->constructDataGraph();
+  this->constructDataGraph(_IsInput);
 }
 
-void BBBranchDataGraph::constructDataGraph() {
+void BBBranchDataGraph::constructDataGraph(IsInputFuncT IsInput) {
   auto Terminator = this->BB->getTerminator();
   auto BranchInst = llvm::dyn_cast<llvm::BranchInst>(Terminator);
   LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Construct " << this->FuncName << '\n');
@@ -66,16 +67,12 @@ void BBBranchDataGraph::constructDataGraph() {
       UnsortedInputs.insert(Inst);
       continue;
     }
-    if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
-      // We simply handle phi node as inputs.
-      UnsortedInputs.insert(PHINode);
-      this->InputPHIs.insert(PHINode);
-      continue;
-    }
-    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(Inst)) {
-      // This is a load stream, should also be an input value.
-      UnsortedInputs.insert(LoadInst);
-      this->InputLoads.insert(LoadInst);
+    if (IsInput(Inst)) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "[BBPredDG]   InputInst: "
+                 << Utils::formatLLVMInstWithoutFunc(Inst) << '\n');
+      UnsortedInputs.insert(Inst);
+      InLoopInputs.insert(Inst);
       continue;
     }
     // This is an compute instruction.
@@ -94,18 +91,20 @@ void BBBranchDataGraph::constructDataGraph() {
    * 2. No InputPHIs unless from loop header BB.
    */
   bool IsValidTemp = true;
-  for (auto InputLoad : this->InputLoads) {
-    if (InputLoad->getParent() != this->BB) {
-      LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: Other BB Load "
-                              << Utils::formatLLVMBB(this->BB) << '\n');
-      IsValidTemp = false;
-    }
-  }
-  if (!this->InputPHIs.empty()) {
-    for (auto InputPHI : this->InputPHIs) {
+  for (auto InputInst : this->InLoopInputs) {
+    // This is an input from this loop.
+    if (auto InputPHI = llvm::dyn_cast<llvm::PHINode>(InputInst)) {
       if (InputPHI->getParent() != this->BB ||
           this->BB != this->Loop->getHeader()) {
         LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: PHI Input "
+                                << Utils::formatLLVMBB(this->BB) << '\n');
+        IsValidTemp = false;
+        break;
+      }
+    } else {
+      // This is an input from LoadS?
+      if (InputInst->getParent() != this->BB) {
+        LLVM_DEBUG(llvm::dbgs() << "[BBPredDG] Invalid: Other BB Load "
                                 << Utils::formatLLVMBB(this->BB) << '\n');
         IsValidTemp = false;
         break;
@@ -135,8 +134,7 @@ void BBBranchDataGraph::constructDataGraph() {
 
 void BBBranchDataGraph::clear() {
   this->IsValid = false;
-  this->InputPHIs.clear();
-  this->InputLoads.clear();
+  this->InLoopInputs.clear();
   this->ComputeInsts.clear();
   this->TrueBB = nullptr;
   this->FalseBB = nullptr;
@@ -251,13 +249,12 @@ CachedBBBranchDataGraph::~CachedBBBranchDataGraph() {
   this->KeyToDGMap.clear();
 }
 
-BBBranchDataGraph *
-CachedBBBranchDataGraph::getBBBranchDataGraph(const llvm::Loop *Loop,
-                                              const llvm::BasicBlock *BB) {
+BBBranchDataGraph *CachedBBBranchDataGraph::getBBBranchDataGraph(
+    const llvm::Loop *Loop, const llvm::BasicBlock *BB, IsInputFuncT IsInput) {
   auto K = std::make_pair(Loop, BB);
   auto Iter = this->KeyToDGMap.find(K);
   if (Iter == this->KeyToDGMap.end()) {
-    auto BBPredDG = new BBBranchDataGraph(Loop, BB);
+    auto BBPredDG = new BBBranchDataGraph(Loop, BB, IsInput);
     this->KeyToDGMap.emplace(K, BBPredDG);
     return BBPredDG;
   }

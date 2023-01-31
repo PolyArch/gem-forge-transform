@@ -177,8 +177,12 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
    */
   auto OuterHeaderBB = OuterLoop->getHeader();
   auto InnerHeaderBB = InnerLoop->getHeader();
-  auto BBPredDG =
-      Analyzer->getBBBranchDG()->getBBBranchDataGraph(OuterLoop, OuterHeaderBB);
+  auto IsStreamInst = [Analyzer](const llvm::Instruction *Inst) -> bool {
+    return Analyzer->isStreamInst(Inst);
+  };
+
+  auto BBPredDG = Analyzer->getBBBranchDG()->getBBBranchDataGraph(
+      OuterLoop, OuterHeaderBB, IsStreamInst);
   bool IsPredicated = false;
   bool PredicateRet = false;
   auto PredFuncInfo = std::make_unique<::LLVM::TDG::ExecFuncInfo>();

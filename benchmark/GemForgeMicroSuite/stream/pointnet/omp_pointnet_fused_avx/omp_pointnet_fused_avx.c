@@ -71,92 +71,104 @@ __attribute__((noinline)) Value *
 mlp(const Value *restrict weights, // [nLayers][nDims][nDims]
     Value *restrict t1,            // [nThreads][nDims][nDims]
     Value *restrict t2,            // [nThreads][nDims][nDims]
-    int64_t nDims, int64_t nLayers) {
+    int64_t nDims, int64_t layer) {
 
   __builtin_assume(nDims >= 16);
   __builtin_assume(nDims % 16 == 0);
+
+#ifdef MLP_OUTER // outer-prod version
+
+  for (int64_t k = 0; k < nDims; ++k) {
+
+    for (int64_t row = 0; row < nDims; ++row) {
+
+      Value a = t1[row * nDims + k];
+
+#ifndef NO_AVX // Vectorize version.
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+      for (int64_t col = 0; col < nDims; col += 16) {
+
+        ValueAVX vw =
+            ValueAVXLoad(weights + layer * nDims * nDims + col * nDims + k);
+        ValueAVX vo = ValueAVXLoad(t2 + row * nDims + col);
+        ValueAVX va = ValueAVXSet1(a);
+
+        ValueAVX s = ValueAVXAdd(vo, ValueAVXMul(va, vw));
+
+        ValueAVXStore(t2 + row * nDims + col, s);
+      }
+
+#else // Scalar version.
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+      for (int64_t col = 0; col < nDims; ++col) {
+
+        Value w = weights[layer * nDims * nDims + k * nDims + col];
+        Value o = t2[row * nDims + col];
+
+        Value s = o + a * w;
+        t2[rows * nDims + col] = s;
+      }
+
+#endif
+    }
+  }
+
+  // Apply the relu.
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+  for (int64_t row = 0; row < nDims; ++row) {
+
+#ifndef NO_AVX // Vectorize version.
+#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
+#else // Scalar version.
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+#endif
+    for (int64_t col = 0; col < nDims; ++col) {
+      Value v = t2[row * nDims + col];
+      Value relu = (v > 0) ? v : 0;
+      t2[row * nDims + col] = relu;
+    }
+  }
+
+#else // inner-prod version (weight is transposed)
+
+  for (int64_t row = 0; row < nDims; ++row) {
+    for (int64_t col = 0; col < nDims; ++col) {
+
+      Value sum = 0;
+
+#ifndef NO_AVX // Vectorize version.
+#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
+#else // Scalar version.
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+#endif
+      for (int64_t k = 0; k < nDims; ++k) {
+        Value a = t1[row * nDims + k];
+        Value w = weights[layer * nDims * nDims + col * nDims + k];
+        sum += a * w;
+      }
+
+      Value relu = (sum > 0) ? sum : 0;
+      t2[row * nDims + col] = relu;
+    }
+  }
+
+#endif
+
+  return t1;
+}
+
+__attribute__((noinline)) Value *
+mlp_multi_layer(const Value *restrict weights, // [nLayers][nDims][nDims]
+                Value *restrict t1,            // [nThreads][nDims][nDims]
+                Value *restrict t2,            // [nThreads][nDims][nDims]
+                int64_t nDims, int64_t nLayers) {
+
   __builtin_assume(nLayers > 0);
 
   // Apply MLP
   for (int64_t layer = 0; layer < nLayers; ++layer) {
 
-#ifdef MLP_OUTER // outer-prod version
-
-    for (int64_t k = 0; k < nDims; ++k) {
-
-      for (int64_t row = 0; row < nDims; ++row) {
-
-        Value a = t1[row * nDims + k];
-
-#ifndef NO_AVX // Vectorize version.
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-        for (int64_t col = 0; col < nDims; col += 16) {
-
-          ValueAVX vw =
-              ValueAVXLoad(weights + layer * nDims * nDims + col * nDims + k);
-          ValueAVX vo = ValueAVXLoad(t2 + row * nDims + col);
-          ValueAVX va = ValueAVXSet1(a);
-
-          ValueAVX s = ValueAVXAdd(vo, ValueAVXMul(va, vw));
-
-          ValueAVXStore(t2 + row * nDims + col, s);
-        }
-
-#else // Scalar version.
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-        for (int64_t col = 0; col < nDims; ++col) {
-
-          Value w = weights[layer * nDims * nDims + k * nDims + col];
-          Value o = t2[row * nDims + col];
-
-          Value s = o + a * w;
-          t2[rows * nDims + col] = s;
-        }
-
-#endif
-      }
-    }
-
-    // Apply the relu.
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-    for (int64_t row = 0; row < nDims; ++row) {
-
-#ifndef NO_AVX // Vectorize version.
-#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
-#else // Scalar version.
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-#endif
-      for (int64_t col = 0; col < nDims; ++col) {
-        Value v = t2[row * nDims + col];
-        Value relu = (v > 0) ? v : 0;
-        t2[row * nDims + col] = relu;
-      }
-    }
-
-#else // inner-prod version (weight is transposed)
-
-    for (int64_t row = 0; row < nDims; ++row) {
-      for (int64_t col = 0; col < nDims; ++col) {
-
-        Value sum = 0;
-
-#ifndef NO_AVX // Vectorize version.
-#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
-#else // Scalar version.
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-#endif
-        for (int64_t k = 0; k < nDims; ++k) {
-          Value a = t1[row * nDims + k];
-          Value w = weights[layer * nDims * nDims + col * nDims + k];
-          sum += a * w;
-        }
-
-        Value relu = (sum > 0) ? sum : 0;
-        t2[row * nDims + col] = relu;
-      }
-    }
-
-#endif
+    mlp(weights, t1, t2, nDims, layer);
 
     // Swap t1 and t2.
     Value *t = t1;
@@ -229,7 +241,7 @@ foo(Value *restrict results,         // [nPoints][nDims]
     Value *restrict t2 = buffer2 + tid * nDims * nDims;
 
     gather(features, neighbors + tile * nDims, t1, nDims);
-    Value *out = mlp(weights, t1, t2, nDims, nLayers);
+    Value *out = mlp_multi_layer(weights, t1, t2, nDims, nLayers);
     writeback(results + tile * nDims * nDims, out, nDims);
   }
 

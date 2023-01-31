@@ -42,7 +42,12 @@ gather(Value *restrict results,         // [nPoints][nDims]
   __builtin_assume(nDims >= 16);
   __builtin_assume(nDims % 16 == 0);
 
+#ifdef NO_OPENMP
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+#else
+#pragma omp parallel for schedule(static)                                      \
+    firstprivate(nPoints, nDims, neighbors, features, results)
+#endif
   for (int64_t point = 0; point < nPoints; ++point) {
 
     Index index = neighbors[point];

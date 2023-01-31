@@ -159,6 +159,8 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_region("gfm.gaussian.b", b, sizeof(b[0]), M);
   gf_stream_nuca_region("gfm.gaussian.x", x, sizeof(x[0]), N);
 
+  gf_stream_nuca_set_property(a, STREAM_NUCA_REGION_PROPERTY_BROADCAST_DIM, 0);
+
   gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
   gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE,
                               M / 64);

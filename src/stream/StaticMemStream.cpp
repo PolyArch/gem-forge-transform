@@ -79,6 +79,14 @@ void StaticMemStream::analyzeIsCandidate() {
     }
   }
 
+  if (this->UserNoStream) {
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: UserNoStream.\n");
+    this->StaticStreamInfo.set_not_stream_reason(
+        LLVM::TDG::StaticStreamInfo::USER_NO_STREAM);
+    this->IsCandidate = false;
+    return;
+  }
+
   if (llvm::isa<llvm::AtomicCmpXchgInst>(this->Inst) ||
       llvm::isa<llvm::AtomicRMWInst>(this->Inst)) {
     if (!this->ValueDG) {
@@ -301,8 +309,9 @@ bool StaticMemStream::validateSCEVAsStreamDG(
        * care of them.
        */
       if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
-        if (Inst->getOpcode() == llvm::Instruction::And) {
-          llvm::dbgs() << "[And]" << '\n';
+        if (Inst->getOpcode() == llvm::Instruction::And ||
+            Inst->getOpcode() == llvm::Instruction::AShr) {
+          llvm::dbgs() << "[And/Shift]" << '\n';
           const llvm::SCEV *LoopVariantSCEV = nullptr;
           for (size_t OperandIdx = 0, NumOperands = Inst->getNumOperands();
                OperandIdx < NumOperands; ++OperandIdx) {
