@@ -6,14 +6,15 @@
 
 #define DEBUG_TYPE "StaticMemStream"
 
-StaticMemStream::StaticMemStream(const llvm::Instruction *_Inst,
+StaticMemStream::StaticMemStream(StaticStreamRegionAnalyzer *_Analyzer,
+                                 const llvm::Instruction *_Inst,
                                  const llvm::Loop *_ConfigureLoop,
                                  const llvm::Loop *_InnerMostLoop,
                                  llvm::ScalarEvolution *_SE,
                                  const llvm::PostDominatorTree *_PDT,
                                  llvm::DataLayout *_DataLayout)
-    : StaticStream(TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop, _SE, _PDT,
-                   _DataLayout) {
+    : StaticStream(_Analyzer, TypeT::MEM, _Inst, _ConfigureLoop, _InnerMostLoop,
+                   _SE, _PDT, _DataLayout) {
   // We initialize the AddrDG, assuming all PHI nodes in loop head are IV
   // streams.
   auto IsInductionVar = [this](const llvm::Instruction *Inst) -> bool {
@@ -215,12 +216,12 @@ void StaticMemStream::analyzeIsCandidate() {
         this->SE->getSCEV(const_cast<llvm::Value *>(LoopInvariantInput)));
   }
   if (!this->validateSCEVAsStreamDG(SCEV, InputSCEVs)) {
-    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEVStreamDG "
-                            << this->getStreamName() << " SCEV: ";
-               SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
+    // LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Invalid SCEVStreamDG "
+    //                         << this->getStreamName() << " SCEV: ";
+    //            SCEV->print(llvm::dbgs()); llvm::dbgs() << '\n');
 
-    this->IsCandidate = false;
-    return;
+    // this->IsCandidate = false;
+    // return;
   }
 
   if (this->isDirectMemStream()) {

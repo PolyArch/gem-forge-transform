@@ -22,20 +22,8 @@ StreamDataGraph::StreamDataGraph(const llvm::Loop *_Loop,
     if (llvm::isa<llvm::PHINode>(ComputeInst)) {
       this->HasPHINodeInComputeInsts = true;
     }
-    if (Utils::isCallOrInvokeInst(ComputeInst)) {
-      // Unless it's some supported intrinsics.
-      if (auto Callee = Utils::getCalledFunction(ComputeInst)) {
-        if (Callee->isIntrinsic()) {
-          auto IntrinsicId = Callee->getIntrinsicID();
-          if (IntrinsicId == llvm::Intrinsic::maxnum) {
-            continue;
-          } else if (IntrinsicId ==
-                     llvm::Intrinsic::experimental_vector_reduce_v2_fadd) {
-            continue;
-          }
-        }
-      }
-
+    if (Utils::isCallOrInvokeInst(ComputeInst) &&
+        !Utils::isStreamSupportedIntrinsic(ComputeInst)) {
       this->HasCallInstInComputeInsts = true;
     }
   }
@@ -81,9 +69,11 @@ void StreamDataGraph::constructDataGraph(IsIndOrCmpVarFuncT IsIndOrCmpVar) {
       continue;
     }
 
-    if (auto LoadInst = llvm::dyn_cast<llvm::LoadInst>(Inst)) {
-      // This is a load stream, should also be an input value.
-      UnsortedInputs.insert(LoadInst);
+    if (llvm::isa<llvm::LoadInst>(Inst) ||
+        llvm::isa<llvm::AtomicCmpXchgInst>(Inst) ||
+        llvm::isa<llvm::AtomicRMWInst>(Inst)) {
+      // This is a load/atomic stream, should also be an input value.
+      UnsortedInputs.insert(Inst);
       continue;
     }
 

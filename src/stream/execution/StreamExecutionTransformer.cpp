@@ -1947,7 +1947,9 @@ void StreamExecutionTransformer::handleExtraInputValue(
   /**
    * If this has merged predicate stream, handle inputs from pred func.
    */
-  if (SS->StaticStreamInfo.merged_predicated_streams_size()) {
+  // if (SS->StaticStreamInfo.merged_predicated_streams_size()) {
+  if (SS->BBPredDG && SS->BBPredDG->isValid() &&
+      (SS->PredicatedTrueStreams.size() || SS->PredicatedFalseStreams.size())) {
     for (auto Input : SS->getPredFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
     }

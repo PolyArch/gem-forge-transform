@@ -1,5 +1,7 @@
 #include "stream/StaticStream.h"
 
+#include "stream/StaticStreamRegionAnalyzer.h"
+
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/raw_ostream.h"
@@ -17,14 +19,15 @@ uint64_t StaticStream::AllocatedStreamId =
  * After creating all the streams, the manager should call constructGraph() to
  * initialize the MetaGraph and StreamGraph.
  */
-StaticStream::StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
+StaticStream::StaticStream(StaticStreamRegionAnalyzer *_Analyzer, TypeT _Type,
+                           const llvm::Instruction *_Inst,
                            const llvm::Loop *_ConfigureLoop,
                            const llvm::Loop *_InnerMostLoop,
                            llvm::ScalarEvolution *_SE,
                            const llvm::PostDominatorTree *_PDT,
                            llvm::DataLayout *_DataLayout)
-    : StreamId(allocateStreamId()), Type(_Type), Inst(_Inst),
-      ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop),
+    : Analyzer(_Analyzer), StreamId(allocateStreamId()), Type(_Type),
+      Inst(_Inst), ConfigureLoop(_ConfigureLoop), InnerMostLoop(_InnerMostLoop),
       FuncNameBase(llvm::Twine(_Inst->getFunction()->getName() + "_" +
                                _Inst->getParent()->getName() + "_" +
                                _Inst->getName() + "_" + _Inst->getOpcodeName() +
@@ -66,6 +69,7 @@ StaticStream::translateToProtobufDataType(llvm::DataLayout *DataLayout,
       return ::LLVM::TDG::DataType::VECTOR_512;
     default:
       llvm::errs() << "Invalid Vector BitWidth " << NumBits << '\n';
+      Type->print(llvm::errs());
       llvm_unreachable("Invalid Vector BitWidth.\n");
     }
   }
@@ -178,7 +182,8 @@ void StaticStream::handleFirstTimeComputeNode(
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(DNode.Value)) {
     if (this->ConfigureLoop->contains(Inst)) {
       if (llvm::isa<llvm::LoadInst>(Inst) ||
-          llvm::isa<llvm::AtomicRMWInst>(Inst)) {
+          llvm::isa<llvm::AtomicRMWInst>(Inst) ||
+          llvm::isa<llvm::AtomicCmpXchgInst>(Inst)) {
         // LoadBaseStream.
         auto LoadBaseStream = GetStream(Inst, this->ConfigureLoop);
         if (!LoadBaseStream) {
@@ -225,7 +230,8 @@ void StaticStream::handleFirstTimeComputeNode(
           auto PHIMNode = ConstructedPHIMetaNodeMap.at(PHINode);
           ComputeMNode->PHIMetaNodes.insert(PHIMNode);
         }
-      } else if (Utils::isCallOrInvokeInst(Inst)) {
+      } else if (Utils::isCallOrInvokeInst(Inst) &&
+                 !Utils::isStreamSupportedIntrinsic(Inst)) {
         // Call input.
         ComputeMNode->CallInputs.insert(Inst);
         this->CallInputs.insert(Inst);
@@ -893,6 +899,20 @@ StaticStream::getExecFuncInputStream(const llvm::Value *Value) const {
             return BackBaseStepRootS;
           }
         }
+      }
+    }
+    /**
+     * Final query to StaticStreamRegionAnalyzer. So far this is only used for
+     * multi-stream predication appeared in sssp_inline_spatial.
+     */
+    if (!this->Analyzer) {
+      llvm::errs() << "Missing Analyzer for stream " << this->StreamName
+                   << '\n';
+      llvm_unreachable("Missing Analyzer.");
+    }
+    if (auto S = this->Analyzer->getChosenStreamWithPlaceholderInst(Inst)) {
+      if (S->InnerMostLoop == this->InnerMostLoop) {
+        return S;
       }
     }
   }

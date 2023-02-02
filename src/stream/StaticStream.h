@@ -26,8 +26,10 @@
  * is separate in BackBaseStreams.
  *
  */
+class StaticStreamRegionAnalyzer;
 class StaticStream {
 public:
+  StaticStreamRegionAnalyzer *Analyzer;
   const uint64_t StreamId;
   enum TypeT {
     IV,
@@ -76,13 +78,14 @@ public:
    * After creating all the streams, the manager should call constructGraph() to
    * initialize the MetaGraph and StreamGraph.
    */
-  StaticStream(TypeT _Type, const llvm::Instruction *_Inst,
-               const llvm::Loop *_ConfigureLoop,
+  StaticStream(StaticStreamRegionAnalyzer *_Analyzer, TypeT _Type,
+               const llvm::Instruction *_Inst, const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
                const llvm::PostDominatorTree *_PDT,
                llvm::DataLayout *_DataLayout);
   virtual ~StaticStream() {}
   void setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const;
+
   void fillProtobufStreamInfo(LLVM::TDG::StreamInfo *ProtobufInfo) const;
   int getCoreElementSize() const;
   int getMemElementSize() const;
@@ -259,7 +262,7 @@ public:
   BBBranchDataGraph *BBPredDG = nullptr;
   StreamSet PredicatedTrueStreams;
   StreamSet PredicatedFalseStreams;
-  StaticStream *PredicatedByStream = nullptr;
+  StreamSet PredicatedByStreams;
 
   // AddrDG for MemStream.
   std::unique_ptr<StreamDataGraph> AddrDG = nullptr;

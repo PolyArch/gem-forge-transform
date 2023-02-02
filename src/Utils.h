@@ -86,6 +86,8 @@ public:
     return llvm::dyn_cast<llvm::Function>(Utils::getCalledValue(Inst));
   }
 
+  static bool isStreamSupportedIntrinsic(const llvm::Instruction *Inst);
+
   static llvm::Value *getArgOperand(const llvm::Instruction *Inst,
                                     unsigned Idx) {
     if (auto CallInst = llvm::dyn_cast<llvm::CallInst>(Inst)) {

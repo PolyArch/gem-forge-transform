@@ -2,7 +2,8 @@
 
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/Intrinsics.h" // For some x86 intrinsic ids.
+#include "llvm/IR/Intrinsics.h" 
+#include "llvm/IR/IntrinsicsX86.h" // For some x86 intrinsic ids.
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
 
@@ -98,6 +99,26 @@ llvm::Value *Utils::getMemAddrValue(const llvm::Instruction *Inst) {
     break;
   }
   llvm_unreachable("This is not a MemAccessInst.");
+}
+
+bool Utils::isStreamSupportedIntrinsic(const llvm::Instruction *Inst) {
+  if (Utils::isCallOrInvokeInst(Inst)) {
+    if (auto Callee = Utils::getCalledFunction(Inst)) {
+      if (Callee->isIntrinsic()) {
+        auto IntrinsicId = Callee->getIntrinsicID();
+        switch (IntrinsicId) {
+        case llvm::Intrinsic::maxnum:
+        case llvm::Intrinsic::experimental_vector_reduce_v2_fadd:
+        case llvm::Intrinsic::x86_avx512_min_ps_512:
+        case llvm::Intrinsic::x86_avx512_max_ps_512:
+          return true;
+        default:
+          break;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {

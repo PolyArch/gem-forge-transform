@@ -174,14 +174,14 @@ void StaticStreamRegionAnalyzer::initializeStreamForAllLoops(
                << " Config Loop " << LoopUtils::getLoopId(ConfigureLoop)
                << '\n');
     if (auto PHIInst = llvm::dyn_cast<llvm::PHINode>(StreamInst)) {
-      NewStream = new StaticIndVarStream(PHIInst, ConfigureLoop, InnerMostLoop,
-                                         SE, PDT, DataLayout);
+      NewStream = new StaticIndVarStream(this, PHIInst, ConfigureLoop,
+                                         InnerMostLoop, SE, PDT, DataLayout);
     } else if (UserDefinedMemStream::isUserDefinedMemStream(StreamInst)) {
-      NewStream = new UserDefinedMemStream(StreamInst, ConfigureLoop,
+      NewStream = new UserDefinedMemStream(this, StreamInst, ConfigureLoop,
                                            InnerMostLoop, SE, PDT, DataLayout);
     } else {
-      NewStream = new StaticMemStream(StreamInst, ConfigureLoop, InnerMostLoop,
-                                      SE, PDT, DataLayout);
+      NewStream = new StaticMemStream(this, StreamInst, ConfigureLoop,
+                                      InnerMostLoop, SE, PDT, DataLayout);
     }
     Streams.emplace_back(NewStream);
 
@@ -383,19 +383,16 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
     return;
   }
   auto PredInputs = BBPredDG->getInLoopInputs();
-  if (PredInputs.size() != 1) {
+  if (PredInputs.size() == 0) {
     // Complicate predicate is not supported.
     LLVM_DEBUG(llvm::dbgs()
-               << "BBPredDG Multiple InLoopInputs " << BB->getName() << '\n');
+               << "BBPredDG Not Single InLoopInputs " << BB->getName() << '\n');
     return;
   }
-  auto PredInst = *(PredInputs.begin());
-  auto PredStream = this->getStreamWithPlaceholderInst(PredInst, Loop);
-  assert(PredStream->BBPredDG == nullptr && "Multiple BBPredDG.");
-  PredStream->BBPredDG = BBPredDG;
 
-  auto MarkStreamInBB = [this, PredStream](const llvm::BasicBlock *TargetBB,
-                                           bool PredicatedTrue) -> void {
+  auto MarkStreamInBB = [this](StaticStream *PredStream,
+                               const llvm::BasicBlock *TargetBB,
+                               bool PredicatedTrue) -> void {
     auto ConfigureLoop = PredStream->ConfigureLoop;
     for (const auto &TargetInst : *TargetBB) {
       auto TargetStream =
@@ -412,15 +409,20 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
       } else {
         PredStream->PredicatedFalseStreams.insert(TargetStream);
       }
-      assert(!TargetStream->PredicatedByStream && "Already Predicated.");
-      TargetStream->PredicatedByStream = PredStream;
+      TargetStream->PredicatedByStreams.insert(PredStream);
     }
   };
-  if (auto TrueBB = BBPredDG->getPredicateBB(true)) {
-    MarkStreamInBB(TrueBB, true);
-  }
-  if (auto FalseBB = BBPredDG->getPredicateBB(false)) {
-    MarkStreamInBB(FalseBB, false);
+
+  for (auto PredInst : PredInputs) {
+    auto PredStream = this->getStreamWithPlaceholderInst(PredInst, Loop);
+    assert(PredStream->BBPredDG == nullptr && "Multiple BBPredDG.");
+    PredStream->BBPredDG = BBPredDG;
+    if (auto TrueBB = BBPredDG->getPredicateBB(true)) {
+      MarkStreamInBB(PredStream, TrueBB, true);
+    }
+    if (auto FalseBB = BBPredDG->getPredicateBB(false)) {
+      MarkStreamInBB(PredStream, FalseBB, false);
+    }
   }
 }
 
@@ -1061,7 +1063,7 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     auto StoreBB = StoreS->Inst->getParent();
     auto HeaderBB = StoreS->InnerMostLoop->getHeader();
     if (!this->PDT->dominates(StoreBB, HeaderBB) &&
-        !StoreS->PredicatedByStream) {
+        StoreS->PredicatedByStreams.empty()) {
       LLVM_DEBUG(llvm::dbgs()
                  << "[NoValueDG] Conditional (not Predicated) Access.\n");
       return;
@@ -1971,6 +1973,7 @@ bool StaticStreamRegionAnalyzer::isStreamInst(
   switch (Inst->getOpcode()) {
   case llvm::Instruction::Load:
   case llvm::Instruction::AtomicCmpXchg:
+  case llvm::Instruction::AtomicRMW:
   case llvm::Instruction::PHI:
     return true;
   default:

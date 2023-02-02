@@ -263,7 +263,8 @@ bool StaticIndVarStream::checkReduceDGComplete() {
     }
   }
   /**
-   * ! Except the reduction in pr_push.
+   * ! Except some reduction if forced.
+   * ! This will cause recomputing some value.
    * TODO: Really solve this case.
    */
   bool ForceReduction = false;
@@ -271,6 +272,9 @@ bool StaticIndVarStream::checkReduceDGComplete() {
     auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
     auto FileName = Scope->getFilename().str();
     if (FileName.find("pr_push.cc") != std::string::npos) {
+      ForceReduction = true;
+    }
+    if (FileName.find("pntnet2") != std::string::npos) {
       ForceReduction = true;
     }
   }
@@ -537,6 +541,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
     return;
   }
 
+#if 0
   if (this->StaticStreamInfo.val_pattern() ==
       ::LLVM::TDG::StreamValuePattern::REDUCTION) {
     auto FirstLoadBaseS = *(this->LoadBaseStreams.begin());
@@ -560,6 +565,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
       }
     }
   }
+#endif
 
   this->IsCandidate = true;
   return;
@@ -680,6 +686,7 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
         return A->BaseStepRootStreams == B->BaseStepRootStreams;
       }
     };
+#if 0 
     auto FirstBackBaseS = *(this->BackBaseStreams.begin());
     for (auto BackBaseS : this->BackBaseStreams) {
       if (!IsSameStepRoot(FirstBackBaseS, BackBaseS)) {
@@ -688,6 +695,7 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
         return false;
       }
     }
+#endif
   }
   // Check all the base streams are qualified.
   for (auto &BaseStream : this->BaseStreams) {

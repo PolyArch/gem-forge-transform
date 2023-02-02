@@ -5,14 +5,13 @@ const std::unordered_set<std::string> UserDefinedMemStream::StreamLoadFuncNames{
     "ssp_load_i32",
 };
 
-UserDefinedMemStream::UserDefinedMemStream(const llvm::Instruction *_Inst,
-                                           const llvm::Loop *_ConfigureLoop,
-                                           const llvm::Loop *_InnerMostLoop,
-                                           llvm::ScalarEvolution *_SE,
-                                           const llvm::PostDominatorTree *_PDT,
-                                           llvm::DataLayout *_DataLayout)
-    : StaticStream(TypeT::USER, _Inst, _ConfigureLoop, _InnerMostLoop, _SE,
-                   _PDT, _DataLayout),
+UserDefinedMemStream::UserDefinedMemStream(
+    StaticStreamRegionAnalyzer *_Analyzer, const llvm::Instruction *_Inst,
+    const llvm::Loop *_ConfigureLoop, const llvm::Loop *_InnerMostLoop,
+    llvm::ScalarEvolution *_SE, const llvm::PostDominatorTree *_PDT,
+    llvm::DataLayout *_DataLayout)
+    : StaticStream(_Analyzer, TypeT::USER, _Inst, _ConfigureLoop,
+                   _InnerMostLoop, _SE, _PDT, _DataLayout),
       UserInst(nullptr), ConfigInst(nullptr), EndInst(nullptr) {
   assert(isUserDefinedMemStream(this->Inst) &&
          "This is not a UserDefinedMemStream.");
