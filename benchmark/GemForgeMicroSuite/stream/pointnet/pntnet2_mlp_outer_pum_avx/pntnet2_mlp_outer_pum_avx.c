@@ -1,0 +1,9 @@
+#define NO_OPENMP
+#define IS_PUM
+#define MLP_OUTER
+#define SPLIT_XYZ
+#define NO_SAMPLE
+#define NO_BALL_QUERY
+#define NO_GATHER
+#define NO_AGGREGATE
+#include "../omp_pntnet2_avx/omp_pntnet2_avx.c"

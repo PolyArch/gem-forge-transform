@@ -20,6 +20,8 @@
 #define ValueAVXAdd _mm512_add_ps
 #define ValueAVXSub _mm512_sub_ps
 #define ValueAVXMul _mm512_mul_ps
+#define ValueAVXMin _mm512_min_ps
+#define ValueAVXMax _mm512_max_ps
 #define ValueAVXDiv _mm512_div_ps
 #define ValueAVXReduceAdd _mm512_reduce_add_ps
 #define ValueAVXSet1 _mm512_set1_ps
@@ -110,6 +112,7 @@ uint8_t *LOAD_BIN_ARRAY_FROM_FILE(uint64_t *size, FILE *f) {
 void LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(int64_t size, char *buffer,
                                         const char *fn) {
   FILE *f = fopen(fn, "rb");
+  assert(f);
   fread(buffer, sizeof(char), size, (f));
   fclose(f);
 }
@@ -196,6 +199,20 @@ const char *formatBytes(uint64_t *bytes) {
     suffix = "kB";
   }
   return suffix;
+}
+
+static int alignBytes = 4096;
+void *alignedAllocAndTouch(uint64_t numElements, int elemSize) {
+  uint64_t totalBytes = elemSize * numElements;
+  if (totalBytes % alignBytes) {
+    totalBytes = (totalBytes / alignBytes + 1) * alignBytes;
+  }
+  char *p = (char *)aligned_alloc(alignBytes, totalBytes);
+
+  for (unsigned long Byte = 0; Byte < totalBytes; Byte += alignBytes) {
+    p[Byte] = 0;
+  }
+  return p;
 }
 
 #endif

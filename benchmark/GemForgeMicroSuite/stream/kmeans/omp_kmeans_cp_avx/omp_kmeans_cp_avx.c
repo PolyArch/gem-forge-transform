@@ -40,7 +40,7 @@ typedef struct {
 #define OFFSET_BYTES 0
 #endif
 
-struct MinCenter {
+struct DistanceIndex {
   union {
     struct {
       Value distance;
@@ -53,7 +53,7 @@ struct MinCenter {
 __attribute__((noinline)) Value
 computeDist(Value *features,              // [nPoints][nDims]
             Value *centers,               // [nCenters][nDims]
-            struct MinCenter *minCenters, // [nPoints][nDims]
+            struct DistanceIndex *minCenters, // [nPoints][nDims]
             int64_t nPoints, int64_t nDims, Index center) {
 
   __builtin_assume(nDims >= 16);
@@ -93,7 +93,7 @@ computeDist(Value *features,              // [nPoints][nDims]
     int32_t y = raw & 0xffffffff;
     float minDist = *(float *)(&y);
 
-    struct MinCenter n;
+    struct DistanceIndex n;
     n.center = center;
     n.distance = dist;
 
@@ -108,7 +108,7 @@ computeDist(Value *features,              // [nPoints][nDims]
 
 __attribute__((noinline)) Value
 accCenter(Value *restrict features,               // [nPoints][nDims]
-          struct MinCenter *restrict memberships, // [nPoints][nDims]
+          struct DistanceIndex *restrict memberships, // [nPoints][nDims]
           Value *restrict newCenters,             // [nThreads][nCenters][nDims]
           Index *restrict clusterSize,            // [nThreads][nCenters]
           int64_t nPoints, int64_t nDims, int64_t nCenters, int64_t nThreads) {
@@ -225,7 +225,7 @@ normCenter(Value *restrict newCenters,  // [nThreads][nCenters][nDims]
 __attribute__((noinline)) Value
 driver(Value *restrict features,               // [nPoints][nDims]
        Value *restrict centers,                // [nCenters][nDims]
-       struct MinCenter *restrict memberships, // [nPoints][nDims]
+       struct DistanceIndex *restrict memberships, // [nPoints][nDims]
        Value *restrict newCenters,             // [nThreads][nCenters][nDims]
        Index *restrict clusterSize,            // [nThreads][nCenters]
        int64_t nPoints, int64_t nDims, int64_t nCenters, int64_t nThreads) {
@@ -304,7 +304,7 @@ int main(int argc, char *argv[]) {
   uint64_t totalBytes =
       T * sizeof(Value)                               // features
       + nCenters * nDims * sizeof(Value)              // centers
-      + T * sizeof(struct MinCenter)                  // memberships
+      + T * sizeof(struct DistanceIndex)                  // memberships
       + numThreads * nCenters * nDims * sizeof(Value) // newCenters
       + numThreads * nCenters * sizeof(Index)         // clusterSize
       ;
@@ -320,8 +320,8 @@ int main(int argc, char *argv[]) {
 
   Value *features = buffer;
   Value *centers = features + T;
-  struct MinCenter *memberships =
-      (struct MinCenter *)(centers + nCenters * nDims);
+  struct DistanceIndex *memberships =
+      (struct DistanceIndex *)(centers + nCenters * nDims);
   Value *newCenters = (Value *)(memberships + T);
   Index *clusterSize = (Index *)(newCenters + numThreads * nCenters * nDims);
 
@@ -413,7 +413,7 @@ int main(int argc, char *argv[]) {
     gf_warm_array("gfm.kmeans.centers", centers,
                   nCenters * nDims * sizeof(Value));
     gf_warm_array("gfm.kmeans.memberships", memberships,
-                  nPoints * nDims * sizeof(struct MinCenter));
+                  nPoints * nDims * sizeof(struct DistanceIndex));
     gf_warm_array("gfm.kmeans.new_centers", newCenters,
                   numThreads * nCenters * nDims * sizeof(Value));
     gf_warm_array("gfm.kmeans.cluster_size", clusterSize,
