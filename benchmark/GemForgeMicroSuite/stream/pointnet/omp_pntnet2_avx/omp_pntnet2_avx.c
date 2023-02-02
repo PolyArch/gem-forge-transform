@@ -292,10 +292,10 @@ computeMinDistTo(Value *restrict distances,                     // [nPoints]
     {
       // 2 to 1.
       __m512 dist0 = dist;
-      __m512 dist1 = _mm512_permute_ps(dist, 0x2);
+      __m512 dist1 = _mm512_permute_ps(dist, 0x1);
 
       __m512 idx0 = idx;
-      __m512 idx1 = _mm512_permute_ps(idx, 0x2);
+      __m512 idx1 = _mm512_permute_ps(idx, 0x1);
 
       __mmask16 further = _mm512_cmp_ps_mask(dist0, dist1, _CMP_GT_OS);
 
