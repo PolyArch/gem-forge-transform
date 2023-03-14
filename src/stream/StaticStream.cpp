@@ -181,52 +181,63 @@ void StaticStream::handleFirstTimeComputeNode(
 
   if (auto Inst = llvm::dyn_cast<llvm::Instruction>(DNode.Value)) {
     if (this->ConfigureLoop->contains(Inst)) {
-      if (llvm::isa<llvm::LoadInst>(Inst) ||
-          llvm::isa<llvm::AtomicRMWInst>(Inst) ||
-          llvm::isa<llvm::AtomicCmpXchgInst>(Inst)) {
-        // LoadBaseStream.
-        auto LoadBaseStream = GetStream(Inst, this->ConfigureLoop);
-        if (!LoadBaseStream) {
-          llvm::errs() << "Failed to find LoadBaseStream "
-                       << Utils::formatLLVMInst(Inst) << " for "
-                       << this->getStreamName() << '\n';
-          assert(false && "Failed to find LoadBaseStream.");
+
+      /**
+       * We prioritize the BaseS with the same ConfigureLoop.
+       * If not, then the one with inner most loop.
+       * This is used to correctly get the dependence on streams in the inner
+       * loop.
+       */
+      if (auto BaseS = GetStream(Inst, this->ConfigureLoop)) {
+        if (this->InnerMostLoop != BaseS->InnerMostLoop &&
+            this->InnerMostLoop->contains(BaseS->InnerMostLoop)) {
+          if (this->UserParamInnerDep || this->Type == TypeT::IV) {
+            // IV stream very likely to be a two-level reduction.
+            // Switch to InnerMostLoop stream.
+            BaseS = GetStream(Inst, BaseS->InnerMostLoop);
+          }
         }
-        if (this->UserParamInnerDep &&
-            this->InnerMostLoop != LoadBaseStream->InnerMostLoop &&
-            this->InnerMostLoop->contains(LoadBaseStream->InnerMostLoop)) {
-          // Switch to InnerMostLoop stream.
-          LoadBaseStream = GetStream(Inst, LoadBaseStream->InnerMostLoop);
+        if (BaseS->Type == TypeT::IV) {
+          ComputeMNode->IndVarBaseStreams.insert(BaseS);
+          this->IndVarBaseStreams.insert(BaseS);
+        } else {
+          ComputeMNode->LoadBaseStreams.insert(BaseS);
+          this->LoadBaseStreams.insert(BaseS);
         }
-        ComputeMNode->LoadBaseStreams.insert(LoadBaseStream);
-        this->LoadBaseStreams.insert(LoadBaseStream);
         DFSStack.pop_back();
-      } else if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
+        return;
+      }
+
+      auto InstInnerMostLoop =
+          this->Analyzer->getLoopInfo()->getLoopFor(Inst->getParent());
+      if (this->InnerMostLoop != InstInnerMostLoop &&
+          this->InnerMostLoop->contains(InstInnerMostLoop)) {
+        if (auto BaseS = GetStream(Inst, InstInnerMostLoop)) {
+          if (BaseS->Type == TypeT::IV) {
+            ComputeMNode->IndVarBaseStreams.insert(BaseS);
+            this->IndVarBaseStreams.insert(BaseS);
+          } else {
+            ComputeMNode->LoadBaseStreams.insert(BaseS);
+            this->LoadBaseStreams.insert(BaseS);
+          }
+          DFSStack.pop_back();
+          return;
+        }
+      }
+
+      if (auto PHINode = llvm::dyn_cast<llvm::PHINode>(Inst)) {
         // We have to pop this before handleFirstTimePHIMetaNode emplace next
         // compute nodes.
         DFSStack.pop_back();
-        if (auto IndVarBaseStream = GetStream(Inst, this->ConfigureLoop)) {
-          // IndVarBaseStream.
-          if (this->UserParamInnerDep &&
-              this->InnerMostLoop != IndVarBaseStream->InnerMostLoop &&
-              this->InnerMostLoop->contains(IndVarBaseStream->InnerMostLoop)) {
-            // Switch to InnerMostLoop stream.
-            IndVarBaseStream = GetStream(Inst, IndVarBaseStream->InnerMostLoop);
-          }
-          ComputeMNode->IndVarBaseStreams.insert(IndVarBaseStream);
-          this->IndVarBaseStreams.insert(IndVarBaseStream);
-        } else {
-          // Another PHIMetaNode.
-          if (ConstructedPHIMetaNodeMap.count(PHINode) == 0) {
-            // First time encounter the phi node.
-            this->PHIMetaNodes.emplace_back(PHINode);
-            ConstructedPHIMetaNodeMap.emplace(PHINode,
-                                              &this->PHIMetaNodes.back());
-            // This may modify the DFSStack.
-            this->handleFirstTimePHIMetaNode(DFSStack,
-                                             &this->PHIMetaNodes.back(),
-                                             ConstructedComputeMetaNodeMap);
-          }
+        // Another PHIMetaNode.
+        if (ConstructedPHIMetaNodeMap.count(PHINode) == 0) {
+          // First time encounter the phi node.
+          this->PHIMetaNodes.emplace_back(PHINode);
+          ConstructedPHIMetaNodeMap.emplace(PHINode,
+                                            &this->PHIMetaNodes.back());
+          // This may modify the DFSStack.
+          this->handleFirstTimePHIMetaNode(DFSStack, &this->PHIMetaNodes.back(),
+                                           ConstructedComputeMetaNodeMap);
           auto PHIMNode = ConstructedPHIMetaNodeMap.at(PHINode);
           ComputeMNode->PHIMetaNodes.insert(PHIMNode);
         }
@@ -251,7 +262,7 @@ void StaticStream::handleFirstTimeComputeNode(
             DFSStack.emplace_back(ComputeMNode, Inst->getOperand(OperandIdx));
             LLVM_DEBUG(llvm::dbgs()
                        << "Pushing DFSNode "
-                       << Utils::formatLLVMValue(ComputeMNode->RootValue)
+                       << Utils::formatLLVMValue(ComputeMNode->RootValue) << " "
                        << Utils::formatLLVMValue(Inst->getOperand(OperandIdx))
                        << '\n');
           }
@@ -435,11 +446,11 @@ bool StaticStream::checkBaseStreamInnerMostLoopContainsMine() const {
    * We want to support getting the final value of inner-loop stream.
    * So far, we allow at most one inner-loop base stream.
    */
-  const StaticStream *InnerBaseStream = nullptr;
-  for (const auto &BaseStream : this->BaseStreams) {
-    if (!BaseStream->InnerMostLoop->contains(this->InnerMostLoop)) {
-      if (!InnerBaseStream) {
-        InnerBaseStream = BaseStream;
+  const StaticStream *InnerBaseS = nullptr;
+  for (const auto &BaseS : this->BaseStreams) {
+    if (!BaseS->InnerMostLoop->contains(this->InnerMostLoop)) {
+      if (!InnerBaseS) {
+        InnerBaseS = BaseS;
       } else {
         return false;
       }
@@ -447,8 +458,8 @@ bool StaticStream::checkBaseStreamInnerMostLoopContainsMine() const {
   }
   for (const auto &BackBaseS : this->BackBaseStreams) {
     if (!BackBaseS->InnerMostLoop->contains(this->InnerMostLoop)) {
-      if (!InnerBaseStream) {
-        InnerBaseStream = BackBaseS;
+      if (!InnerBaseS) {
+        InnerBaseS = BackBaseS;
       } else {
         return false;
       }

@@ -47,6 +47,8 @@ public:
       std::unique_ptr<::LLVM::TDG::ExecFuncInfo> PredFuncInfo,
       bool PredicateRet);
 
+  bool isNested() const { return this->NestConfigureFuncInfo != nullptr; }
+
   void
   addLoopBoundDG(std::unique_ptr<::LLVM::TDG::ExecFuncInfo> LoopBoundFuncInfo,
                  bool LoopBoundRet);

@@ -93,14 +93,19 @@ bool StaticStreamLoopBoundBuilder::isStreamLoopBound(
    * 2. All the input streams are chosen streams configured at this loop.
    */
   if (!LatchBBBranchDG->isValidLoopBoundPredicate()) {
+    LLVM_DEBUG(llvm::dbgs() << "[LoopBound] InvalidLoopBoundPredicate\n");
     return false;
   }
   for (auto Input : LatchBBBranchDG->getInLoopInputs()) {
     auto S = Analyzer->getChosenStreamWithPlaceholderInst(Input);
     if (!S) {
+      LLVM_DEBUG(llvm::dbgs() << "[LoopBound] Not StreamInput "
+                              << Utils::formatLLVMInst(Input) << "\n");
       return false;
     }
     if (S->ConfigureLoop != Loop) {
+      LLVM_DEBUG(llvm::dbgs() << "[LoopBound] Mismatch ConfigLoop of S "
+                              << S->StreamName << "\n");
       return false;
     }
   }

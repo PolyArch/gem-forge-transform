@@ -1,5 +1,7 @@
 #include "stream/StaticIndVarStream.h"
 
+#include "stream/StaticStreamRegionAnalyzer.h"
+
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/raw_ostream.h"
@@ -207,23 +209,11 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
 void StaticIndVarStream::buildReduceDG(
     const ComputeMetaNode *FirstNonEmptyComputeMNode) {
   // The only IndVarStream should be myself.
-  auto IsIndVarStream = [this](const llvm::Instruction *Inst) -> bool {
-    if (auto PHI = llvm::dyn_cast<llvm::Instruction>(Inst)) {
-      if (PHI == this->Inst) {
-        return true;
-      }
-      // Otherwise, search in our IVBaseStream.
-      for (auto IVBaseS : this->IndVarBaseStreams) {
-        if (IVBaseS->Inst == PHI) {
-          return true;
-        }
-      }
-    }
-    return false;
+  auto IsStream = [this](const llvm::Instruction *Inst) -> bool {
+    return this->Analyzer->isStreamInst(Inst);
   };
   this->ReduceDG = std::make_unique<StreamDataGraph>(
-      this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue,
-      IsIndVarStream);
+      this->ConfigureLoop, FirstNonEmptyComputeMNode->RootValue, IsStream);
   assert(!this->ReduceDG->hasCircle() && "Circle in ReduceDG.");
 }
 
@@ -323,16 +313,27 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
                             << this->AllComputePaths.size() << '\n');
     return false;
   }
-  if (this->LoadBaseStreams.empty()) {
-    // No LoadStream input to reduce one.
-    LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] No InputLoadS\n");
-    return false;
-  }
   if (!this->IndVarBaseStreams.count(const_cast<StaticIndVarStream *>(this))) {
     // This is not reduction.
     LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] Myself Not as Input\n");
     return false;
   }
+  StaticStream *InputS = nullptr;
+  if (!this->LoadBaseStreams.empty()) {
+    InputS = *this->LoadBaseStreams.begin();
+  }
+  for (auto IVBaseS : this->IndVarBaseStreams) {
+    if (IVBaseS == this) {
+      continue;
+    }
+    if (InputS) {
+      LLVM_DEBUG(llvm::dbgs() << "==== [NotReduction] Multi InputS\n");
+      return false;
+    } else {
+      InputS = IVBaseS;
+    }
+  }
+
   // We try to allow ReductionStream configured at outer loop.
   auto FinalInst =
       llvm::dyn_cast<llvm::Instruction>(FirstNonEmptyComputeMNode->RootValue);
@@ -342,14 +343,13 @@ bool StaticIndVarStream::analyzeIsReductionFromComputePath(
                << "==== [NotReduction] FinalValue is not Instruction\n");
     return false;
   }
-  auto FirstLoadBaseS = *(this->LoadBaseStreams.begin());
   for (auto LoadBaseS : this->LoadBaseStreams) {
-    if (LoadBaseS->BaseStepRootStreams != FirstLoadBaseS->BaseStepRootStreams) {
+    if (LoadBaseS->BaseStepRootStreams != InputS->BaseStepRootStreams) {
       // Not same StepRoot.
       LLVM_DEBUG(llvm::dbgs()
                  << "==== [NotReduction] Different StepRoot between "
                  << LoadBaseS->getStreamName() << " and "
-                 << FirstLoadBaseS->getStreamName() << '\n');
+                 << InputS->getStreamName() << '\n');
       return false;
     }
     if (LoadBaseS->Inst->getParent() != FinalInst->getParent()) {

@@ -233,12 +233,6 @@ bool BBBranchDataGraph::isValidLoopBoundPredicate() const {
                             << Utils::formatLLVMBB(this->BB) << '\n');
     return false;
   }
-  if (this->Loop->getNumBlocks() != 1) {
-    // This is very restricted.
-    LLVM_DEBUG(llvm::dbgs() << "[LoopBoundPredDG] Invalid: Not Single BB "
-                            << Utils::formatLLVMBB(this->BB) << '\n');
-    return false;
-  }
   return true;
 }
 

@@ -72,6 +72,8 @@ public:
     return this->AnalyzeRelativePath;
   }
 
+  llvm::LoopInfo *getLoopInfo() const { return this->LI; }
+
   /**
    * Nest the inner region into outer region.
    * We also reserve a special RegionStreamId for ConfigureFunc input.
@@ -157,8 +159,9 @@ protected:
   void initializeStreamForAllLoops(llvm::Instruction *StreamInst);
   void markUpdateRelationship();
   void markUpdateRelationshipForLoadStream(StaticStream *LoadSS);
-  void buildStreamAddrDepGraph();
-  void collectReduceFinalInsts();
+  void buildStreamAddrDepGraphAndCollectReduceFinalInsts();
+  void buildStreamAddrDepGraphAndCollectReduceFinalInstsForLoop(
+      const llvm::Loop *Loop);
   void markAliasRelationship();
   void markAliasRelationshipForLoopBB(const llvm::Loop *Loop);
   void fuseLoadOps();

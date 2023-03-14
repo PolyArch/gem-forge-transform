@@ -13,19 +13,23 @@ void StaticNestStreamBuilder::buildNestStreams(
   if (!StreamPassEnableNestStream) {
     return;
   }
-  /**
-   * We require preorder to iterate through all streams.
-   * This means we first nest outer streams, then inner ones.
-   */
   auto TopLoop = Analyzer->getTopLoop();
-  for (auto SubLoop : TopLoop->getLoopsInPreorder()) {
-    this->buildNestStreamsForLoop(Analyzer, SubLoop);
-  }
+  this->buildNestStreamsForLoop(Analyzer, TopLoop);
 }
 
 void StaticNestStreamBuilder::buildNestStreamsForLoop(
     StaticStreamRegionAnalyzer *Analyzer, const llvm::Loop *Loop) {
-  // Searching from TopLoops.
+  /**
+   * We first try to nest inner loop. Then this one.
+   */
+  for (auto SubLoop : Loop->getSubLoops()) {
+    this->buildNestStreamsForLoop(Analyzer, SubLoop);
+  }
+
+  /**
+   * Given a loop, we try to nest it with the outer-most loop possible.
+   * This is done by searching from the outer-most loop.
+   */
   auto TopLoop = Analyzer->getTopLoop();
   std::vector<const llvm::Loop *> OuterLoops;
   for (auto OuterLoop = Loop->getParentLoop();

@@ -44,9 +44,6 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
   assert(!ErrCode && "Failed to create AnalyzePath.");
 
   this->initializeStreams();
-  LLVM_DEBUG(llvm::dbgs() << "Initializing streams done.\n");
-  this->buildStreamAddrDepGraph();
-  LLVM_DEBUG(llvm::dbgs() << "Build StreamAddrDepGraph done.\n");
   /**
    * After building AddrDepGraph, IVStream should have constructed MetaGraph and
    * analyzed ValPattern.
@@ -55,8 +52,9 @@ StaticStreamRegionAnalyzer::StaticStreamRegionAnalyzer(
    * This information is used in buildStreamValueDepGraph() to correctly
    * recognize UserStream of the ReduceStream.
    */
-  this->collectReduceFinalInsts();
-  LLVM_DEBUG(llvm::dbgs() << "Collect ReduceFinalInsts done.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Initializing streams done.\n");
+  this->buildStreamAddrDepGraphAndCollectReduceFinalInsts();
+  LLVM_DEBUG(llvm::dbgs() << "Build StreamAddrDepGraph done.\n");
   this->markAliasRelationship();
   LLVM_DEBUG(llvm::dbgs() << "Mark alias relationship done.\n");
   /**
@@ -459,18 +457,39 @@ void StaticStreamRegionAnalyzer::insertAddrFuncInModule(
   }
 }
 
-void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
+void StaticStreamRegionAnalyzer::
+    buildStreamAddrDepGraphAndCollectReduceFinalInstsForLoop(
+        const llvm::Loop *Loop) {
+
+  std::vector<const llvm::Instruction *> StreamInstInThisLoop;
+  for (auto BB : Loop->getBlocks()) {
+    if (this->LI->getLoopFor(BB) != Loop) {
+      // This is a BB in some inner loop.
+      continue;
+    }
+    for (auto InstIter = BB->begin(), InstEnd = BB->end(); InstIter != InstEnd;
+         ++InstIter) {
+      auto Inst = &*InstIter;
+      if (this->InstStaticStreamMap.count(Inst)) {
+        StreamInstInThisLoop.push_back(Inst);
+      }
+    }
+  }
+
   auto GetStream = [this](const llvm::Instruction *Inst,
                           const llvm::Loop *ConfigureLoop) -> StaticStream * {
-    return this->getStreamByInstAndConfigureLoop(Inst, ConfigureLoop);
+    // With placeholder so we can get the final value of inner loop.
+    return this->getStreamWithPlaceholderInst(Inst, ConfigureLoop);
   };
-  for (auto &InstStream : this->InstStaticStreamMap) {
-    for (auto &S : InstStream.second) {
+
+  for (auto Inst : StreamInstInThisLoop) {
+    for (auto &S : this->InstStaticStreamMap.at(Inst)) {
       LLVM_DEBUG(llvm::dbgs() << "== SSRA: Construct Graph for "
                               << S->getStreamName() << '\n');
       S->constructGraph(GetStream);
     }
   }
+
   LLVM_DEBUG(llvm::dbgs() << "==== SSRA: constructGraph done.\n");
   /**
    * After add all the base streams, we are going to compute the base step root
@@ -478,8 +497,8 @@ void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
    * result in some overhead, but hopefully the dependency chain is not very
    * long.
    */
-  for (auto &InstStream : this->InstStaticStreamMap) {
-    for (auto &S : InstStream.second) {
+  for (auto Inst : StreamInstInThisLoop) {
+    for (auto &S : this->InstStaticStreamMap.at(Inst)) {
       LLVM_DEBUG(llvm::dbgs() << "== SSRA: ComputeBaseStepRoot for "
                               << S->getStreamName() << '\n');
       S->computeBaseStepRootStreams();
@@ -491,20 +510,19 @@ void StaticStreamRegionAnalyzer::buildStreamAddrDepGraph() {
    * ValuePattern for IV stream. This is delayed here as PtrChaseS need to know
    * the StepRootS is itself.
    */
-  for (auto &InstStream : this->InstStaticStreamMap) {
-    for (auto &S : InstStream.second) {
+  for (auto Inst : StreamInstInThisLoop) {
+    for (auto &S : this->InstStaticStreamMap.at(Inst)) {
       LLVM_DEBUG(llvm::dbgs() << "== SSRA: AnalyzeValuePattern for "
                               << S->getStreamName() << '\n');
       S->analyzeValuePattern();
     }
   }
   LLVM_DEBUG(llvm::dbgs() << "==== SSRA: analyzerValuePattern done.\n");
-}
 
-void StaticStreamRegionAnalyzer::collectReduceFinalInsts() {
-
-  for (auto &InstStream : this->InstStaticStreamMap) {
-    for (auto &S : InstStream.second) {
+  for (auto Inst : StreamInstInThisLoop) {
+    // const llvm::Instruction *LastReduceFinalInst = nullptr;
+    for (auto &S : this->InstStaticStreamMap.at(Inst)) {
+      // bool FoundReduceFinalInst = false;
       if (S->ReduceDG) {
         auto ReduceFinalInst = llvm::dyn_cast<llvm::Instruction>(
             S->ReduceDG->getSingleResultValue());
@@ -532,12 +550,82 @@ void StaticStreamRegionAnalyzer::collectReduceFinalInsts() {
           continue;
         }
 
+        // FoundReduceFinalInst = true;
+        // LastReduceFinalInst = ReduceFinalInst;
         this->FinalInstStaticStreamMap
             .emplace(std::piecewise_construct,
                      std::forward_as_tuple(ReduceFinalInst),
                      std::forward_as_tuple())
             .first->second.push_back(S);
       }
+      // if (!FoundReduceFinalInst && LastReduceFinalInst) {
+      //   // We try to reuse previous one if we have?
+      //   LLVM_DEBUG(llvm::dbgs()
+      //              << "== SSRA: Reuse LastReduceInst "
+      //              << Utils::formatLLVMInstWithoutFunc(LastReduceFinalInst)
+      //              << " from " << S->getStreamName() << '\n');
+      //   this->FinalInstStaticStreamMap
+      //       .emplace(std::piecewise_construct,
+      //                std::forward_as_tuple(LastReduceFinalInst),
+      //                std::forward_as_tuple())
+      //       .first->second.push_back(S);
+      // }
+    }
+  }
+
+  LLVM_DEBUG(
+      llvm::dbgs()
+      << "====== SSRA: BuiltAddrDepGraph and CollectFinalReduceInst for Loop "
+      << LoopUtils::getLoopId(Loop) << ".\n");
+}
+
+void StaticStreamRegionAnalyzer::
+    buildStreamAddrDepGraphAndCollectReduceFinalInsts() {
+
+  /**
+   * In order to support two-level reduction, e.g.:
+   * int64_t sum = 0;
+   * for (int i = 0; i < M; ++i) {
+   *   int64_t s = 0;
+   *   for (int j = 0; j < N; ++j) {
+   *     s += A[i][j];
+   *   }
+   *   sum += s;
+   * }
+   *
+   * We now fuse buidling AddrDepGraph and collectFinalReduceInst into
+   * a single step.
+   *
+   * After building AddrDepGraph, IVStream should have constructed MetaGraph and
+   * analyzed ValPattern.
+   * Now we collect ReductionFinalInst and mark them as PlaceholderInst for
+   * the ReduceStream in the InstStaticStreamMap.
+   * This information is used in buildStreamValueDepGraph() to correctly
+   * recognize UserStream of the ReduceStream.
+   *
+   * We process from the inner loop to outer loop. In this way, the
+   * stream "sum" can correctly get the finaly value of stream "s".
+   *
+   */
+
+  /**
+   * Process loops in post order.
+   */
+  std::vector<std::pair<const llvm::Loop *, int>> LoopStack;
+  LoopStack.emplace_back(this->TopLoop, 0);
+  while (!LoopStack.empty()) {
+    auto Loop = LoopStack.back().first;
+    auto Visit = LoopStack.back().second;
+    if (Visit == 0) {
+      // First time. Push sub loops.
+      LoopStack.back().second = 1;
+      for (auto SubLoop : Loop->getSubLoops()) {
+        LoopStack.emplace_back(SubLoop, 0);
+      }
+    } else {
+      // Second time. Pop and process.
+      LoopStack.pop_back();
+      this->buildStreamAddrDepGraphAndCollectReduceFinalInstsForLoop(Loop);
     }
   }
 }
@@ -1144,24 +1232,41 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     auto InputS =
         this->getStreamWithPlaceholderInst(InputInst, StoreS->ConfigureLoop);
     if (!InputS) {
+      // Try again with the InputS's InnerMostLoop loop.
+      auto InputInnerMostLoop = this->LI->getLoopFor(InputInst->getParent());
+      InputS =
+          this->getStreamWithPlaceholderInst(InputInst, InputInnerMostLoop);
+    }
+    if (!InputS) {
       // This is not a Stream.
       LLVM_DEBUG(llvm::dbgs()
                  << "[NoValueDG] LoopVariantInput Not Stream "
                  << Utils::formatLLVMInstWithoutFunc(InputInst) << '\n');
       return;
     }
-    auto InnerLoop = StoreS->InnerMostLoop;
-    auto OuterLoop = InputS->InnerMostLoop;
+    auto InnerS = StoreS;
+    auto OuterS = InputS;
     if (StoreS->InnerMostLoop->contains(InputS->InnerMostLoop)) {
       // The opposite way, e.g., using final reduced value.
-      InnerLoop = InputS->InnerMostLoop;
-      OuterLoop = StoreS->InnerMostLoop;
+      InnerS = InputS;
+      OuterS = StoreS;
     }
-    if (!LoopUtils::hasLoopInvariantTripCountBetween(
-            this->SE, StoreS->ConfigureLoop, InnerLoop, OuterLoop)) {
-      LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] No StaticMap: "
-                              << InputS->getStreamName() << '\n');
-      return;
+    /**
+     * There is a special case that we don't have enforce the static mapping
+     * between the InnerLoop and OuterLoop:
+     * 1. InnerS ConfigureLoop == InnerMostLoop.
+     * 2. InnerS ConfigureLoop.ParentLoop == OuterS InnerMostLoop.
+     */
+    if (InnerS->ConfigureLoop == InnerS->InnerMostLoop &&
+        InnerS->ConfigureLoop->getParentLoop() == OuterS->InnerMostLoop) {
+    } else {
+      if (!LoopUtils::hasLoopInvariantTripCountBetween(
+              this->SE, StoreS->ConfigureLoop, InnerS->InnerMostLoop,
+              OuterS->InnerMostLoop)) {
+        LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] No StaticMap: "
+                                << InputS->getStreamName() << '\n');
+        return;
+      }
     }
     InputStrams.push_back(InputS);
   }

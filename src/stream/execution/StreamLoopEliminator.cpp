@@ -122,6 +122,15 @@ void StreamLoopEliminator::eliminateLoop(StaticStreamRegionAnalyzer *Analyzer,
     }
   }
 
+  /**
+   * For eliminated nest stream region, we remove StreamEnd.
+   */
+  if (Analyzer->getConfigureLoopInfo(Loop).isNested())
+  for (auto ClonedEndInst :
+       this->Transformer->LoopToClonedEndInstsMap.at(Loop)) {
+    this->Transformer->PendingRemovedInsts.insert(ClonedEndInst);
+  }
+
   LLVM_DEBUG({
     if (llvm::verifyFunction(*ClonedFunc, &llvm::dbgs())) {
       llvm::errs() << "Func broken after eliminating StreamLoop.\n";
