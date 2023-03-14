@@ -105,9 +105,14 @@ void buildTreeRecursive(TreeValueT keyMin, TreeValueT keyMax, uint64_t nodes,
                      freeNodes + 1 + lhsNodes);
 }
 
+void generateFilename(char *fn, int bufSize, uint64_t totalNodes,
+                      TreeValueT keyMax) {
+  snprintf(fn, bufSize, "../bst-%lu-%lu.data", totalNodes, keyMax);
+}
+
 void dumpTree(const struct BSTree *tree, TreeValueT keyMax) {
   char fn[256];
-  snprintf(fn, 256, "bst-%lu-%lu.data", tree->total, keyMax);
+  generateFilename(fn, 256, tree->total, keyMax);
 
   FILE *f = fopen(fn, "wb");
   fwrite(tree, sizeof(*tree), 1, f);
@@ -117,7 +122,7 @@ void dumpTree(const struct BSTree *tree, TreeValueT keyMax) {
 
 struct BSTree loadTree(TreeValueT keyMax, uint64_t totalNodes) {
   char fn[256];
-  snprintf(fn, 256, "bst-%lu-%lu.data", totalNodes, keyMax);
+  generateFilename(fn, 256, totalNodes, keyMax);
 
   struct BSTree tree;
 

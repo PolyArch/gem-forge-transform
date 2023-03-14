@@ -1114,11 +1114,17 @@ int main(int argc, char *argv[]) {
   printf("Data size %lukB.\n",
          nCentroids * nNeighbors * inDims * sizeof(Value) / 1024);
 
+  printf("Init OMP.\n");
+
 #ifndef NO_OPENMP
   omp_set_dynamic(0);
+  printf("Init OMP Dyn.\n");
   omp_set_num_threads(numThreads);
+  printf("Init OMP Ths.\n");
   omp_set_schedule(omp_sched_static, 0);
+  printf("Init OMP Sch.\n");
 #endif
+  printf("Init OMP Done.\n");
 
   if (isFC) {
     // Different path for FC.
@@ -1155,9 +1161,13 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
+  printf("Allocating features.\n");
   Value *features = alignedAllocAndTouch(nFeatures * inDims, sizeof(Value));
+  printf("Allocated features.\n");
+
   struct Coordinate *coordinates =
       alignedAllocAndTouch(nFeatures, sizeof(struct Coordinate));
+  printf("Allocate coordinates.\n");
 
   /****************************************************************************
    * The first SetAbstractor (SA)

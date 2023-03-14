@@ -76,12 +76,13 @@
 
 #endif
 
+#include <assert.h>
+
 #ifdef GEM_FORGE
 #include "gem5/m5ops.h"
 #else
 #include <time.h>
 #endif
-#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

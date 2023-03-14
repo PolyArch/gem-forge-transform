@@ -40,19 +40,17 @@ __attribute__((noinline)) void foo(struct BSTreeNode *root, Value *keys,
     struct BSTreeNode *node = root;
     uint8_t found = 0;
     Value val = 0;
-    if (node) {
-      do {
+    do {
 #pragma ss stream_name "gfm.bin_tree.val.ld"
-        Value v = node->val;
+      Value v = node->val;
 #pragma ss stream_name "gfm.bin_tree.lhs.ld"
-        struct BSTreeNode *lhs = node->lhs;
+      struct BSTreeNode *lhs = node->lhs;
 #pragma ss stream_name "gfm.bin_tree.rhs.ld"
-        struct BSTreeNode *rhs = node->rhs;
-        val = v;
-        node = (val > key) ? lhs : rhs;
-        found = found || (val == key);
-      } while (val != key && node != NULL);
-    }
+      struct BSTreeNode *rhs = node->rhs;
+      val = v;
+      node = (val > key) ? lhs : rhs;
+      found = found || (val == key);
+    } while (val != key && node != NULL);
 #pragma ss stream_name "gfm.bin_tree.match.st"
     matched[i] = found;
   }

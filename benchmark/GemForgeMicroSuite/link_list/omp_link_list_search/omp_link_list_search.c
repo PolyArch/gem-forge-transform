@@ -17,23 +17,6 @@ struct Node {
   uint64_t dummy[6];
 };
 
-Value foo_warm(struct Node **heads, int64_t numLists, Value terminateValue) {
-
-  Value sum = 0;
-  for (int64_t i = 0; i < numLists; ++i) {
-    struct Node *head = heads[i];
-    Value val = 0;
-    if (head) {
-      do {
-        val = head->val;
-        head = head->next;
-        sum += val;
-      } while (val != terminateValue && head != NULL);
-    }
-  }
-  return sum;
-}
-
 __attribute__((noinline)) Value foo(struct Node **heads, int64_t numLists,
                                     Value terminateValue) {
 
@@ -46,22 +29,22 @@ __attribute__((noinline)) Value foo(struct Node **heads, int64_t numLists,
       struct Node *head = heads[i];
       Value val = 0;
       Value sum = 0;
-      if (head) {
-        /**
-         * This helps us getting a single BB loop body, with simple condition.
-         */
-        do {
+      /**
+       * This helps us getting a single BB loop body, with simple condition.
+       * We assert that head != null so that outer stream "localRet" can
+       * always get the value on stream "sum".
+       */
+      do {
 #pragma ss stream_name "gfm.link_list.val.ld"
-          Value v = head->val;
+        Value v = head->val;
 
 #pragma ss stream_name "gfm.link_list.next.ld"
-          struct Node *next = head->next;
+        struct Node *next = head->next;
 
-          val = v;
-          head = next;
-          sum += val;
-        } while (val != terminateValue && head != NULL);
-      }
+        val = v;
+        head = next;
+        sum += val;
+      } while (val != terminateValue && head != NULL);
 
       localRet += sum;
     }
@@ -122,7 +105,7 @@ const char *generateFileName(struct InputArgs args) {
       args.numLists * args.elementsPerList * sizeof(struct Node);
   const char *elementBytesSuffix = formatBytes(&totalElementBytes);
 
-  snprintf(fileName, MAX_FILE_NAME, "link_list_search_%lu%s_%lu_%lu.data",
+  snprintf(fileName, MAX_FILE_NAME, "../link_list_search_%lu%s_%lu_%lu.data",
            totalElementBytes, elementBytesSuffix, args.numLists,
            args.elementsPerList);
 
@@ -206,9 +189,6 @@ struct DataArrays generateData(struct InputArgs args) {
 
   {
     struct DataArrays data = loadData(args, fileName);
-#ifdef GEM_FORGE
-    assert(data.nodes != NULL && "Failed to load data.");
-#endif
     if (data.nodes != NULL) {
       return data;
     }
@@ -224,6 +204,7 @@ struct DataArrays generateData(struct InputArgs args) {
 
   for (uint64_t i = 0; i < totalNodes; ++i) {
     nodes[i].next = NULL;
+    nodes[i].val = i;
   }
   for (uint64_t i = 0; i < args.numLists; ++i) {
     heads[i] = NULL;
@@ -249,7 +230,7 @@ struct DataArrays generateData(struct InputArgs args) {
     for (int64_t i = 0; i < args.elementsPerList - 1; ++i) {
       int64_t idx = j * args.elementsPerList + i;
       GET_PTR(idx)->next = GET_PTR(idx + 1);
-      printf("%ld %ld %ld.\n", j, i, GET_PTR(idx)->next - nodes);
+      // printf("%ld %ld %ld.\n", j, i, GET_PTR(idx)->next - nodes);
     }
   }
 

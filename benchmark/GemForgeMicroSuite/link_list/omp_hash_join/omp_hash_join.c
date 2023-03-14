@@ -26,23 +26,21 @@ __attribute__((noinline)) void foo(struct Node **heads, uint64_t hashMask,
     struct Node *head = heads[hash];
     Value val = 0;
     uint8_t found = 0;
-    if (head) {
-      /**
-       * This helps us getting a single BB loop body, with simple condition.
-       */
-      do {
+    /**
+     * This helps us getting a single BB loop body, with simple condition.
+     */
+    do {
 #pragma ss stream_name "gfm.hash_join.val.ld"
-        Value v = head->val;
+      Value v = head->val;
 
 #pragma ss stream_name "gfm.hash_join.next.ld"
-        struct Node *n = head->next;
+      struct Node *n = head->next;
 
-        val = v;
-        head = n;
-        // This ensures that found is a reduction variable.
-        found = found || (val == key);
-      } while (val != key && head != NULL);
-    }
+      val = v;
+      head = n;
+      // This ensures that found is a reduction variable.
+      found = found || (val == key);
+    } while (val != key && head != NULL);
 #pragma ss stream_name "gfm.hash_join.match.st"
     matched[i] = found;
   }
@@ -114,7 +112,7 @@ const char *generateFileName(struct InputArgs args) {
   uint64_t totalKeyBytes = args.totalKeys * sizeof(Value);
   const char *keySuffix = formatBytes(&totalKeyBytes);
 
-  snprintf(fileName, MAX_FILE_NAME, "hash_join_%lu%s_%lu_%lu%s_%lu.data",
+  snprintf(fileName, MAX_FILE_NAME, "../hash_join_%lu%s_%lu_%lu%s_%lu.data",
            totalElementBytes, elementBytesSuffix, args.elementsPerBucket,
            totalKeyBytes, keySuffix, args.hitRatio);
 
