@@ -92,14 +92,12 @@ int main(int argc, char *argv[]) {
          totalKeys, hitRatio, keyMax,
          totalKeys * sizeof(Value) / numThreads / 1024);
 
-#ifdef GEM_FORGE
   struct BSTree tree = loadTree(keyMax, totalElements);
-  printf("Tree loaded.\n");
-#else
-  struct BSTree tree = generateUniformTree(keyMax, totalElements);
-  dumpTree(&tree, keyMax);
-  printf("Tree generated.\n");
-#endif
+  if (!tree.array) {
+    tree = generateUniformTree(keyMax, totalElements);
+    dumpTree(&tree, keyMax);
+    printf("Tree generated.\n");
+  }
 
 #ifndef NO_OMP
   omp_set_dynamic(0);
@@ -108,13 +106,13 @@ int main(int argc, char *argv[]) {
 #endif
 
   // Generate the keys.
-  Value *keys = aligned_alloc(64, sizeof(Value) * totalKeys);
+  Value *keys = alignedAllocAndTouch(totalKeys, sizeof(Value));
   for (int64_t i = 0; i < totalKeys; ++i) {
     keys[i] = (int64_t)(((float)(rand()) / (float)(RAND_MAX)) * keyMax);
   }
 
   // Allocated the matched results.
-  uint8_t *matched = aligned_alloc(64, sizeof(uint8_t) * totalKeys);
+  uint8_t *matched = alignedAllocAndTouch(totalKeys, sizeof(uint8_t));
 
   gf_stream_nuca_region("gfm.bin_tree.tree", tree.array, sizeof(tree.array[0]),
                         totalElements);
@@ -151,9 +149,10 @@ int main(int argc, char *argv[]) {
         totalHits++;
       }
       if (found != expected) {
-        printf("Mismatch %ldth Key = %ld. Expected %d != Ret %d. TotalElements "
+        printf("Mismatch %ldth Key = %ld VAddr %p. Expected %d != Ret %d. "
+               "TotalElements "
                "%lu.\n",
-               i, key, expected, found, totalElements);
+               i, key, matched + i, expected, found, totalElements);
         gf_panic();
       }
     }

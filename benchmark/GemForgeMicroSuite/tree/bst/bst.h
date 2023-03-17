@@ -129,12 +129,13 @@ struct BSTree loadTree(TreeValueT keyMax, uint64_t totalNodes) {
   FILE *f = fopen(fn, "rb");
   if (!f) {
     printf("Failed to open tree %s.\n", fn);
-    exit(1);
+    tree.array = NULL;
+    return tree;
   }
   fread(&tree, sizeof(tree), 1, f);
 
   struct BSTreeNode *nodes =
-      aligned_alloc(64, sizeof(struct BSTreeNode) * totalNodes);
+      aligned_alloc(4096, sizeof(struct BSTreeNode) * totalNodes);
   fread(nodes, sizeof(struct BSTreeNode), tree.total, f);
 
   fclose(f);

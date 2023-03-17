@@ -10,6 +10,8 @@ typedef int64_t Value;
 struct Node {
   struct Node *next;
   Value val;
+  // Make this one cache line.
+  uint64_t dummy[6];
 };
 
 __attribute__((noinline)) void foo(struct Node **heads, uint64_t hashMask,
@@ -158,10 +160,9 @@ struct DataArrays loadData(struct InputArgs args, const char *fileName) {
     struct Node *oldNodesPtr = NULL;
     fread(&oldNodesPtr, sizeof(oldNodesPtr), 1, f);
 
-    data.nodes =
-        aligned_alloc(PAGE_SIZE, sizeof(struct Node) * args.totalElements);
-    data.heads = aligned_alloc(PAGE_SIZE, sizeof(struct Node *) * totalBuckets);
-    data.keys = aligned_alloc(PAGE_SIZE, sizeof(Value) * args.totalKeys);
+    data.nodes = alignedAllocAndTouch(args.totalElements, sizeof(struct Node));
+    data.heads = alignedAllocAndTouch(totalBuckets, sizeof(struct Node *));
+    data.keys = alignedAllocAndTouch(args.totalKeys, sizeof(Value));
 
     fread(data.nodes, sizeof(struct Node), args.totalElements, f);
     fread(data.heads, sizeof(struct Node *), totalBuckets, f);
@@ -208,12 +209,11 @@ struct DataArrays generateData(struct InputArgs args) {
    */
   printf("Start to generate data.\n");
   uint64_t totalNodes = args.totalElements;
-  struct Node *nodes =
-      aligned_alloc(PAGE_SIZE, sizeof(struct Node) * totalNodes);
+  struct Node *nodes = alignedAllocAndTouch(totalNodes, sizeof(struct Node));
   struct Node **nodes_ptr =
-      aligned_alloc(PAGE_SIZE, sizeof(struct Node *) * totalNodes);
+      alignedAllocAndTouch(totalNodes, sizeof(struct Node *));
   struct Node **heads =
-      aligned_alloc(PAGE_SIZE, sizeof(struct Node *) * totalBuckets);
+      alignedAllocAndTouch(totalBuckets, sizeof(struct Node *));
 
   for (uint64_t i = 0; i < totalNodes; ++i) {
     nodes[i].next = NULL;
@@ -244,7 +244,7 @@ struct DataArrays generateData(struct InputArgs args) {
   }
 
   // Generate the keys.
-  Value *keys = aligned_alloc(64, sizeof(Value) * args.totalKeys);
+  Value *keys = alignedAllocAndTouch(args.totalKeys, sizeof(Value));
   Value keyMax = args.totalElements * args.hitRatio;
   for (int64_t i = 0; i < args.totalKeys; ++i) {
     keys[i] = (int64_t)(((float)(rand()) / (float)(RAND_MAX)) * keyMax);
@@ -286,14 +286,22 @@ int main(int argc, char *argv[]) {
   struct DataArrays data = generateData(args);
 
   // Allocated the matched results.
-  uint8_t *matched = aligned_alloc(64, sizeof(uint8_t) * args.totalKeys);
+  uint8_t *matched = alignedAllocAndTouch(args.totalKeys, sizeof(uint8_t));
 
   gf_stream_nuca_region("gfm.hash_join.nodes", data.nodes,
                         sizeof(data.nodes[0]), args.totalElements);
+  gf_stream_nuca_region("gfm.hash_join.heads", data.heads,
+                        sizeof(data.heads[0]), totalBuckets);
   gf_stream_nuca_region("gfm.hash_join.keys", data.keys, sizeof(data.keys[0]),
                         args.totalKeys);
   gf_stream_nuca_region("gfm.hash_join.match", matched, sizeof(matched[0]),
                         args.totalKeys);
+  {
+    const int64_t ptrOffset = (int64_t)(&(((struct Node *)0)->next));
+    const int64_t ptrSize = sizeof(((struct Node *)0)->next);
+    gf_stream_nuca_align(data.nodes, data.heads,
+                         m5_stream_nuca_encode_ptr_align(ptrOffset, ptrSize));
+  }
   gf_stream_nuca_remap();
 
   gf_detail_sim_start();
