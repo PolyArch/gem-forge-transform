@@ -397,7 +397,7 @@ void StaticStream::constructStreamGraph() {
       // No circle dependency in stream graph.
       continue;
     }
-    if (IndVarBaseS->InnerMostLoop == this->InnerMostLoop &&
+    if (this->InnerMostLoop->contains(IndVarBaseS->InnerMostLoop) &&
         this->Type == TypeT::IV) {
       // This is a back edge from IV to IV.
       this->addBackEdgeBaseStream(IndVarBaseS);
