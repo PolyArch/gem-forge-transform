@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.4)
 project("GemForge")
 
-set(CMAKE_CXX_STANDARD 14)
-
 if (NOT DEFINED ENV{LLVM_DEBUG_INSTALL_PATH})
     message(FATAL_ERROR "Please specify where debug version of llvm installed in LLVM_DEBUG_INSTALL_PATH")
 endif ()
