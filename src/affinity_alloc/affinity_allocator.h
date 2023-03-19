@@ -9,9 +9,7 @@
 #include <shared_mutex>
 #include <vector>
 
-#ifdef GEM_FORGE
 #include "gem5/m5ops.h"
-#endif
 
 namespace affinity_alloc {
 
@@ -23,7 +21,21 @@ constexpr bool isInGemForge() {
 #endif
 }
 
-using AffinityAddressVecT = std::vector<std::uintptr_t>;
+namespace {
+int countBits(int v) {
+  // v should be a power of 2 and positive.
+  int bits = 0;
+  v--;
+  while (v) {
+    bits++;
+    v >>= 1;
+  }
+  return bits;
+}
+} // namespace
+
+using Addr = std::uintptr_t;
+using AffinityAddressVecT = std::vector<Addr>;
 
 /**
  * @brief
@@ -46,20 +58,38 @@ public:
     char remain[NodeSize - 16];
   };
 
-  AffinityAllocator() = default;
-  AffinityAllocator(AffinityAllocator &&other) : arenas(other.arenas) {
-    other.arenas = nullptr;
+  AffinityAllocator()
+      : numRows(m5_stream_nuca_get_property(
+            nullptr, STREAM_NUCA_REGION_PROPERTY_BANK_ROWS)),
+        rowMask(numRows - 1), rowBits(countBits(numRows)),
+        numCols(m5_stream_nuca_get_property(
+            nullptr, STREAM_NUCA_REGION_PROPERTY_BANK_COLS)),
+        colMask(numCols - 1), colBits(countBits(numCols)),
+        totalBanks(numRows * numCols), bankFreeList(totalBanks, nullptr),
+        hopsToEachBank(totalBanks, 0) {
+    assert(ArenaSize > totalBanks && "Arena too small.");
+    assert(numRows >= 1);
+    assert((numRows & (numRows - 1)) == 0);
+    assert(numCols >= 1);
+    assert((numCols & (numCols - 1)) == 0);
   }
-  AffinityAllocator &operator=(AffinityAllocator &&other) {
-    this->deallocArenas();
-    this->arenas = other.arenas;
-    other.arenas = nullptr;
-  }
+
+  AffinityAllocator(const AffinityAllocator &other) = delete;
+  AffinityAllocator &operator=(const AffinityAllocator &other) = delete;
+  AffinityAllocator(AffinityAllocator &&other) = delete;
+  AffinityAllocator &operator=(AffinityAllocator &&other) = delete;
 
   ~AffinityAllocator() { this->deallocArenas(); }
 
   NodeT *alloc(const AffinityAddressVecT &affinityAddrs) {
-    return this->allocFromArena();
+
+    auto allocBank = this->chooseAllocBank(affinityAddrs);
+
+    if (!this->bankFreeList.at(allocBank)) {
+      this->allocArena();
+    }
+
+    return this->popBankFreeList(allocBank);
   }
 
   /*********************************************************
@@ -68,28 +98,158 @@ public:
 
   struct AffinityAllocatorArena {
     NodeT data[ArenaSize];
-    NodeT *freeList;
-    int64_t usedNodes = 0;
     AffinityAllocatorArena *next = nullptr;
     AffinityAllocatorArena *prev = nullptr;
 
-    AffinityAllocatorArena() {
+    AffinityAllocatorArena() = default;
+  };
 
-      auto curNode = new (this->data + initFreeNodeIndexes.indexes[0]) NodeT();
-
-      // Connect them into a free list.
-      for (int64_t i = 1; i < ArenaSize; ++i) {
-        auto newNode =
-            new (this->data + initFreeNodeIndexes.indexes[i]) NodeT();
-        curNode->prev = newNode;
-        newNode->next = curNode;
-        curNode = newNode;
-      }
-
-      this->freeList = curNode;
-      this->usedNodes = 0;
+  /*************************************************************
+   * Memorized region information.
+   *************************************************************/
+  struct RegionInfo {
+    const Addr lhs;
+    const Addr rhs;
+    const Addr interleave;
+    const int startBank;
+    RegionInfo(Addr _lhs, Addr _rhs, Addr _interleave, int _startBank)
+        : lhs(_lhs), rhs(_rhs), interleave(_interleave), startBank(_startBank) {
+    }
+    int calculateBank(Addr vaddr, int totalBanks) const {
+      auto diff = vaddr - this->lhs;
+      auto bank = diff / this->interleave;
+      return (this->startBank + bank) % totalBanks;
     }
   };
+  const int numRows;
+  const int rowMask;
+  const int rowBits;
+  const int numCols;
+  const int colMask;
+  const int colBits;
+  const int totalBanks;
+  using RegionInfoMap = std::map<Addr, RegionInfo>;
+  using RegionInfoMapIter = typename std::map<Addr, RegionInfo>::iterator;
+  RegionInfoMap vaddrRegionMap;
+
+  // Free list at each bank.
+  std::vector<NodeT *> bankFreeList;
+
+  // Buffer to host distance to each bank.
+  std::vector<int> hopsToEachBank;
+
+  void pushBankFreeList(int bank, NodeT *node) {
+    auto &head = bankFreeList.at(bank);
+    if (head) {
+      head->prev = node;
+    }
+    node->next = head;
+    head = node;
+  }
+
+  NodeT *popBankFreeList(int bank) {
+    auto &head = this->bankFreeList.at(bank);
+    assert(head);
+    auto ret = head;
+    head = head->next;
+    if (head) {
+      head->prev = nullptr;
+    }
+    return ret;
+  }
+
+  RegionInfoMapIter initRegionInfo(Addr vaddr) {
+    auto ptr = reinterpret_cast<void *>(vaddr);
+    Addr lhs = m5_stream_nuca_get_property(
+        ptr, STREAM_NUCA_REGION_PROPERTY_START_VADDR);
+    Addr rhs =
+        m5_stream_nuca_get_property(ptr, STREAM_NUCA_REGION_PROPERTY_END_VADDR);
+    Addr interleave = m5_stream_nuca_get_property(
+        ptr, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE);
+    int startBank = m5_stream_nuca_get_property(
+        ptr, STREAM_NUCA_REGION_PROPERTY_START_BANK);
+    return this->vaddrRegionMap
+        .emplace(std::piecewise_construct, std::forward_as_tuple(lhs),
+                 std::forward_as_tuple(lhs, rhs, interleave, startBank))
+        .first;
+  }
+
+  const RegionInfo &getOrInitRegionInfo(Addr vaddr) {
+    auto iter = this->vaddrRegionMap.upper_bound(vaddr);
+    if (iter == this->vaddrRegionMap.begin()) {
+      iter = this->initRegionInfo(vaddr);
+    } else {
+      iter--;
+      if (vaddr >= iter->second.rhs) {
+        iter = this->initRegionInfo(vaddr);
+      }
+    }
+    const auto &region = iter->second;
+    return region;
+  }
+
+  /**
+   * @brief Get the mapped bank for a give vaddr.
+   *
+   * @param vaddr
+   * @return int
+   */
+  int getBank(Addr vaddr) {
+    return this->getOrInitRegionInfo(vaddr).calculateBank(vaddr,
+                                                          this->totalBanks);
+  }
+
+  int64_t computeHops(int64_t bankA, int64_t bankB) {
+    int64_t bankARow = (bankA >> this->colBits) & this->rowMask;
+    int64_t bankACol = (bankA & this->colMask);
+    int64_t bankBRow = (bankB >> this->colBits) & this->rowMask;
+    int64_t bankBCol = (bankB & this->colMask);
+    return std::abs(bankARow - bankBRow) + std::abs(bankACol - bankBCol);
+  }
+
+  void computeHopsToEachBank(const AffinityAddressVecT &affinityAddrs) {
+    // Clear the hops.
+    for (auto &hop : this->hopsToEachBank) {
+      hop = 0;
+    }
+    for (const auto vaddr : affinityAddrs) {
+      auto bankA = this->getBank(vaddr);
+      int64_t bankARow = (bankA >> this->colBits) & this->rowMask;
+      int64_t bankACol = (bankA & this->colMask);
+      for (int bankB = 0; bankB < this->totalBanks; ++bankB) {
+        int64_t bankBRow = (bankB >> this->colBits) & this->rowMask;
+        int64_t bankBCol = (bankB & this->colMask);
+        int64_t hops =
+            std::abs(bankARow - bankBRow) + std::abs(bankACol - bankBCol);
+        this->hopsToEachBank.at(bankB) += hops;
+      }
+    }
+  }
+
+  int chooseAllocBank(const AffinityAddressVecT &affinityAddrs) {
+    /**
+     * For now we have a simple policy: allocate at the bank with minimal hops.
+     */
+    this->computeHopsToEachBank(affinityAddrs);
+    auto allocBank = 0;
+    auto minHops = INT32_MAX;
+    auto minHopsCnt = 0;
+    for (int bank = 0; bank < this->totalBanks; ++bank) {
+      auto hops = this->hopsToEachBank.at(bank);
+      if (hops < minHops) {
+        minHops = hops;
+        allocBank = bank;
+        minHopsCnt = 1;
+      } else if (hops == minHops) {
+        // Randomly pick one bank with reservoir sampling.
+        minHopsCnt++;
+        // This is biased, but I don't care.
+        bool replace = (rand() % minHopsCnt) == 0;
+        allocBank = replace ? bank : allocBank;
+      }
+    }
+    return allocBank;
+  }
 
   AffinityAllocatorArena *arenas = nullptr;
 
@@ -113,13 +273,25 @@ public:
 
     auto arena = new (arenaRaw) AffinityAllocatorArena();
 
-    // Make sure we register ourselve at stream_nuca_manager.
-#ifdef GEM_FORGE
+    /**
+     * Register ourselve at StreamNUCAManger, and make sure that we are
+     * interleaved at the NodeT with StartBank 0.
+     * Then remember the RegionInfo.
+     */
     {
-      auto regionName = "gap.pr_push.adj/";
-      m5_stream_nuca_region(regionName, arena, 1, ArenaSize, 0, 0);
+      auto regionName = "affinity_alloc/";
+      m5_stream_nuca_region(regionName, arena, sizeof(NodeT), ArenaSize, 0, 0);
+      m5_stream_nuca_set_property(arena, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE,
+                                  NodeSize);
+      m5_stream_nuca_set_property(arena, STREAM_NUCA_REGION_PROPERTY_START_BANK,
+                                  0);
+      m5_stream_nuca_remap();
+      Addr lhs = reinterpret_cast<Addr>(arena);
+      Addr rhs = reinterpret_cast<Addr>(arena + 1);
+      this->vaddrRegionMap.emplace(
+          std::piecewise_construct, std::forward_as_tuple(lhs),
+          std::forward_as_tuple(lhs, rhs, NodeSize, 0));
     }
-#endif
 
     // Connect arenas together.
     arena->next = this->arenas;
@@ -127,6 +299,18 @@ public:
       this->arenas->prev = arena;
     }
     this->arenas = arena;
+
+    for (int64_t i = 0; i < ArenaSize; ++i) {
+#ifdef GEM_FORGE
+      // Add nodes from this arena to the free list.
+      auto newNode = new (arena->data + i) NodeT();
+#else
+      // Just add them to the only one free list.
+      auto newNode = new (arena->data + initFreeNodeIndexes.indexes[i]) NodeT();
+#endif
+      auto newBank = this->getBank(reinterpret_cast<Addr>(newNode));
+      this->pushBankFreeList(newBank, newNode);
+    }
   }
 
   void deallocArenas() {

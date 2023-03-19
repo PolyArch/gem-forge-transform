@@ -3,6 +3,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstdio>
+#include <sstream>
+
 namespace affinity_alloc {
 
 // Define the fixed sizes.
@@ -19,6 +22,14 @@ MultiThreadAffinityAllocator<512, FixArenaSize> allocator512B;
 MultiThreadAffinityAllocator<1024, FixArenaSize> allocator1024B;
 MultiThreadAffinityAllocator<4096, FixArenaSize> allocator4096B;
 
+std::string printAddrs(const AffinityAddressVecT &addrs) {
+  std::stringstream ss;
+  for (const auto addr : addrs) {
+    ss << std::hex << addr << ' ';
+  }
+  return ss.str();
+}
+
 void *alloc(size_t size, const AffinityAddressVecT &affinityAddrs) {
   // Round up the size.
   auto roundSize = 0;
@@ -32,6 +43,9 @@ void *alloc(size_t size, const AffinityAddressVecT &affinityAddrs) {
 
   // Get the tid.
   int tid = gettid();
+
+  // printf("[AffAlloc Th=%d] Alloc Size %lu AffAddrs %s.\n", tid, size,
+  //        printAddrs(affinityAddrs).c_str());
 
   // Dispatch to the correct allocator.
 #define CASE(X)                                                                \
