@@ -1,6 +1,7 @@
 #ifndef AFFINITY_ALLOCATOR_HH
 #define AFFINITY_ALLOCATOR_HH
 
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -8,6 +9,8 @@
 #include <mutex>
 #include <shared_mutex>
 #include <vector>
+
+// #include <immintrin.h>
 
 #include "gem5/m5ops.h"
 
@@ -48,7 +51,7 @@ using AffinityAddressVecT = std::vector<Addr>;
  */
 template <int NodeSize, int ArenaSize> class AffinityAllocator {
 public:
-  constexpr static int MaxBanks = 128;
+  constexpr static int MaxBanks = 64;
 
   static_assert(NodeSize >= 64, "Invalid NodeSize");
 
@@ -65,13 +68,15 @@ public:
         numCols(m5_stream_nuca_get_property(
             nullptr, STREAM_NUCA_REGION_PROPERTY_BANK_COLS)),
         colMask(numCols - 1), colBits(countBits(numCols)),
-        totalBanks(numRows * numCols), bankFreeList(totalBanks, nullptr),
-        hopsToEachBank(totalBanks, 0) {
+        totalBanks(numRows * numCols), bankFreeList(totalBanks, nullptr) {
     assert(ArenaSize > totalBanks && "Arena too small.");
     assert(numRows >= 1);
     assert((numRows & (numRows - 1)) == 0);
     assert(numCols >= 1);
     assert((numCols & (numCols - 1)) == 0);
+    assert(totalBanks <= MaxBanks);
+
+    this->initBankToBankHops();
   }
 
   AffinityAllocator(const AffinityAllocator &other) = delete;
@@ -132,11 +137,35 @@ public:
   using RegionInfoMapIter = typename std::map<Addr, RegionInfo>::iterator;
   RegionInfoMap vaddrRegionMap;
 
-  // Free list at each bank.
-  std::vector<NodeT *> bankFreeList;
+  /**
+   * We use uint8_t for hops. And optimize the hops computation.
+   */
+  using HopT = uint8_t;
+  struct BankHopT {
+    std::array<HopT, MaxBanks> hops;
+  };
+  std::array<BankHopT, MaxBanks> bankToBankHops;
 
   // Buffer to host distance to each bank.
-  std::vector<int> hopsToEachBank;
+  BankHopT hopsToEachBank;
+
+  void initBankToBankHops() {
+    for (int bankA = 0; bankA < this->totalBanks; ++bankA) {
+      auto &bankHop = this->bankToBankHops[bankA];
+      for (int bankB = 0; bankB < this->totalBanks; ++bankB) {
+        bankHop.hops[bankB] = this->computeHops(bankA, bankB);
+      }
+    }
+  }
+
+  void resetHopsToEachBank() {
+    for (int bank = 0; bank < this->totalBanks; ++bank) {
+      hopsToEachBank.hops[bank] = 0;
+    }
+  }
+
+  // Free list at each bank.
+  std::vector<NodeT *> bankFreeList;
 
   void pushBankFreeList(int bank, NodeT *node) {
     auto &head = bankFreeList.at(bank);
@@ -209,20 +238,27 @@ public:
 
   void computeHopsToEachBank(const AffinityAddressVecT &affinityAddrs) {
     // Clear the hops.
-    for (auto &hop : this->hopsToEachBank) {
-      hop = 0;
-    }
+    this->resetHopsToEachBank();
+
+    auto &sumHops = this->hopsToEachBank.hops;
     for (const auto vaddr : affinityAddrs) {
       auto bankA = this->getBank(vaddr);
-      int64_t bankARow = (bankA >> this->colBits) & this->rowMask;
-      int64_t bankACol = (bankA & this->colMask);
-      for (int bankB = 0; bankB < this->totalBanks; ++bankB) {
-        int64_t bankBRow = (bankB >> this->colBits) & this->rowMask;
-        int64_t bankBCol = (bankB & this->colMask);
-        int64_t hops =
-            std::abs(bankARow - bankBRow) + std::abs(bankACol - bankBCol);
-        this->hopsToEachBank.at(bankB) += hops;
+
+      const auto &hops = this->bankToBankHops[bankA].hops;
+#ifdef GEM_FORGE
+    asm(
+      "vmovdqa32      (%0), %%zmm0\n\t"
+      "vpaddb         (%1), %%zmm0, %%zmm0\n\t"
+      "vmovdqa32      %%zmm0, (%0)\n\t"
+        : /* no output operands */
+        : "r"(&sumHops), "r"(&hops)
+        : "%zmm0"
+    );
+#else
+      for (int bankB = 0; bankB < this->MaxBanks; ++bankB) {
+        sumHops[bankB] += hops[bankB];
       }
+#endif
     }
   }
 
@@ -235,7 +271,7 @@ public:
     auto minHops = INT32_MAX;
     auto minHopsCnt = 0;
     for (int bank = 0; bank < this->totalBanks; ++bank) {
-      auto hops = this->hopsToEachBank.at(bank);
+      auto hops = this->hopsToEachBank.hops[bank];
       if (hops < minHops) {
         minHops = hops;
         allocBank = bank;
