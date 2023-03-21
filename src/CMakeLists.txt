@@ -7,7 +7,6 @@ set(LLVM_SRC_LIB_DIR "$ENV{LLVM_SRC_LIB_PATH}")
 # First dive into trace, as it will give us PROTOBUF variables.
 add_subdirectory(trace)
 add_subdirectory(stream)
-add_subdirectory(affinity_alloc)
 
 # generate tdg protobuf messages.
 protobuf_generate_cpp(TDG_PROTOBUF_SRCS TDG_PROTOBUF_HDRS
