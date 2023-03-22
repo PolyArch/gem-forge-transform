@@ -51,8 +51,8 @@ struct DistanceIndex {
 };
 
 __attribute__((noinline)) Value
-computeDist(Value *features,              // [nPoints][nDims]
-            Value *centers,               // [nCenters][nDims]
+computeDist(Value *features,                  // [nPoints][nDims]
+            Value *centers,                   // [nCenters][nDims]
             struct DistanceIndex *minCenters, // [nPoints][nDims]
             int64_t nPoints, int64_t nDims, Index center) {
 
@@ -107,10 +107,10 @@ computeDist(Value *features,              // [nPoints][nDims]
 }
 
 __attribute__((noinline)) Value
-accCenter(Value *restrict features,               // [nPoints][nDims]
+accCenter(Value *restrict features,                   // [nPoints][nDims]
           struct DistanceIndex *restrict memberships, // [nPoints][nDims]
-          Value *restrict newCenters,             // [nThreads][nCenters][nDims]
-          Index *restrict clusterSize,            // [nThreads][nCenters]
+          Value *restrict newCenters,  // [nThreads][nCenters][nDims]
+          Index *restrict clusterSize, // [nThreads][nCenters]
           int64_t nPoints, int64_t nDims, int64_t nCenters, int64_t nThreads) {
 
   __builtin_assume(nCenters > 1);
@@ -223,11 +223,11 @@ normCenter(Value *restrict newCenters,  // [nThreads][nCenters][nDims]
 }
 
 __attribute__((noinline)) Value
-driver(Value *restrict features,               // [nPoints][nDims]
-       Value *restrict centers,                // [nCenters][nDims]
+driver(Value *restrict features,                   // [nPoints][nDims]
+       Value *restrict centers,                    // [nCenters][nDims]
        struct DistanceIndex *restrict memberships, // [nPoints][nDims]
-       Value *restrict newCenters,             // [nThreads][nCenters][nDims]
-       Index *restrict clusterSize,            // [nThreads][nCenters]
+       Value *restrict newCenters,  // [nThreads][nCenters][nDims]
+       Index *restrict clusterSize, // [nThreads][nCenters]
        int64_t nPoints, int64_t nDims, int64_t nCenters, int64_t nThreads) {
 
   for (Index center = 0; center < nCenters; ++center) {
@@ -304,7 +304,7 @@ int main(int argc, char *argv[]) {
   uint64_t totalBytes =
       T * sizeof(Value)                               // features
       + nCenters * nDims * sizeof(Value)              // centers
-      + T * sizeof(struct DistanceIndex)                  // memberships
+      + T * sizeof(struct DistanceIndex)              // memberships
       + numThreads * nCenters * nDims * sizeof(Value) // newCenters
       + numThreads * nCenters * sizeof(Index)         // clusterSize
       ;
@@ -388,7 +388,7 @@ int main(int argc, char *argv[]) {
 #endif
   gf_stream_nuca_set_property(newCenters,
                               STREAM_NUCA_REGION_PROPERTY_INTERLEAVE,
-                              NEW_CENTER_INTERLEAVE);
+                              NEW_CENTER_INTERLEAVE * sizeof(Value));
   /**
    * As a hack, do not initialize memberships for now.
    * TODO: Avoid using extra space for memberships so we remove this.

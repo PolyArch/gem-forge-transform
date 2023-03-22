@@ -87,6 +87,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "affinity_alloc.h"
+
 // Used to readin an array and warm up the cache.
 #define CACHE_LINE_SIZE 64
 #define PAGE_SIZE 4096
@@ -215,5 +217,16 @@ void *alignedAllocAndTouch(uint64_t numElements, int elemSize) {
   }
   return p;
 }
+
+#define startThreads(numThreads)                                               \
+  {                                                                            \
+    float p;                                                                   \
+    float *pp = &p;                                                            \
+    _Pragma("omp parallel for schedule(static)")                               \
+                                                                               \
+        for (int tid = 0; tid < numThreads; ++tid) {                           \
+      volatile float x = *pp;                                                  \
+    }                                                                          \
+  }
 
 #endif

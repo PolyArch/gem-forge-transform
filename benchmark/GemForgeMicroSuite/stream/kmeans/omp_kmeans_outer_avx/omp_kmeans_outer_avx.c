@@ -535,7 +535,7 @@ int main(int argc, char *argv[]) {
 #endif
   gf_stream_nuca_set_property(newCenters,
                               STREAM_NUCA_REGION_PROPERTY_INTERLEAVE,
-                              NEW_CENTER_INTERLEAVE);
+                              NEW_CENTER_INTERLEAVE * sizeof(Value));
   /**
    * As a hack, do not initialize memberships for now.
    * TODO: Avoid using extra space for memberships so we remove this.

@@ -159,4 +159,61 @@ struct BSTree loadTree(TreeValueT keyMax, uint64_t totalNodes) {
   return tree;
 }
 
+void buildTreeRecursiveWithAffnityAlloc(TreeValueT keyMin, TreeValueT keyMax,
+                                        uint64_t nodes,
+                                        struct BSTreeNode *root) {
+
+  if (nodes == 0) {
+    return;
+  }
+
+  const void *rootPtr = root;
+  struct BSTreeNode *node = malloc_aff(sizeof(struct BSTreeNode), 1, &rootPtr);
+
+  TreeValueT nodeVal = (keyMax - keyMin - 1) / 2 + keyMin;
+  node->val = nodeVal;
+  node->lhs = NULL;
+  node->rhs = NULL;
+  node->parent = root;
+  if (nodeVal < root->val) {
+    root->lhs = node;
+  } else {
+    root->rhs = node;
+  }
+
+  uint64_t lhsNodes = (nodes - 1) / 2;
+  uint64_t rhsNodes = nodes - 1 - lhsNodes;
+  buildTreeRecursiveWithAffnityAlloc(keyMin, nodeVal, lhsNodes, node);
+  buildTreeRecursiveWithAffnityAlloc(nodeVal + 1, keyMax, rhsNodes, node);
+}
+
+struct BSTree generateUniformTreeWithAffinityAlloc(TreeValueT keyRange,
+                                                   uint64_t totalNodes) {
+
+  if (keyRange < totalNodes) {
+    keyRange = totalNodes;
+  }
+
+  // Recursive build the tree.
+  struct BSTreeNode *root = malloc_aff(sizeof(struct BSTreeNode), 0, NULL);
+  TreeValueT rootVal = (keyRange - 1) / 2;
+  root->val = rootVal;
+  root->lhs = NULL;
+  root->rhs = NULL;
+  root->parent = NULL;
+
+  uint64_t lhsNodes = (totalNodes - 1) / 2;
+  uint64_t rhsNodes = totalNodes - 1 - lhsNodes;
+  buildTreeRecursiveWithAffnityAlloc(0, rootVal, lhsNodes, root);
+  buildTreeRecursiveWithAffnityAlloc(rootVal + 1, keyRange, rhsNodes, root);
+
+  struct BSTree tree;
+  tree.array = NULL;
+  tree.root = root;
+  tree.freelist = NULL;
+  tree.total = totalNodes;
+  tree.allocated = totalNodes;
+  return tree;
+}
+
 #endif

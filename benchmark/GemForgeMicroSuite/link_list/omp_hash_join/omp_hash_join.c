@@ -14,6 +14,20 @@ struct Node {
   uint64_t dummy[6];
 };
 
+__attribute__((noinline)) Value foo_warm(struct Node **heads,
+                                         int64_t totalHeads) {
+
+  Value ret = 0;
+  for (int64_t i = 0; i < totalHeads; ++i) {
+    struct Node *head = heads[i];
+    while (head) {
+      ret += head->val;
+      head = head->next;
+    }
+  }
+  return ret;
+}
+
 __attribute__((noinline)) void foo(struct Node **heads, uint64_t hashMask,
                                    Value *keys, int64_t totalKeys,
                                    uint8_t *matched) {
@@ -189,7 +203,51 @@ struct DataArrays loadData(struct InputArgs args, const char *fileName) {
   return data;
 }
 
+struct DataArrays generateDataWithAffinityAlloc(struct InputArgs args) {
+  const uint64_t totalBuckets = args.totalElements / args.elementsPerBucket;
+
+  printf("Start to generate data with affinity alloc.\n");
+  uint64_t totalNodes = args.totalElements;
+  struct Node **heads =
+      alignedAllocAndTouch(totalBuckets, sizeof(struct Node *));
+
+  // Connect the nodes.
+  for (int64_t j = 0; j < totalBuckets; ++j) {
+    struct Node *node = malloc_aff(sizeof(struct Node), 0, NULL);
+    node->val = j;
+    node->next = NULL;
+    for (int64_t i = 1; i < args.elementsPerBucket; ++i) {
+      struct Node *prevNode = node;
+      const void *ptr = prevNode;
+      node = malloc_aff(sizeof(struct Node), 1, &ptr);
+      // Set one value with the correct hash values.
+      node->val = i * totalBuckets + j;
+      node->next = prevNode;
+    }
+    heads[j] = node;
+  }
+
+  // Generate the keys.
+  Value *keys = alignedAllocAndTouch(args.totalKeys, sizeof(Value));
+  Value keyMax = args.totalElements * args.hitRatio;
+  for (int64_t i = 0; i < args.totalKeys; ++i) {
+    keys[i] = (int64_t)(((float)(rand()) / (float)(RAND_MAX)) * keyMax);
+  }
+
+  struct DataArrays data;
+  data.nodes = NULL;
+  data.heads = heads;
+  data.keys = keys;
+
+  return data;
+}
+
 struct DataArrays generateData(struct InputArgs args) {
+
+#ifdef USE_AFFINITY_ALLOC
+  return generateDataWithAffinityAlloc(args);
+#endif
+
   const uint64_t totalBuckets = args.totalElements / args.elementsPerBucket;
   const char *fileName = generateFileName(args);
 
@@ -288,15 +346,15 @@ int main(int argc, char *argv[]) {
   // Allocated the matched results.
   uint8_t *matched = alignedAllocAndTouch(args.totalKeys, sizeof(uint8_t));
 
-  gf_stream_nuca_region("gfm.hash_join.nodes", data.nodes,
-                        sizeof(data.nodes[0]), args.totalElements);
   gf_stream_nuca_region("gfm.hash_join.heads", data.heads,
                         sizeof(data.heads[0]), totalBuckets);
   gf_stream_nuca_region("gfm.hash_join.keys", data.keys, sizeof(data.keys[0]),
                         args.totalKeys);
   gf_stream_nuca_region("gfm.hash_join.match", matched, sizeof(matched[0]),
                         args.totalKeys);
-  {
+  if (data.nodes != NULL) {
+    gf_stream_nuca_region("gfm.hash_join.nodes", data.nodes,
+                          sizeof(data.nodes[0]), args.totalElements);
     const int64_t ptrOffset = (int64_t)(&(((struct Node *)0)->next));
     const int64_t ptrSize = sizeof(((struct Node *)0)->next);
     gf_stream_nuca_align(data.nodes, data.heads,
@@ -306,18 +364,19 @@ int main(int argc, char *argv[]) {
 
   gf_detail_sim_start();
   if (args.warm) {
-    gf_warm_array("nodes", data.nodes,
-                  args.totalElements * sizeof(data.nodes[0]));
     gf_warm_array("keys", data.keys, args.totalKeys * sizeof(data.keys[0]));
     gf_warm_array("match", matched, args.totalKeys * sizeof(matched[0]));
+    if (data.nodes != NULL) {
+      gf_warm_array("nodes", data.nodes,
+                    args.totalElements * sizeof(data.nodes[0]));
+    } else {
+      printf("Start to warm link list.\n");
+      volatile Value ret = foo_warm(data.heads, totalBuckets);
+      printf("Warmed link list.\n");
+    }
   }
 
-  Value p;
-  Value *pp = &p;
-#pragma omp parallel for schedule(static)
-  for (int tid = 0; tid < args.numThreads; ++tid) {
-    volatile Value x = *pp;
-  }
+  startThreads(args.numThreads);
 
   gf_reset_stats();
   foo(data.heads, hashMask, data.keys, args.totalKeys, matched);

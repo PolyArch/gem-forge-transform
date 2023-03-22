@@ -163,7 +163,7 @@ int main(int argc, char *argv[]) {
 
   gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
   gf_stream_nuca_set_property(b, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE,
-                              M / 64);
+                              M / 64 * sizeof(b[0]));
 
   gf_stream_nuca_set_property(x, STREAM_NUCA_REGION_PROPERTY_USE_PUM, 0);
 

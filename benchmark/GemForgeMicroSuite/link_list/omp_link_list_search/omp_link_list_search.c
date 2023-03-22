@@ -17,6 +17,19 @@ struct Node {
   uint64_t dummy[6];
 };
 
+__attribute__((noinline)) Value foo_warm(struct Node **heads,
+                                         int64_t numLists) {
+  Value ret = 0;
+  for (int64_t i = 0; i < numLists; ++i) {
+    struct Node *head = heads[i];
+    do {
+      ret += head->val;
+      head = head->next;
+    } while (head != NULL);
+  }
+  return ret;
+}
+
 __attribute__((noinline)) Value foo(struct Node **heads, int64_t numLists,
                                     Value terminateValue) {
 
@@ -182,7 +195,43 @@ struct DataArrays loadData(struct InputArgs args, const char *fileName) {
   return data;
 }
 
+struct DataArrays generateDataWithAffinityAlloc(struct InputArgs args) {
+  uint64_t totalNodes = args.elementsPerList * args.numLists;
+  uint64_t totalBulks = totalNodes / BULK_SIZE;
+
+  printf("Start to generate data with affinity allocator.\n");
+  struct Node **heads =
+      aligned_alloc(PAGE_SIZE, sizeof(struct Node *) * args.numLists);
+
+  // Create and connect the nodes.
+  for (int64_t j = 0; j < args.numLists; ++j) {
+    struct Node *node = malloc_aff(sizeof(struct Node), 0, NULL);
+    Value baseValue = j * args.elementsPerList;
+    node->val = baseValue;
+    node->next = NULL;
+    for (int64_t i = 1; i < args.elementsPerList; ++i) {
+      struct Node *prevNode = node;
+      const void *ptr = prevNode;
+      node = malloc_aff(sizeof(struct Node), 1, &ptr);
+      node->val = baseValue + i;
+      node->next = prevNode;
+    }
+    heads[j] = node;
+  }
+
+  struct DataArrays data;
+  data.nodes = NULL;
+  data.heads = heads;
+
+  return data;
+}
+
 struct DataArrays generateData(struct InputArgs args) {
+
+#ifdef USE_AFFINITY_ALLOC
+  return generateDataWithAffinityAlloc(args);
+#endif
+
   uint64_t totalNodes = args.elementsPerList * args.numLists;
   uint64_t totalBulks = totalNodes / BULK_SIZE;
   const char *fileName = generateFileName(args);
@@ -270,9 +319,9 @@ int main(int argc, char *argv[]) {
 
   gf_stream_nuca_region("gfm.link_list.heads", data.heads,
                         sizeof(data.heads[0]), args.numLists);
-  gf_stream_nuca_region("gfm.link_list.nodes", data.nodes,
-                        sizeof(data.nodes[0]), totalNodes);
-  {
+  if (data.nodes != NULL) {
+    gf_stream_nuca_region("gfm.link_list.nodes", data.nodes,
+                          sizeof(data.nodes[0]), totalNodes);
     const int64_t ptrOffset = (int64_t)(&(((struct Node *)0)->next));
     const int64_t ptrSize = sizeof(((struct Node *)0)->next);
     gf_stream_nuca_align(data.nodes, data.heads,
@@ -283,16 +332,19 @@ int main(int argc, char *argv[]) {
   gf_detail_sim_start();
 
   if (args.warm) {
-    gf_warm_array("gfm.link_list.nodes", data.nodes,
-                  totalNodes * sizeof(struct Node));
     gf_warm_array("gfm.link_list.heads", data.heads,
                   args.numLists * sizeof(data.heads[0]));
+    if (data.nodes != NULL) {
+      gf_warm_array("gfm.link_list.nodes", data.nodes,
+                    totalNodes * sizeof(struct Node));
+    } else {
+      printf("Start to warm link list.\n");
+      volatile Value ret = foo_warm(data.heads, args.numLists);
+      printf("Warmed link list.\n");
+    }
   }
 
-#pragma omp parallel for schedule(static)
-  for (int tid = 0; tid < args.numThreads; ++tid) {
-    volatile Value x = data.nodes[tid].val;
-  }
+  startThreads(args.numThreads);
 
   gf_reset_stats();
   volatile Value ret = foo(data.heads, args.numLists, terminateValue);

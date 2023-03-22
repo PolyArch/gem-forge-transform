@@ -92,12 +92,19 @@ int main(int argc, char *argv[]) {
          totalKeys, hitRatio, keyMax,
          totalKeys * sizeof(Value) / numThreads / 1024);
 
+#ifdef USE_AFFINITY_ALLOC
+  printf("Start to generate tree with affinity alloc.\n");
+  struct BSTree tree =
+      generateUniformTreeWithAffinityAlloc(keyMax, totalElements);
+  printf("Tree generated.\n");
+#else
   struct BSTree tree = loadTree(keyMax, totalElements);
   if (!tree.array) {
     tree = generateUniformTree(keyMax, totalElements);
     dumpTree(&tree, keyMax);
     printf("Tree generated.\n");
   }
+#endif
 
 #ifndef NO_OMP
   omp_set_dynamic(0);
@@ -114,8 +121,10 @@ int main(int argc, char *argv[]) {
   // Allocated the matched results.
   uint8_t *matched = alignedAllocAndTouch(totalKeys, sizeof(uint8_t));
 
-  gf_stream_nuca_region("gfm.bin_tree.tree", tree.array, sizeof(tree.array[0]),
-                        totalElements);
+  if (tree.array) {
+    gf_stream_nuca_region("gfm.bin_tree.tree", tree.array,
+                          sizeof(tree.array[0]), totalElements);
+  }
   gf_stream_nuca_region("gfm.bin_tree.keys", keys, sizeof(keys[0]), totalKeys);
   gf_stream_nuca_region("gfm.bin_tree.match", matched, sizeof(matched[0]),
                         totalKeys);
@@ -124,14 +133,17 @@ int main(int argc, char *argv[]) {
   gf_detail_sim_start();
 
   if (warm) {
-    gf_warm_array("tree", tree.array, totalElements * sizeof(tree.array[0]));
     gf_warm_array("keys", keys, totalKeys * sizeof(keys[0]));
     gf_warm_array("match", matched, totalKeys * sizeof(matched[0]));
+    if (tree.array != NULL) {
+      gf_warm_array("tree", tree.array, totalElements * sizeof(tree.array[0]));
+    } else {
+      printf("Start to warm the tree.\n");
+      foo_warm(tree.root, keys, totalKeys, matched);
+      printf("Warmed the tree.\n");
+    }
   }
-#pragma omp parallel for schedule(static)
-  for (int tid = 0; tid < numThreads; ++tid) {
-    volatile Value x = keys[tid];
-  }
+  startThreads(numThreads);
 
   gf_reset_stats();
   foo(tree.root, keys, totalKeys, matched);
