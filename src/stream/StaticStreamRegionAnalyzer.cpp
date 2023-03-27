@@ -926,7 +926,7 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
     }
   });
 
-  if (NearbyStreams.at(NearbyStreams.size() / 2) != S) {
+  if (NearbyStreams.at((NearbyStreams.size() - 1) / 2) != S) {
     LLVM_DEBUG(llvm::dbgs()
                << "[FuseLoadOps] No fusing as I am not the MiddleOne.\n");
     return;
