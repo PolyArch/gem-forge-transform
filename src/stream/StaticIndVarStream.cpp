@@ -713,8 +713,22 @@ bool StaticIndVarStream::checkIsQualifiedWithoutBackEdgeDep() const {
   if (!this->checkStaticMapToBaseStreamsInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
-    LLVM_DEBUG(llvm::dbgs() << "  [Unqualified] No StaticMapping.\n");
+    LLVM_DEBUG(llvm::dbgs() << "  [Unqualified] No StaticMap.\n");
     return false;
+  }
+  // If I am a ReduceS configured at outer loop, we enforce the static map.
+  if (this->StaticStreamInfo.val_pattern() ==
+          LLVM::TDG::StreamValuePattern::REDUCTION &&
+      this->ConfigureLoop != this->InnerMostLoop) {
+    if (!LoopUtils::hasLoopInvariantTripCountBetween(
+            this->SE, this->ConfigureLoop, this->InnerMostLoop,
+            this->ConfigureLoop)) {
+      this->StaticStreamInfo.set_not_stream_reason(
+          LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);
+      LLVM_DEBUG(llvm::dbgs()
+                 << "  [Unqualified] No StaticMap for OuterReduce.\n");
+      return false;
+    }
   }
   LLVM_DEBUG(llvm::dbgs() << "  [Qualified] Without BackEdgeDep.\n");
   return true;
