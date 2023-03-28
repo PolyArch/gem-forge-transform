@@ -211,21 +211,54 @@ struct DataArrays generateDataWithAffinityAlloc(struct InputArgs args) {
   struct Node **heads =
       alignedAllocAndTouch(totalBuckets, sizeof(struct Node *));
 
-  // Connect the nodes.
-  for (int64_t j = 0; j < totalBuckets; ++j) {
-    struct Node *node = malloc_aff(sizeof(struct Node), 0, NULL);
-    node->val = j;
-    node->next = NULL;
-    for (int64_t i = 1; i < args.elementsPerBucket; ++i) {
-      struct Node *prevNode = node;
-      const void *ptr = prevNode;
-      node = malloc_aff(sizeof(struct Node), 1, &ptr);
-      // Set one value with the correct hash values.
-      node->val = i * totalBuckets + j;
-      node->next = prevNode;
-    }
-    heads[j] = node;
+  // Create all the values.
+  Value *values = alignedAllocAndTouch(totalNodes, sizeof(Value));
+  for (int64_t i = 0; i < totalNodes; ++i) {
+    values[i] = i;
   }
+
+  // Shuffle the values.
+  shuffle(values, totalNodes, Value);
+
+  // Insert all nodes into the hash map.
+  int64_t hashMask = totalBuckets - 1;
+  for (int64_t i = 0; i < totalNodes; ++i) {
+    Value val = values[i];
+    int64_t bucket = val & hashMask;
+    if (!heads[bucket]) {
+      // Allocate the first node.
+      struct Node *node = malloc_aff(sizeof(struct Node), 0, NULL);
+      node->val = val;
+      node->next = NULL;
+      heads[bucket] = node;
+    } else {
+      // Prepend the node.
+      const void *ptr = heads[bucket];
+      struct Node *node = malloc_aff(sizeof(struct Node), 1, &ptr);
+      node->val = val;
+      node->next = heads[bucket];
+      heads[bucket] = node;
+    }
+  }
+  // Assert all heads are allocated.
+  for (int64_t i = 0; i < totalBuckets; ++i) {
+    assert(heads[i] && "Missing head.");
+  }
+
+  // // Connect the nodes.
+  // for (int64_t j = 0; j < totalBuckets; ++j) {
+  //   struct Node *node = malloc_aff(sizeof(struct Node), 0, NULL);
+  //   node->val = j;
+  //   heads[j] = node;
+  //   for (int64_t i = 1; i < args.elementsPerBucket; ++i) {
+  //     const void *ptr = node;
+  //     node->next = malloc_aff(sizeof(struct Node), 1, &ptr);
+  //     // Set one value with the correct hash values.
+  //     node = node->next;
+  //     node->val = i * totalBuckets + j;
+  //   }
+  //   node->next = NULL;
+  // }
 
   // Generate the keys.
   Value *keys = alignedAllocAndTouch(args.totalKeys, sizeof(Value));
@@ -279,12 +312,7 @@ struct DataArrays generateData(struct InputArgs args) {
   }
 
   // Shuffle the nodes.
-  for (int j = totalNodes - 1; j > 0; --j) {
-    int i = (int)(((float)(rand()) / (float)(RAND_MAX)) * j);
-    struct Node *tmp = nodes_ptr[i];
-    nodes_ptr[i] = nodes_ptr[j];
-    nodes_ptr[j] = tmp;
-  }
+  shuffle(nodes_ptr, totalNodes, struct Node *);
 
   // Connect the nodes.
   for (int64_t j = 0; j < totalBuckets; ++j) {

@@ -229,4 +229,23 @@ void *alignedAllocAndTouch(uint64_t numElements, int elemSize) {
     }                                                                          \
   }
 
+#define shuffle(A, N, T)                                                       \
+  for (int j = N - 1; j > 0; --j) {                                            \
+    int i = (int)(((float)(rand()) / (float)(RAND_MAX)) * j);                  \
+    T tmp = A[i];                                                              \
+    A[i] = A[j];                                                               \
+    A[j] = tmp;                                                                \
+  }
+
+int countBits(int v) {
+  // v should be a power of 2 and positive.
+  int bits = 0;
+  v--;
+  while (v) {
+    bits++;
+    v >>= 1;
+  }
+  return bits;
+}
+
 #endif

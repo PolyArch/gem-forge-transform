@@ -11,8 +11,8 @@
 
 typedef int64_t Value;
 
-void foo_warm(struct BSTreeNode *root, Value *keys, int64_t totalKeys,
-              uint8_t *matched) {
+void foo_ground_truth(struct BSTreeNode *root, Value *keys, int64_t totalKeys,
+                      uint8_t *matched) {
   for (int64_t i = 0; i < totalKeys; ++i) {
     Value key = keys[i];
     struct BSTreeNode *node = root;
@@ -27,6 +27,14 @@ void foo_warm(struct BSTreeNode *root, Value *keys, int64_t totalKeys,
     } while (val != key && node != NULL);
     matched[i] = found;
   }
+}
+
+__attribute__((noinline)) Value warm_tree(struct BSTreeNode *root) {
+  if (!root) {
+    return 0;
+  }
+  Value val = root->val;
+  return val + warm_tree(root->lhs) + warm_tree(root->rhs);
 }
 
 __attribute__((noinline)) void foo(struct BSTreeNode *root, Value *keys,
@@ -139,7 +147,7 @@ int main(int argc, char *argv[]) {
       gf_warm_array("tree", tree.array, totalElements * sizeof(tree.array[0]));
     } else {
       printf("Start to warm the tree.\n");
-      foo_warm(tree.root, keys, totalKeys, matched);
+      volatile Value v = warm_tree(tree.root);
       printf("Warmed the tree.\n");
     }
   }
@@ -151,7 +159,7 @@ int main(int argc, char *argv[]) {
 
   if (check) {
     uint8_t *expected_matched = aligned_alloc(64, sizeof(uint8_t) * totalKeys);
-    foo_warm(tree.root, keys, totalKeys, expected_matched);
+    foo_ground_truth(tree.root, keys, totalKeys, expected_matched);
     uint64_t totalHits = 0;
     for (int64_t i = 0; i < totalKeys; ++i) {
       Value key = keys[i];

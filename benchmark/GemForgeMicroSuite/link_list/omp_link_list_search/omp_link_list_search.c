@@ -208,15 +208,14 @@ struct DataArrays generateDataWithAffinityAlloc(struct InputArgs args) {
     struct Node *node = malloc_aff(sizeof(struct Node), 0, NULL);
     Value baseValue = j * args.elementsPerList;
     node->val = baseValue;
-    node->next = NULL;
-    for (int64_t i = 1; i < args.elementsPerList; ++i) {
-      struct Node *prevNode = node;
-      const void *ptr = prevNode;
-      node = malloc_aff(sizeof(struct Node), 1, &ptr);
-      node->val = baseValue + i;
-      node->next = prevNode;
-    }
     heads[j] = node;
+    for (int64_t i = 1; i < args.elementsPerList; ++i) {
+      const void *ptr = node;
+      node->next = malloc_aff(sizeof(struct Node), 1, &ptr);
+      node = node->next;
+      node->val = baseValue + i;
+    }
+    node->next = NULL;
   }
 
   struct DataArrays data;
