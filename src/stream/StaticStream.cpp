@@ -922,7 +922,10 @@ StaticStream::getExecFuncInputStream(const llvm::Value *Value) const {
       llvm_unreachable("Missing Analyzer.");
     }
     if (auto S = this->Analyzer->getChosenStreamWithPlaceholderInst(Inst)) {
-      return S;
+      // Allow InnerLoopDep.
+      if (this->InnerMostLoop->contains(S->InnerMostLoop)) {
+        return S;
+      }
     }
   }
   return nullptr;

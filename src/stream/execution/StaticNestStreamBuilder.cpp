@@ -230,7 +230,7 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
         PredInputValues.push_back(this->Transformer->getClonedValue(Input));
         continue;
       }
-      auto S = Analyzer->getChosenStreamByInst(Inst);
+      auto S = Analyzer->getChosenStreamWithPlaceholderInst(Inst);
       if (!S || S->ConfigureLoop != OuterLoop || !S->isChosen()) {
         LLVM_DEBUG(llvm::dbgs()
                    << "[Nest] Predication has non-stream load input "

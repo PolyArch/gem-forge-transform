@@ -109,6 +109,7 @@ bool Utils::isStreamSupportedIntrinsic(const llvm::Instruction *Inst) {
         switch (IntrinsicId) {
         case llvm::Intrinsic::maxnum:
         case llvm::Intrinsic::experimental_vector_reduce_v2_fadd:
+        case llvm::Intrinsic::sadd_sat:
         case llvm::Intrinsic::x86_avx512_min_ps_512:
         case llvm::Intrinsic::x86_avx512_max_ps_512:
           return true;
