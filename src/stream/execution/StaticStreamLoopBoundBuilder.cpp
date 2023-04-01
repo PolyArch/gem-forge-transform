@@ -90,7 +90,7 @@ bool StaticStreamLoopBoundBuilder::isStreamLoopBound(
   /**
    * We add the LoopBoundDG to ConfigureInfo iff.
    * 1. This is a valid LoopBoundPredicate.
-   * 2. All the input streams are chosen streams configured at this loop.
+   * 2. All the input streams are chosen streams configured within this loop.
    */
   if (!LatchBBBranchDG->isValidLoopBoundPredicate()) {
     LLVM_DEBUG(llvm::dbgs() << "[LoopBound] InvalidLoopBoundPredicate\n");
@@ -103,8 +103,8 @@ bool StaticStreamLoopBoundBuilder::isStreamLoopBound(
                               << Utils::formatLLVMInst(Input) << "\n");
       return false;
     }
-    if (S->ConfigureLoop != Loop) {
-      LLVM_DEBUG(llvm::dbgs() << "[LoopBound] Mismatch ConfigLoop of S "
+    if (!Loop->contains(S->ConfigureLoop)) {
+      LLVM_DEBUG(llvm::dbgs() << "[LoopBound] Outside ConfigLoop of S "
                               << S->StreamName << "\n");
       return false;
     }
