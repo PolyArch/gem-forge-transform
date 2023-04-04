@@ -390,14 +390,16 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
 
   auto MarkStreamInBB = [this](StaticStream *PredStream,
                                const llvm::BasicBlock *TargetBB,
-                               bool PredicatedTrue) -> void {
+                               bool PredicatedTrue) -> bool {
     auto ConfigureLoop = PredStream->ConfigureLoop;
+    bool FoundPredication = false;
     for (const auto &TargetInst : *TargetBB) {
       auto TargetStream =
           this->getStreamByInstAndConfigureLoop(&TargetInst, ConfigureLoop);
       if (!TargetStream) {
         continue;
       }
+      FoundPredication = true;
       LLVM_DEBUG(llvm::dbgs()
                  << "Add predicated relation " << PredStream->getStreamName()
                  << " -- " << PredicatedTrue << " --> "
@@ -409,17 +411,37 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
       }
       TargetStream->PredicatedByStreams.insert(PredStream);
     }
+    return FoundPredication;
   };
 
+  bool FoundPredication = false;
   for (auto PredInst : PredInputs) {
     auto PredStream = this->getStreamWithPlaceholderInst(PredInst, Loop);
-    assert(PredStream->BBPredDG == nullptr && "Multiple BBPredDG.");
-    PredStream->BBPredDG = BBPredDG;
+    LLVM_DEBUG(llvm::dbgs() << "PredS " << PredStream->getStreamName() << '\n');
     if (auto TrueBB = BBPredDG->getPredicateBB(true)) {
-      MarkStreamInBB(PredStream, TrueBB, true);
+      LLVM_DEBUG(llvm::dbgs()
+                 << " TrueBB " << Utils::formatLLVMBB(TrueBB) << '\n');
+      if (MarkStreamInBB(PredStream, TrueBB, true)) {
+        FoundPredication = true;
+      }
     }
     if (auto FalseBB = BBPredDG->getPredicateBB(false)) {
-      MarkStreamInBB(PredStream, FalseBB, false);
+      LLVM_DEBUG(llvm::dbgs()
+                 << " FalseBB " << Utils::formatLLVMBB(FalseBB) << '\n');
+      if (MarkStreamInBB(PredStream, FalseBB, false)) {
+        FoundPredication = true;
+      }
+    }
+  }
+  if (FoundPredication) {
+    for (auto PredInst : PredInputs) {
+      auto PredStream = this->getStreamWithPlaceholderInst(PredInst, Loop);
+      if (PredStream->BBPredDG) {
+        llvm::errs() << "Multiple BBPredDG on " << PredStream->StreamName
+                     << '\n';
+        assert(PredStream->BBPredDG == nullptr && "Multiple BBPredDG.");
+      }
+      PredStream->BBPredDG = BBPredDG;
     }
   }
 }
