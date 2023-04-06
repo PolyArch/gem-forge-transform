@@ -29,14 +29,6 @@ void foo_ground_truth(struct BSTreeNode *root, Value *keys, int64_t totalKeys,
   }
 }
 
-__attribute__((noinline)) Value warm_tree(struct BSTreeNode *root) {
-  if (!root) {
-    return 0;
-  }
-  Value val = root->val;
-  return val + warm_tree(root->lhs) + warm_tree(root->rhs);
-}
-
 __attribute__((noinline)) void foo(struct BSTreeNode *root, Value *keys,
                                    int64_t totalKeys, uint8_t *matched) {
 #ifndef NO_OMP
@@ -101,9 +93,15 @@ int main(int argc, char *argv[]) {
          totalKeys * sizeof(Value) / numThreads / 1024);
 
 #ifdef USE_AFFINITY_ALLOC
+#ifdef RANDOM_BUILD_TREE
+  printf("Start to randomly generate tree with affinity alloc.\n");
+  struct BSTree tree =
+      generateRandomTreeWithAffinityAlloc(keyMax, totalElements);
+#else
   printf("Start to generate tree with affinity alloc.\n");
   struct BSTree tree =
       generateUniformTreeWithAffinityAlloc(keyMax, totalElements);
+#endif
   printf("Tree generated.\n");
 #else
   struct BSTree tree = loadTree(keyMax, totalElements);
@@ -136,6 +134,12 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_region("gfm.bin_tree.keys", keys, sizeof(keys[0]), totalKeys);
   gf_stream_nuca_region("gfm.bin_tree.match", matched, sizeof(matched[0]),
                         totalKeys);
+  /**
+   * Due to the RemoteConfig feature, we want to avoid hotspot for NestRegion.
+   * Change this interleave to 64 should help a little bit. Otherwise we have to
+   * implement some policy to arbitrate RemoteConfig.
+   */
+  gf_stream_nuca_set_property(keys, STREAM_NUCA_REGION_PROPERTY_INTERLEAVE, 64);
   gf_stream_nuca_remap();
 
   gf_detail_sim_start();
@@ -147,7 +151,7 @@ int main(int argc, char *argv[]) {
       gf_warm_array("tree", tree.array, totalElements * sizeof(tree.array[0]));
     } else {
       printf("Start to warm the tree.\n");
-      volatile Value v = warm_tree(tree.root);
+      volatile Value v = warmBST(tree.root);
       printf("Warmed the tree.\n");
     }
   }

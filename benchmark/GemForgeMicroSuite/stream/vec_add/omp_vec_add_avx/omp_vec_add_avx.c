@@ -16,14 +16,9 @@ typedef ValueT Value;
 /**
  * Parameters:
  * STATIC_CHUNK_SIZE: OpenMP static scheduling chunk size.
- * OFFSET_BYTES:      Offset between arrays.
  */
 #ifndef STATIC_CHUNK_SIZE
 #define STATIC_CHUNK_SIZE 0
-#endif
-
-#ifndef OFFSET_BYTES
-#define OFFSET_BYTES 0
 #endif
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
@@ -37,7 +32,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
 #else
 #pragma clang loop unroll(disable)
 #endif
-  for (int64_t i = 0; i < N; i += 16) {
+  for (int64_t i = 0; i < N; i += 64 / sizeof(ValueT)) {
 
 #pragma ss stream_name "gfm.vec_add.A.ld"
     ValueAVX valA = ValueAVXLoad(a + i);
@@ -56,6 +51,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int N) {
 int main(int argc, char *argv[]) {
 
   int numThreads = 1;
+  uint64_t offsetBytes = 0;
   uint64_t N = 16 * 1024 * 1024 / sizeof(Value);
   int check = 0;
   int warm = 0;
@@ -76,8 +72,18 @@ int main(int argc, char *argv[]) {
     warm = atoi(argv[argx - 1]);
   }
   argx++;
+  if (argc >= argx) {
+    offsetBytes = atoll(argv[argx - 1]);
+  }
+  argx++;
+  int random = 0;
+  if (offsetBytes == -1) {
+    random = 1;
+    offsetBytes = 0;
+  }
   printf("Number of Threads: %d.\n", numThreads);
-  printf("Data size %lukB.\n", N * sizeof(Value) / 1024);
+  printf("Data size %lukB Offset %lukB Random %d.\n", N * sizeof(Value) / 1024,
+         offsetBytes / 1024, random);
 
 #ifndef NO_OPENMP
   omp_set_dynamic(0);
@@ -86,28 +92,29 @@ int main(int argc, char *argv[]) {
 #endif
 
   const int NUM_ARRAYS = 3;
-  uint64_t totalBytes = NUM_ARRAYS * (N * sizeof(Value) + OFFSET_BYTES);
+  uint64_t totalBytes = NUM_ARRAYS * (N * sizeof(Value) + offsetBytes);
   uint64_t numPages = (totalBytes + PAGE_SIZE - 1) / PAGE_SIZE;
-  Value *buffer = (Value *)aligned_alloc(PAGE_SIZE, numPages * PAGE_SIZE);
-
-  // Initialize separately so that their physical address is not interleaved
-  int elementsPerPage = PAGE_SIZE / sizeof(Value);
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-  for (int i = 0; i < numPages; i++) {
-    volatile Value v = buffer[i * elementsPerPage];
+  Value *buffer = NULL;
+  if (random) {
+    buffer = alignedAllocAndRandomTouch(numPages, PAGE_SIZE);
+  } else {
+    buffer = alignedAllocAndTouch(numPages, PAGE_SIZE);
   }
 
+  // C is the middle one as a/b is sending to c.
   Value *a = buffer + 0;
-  Value *b = a + N + (OFFSET_BYTES / sizeof(Value));
-  Value *c = b + N + (OFFSET_BYTES / sizeof(Value));
+  Value *c = a + N + (offsetBytes / sizeof(Value));
+  Value *b = c + N + (offsetBytes / sizeof(Value));
 
 #ifdef GEM_FORGE
   gf_stream_nuca_region("gfm.vec_add.a", a, sizeof(a[0]), N);
   gf_stream_nuca_region("gfm.vec_add.b", b, sizeof(b[0]), N);
   gf_stream_nuca_region("gfm.vec_add.c", c, sizeof(c[0]), N);
-  m5_stream_nuca_align(a, c, 0);
-  m5_stream_nuca_align(b, c, 0);
-  m5_stream_nuca_remap();
+  if (!random) {
+    m5_stream_nuca_align(a, c, 0);
+    m5_stream_nuca_align(b, c, 0);
+    m5_stream_nuca_remap();
+  }
 #endif
 
   if (check) {

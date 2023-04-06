@@ -16,14 +16,9 @@ typedef ValueT Value;
 /**
  * Parameters:
  * STATIC_CHUNK_SIZE: OpenMP static scheduling chunk size.
- * OFFSET_BYTES:      Offset between arrays.
  */
 #ifndef STATIC_CHUNK_SIZE
 #define STATIC_CHUNK_SIZE 0
-#endif
-
-#ifndef OFFSET_BYTES
-#define OFFSET_BYTES 0
 #endif
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
@@ -104,10 +99,69 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
   for (int64_t i = 1; i < M - 1; i++) {
 
 #ifndef NO_AVX
-#pragma clang loop unroll(disable) vectorize_width(16) interleave(disable)
+
+    const int64_t vLen = 64 / sizeof(Value);
+    const int64_t vN = N / vLen;
+
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+    for (int64_t j = 0; j < vN; j++) {
+
+      int64_t idx = i * N + j * vLen;
+
+#pragma ss stream_name "gfm.stencil2d.Aw.ld"
+      ValueAVX valAw = ValueAVXLoad(&a[idx - 1]);
+
+#pragma ss stream_name "gfm.stencil2d.Ac.ld"
+      ValueAVX valAc = ValueAVXLoad(&a[idx]);
+
+#pragma ss stream_name "gfm.stencil2d.Ae.ld"
+      ValueAVX valAe = ValueAVXLoad(&a[idx + 1]);
+
+#pragma ss stream_name "gfm.stencil2d.An.ld"
+      ValueAVX valAn = ValueAVXLoad(&a[idx - N]);
+
+#pragma ss stream_name "gfm.stencil2d.As.ld"
+      ValueAVX valAs = ValueAVXLoad(&a[idx + N]);
+
+#pragma ss stream_name "gfm.stencil2d.B.ld"
+      ValueAVX valB = ValueAVXLoad(&b[idx]);
+
+#ifdef RODINIA_HOTSPOT_KERNEL
+
+#if VALUE_TYPE == VALUE_TYPE_FLOAT
+      const ValueAVX Cap = ValueAVXSet1(0.5);
+      const ValueAVX Rx = ValueAVXSet1(1.5);
+      const ValueAVX Ry = ValueAVXSet1(1.2);
+      const ValueAVX Rz = ValueAVXSet1(0.7);
+      const ValueAVX ambTemp = ValueAVXSet1(80.0);
+#else
+      const ValueAVX Cap = ValueAVXSet1(3);
+      const ValueAVX Rx = ValueAVXSet1(2);
+      const ValueAVX Ry = ValueAVXSet1(2);
+      const ValueAVX Rz = ValueAVXSet1(2);
+      const ValueAVX ambTemp = ValueAVXSet1(80);
+#endif
+      ValueAVX vY = ValueAVXMul(Ry, ValueAVXSub(ValueAVXAdd(valAs + valAn),
+                                                ValueAVXAdd(valAc, valAc)));
+      ValueAVX vX = ValueAVXMul(Rx, ValueAVXSub(ValueAVXAdd(valAe + valAw),
+                                                ValueAVXAdd(valAc, valAc)));
+      ValueAVX vZ = ValueAVXMul(Rz, ValueAVXSub(ambTemp, valAc));
+
+      ValueAVX delta = ValueAVXMul(
+          Cap, ValueAVXAdd(ValueAVXAdd(vX, vY), ValueAVXAdd(vZ, valB)));
+      ValueAVX valM = ValueAVXAdd(valAc + delta);
+
+#else
+      ValueAVX valAh = ValueAVXSub(ValueAVXAdd(valAw, valAe), valAc);
+      ValueAVX valAv = ValueAVXSub(ValueAVXAdd(valAn, valAs), valAc);
+      ValueAVX valM = ValueAVXSub(ValueAVXAdd(valAh, valAv), valB);
+#endif
+
+#pragma ss stream_name "gfm.stencil2d.C.st"
+      ValueAVXStore(&c[idx], valM);
+    }
 #else
 #pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
-#endif
     for (int64_t j = 1; j < N - 1; j++) {
 
       int64_t idx = i * N + j;
@@ -159,6 +213,7 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int M,
 #pragma ss stream_name "gfm.stencil2d.C.st"
       c[idx] = valM;
     }
+#endif
   }
 
 #endif
@@ -173,6 +228,7 @@ int main(int argc, char *argv[]) {
   int rounds = 1;
   int check = 0;
   int warm = 0;
+  int offsetBytes = 0;
   int argx = 2;
 
   if (argc >= argx) {
@@ -199,8 +255,18 @@ int main(int argc, char *argv[]) {
     warm = atoi(argv[argx - 1]);
   }
   argx++;
+  if (argc >= argx) {
+    offsetBytes = atoi(argv[argx - 1]);
+  }
+  argx++;
+  int random = 0;
+  if (offsetBytes == -1) {
+    random = 1;
+    offsetBytes = 0;
+  }
   printf("Threads: %d. Rounds: %d.\n", numThreads, rounds);
-  printf("Data size %lukB.\n", M * N * sizeof(Value) / 1024);
+  printf("Data size %lukB Offset %dkB Random %d.\n",
+         M * N * sizeof(Value) / 1024, offsetBytes / 1024, random);
 
 #ifndef NO_OPENMP
   omp_set_dynamic(0);
@@ -209,30 +275,30 @@ int main(int argc, char *argv[]) {
 #endif
 
   const int NUM_ARRAYS = 3;
-  uint64_t totalBytes = NUM_ARRAYS * (M * N * sizeof(Value) + OFFSET_BYTES);
+  uint64_t totalBytes = NUM_ARRAYS * (M * N * sizeof(Value) + offsetBytes);
   uint64_t numPages = (totalBytes + PAGE_SIZE - 1) / PAGE_SIZE;
-  Value *buffer = (Value *)aligned_alloc(PAGE_SIZE, numPages * PAGE_SIZE);
-
-  // Initialize separately so that their physical address is not interleaved
-  int elementsPerPage = PAGE_SIZE / sizeof(Value);
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-  for (int i = 0; i < numPages; i++) {
-    volatile Value v = buffer[i * elementsPerPage];
+  Value *buffer = NULL;
+  if (random) {
+    buffer = alignedAllocAndRandomTouch(numPages, PAGE_SIZE);
+  } else {
+    buffer = alignedAllocAndTouch(numPages, PAGE_SIZE);
   }
 
   Value *a = buffer + 0;
-  Value *b = a + M * N + (OFFSET_BYTES / sizeof(Value));
-  Value *c = b + M * N + (OFFSET_BYTES / sizeof(Value));
+  Value *b = a + M * N + (offsetBytes / sizeof(Value));
+  Value *c = b + M * N + (offsetBytes / sizeof(Value));
 
   gf_stream_nuca_region("gfm.stencil2d.a", a, sizeof(a[0]), N, M);
   gf_stream_nuca_region("gfm.stencil2d.b", b, sizeof(b[0]), N, M);
   gf_stream_nuca_region("gfm.stencil2d.c", c, sizeof(c[0]), N, M);
-  gf_stream_nuca_align(a, c, 0);
-  gf_stream_nuca_align(b, c, 0);
-  gf_stream_nuca_align(c, c, 1);
-  gf_stream_nuca_align(c, c, N);
-  gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
-  gf_stream_nuca_remap();
+  if (!random) {
+    gf_stream_nuca_align(a, c, 0);
+    gf_stream_nuca_align(b, c, 0);
+    gf_stream_nuca_align(c, c, 1);
+    gf_stream_nuca_align(c, c, N);
+    gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
+    gf_stream_nuca_remap();
+  }
 
   if (check) {
 #pragma clang loop vectorize(disable)

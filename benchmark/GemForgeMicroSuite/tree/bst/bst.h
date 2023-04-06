@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef GEM_FORGE
+#include "gfm_utils.h"
+#endif
+
 /**
  * Use int64_t as the Value.
  */
@@ -30,6 +34,14 @@ struct BSTree {
   // Total allocated nodes.
   uint64_t allocated;
 };
+
+__attribute__((noinline)) TreeValueT warmBST(struct BSTreeNode *root) {
+  if (!root) {
+    return 0;
+  }
+  TreeValueT val = root->val;
+  return val + warmBST(root->lhs) + warmBST(root->rhs);
+}
 
 void buildTreeRecursive(TreeValueT keyMin, TreeValueT keyMax, uint64_t nodes,
                         struct BSTreeNode *root, struct BSTreeNode **freeNodes);
@@ -206,6 +218,86 @@ struct BSTree generateUniformTreeWithAffinityAlloc(TreeValueT keyRange,
   uint64_t rhsNodes = totalNodes - 1 - lhsNodes;
   buildTreeRecursiveWithAffnityAlloc(0, rootVal, lhsNodes, root);
   buildTreeRecursiveWithAffnityAlloc(rootVal + 1, keyRange, rhsNodes, root);
+
+  struct BSTree tree;
+  tree.array = NULL;
+  tree.root = root;
+  tree.freelist = NULL;
+  tree.total = totalNodes;
+  tree.allocated = totalNodes;
+  return tree;
+}
+
+void bstInsertWithAffinityAlloc(struct BSTreeNode *root, TreeValueT val) {
+
+  // root can not be null.
+  while (root) {
+    const void *rootPtr = root;
+    TreeValueT rootVal = root->val;
+    struct BSTreeNode *lhs = root->lhs;
+    struct BSTreeNode *rhs = root->rhs;
+    if (rootVal == val) {
+      // Already in the tree.
+      return;
+    }
+
+    if (val < rootVal) {
+      // Go left.
+      if (lhs == NULL) {
+        lhs = malloc_aff(sizeof(struct BSTreeNode), 1, &rootPtr);
+        lhs->val = val;
+        lhs->lhs = NULL;
+        lhs->rhs = NULL;
+        lhs->parent = root;
+        root->lhs = lhs;
+        return;
+      } else {
+        root = lhs;
+      }
+    } else {
+      // Go right.
+      if (rhs == NULL) {
+        rhs = malloc_aff(sizeof(struct BSTreeNode), 1, &rootPtr);
+        rhs->val = val;
+        rhs->lhs = NULL;
+        rhs->rhs = NULL;
+        rhs->parent = root;
+        root->rhs = rhs;
+        return;
+      } else {
+        root = rhs;
+      }
+    }
+  }
+}
+
+struct BSTree generateRandomTreeWithAffinityAlloc(TreeValueT keyRange,
+                                                  uint64_t totalNodes) {
+
+  if (keyRange < totalNodes) {
+    keyRange = totalNodes;
+  }
+
+  // Shuffle the keys.
+  TreeValueT *values = aligned_alloc(4096, totalNodes * sizeof(TreeValueT));
+  TreeValueT ratio = keyRange / totalNodes;
+  for (int i = 0; i < totalNodes; ++i) {
+    values[i] = i * ratio;
+  }
+  shuffle(values, totalNodes, TreeValueT);
+
+  // Fix the root value so that it's somehow balanced at top level.
+  struct BSTreeNode *root = malloc_aff(sizeof(struct BSTreeNode), 0, NULL);
+  TreeValueT rootVal = (keyRange - 1) / 2;
+  root->val = rootVal;
+  root->lhs = NULL;
+  root->rhs = NULL;
+  root->parent = NULL;
+
+  for (int i = 0; i < totalNodes; ++i) {
+    TreeValueT val = values[i];
+    bstInsertWithAffinityAlloc(root, val);
+  }
 
   struct BSTree tree;
   tree.array = NULL;

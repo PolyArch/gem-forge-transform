@@ -204,9 +204,17 @@ const char *formatBytes(uint64_t *bytes) {
   return suffix;
 }
 
+#define shuffle(A, N, T)                                                       \
+  for (int j = N - 1; j > 0; --j) {                                            \
+    int i = (int)(((float)(rand()) / (float)(RAND_MAX)) * j);                  \
+    T tmp = A[i];                                                              \
+    A[i] = A[j];                                                               \
+    A[j] = tmp;                                                                \
+  }
+
 static int alignBytes = 4096;
-void *alignedAllocAndTouch(uint64_t numElements, int elemSize) {
-  uint64_t totalBytes = elemSize * numElements;
+void *alignedAllocAndTouch(uint64_t numElems, int elemSize) {
+  uint64_t totalBytes = elemSize * numElems;
   if (totalBytes % alignBytes) {
     totalBytes = (totalBytes / alignBytes + 1) * alignBytes;
   }
@@ -214,6 +222,29 @@ void *alignedAllocAndTouch(uint64_t numElements, int elemSize) {
 
   for (unsigned long Byte = 0; Byte < totalBytes; Byte += alignBytes) {
     p[Byte] = 0;
+  }
+  return p;
+}
+void *alignedAllocAndRandomTouch(uint64_t numElems, int elemSize) {
+
+  uint64_t totalBytes = elemSize * numElems;
+  if (totalBytes % alignBytes) {
+    totalBytes = (totalBytes / alignBytes + 1) * alignBytes;
+  }
+  uint64_t totalPages = totalBytes / alignBytes;
+
+  uint64_t *idx =
+      (uint64_t *)aligned_alloc(alignBytes, totalPages * sizeof(uint64_t));
+  for (uint64_t i = 0; i < totalPages; ++i) {
+    idx[i] = i;
+  }
+  shuffle(idx, totalPages, uint64_t);
+
+  char *p = (char *)aligned_alloc(alignBytes, totalBytes);
+
+  for (uint64_t i = 0; i < totalPages; ++i) {
+    uint64_t page = idx[i];
+    p[page * alignBytes] = 0;
   }
   return p;
 }
@@ -227,14 +258,6 @@ void *alignedAllocAndTouch(uint64_t numElements, int elemSize) {
         for (int tid = 0; tid < numThreads; ++tid) {                           \
       volatile float x = *pp;                                                  \
     }                                                                          \
-  }
-
-#define shuffle(A, N, T)                                                       \
-  for (int j = N - 1; j > 0; --j) {                                            \
-    int i = (int)(((float)(rand()) / (float)(RAND_MAX)) * j);                  \
-    T tmp = A[i];                                                              \
-    A[i] = A[j];                                                               \
-    A[j] = tmp;                                                                \
   }
 
 int countBits(int v) {

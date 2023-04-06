@@ -20,9 +20,14 @@ typedef struct {
 /**
  * Parameters:
  * STATIC_CHUNK_SIZE: OpenMP static scheduling chunk size.
+ * OFFSET_BYTES:      Offset between arrays.
  */
 #ifndef STATIC_CHUNK_SIZE
 #define STATIC_CHUNK_SIZE 0
+#endif
+
+#ifndef OFFSET_BYTES
+#define OFFSET_BYTES 0
 #endif
 
 __attribute__((noinline)) Value foo(Value *a, Value *b, Value *c, int64_t N) {
@@ -121,7 +126,6 @@ int main(int argc, char *argv[]) {
   int rounds = 1;
   int check = 0;
   int warm = 0;
-  int offsetBytes = 0;
   int argx = 2;
 
   assert(sizeof(ValueVec) == sizeof(Value) * ValueVecLen &&
@@ -147,18 +151,8 @@ int main(int argc, char *argv[]) {
     warm = atoi(argv[argx - 1]);
   }
   argx++;
-  if (argc >= argx) {
-    offsetBytes = atoi(argv[argx - 1]);
-  }
-  argx++;
-  int random = 0;
-  if (offsetBytes == -1) {
-    random = 1;
-    offsetBytes = 0;
-  }
   printf("Threads: %d. Rounds: %d.\n", numThreads, rounds);
-  printf("Data size %lukB Offset %dkB Random %d.\n", N * sizeof(Value) / 1024,
-         offsetBytes / 1024, random);
+  printf("Data size %lukB.\n", N * sizeof(Value) / 1024);
 
 #ifndef NO_OPENMP
   omp_set_dynamic(0);
@@ -167,28 +161,30 @@ int main(int argc, char *argv[]) {
 #endif
 
   const int NUM_ARRAYS = 3;
-  uint64_t totalBytes = NUM_ARRAYS * (N * sizeof(Value) + offsetBytes);
+  uint64_t totalBytes = NUM_ARRAYS * (N * sizeof(Value) + OFFSET_BYTES);
   uint64_t numPages = (totalBytes + PAGE_SIZE - 1) / PAGE_SIZE;
-  Value *buffer = NULL;
-  if (random) {
-    buffer = alignedAllocAndRandomTouch(numPages, PAGE_SIZE);
-  } else {
-    buffer = alignedAllocAndTouch(numPages, PAGE_SIZE);
+  Value *buffer = (Value *)aligned_alloc(PAGE_SIZE, numPages * PAGE_SIZE);
+
+  // Initialize separately so that their physical address is not interleaved
+  int elementsPerPage = PAGE_SIZE / sizeof(Value);
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+  for (int i = 0; i < numPages; i++) {
+    volatile Value v = buffer[i * elementsPerPage];
   }
 
   Value *a = buffer + 0;
-  Value *b = a + N + (offsetBytes / sizeof(Value));
-  Value *c = b + N + (offsetBytes / sizeof(Value));
+  Value *b = a + N + (OFFSET_BYTES / sizeof(Value));
+  Value *c = b + N + (OFFSET_BYTES / sizeof(Value));
 
+#ifdef GEM_FORGE
   gf_stream_nuca_region("gfm.stencil1d.a", a, sizeof(a[0]), N);
   gf_stream_nuca_region("gfm.stencil1d.b", b, sizeof(b[0]), N);
   gf_stream_nuca_region("gfm.stencil1d.c", c, sizeof(c[0]), N);
-  if (!random) {
-    gf_stream_nuca_align(a, c, 0);
-    gf_stream_nuca_align(b, c, 0);
-    gf_stream_nuca_align(c, c, 1);
-    gf_stream_nuca_remap();
-  }
+  gf_stream_nuca_align(a, c, 0);
+  gf_stream_nuca_align(b, c, 0);
+  gf_stream_nuca_align(c, c, 1);
+  gf_stream_nuca_remap();
+#endif
 
   if (check) {
 #pragma clang loop vectorize(disable)

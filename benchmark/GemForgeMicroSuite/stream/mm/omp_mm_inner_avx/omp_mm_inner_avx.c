@@ -265,7 +265,8 @@ int main(int argc, char *argv[]) {
   assert(P >= 1);
   uint64_t T = 2 * M * N + L * N + L * M;
   printf("Number of Threads: %d.\n", numThreads);
-  printf("Data size %lukB.\n", T * sizeof(Value) / 1024);
+  printf("Data size L %lu M %lu N %lu P %lu %lukB.\n", L, M, N, P,
+         T * sizeof(Value) / 1024);
 
 #ifndef NO_OPENMP
   omp_set_dynamic(0);
@@ -301,8 +302,6 @@ int main(int argc, char *argv[]) {
   gf_stream_nuca_align(a, a, 1);
   gf_stream_nuca_align(a, a, M);
   gf_stream_nuca_set_property(c, STREAM_NUCA_REGION_PROPERTY_PUM_NO_INIT, 1);
-
-  assert(L == M && L == N && "Can only handle square MM.");
 
   /**
    * Fakely set all region to reduce over inner dimension to ensure all regions
