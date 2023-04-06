@@ -40,8 +40,14 @@ public:
    * Predication requires:
    * 1. True/FalseBB are not this BB.
    * 2. True/FalseBB are dominated by this BB.
+   * 3. All Inputs are from the same BB.
    */
   bool isValidPredicate() const {
+    for (auto InputInst : this->InLoopInputs) {
+      if (InputInst->getParent() != this->BB) {
+        return false;
+      }
+    }
     return this->isPredicate(this->TrueBB) || this->isPredicate(this->FalseBB);
   }
   const llvm::BasicBlock *getPredicateBB(bool True) const {
