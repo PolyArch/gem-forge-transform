@@ -218,7 +218,8 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
      * And construct the input values and FuncInfo.
      */
     PredFuncInfo->set_name(BBPredDG->getFuncName());
-    PredFuncInfo->set_type(::LLVM::TDG::DataType::INTEGER);
+    PredFuncInfo->set_type(StaticStream::translateToProtobufDataType(
+        Analyzer->getDataLayout(), BBPredDG->getReturnType(false /* isLoad */)));
     for (auto Input : BBPredDG->getInputs()) {
       auto Inst = llvm::dyn_cast<llvm::Instruction>(Input);
       auto PredFuncArg = PredFuncInfo->add_args();

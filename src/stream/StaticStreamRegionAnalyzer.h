@@ -88,6 +88,8 @@ public:
    */
   bool isStreamInst(const llvm::Instruction *Inst) const;
 
+  llvm::DataLayout *getDataLayout() const { return this->DataLayout; }
+
 protected:
   llvm::Loop *TopLoop;
   llvm::DataLayout *DataLayout;

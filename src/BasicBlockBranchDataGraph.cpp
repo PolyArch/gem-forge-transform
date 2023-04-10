@@ -93,10 +93,9 @@ void BBBranchDataGraph::constructDataGraph(IsInputFuncT IsInput) {
   for (auto InputInst : this->InLoopInputs) {
     // This is an input from this loop.
     if (auto InputPHI = llvm::dyn_cast<llvm::PHINode>(InputInst)) {
-      if (InputPHI->getParent() != this->BB ||
-          this->BB != this->Loop->getHeader()) {
+      if (InputPHI->getParent() != this->Loop->getHeader()) {
         LLVM_DEBUG(llvm::dbgs()
-                   << "[BBPredDG] Invalid: PHI Input "
+                   << "[BBPredDG] Invalid: Non LoopHeader PHI Input "
                    << Utils::formatLLVMInstWithoutFunc(InputInst) << ' '
                    << Utils::formatLLVMBB(this->BB) << '\n');
         IsValidTemp = false;

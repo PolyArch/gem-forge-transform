@@ -51,6 +51,10 @@ StaticStream::translateToProtobufDataType(llvm::DataLayout *DataLayout,
                                           llvm::Type *Type) {
   if (auto IntType = llvm::dyn_cast<llvm::IntegerType>(Type)) {
     assert(IntType->getBitWidth() <= 64 && "IntType overflow.");
+    auto BitWidth = IntType->getBitWidth();
+    if (BitWidth == 1) {
+      return ::LLVM::TDG::DataType::INT1;
+    }
     return ::LLVM::TDG::DataType::INTEGER;
   } else if (Type->isPointerTy()) {
     return ::LLVM::TDG::DataType::INTEGER;

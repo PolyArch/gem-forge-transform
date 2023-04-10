@@ -29,6 +29,7 @@ enum DataType {
   VECTOR_256 = 5;
   VECTOR_512 = 6;
   VOID = 7;
+  INT1 = 8;
 }
 
 message StreamParam {
