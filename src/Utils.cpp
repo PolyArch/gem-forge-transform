@@ -2,8 +2,9 @@
 
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/Intrinsics.h" 
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IntrinsicsX86.h" // For some x86 intrinsic ids.
+#include "llvm/IR/Operator.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
 
@@ -131,7 +132,25 @@ const std::string &Utils::getDemangledFunctionName(const llvm::Function *Func) {
     LLVM_DEBUG(llvm::dbgs() << "Demangled " << MangledName << " into "
                             << DemangledName << '\n');
     std::string DemangledNameStr(DemangledName);
-    auto Pos = DemangledNameStr.find('(');
+
+    auto Pos = std::string::npos;
+    int TemplateDepth = 0;
+    // Scan to avoid bracket within template.
+    for (int I = 0; I < DemangledNameStr.size(); ++I) {
+      auto C = DemangledNameStr.at(I);
+      if (C == '<') {
+        TemplateDepth++;
+      } else if (C == '>') {
+        TemplateDepth--;
+      } else if (C == '(') {
+        if (TemplateDepth == 0) {
+          // Found it.
+          Pos = I;
+          break;
+        }
+      }
+    }
+
     if (Pos != std::string::npos) {
       DemangledNameStr = DemangledNameStr.substr(0, Pos);
       LLVM_DEBUG(llvm::dbgs()
@@ -337,6 +356,7 @@ void Utils::dumpProtobufMessageToJson(
 std::unordered_set<llvm::Function *>
 Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
   std::unordered_set<std::string> UnmatchedNames;
+  std::unordered_set<std::string> UnmatchedOMPNames;
   std::unordered_set<llvm::Function *> MatchedFunctions;
 
   size_t Prev = 0;
@@ -355,7 +375,11 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
           LLVM_DEBUG(llvm::dbgs()
                      << "Add function " << Function->getName() << '\n');
         } else {
-          UnmatchedNames.insert(Name);
+          if (Name.find("omp?") == 0) {
+            UnmatchedOMPNames.insert(Name.substr(4));
+          } else {
+            UnmatchedNames.insert(Name);
+          }
         }
       }
       Prev = Curr + 1;
@@ -364,6 +388,7 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
 
   // Try to demangle the names in the module, to find a match for unmatched
   // names.
+  const std::string OMPForkCallFuncName = "__kmpc_fork_call";
   for (auto FuncIter = Module->begin(), FuncEnd = Module->end();
        FuncIter != FuncEnd; ++FuncIter) {
     if (FuncIter->isDeclaration()) {
@@ -371,6 +396,7 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
     }
     auto DemangledName = getDemangledFunctionName(&*FuncIter);
     auto UnmatchedNameIter = UnmatchedNames.find(DemangledName);
+    LLVM_DEBUG(llvm::dbgs() << "Demangled " << DemangledName << '\n');
     if (UnmatchedNameIter != UnmatchedNames.end()) {
       // We found a match.
       // We always use mangled name hereafter for simplicity.
@@ -378,13 +404,61 @@ Utils::decodeFunctions(std::string FuncNames, llvm::Module *Module) {
       LLVM_DEBUG(llvm::dbgs()
                  << "Add traced function " << DemangledName << '\n');
       UnmatchedNames.erase(UnmatchedNameIter);
+      continue;
+    }
+
+    /**
+     * Search for OMP Func names. For these names, we just trace the
+     * called .omp_outlined. functions.
+     */
+    auto UnmatchedOMPNameIter = UnmatchedOMPNames.find(DemangledName);
+    if (UnmatchedOMPNameIter != UnmatchedOMPNames.end()) {
+      bool FoundOMPKernel = false;
+      for (const auto &BB : *FuncIter) {
+        for (const auto &Inst : BB) {
+          if (const auto *CallInst = llvm::dyn_cast<llvm::CallInst>(&Inst)) {
+            if (auto Callee = CallInst->getCalledFunction()) {
+              if (Callee->getName() == OMPForkCallFuncName) {
+                LLVM_DEBUG({
+                  llvm::dbgs() << "Handle OMPForkCall ";
+                  CallInst->dump();
+                  llvm::dbgs() << '\n';
+                });
+
+                assert(CallInst->getNumOperands() >= 3);
+                auto BitCastVal = llvm::dyn_cast<llvm::BitCastOperator>(
+                    CallInst->getArgOperand(2));
+                assert(BitCastVal);
+                auto OMPKernelVal = BitCastVal->getOperand(0);
+                auto OMPKernel = llvm::dyn_cast<llvm::Function>(OMPKernelVal);
+                assert(OMPKernel);
+                LLVM_DEBUG(llvm::dbgs()
+                           << "Add traced OMP kernel " << OMPKernel->getName()
+                           << " from " << DemangledName << '\n');
+                MatchedFunctions.insert(OMPKernel);
+                FoundOMPKernel = true;
+              }
+            }
+          }
+        }
+      }
+      if (FoundOMPKernel) {
+        UnmatchedOMPNames.erase(UnmatchedOMPNameIter);
+      } else {
+        llvm::errs() << "Failed to find OMP Kernel in " << DemangledName
+                     << ".\n";
+        llvm_unreachable("No OMP Kernel");
+      }
     }
   }
 
   for (const auto &Name : UnmatchedNames) {
-    llvm::errs() << "Unable to find match for trace function " << Name << '\n';
+    llvm::errs() << "Unable to find match for trace func " << Name << '\n';
   }
-  assert(UnmatchedNames.empty() &&
+  for (const auto &Name : UnmatchedOMPNames) {
+    llvm::errs() << "Unable to find match for trace OMP func " << Name << '\n';
+  }
+  assert(UnmatchedNames.empty() && UnmatchedOMPNames.empty() &&
          "Unabled to find match for some trace function.");
   return MatchedFunctions;
 }
