@@ -286,6 +286,11 @@ struct BSTree generateRandomTreeWithAffinityAlloc(TreeValueT keyRange,
   }
   shuffle(values, totalNodes, TreeValueT);
 
+  if (totalNodes >= 5) {
+    printf("Shuffled tree values %ld %ld %ld %ld %ld.\n", values[0], values[1],
+           values[2], values[3], values[4]);
+  }
+
   // Fix the root value so that it's somehow balanced at top level.
   struct BSTreeNode *root = malloc_aff(sizeof(struct BSTreeNode), 0, NULL);
   TreeValueT rootVal = (keyRange - 1) / 2;
