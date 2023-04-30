@@ -186,9 +186,11 @@ protected:
   /**
    * Finalize the StreamConfigureLoopInfoMap.
    */
-  void buildStreamConfigureLoopInfoMap(const llvm::Loop *ConfigureLoop);
+  void buildStreamConfigureLoopInfoMap(const llvm::Loop *ConfigureLoop,
+                                       int &UsedRegionId);
   // Must be called after allocate the StreamConfigureLoopInfo.
-  void allocateRegionStreamId(const llvm::Loop *ConfigureLoop);
+  void allocateRegionStreamId(const llvm::Loop *ConfigureLoop,
+                              int &UsedRegionId);
   std::vector<StaticStream *>
   sortChosenStreamsByConfigureLoop(const llvm::Loop *ConfigureLoop);
 

@@ -290,10 +290,16 @@ message StreamFloatEvent {
   }
   
   enum StreamFloatEventType {
+    // Per stream event.
     CONFIG = 0;
     END = 1;
     MIGRATE_IN = 2;
     MIGRATE_OUT = 3;
     ISSUE = 4;
+    // Per stream engine event.
+    CMP_START = 5;
+    CMP_DONE = 6;
+    LOCAL_REQ_START = 7;
+    LOCAL_REQ_DONE = 8;
   }
 }

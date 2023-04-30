@@ -179,87 +179,15 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
   /**
    * We still need to check the conditional branch.
    */
+  NestPredicationResult NestPredRet;
+  this->checkNestPredication(Analyzer, OuterLoop, InnerLoop, NestPredRet);
   auto OuterHeaderBB = OuterLoop->getHeader();
   auto InnerHeaderBB = InnerLoop->getHeader();
-  auto IsStreamInst = [Analyzer](const llvm::Instruction *Inst) -> bool {
-    return Analyzer->isStreamInst(Inst);
-  };
 
-  auto BBPredDG = Analyzer->getBBBranchDG()->getBBBranchDataGraph(
-      OuterLoop, OuterHeaderBB, IsStreamInst);
-  bool IsPredicated = false;
-  bool PredicateRet = false;
-  auto PredFuncInfo = std::make_unique<::LLVM::TDG::ExecFuncInfo>();
-  std::vector<const llvm::Value *> PredInputValues;
-  bool isValidLoopHeadPredicate = BBPredDG->isValidLoopHeadPredicate();
-  LLVM_DEBUG({
-    llvm::dbgs() << "[Nest] BBPredDG Valid " << isValidLoopHeadPredicate
-                 << ".\n";
-    if (isValidLoopHeadPredicate) {
-      auto TrueLoopHeaderBB = BBPredDG->getLoopHeadPredicateBB(true);
-      llvm::dbgs() << "[Nest] BBPredDG TrueLoopHeaderBB "
-                   << (TrueLoopHeaderBB ? Utils::formatLLVMBB(TrueLoopHeaderBB)
-                                        : "Null")
-                   << ".\n";
-      auto FalseLoopHeaderBB = BBPredDG->getLoopHeadPredicateBB(false);
-      llvm::dbgs() << "[Nest] BBPredDG FalseLoopHeaderBB "
-                   << (FalseLoopHeaderBB
-                           ? Utils::formatLLVMBB(FalseLoopHeaderBB)
-                           : "Null")
-                   << ".\n";
-    }
-  });
-
-  if (isValidLoopHeadPredicate &&
-      (BBPredDG->getLoopHeadPredicateBB(true) == InnerHeaderBB ||
-       BBPredDG->getLoopHeadPredicateBB(false) == InnerHeaderBB)) {
-    /**
-     * This is predicated, check that all inputs are from streams.
-     * And construct the input values and FuncInfo.
-     */
-    PredFuncInfo->set_name(BBPredDG->getFuncName());
-    PredFuncInfo->set_type(StaticStream::translateToProtobufDataType(
-        Analyzer->getDataLayout(), BBPredDG->getReturnType(false /* isLoad */)));
-    for (auto Input : BBPredDG->getInputs()) {
-      auto Inst = llvm::dyn_cast<llvm::Instruction>(Input);
-      auto PredFuncArg = PredFuncInfo->add_args();
-      if (!Inst || !OuterLoop->contains(Inst)) {
-        // This is a non-stream input.
-        PredFuncArg->set_is_stream(false);
-        PredFuncArg->set_type(StaticStream::translateToProtobufDataType(
-            this->Transformer->ClonedDataLayout.get(), Input->getType()));
-        PredInputValues.push_back(this->Transformer->getClonedValue(Input));
-        continue;
-      }
-      auto S = Analyzer->getChosenStreamWithPlaceholderInst(Inst);
-      if (!S || S->ConfigureLoop != OuterLoop || !S->isChosen()) {
-        LLVM_DEBUG(llvm::dbgs()
-                   << "[Nest] Predication has non-stream load input "
-                   << Utils::formatLLVMInst(Inst) << ".\n");
-        return false;
-      }
-      PredFuncArg->set_is_stream(true);
-      PredFuncArg->set_stream_id(S->StreamId);
-      PredFuncArg->set_type(StaticStream::translateToProtobufDataType(
-          this->Transformer->ClonedDataLayout.get(), Inst->getType()));
-    }
-    IsPredicated = true;
-    if (BBPredDG->getLoopHeadPredicateBB(true) == InnerHeaderBB) {
-      PredicateRet = true;
-    } else {
-      PredicateRet = false;
-    }
-  }
-  if (!IsPredicated && !Analyzer->getPostDominatorTree()->dominates(
-                           InnerHeaderBB, OuterHeaderBB)) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "[Nest] Is not predicated or post-dominated. BBPredDG Valid "
-               << isValidLoopHeadPredicate << ".\n");
+  if (!NestPredRet.IsPredicated && !Analyzer->getPostDominatorTree()->dominates(
+                                       InnerHeaderBB, OuterHeaderBB)) {
+    LLVM_DEBUG(llvm::dbgs() << "[Nest] Is not predicated or post-dominated.\n");
     return false;
-  }
-  if (!IsPredicated) {
-    PredFuncInfo = nullptr;
-    PredInputValues.clear();
   }
 
   /**
@@ -291,11 +219,6 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
       }
     }
   }
-  // TODO: For now I keep the StreamEnd for simplicity
-  // for (auto StreamEndInst :
-  //      this->Transformer->getClonedEndInstsForLoop(InnerLoop)) {
-  //   this->Transformer->PendingRemovedInsts.insert(StreamEndInst);
-  // }
 
   auto ClonedOuterConfigureBB =
       this->Transformer->getClonedConfigureBBForLoop(OuterLoop);
@@ -322,16 +245,124 @@ bool StaticNestStreamBuilder::canStreamsBeNested(
         const_cast<llvm::Value *>(InputValue));
   }
   // Push input for the predication.
-  for (auto InputValue : PredInputValues) {
-    this->Transformer->addStreamInput(
-        Builder,
-        ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId,
-        const_cast<llvm::Value *>(InputValue));
+  if (NestPredRet.IsPredicated) {
+    for (auto InputValue : NestPredRet.PredInputValues) {
+      this->Transformer->addStreamInput(
+          Builder,
+          ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId,
+          const_cast<llvm::Value *>(InputValue));
+    }
+  } else {
+    NestPredRet.PredFuncInfo = nullptr;
+    NestPredRet.PredInputValues.clear();
   }
 
-  Analyzer->nestRegionInto(InnerLoop, OuterLoop,
-                           std::move(NestConfigureFuncInfo),
-                           std::move(PredFuncInfo), PredicateRet);
+  Analyzer->nestRegionInto(
+      InnerLoop, OuterLoop, std::move(NestConfigureFuncInfo),
+      std::move(NestPredRet.PredFuncInfo), NestPredRet.PredicateRet);
 
   return true;
+}
+
+bool StaticNestStreamBuilder::checkNestPredication(
+    StaticStreamRegionAnalyzer *Analyzer, const llvm::Loop *OuterLoop,
+    const llvm::Loop *InnerLoop, NestPredicationResult &ret) {
+
+  /**
+   * Iterate through all BBs in the OuterLoop. As long as the BB
+   * post dominates the OuterHeader, we can try check predication.
+   */
+  auto OuterHeaderBB = OuterLoop->getHeader();
+  for (auto OuterBB : OuterLoop->getBlocks()) {
+    if (!Analyzer->getPostDominatorTree()->dominates(OuterBB, OuterHeaderBB)) {
+      continue;
+    }
+    LLVM_DEBUG(llvm::dbgs()
+               << "Check NestPred on OuterBB " << OuterBB->getName() << "\n");
+    if (this->checkNestPredicationForOuterBB(Analyzer, OuterLoop, InnerLoop,
+                                             OuterBB, ret)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool StaticNestStreamBuilder::checkNestPredicationForOuterBB(
+    StaticStreamRegionAnalyzer *Analyzer, const llvm::Loop *OuterLoop,
+    const llvm::Loop *InnerLoop, const llvm::BasicBlock *OuterBB,
+    NestPredicationResult &ret) {
+
+  auto InnerHeaderBB = InnerLoop->getHeader();
+  auto IsStreamInst = [Analyzer](const llvm::Instruction *Inst) -> bool {
+    return Analyzer->isStreamInst(Inst);
+  };
+
+  auto BBPredDG = Analyzer->getBBBranchDG()->getBBBranchDataGraph(
+      OuterLoop, OuterBB, IsStreamInst);
+  ret.IsPredicated = false;
+  ret.PredicateRet = false;
+  ret.PredFuncInfo = std::make_unique<::LLVM::TDG::ExecFuncInfo>();
+  ret.PredInputValues.clear();
+  bool isValidLoopHeadPredicate = BBPredDG->isValidLoopHeadPredicate();
+  LLVM_DEBUG({
+    llvm::dbgs() << "[Nest] BBPredDG Valid " << isValidLoopHeadPredicate
+                 << ".\n";
+    if (isValidLoopHeadPredicate) {
+      auto TrueLoopHeaderBB = BBPredDG->getLoopHeadPredicateBB(true);
+      llvm::dbgs() << "[Nest] BBPredDG TrueLoopHeaderBB "
+                   << (TrueLoopHeaderBB ? Utils::formatLLVMBB(TrueLoopHeaderBB)
+                                        : "Null")
+                   << ".\n";
+      auto FalseLoopHeaderBB = BBPredDG->getLoopHeadPredicateBB(false);
+      llvm::dbgs() << "[Nest] BBPredDG FalseLoopHeaderBB "
+                   << (FalseLoopHeaderBB
+                           ? Utils::formatLLVMBB(FalseLoopHeaderBB)
+                           : "Null")
+                   << ".\n";
+    }
+  });
+
+  if (isValidLoopHeadPredicate &&
+      (BBPredDG->getLoopHeadPredicateBB(true) == InnerHeaderBB ||
+       BBPredDG->getLoopHeadPredicateBB(false) == InnerHeaderBB)) {
+    /**
+     * This is predicated, check that all inputs are from streams.
+     * And construct the input values and FuncInfo.
+     */
+    ret.PredFuncInfo->set_name(BBPredDG->getFuncName());
+    ret.PredFuncInfo->set_type(StaticStream::translateToProtobufDataType(
+        Analyzer->getDataLayout(),
+        BBPredDG->getReturnType(false /* isLoad */)));
+    for (auto Input : BBPredDG->getInputs()) {
+      auto Inst = llvm::dyn_cast<llvm::Instruction>(Input);
+      auto PredFuncArg = ret.PredFuncInfo->add_args();
+      if (!Inst || !OuterLoop->contains(Inst)) {
+        // This is a non-stream input.
+        PredFuncArg->set_is_stream(false);
+        PredFuncArg->set_type(StaticStream::translateToProtobufDataType(
+            this->Transformer->ClonedDataLayout.get(), Input->getType()));
+        ret.PredInputValues.push_back(this->Transformer->getClonedValue(Input));
+        continue;
+      }
+      auto S = Analyzer->getChosenStreamWithPlaceholderInst(Inst);
+      if (!S || S->ConfigureLoop != OuterLoop || !S->isChosen()) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "[Nest] Predication has non-stream load input "
+                   << Utils::formatLLVMInst(Inst) << ".\n");
+        return false;
+      }
+      PredFuncArg->set_is_stream(true);
+      PredFuncArg->set_stream_id(S->StreamId);
+      PredFuncArg->set_type(StaticStream::translateToProtobufDataType(
+          this->Transformer->ClonedDataLayout.get(), Inst->getType()));
+    }
+    ret.IsPredicated = true;
+    if (BBPredDG->getLoopHeadPredicateBB(true) == InnerHeaderBB) {
+      ret.PredicateRet = true;
+    } else {
+      ret.PredicateRet = false;
+    }
+  }
+  return ret.IsPredicated;
 }

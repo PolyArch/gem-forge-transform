@@ -183,7 +183,9 @@ void DynStreamRegionAnalyzer::finalizePlan(
   }
   this->buildChosenStreamDependenceGraph();
   this->buildTransformPlan();
-  this->buildStreamConfigureLoopInfoMap(this->TopLoop);
+  int UsedRegionId =
+      ::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId;
+  this->buildStreamConfigureLoopInfoMap(this->TopLoop, UsedRegionId);
 
   this->dumpTransformPlan();
   this->dumpConfigurePlan();

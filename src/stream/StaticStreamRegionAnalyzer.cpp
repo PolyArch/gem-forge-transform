@@ -1433,7 +1433,9 @@ void StaticStreamRegionAnalyzer::finalizePlan() {
   LLVM_DEBUG(llvm::dbgs() << "Build chosen stream graph done.\n");
   this->buildTransformPlan();
   LLVM_DEBUG(llvm::dbgs() << "Build transform plan done.\n");
-  this->buildStreamConfigureLoopInfoMap(this->TopLoop);
+  int UsedRegionId =
+      ::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId;
+  this->buildStreamConfigureLoopInfoMap(this->TopLoop, UsedRegionId);
   LLVM_DEBUG(llvm::dbgs() << "Build StreamConfigureLoopInfoMap done.\n");
 
   this->dumpTransformPlan();
@@ -1707,7 +1709,7 @@ void StaticStreamRegionAnalyzer::buildTransformPlan() {
 }
 
 void StaticStreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
-    const llvm::Loop *ConfigureLoop) {
+    const llvm::Loop *ConfigureLoop, int &UsedRegionId) {
   assert(this->ConfigureLoopInfoMap.count(ConfigureLoop) == 0 &&
          "This StreamConfigureLoopInfo has already been built.");
   auto SortedStreams = this->sortChosenStreamsByConfigureLoop(ConfigureLoop);
@@ -1715,24 +1717,23 @@ void StaticStreamRegionAnalyzer::buildStreamConfigureLoopInfoMap(
       std::piecewise_construct, std::forward_as_tuple(ConfigureLoop),
       std::forward_as_tuple(this->AnalyzePath, this->AnalyzeRelativePath,
                             ConfigureLoop, SortedStreams));
-  this->allocateRegionStreamId(ConfigureLoop);
+  this->allocateRegionStreamId(ConfigureLoop, UsedRegionId);
   for (auto &SubLoop : *ConfigureLoop) {
-    this->buildStreamConfigureLoopInfoMap(SubLoop);
+    this->buildStreamConfigureLoopInfoMap(SubLoop, UsedRegionId);
   }
 }
 
 void StaticStreamRegionAnalyzer::allocateRegionStreamId(
-    const llvm::Loop *ConfigureLoop) {
+    const llvm::Loop *ConfigureLoop, int &UsedRegionId) {
   auto &ConfigureLoopInfo = this->getConfigureLoopInfo(ConfigureLoop);
-  int UsedRegionId =
-      ::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId;
-  for (auto ParentLoop = ConfigureLoop->getParentLoop();
-       ParentLoop != nullptr && this->TopLoop->contains(ParentLoop);
-       ParentLoop = ParentLoop->getParentLoop()) {
-    const auto &ParentConfigureLoopInfo =
-        this->getConfigureLoopInfo(ParentLoop);
-    UsedRegionId += ParentConfigureLoopInfo.getSortedStreams().size();
-  }
+  // NOTE: Don't bother save region stream id.
+  // for (auto ParentLoop = ConfigureLoop->getParentLoop();
+  //      ParentLoop != nullptr && this->TopLoop->contains(ParentLoop);
+  //      ParentLoop = ParentLoop->getParentLoop()) {
+  //   const auto &ParentConfigureLoopInfo =
+  //       this->getConfigureLoopInfo(ParentLoop);
+  //   UsedRegionId += ParentConfigureLoopInfo.getSortedStreams().size();
+  // }
   for (auto S : ConfigureLoopInfo.getSortedStreams()) {
     const int MaxRegionStreamId = 128;
     assert(UsedRegionId < MaxRegionStreamId && "RegionStreamId overflow.");
