@@ -376,8 +376,9 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
 
   auto BBPredDG =
       this->CachedBBBranchDG->getBBBranchDataGraph(Loop, BB, IsStreamInst);
-  if (!BBPredDG->isValidPredicate()) {
-    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid " << BB->getName() << '\n');
+  if (!BBPredDG->isValidPredicate(this->PDT)) {
+    LLVM_DEBUG(llvm::dbgs() << "BBPredDG Invalid " << BB->getName() << " Loop "
+                            << LoopUtils::getLoopId(Loop) << '\n');
     return;
   }
   auto PredInputs = BBPredDG->getInLoopInputs();
@@ -388,28 +389,29 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
     return;
   }
 
-  auto MarkStreamInBB = [this](StaticStream *PredStream,
+  auto MarkStreamInBB = [this](StaticStream *PredS,
                                const llvm::BasicBlock *TargetBB,
                                bool PredicatedTrue) -> bool {
-    auto ConfigureLoop = PredStream->ConfigureLoop;
+    auto ConfigureLoop = PredS->ConfigureLoop;
     bool FoundPredication = false;
+    StaticStream::PredDGId NextPredDGId = PredS->BBPredDGs.size();
     for (const auto &TargetInst : *TargetBB) {
-      auto TargetStream =
+      auto PredicatedS =
           this->getStreamByInstAndConfigureLoop(&TargetInst, ConfigureLoop);
-      if (!TargetStream) {
+      if (!PredicatedS) {
         continue;
       }
       FoundPredication = true;
       LLVM_DEBUG(llvm::dbgs()
-                 << "Add predicated relation " << PredStream->getStreamName()
+                 << "Add predicated relation " << PredS->getStreamName()
                  << " -- " << PredicatedTrue << " --> "
-                 << TargetStream->getStreamName() << '\n');
+                 << PredicatedS->getStreamName() << '\n');
       if (PredicatedTrue) {
-        PredStream->PredicatedTrueStreams.insert(TargetStream);
+        PredS->PredicatedTrueStreams.emplace(PredicatedS, NextPredDGId);
       } else {
-        PredStream->PredicatedFalseStreams.insert(TargetStream);
+        PredS->PredicatedFalseStreams.emplace(PredicatedS, NextPredDGId);
       }
-      TargetStream->PredicatedByStreams.insert(PredStream);
+      PredicatedS->PredicatedByStreams.emplace(PredS, NextPredDGId);
     }
     return FoundPredication;
   };
@@ -436,12 +438,7 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
   if (FoundPredication) {
     for (auto PredInst : PredInputs) {
       auto PredStream = this->getStreamWithPlaceholderInst(PredInst, Loop);
-      if (PredStream->BBPredDG) {
-        llvm::errs() << "Multiple BBPredDG on " << PredStream->StreamName
-                     << '\n';
-        assert(PredStream->BBPredDG == nullptr && "Multiple BBPredDG.");
-      }
-      PredStream->BBPredDG = BBPredDG;
+      PredStream->BBPredDGs.push_back(BBPredDG);
     }
   }
 }
@@ -1160,7 +1157,13 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
   LLVM_DEBUG(llvm::dbgs() << "Build ValueDG for " << StoreS->getStreamName()
                           << '\n');
 
-  if (StoreS->BaseStepRootStreams.size() != 1) {
+  if (StoreS->BaseStepRootStreams.size() == 0) {
+    // Wierd stream has no step root stream. We do not try to analyze it.
+    LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Miss StepRoot.\n");
+    return;
+  }
+
+  if (StoreS->BaseStepRootStreams.size() > 1) {
     // Wierd stream has no step root stream. We do not try to analyze it.
     LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Multiple StepRoot.\n");
     return;

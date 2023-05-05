@@ -30,6 +30,7 @@ enum DataType {
   VECTOR_512 = 6;
   VOID = 7;
   INT1 = 8;
+  INT32_INT1 = 9;
 }
 
 message StreamParam {
@@ -57,6 +58,7 @@ message StreamId {
 message PredicatedStreamId {
   StreamId id = 1;
   bool pred_true = 2;
+  int32 pred_dg_id = 3;
 }
 
 message ExecFuncInfo {
@@ -110,7 +112,7 @@ message StaticStreamInfo {
   repeated PredicatedStreamId predicated_streams = 18; // Predicated streams.
   repeated PredicatedStreamId merged_predicated_streams = 19; // Merged predicated streams.
   bool is_merged_predicated_stream = 20; // This predicated stream has been merged.
-  ExecFuncInfo pred_func_info = 21;
+  repeated ExecFuncInfo pred_func_info = 21;
   bool no_core_user = 22; // This stream has not core user.
 
   /**

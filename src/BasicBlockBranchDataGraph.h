@@ -3,6 +3,8 @@
 
 #include "ExecutionDataGraph.h"
 
+#include "llvm/Analysis/PostDominators.h"
+
 /**
  * This serves as the basic case for a branch data graph:
  * 1. May only depend on loads in the same BB, or value invariant of
@@ -40,11 +42,12 @@ public:
    * Predication requires:
    * 1. True/FalseBB are not this BB.
    * 2. True/FalseBB are dominated by this BB.
-   * 3. All Inputs are from the same BB.
+   * 3. All Inputs are from the same BB, or post-dominated by BB.
    */
-  bool isValidPredicate() const {
+  bool isValidPredicate(const llvm::PostDominatorTree *PDT) const {
     for (auto InputInst : this->InLoopInputs) {
-      if (InputInst->getParent() != this->BB) {
+      auto InputBB = InputInst->getParent();
+      if (InputBB != this->BB && !PDT->dominates(this->BB, InputBB)) {
         return false;
       }
     }

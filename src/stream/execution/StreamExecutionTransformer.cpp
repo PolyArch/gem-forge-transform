@@ -1094,8 +1094,10 @@ void StreamExecutionTransformer::upgradeLoadToUpdateStream(
 
 void StreamExecutionTransformer::mergePredicatedStreams(
     StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS) {
-  auto ProcessPredSS = [this, Analyzer, LoadSS](StaticStream *PredSS,
-                                                bool PredTrue) -> void {
+  auto ProcessPredSS = [this, Analyzer,
+                        LoadSS](const StaticStream::PredStream &Pred,
+                                bool PredTrue) -> void {
+    auto PredSS = Pred.first;
     auto PredInst = PredSS->Inst;
     auto PredStream = Analyzer->getChosenStreamByInst(PredInst);
     if (!PredStream || PredStream != PredSS) {
@@ -1103,24 +1105,25 @@ void StreamExecutionTransformer::mergePredicatedStreams(
       return;
     }
     if (llvm::isa<llvm::StoreInst>(PredInst)) {
-      this->mergePredicatedStore(Analyzer, LoadSS, PredStream, PredTrue);
+      this->mergePredicatedStore(Analyzer, LoadSS, Pred, PredTrue);
     }
   };
-  for (auto PredSS : LoadSS->PredicatedTrueStreams) {
+  for (const auto &PredSS : LoadSS->PredicatedTrueStreams) {
     ProcessPredSS(PredSS, true);
   }
-  for (auto PredSS : LoadSS->PredicatedFalseStreams) {
+  for (const auto &PredSS : LoadSS->PredicatedFalseStreams) {
     ProcessPredSS(PredSS, false);
   }
 }
 
 void StreamExecutionTransformer::mergePredicatedStore(
     StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS,
-    StaticStream *StoreSS, bool PredTrue) {
+    const StaticStream::PredStream &Pred, bool PredTrue) {
   if (!StreamPassMergePredicatedStore) {
     // This feature is disabled.
     return;
   }
+  auto StoreSS = Pred.first;
   if (LoadSS->ChosenBaseStepRootStreams != LoadSS->ChosenBaseStreams) {
     // This is an indirect stream, we only merge iff.
     // 0. The flag is set.
@@ -1159,6 +1162,7 @@ void StreamExecutionTransformer::mergePredicatedStore(
   ProtoEntry->mutable_id()->set_id(StoreSS->StreamId);
   ProtoEntry->mutable_id()->set_name(StoreSS->getStreamName());
   ProtoEntry->set_pred_true(PredTrue);
+  ProtoEntry->set_pred_dg_id(Pred.second);
   // Add the store to pending remove.
   auto ClonedStoreInst = this->getClonedValue(StoreInst);
   this->PendingRemovedInsts.insert(ClonedStoreInst);
@@ -1947,8 +1951,7 @@ void StreamExecutionTransformer::handleExtraInputValue(
   /**
    * If this has merged predicate stream, handle inputs from pred func.
    */
-  // if (SS->StaticStreamInfo.merged_predicated_streams_size()) {
-  if (SS->BBPredDG && SS->BBPredDG->isValid() &&
+  if (SS->BBPredDGs.size() &&
       (SS->PredicatedTrueStreams.size() || SS->PredicatedFalseStreams.size())) {
     for (auto Input : SS->getPredFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));

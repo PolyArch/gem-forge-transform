@@ -258,11 +258,18 @@ public:
   // It should be rare to have more than one update stream?
   StaticStream *UpdateStream = nullptr;
 
-  // Predicate stream.
-  BBBranchDataGraph *BBPredDG = nullptr;
-  StreamSet PredicatedTrueStreams;
-  StreamSet PredicatedFalseStreams;
-  StreamSet PredicatedByStreams;
+  /**
+   * Predication relationship between streams.
+   * Notice that we allow multiple BBPredDGs, which is distinguished by a
+   * PredDGId. All predication edge remembers this PredDGId.
+   */
+  std::vector<BBBranchDataGraph *> BBPredDGs;
+  using PredDGId = int;
+  using PredStream = std::pair<StaticStream *, PredDGId>;
+  using PredStreamSet = std::set<PredStream>;
+  PredStreamSet PredicatedTrueStreams;
+  PredStreamSet PredicatedFalseStreams;
+  PredStreamSet PredicatedByStreams;
 
   // AddrDG for MemStream.
   std::unique_ptr<StreamDataGraph> AddrDG = nullptr;
@@ -498,7 +505,7 @@ protected:
                                 const ExecutionDataGraph &ExecDG,
                                 llvm::Type *RetType) const;
   void fillProtobufAddrFuncInfo(::LLVM::TDG::ExecFuncInfo *AddrFuncInfo) const;
-  void fillProtobufPredFuncInfo(::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const;
+  void fillProtobufPredFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
   void fillProtobufValueDGFuncInfo(::LLVM::TDG::StaticStreamInfo *SSInfo) const;
 };
 #endif

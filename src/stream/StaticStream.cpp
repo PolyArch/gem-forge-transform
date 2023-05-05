@@ -76,6 +76,19 @@ StaticStream::translateToProtobufDataType(llvm::DataLayout *DataLayout,
       Type->print(llvm::errs());
       llvm_unreachable("Invalid Vector BitWidth.\n");
     }
+  } else if (auto Struct = llvm::dyn_cast<llvm::StructType>(Type)) {
+    /**
+     * Special case to support {i32, i1} for cmpxchg inst.
+     */
+    if (Struct->getNumElements() == 2) {
+      auto E0 = llvm::dyn_cast<llvm::IntegerType>(Struct->getElementType(0));
+      auto E1 = llvm::dyn_cast<llvm::IntegerType>(Struct->getElementType(1));
+      auto E0Int32 = E0 && (E0->getBitWidth() == 32);
+      auto E1Int1 = E1 && (E1->getBitWidth() == 1);
+      if (E0Int32 && E1Int1) {
+        return ::LLVM::TDG::DataType::INT32_INT1;
+      }
+    }
   }
   llvm::errs() << "Invalid DataType: ";
   Type->print(llvm::errs());
@@ -90,10 +103,13 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
   // Set
 #define ADD_STREAM(SET, FIELD, PRED_TRUE)                                      \
   {                                                                            \
-    for (const auto &S : SET) {                                                \
+    for (const auto &PredS : SET) {                                            \
+      auto S = PredS.first;                                                    \
+      auto PredDGId = PredS.second;                                            \
       auto Entry = SSI.add_##FIELD();                                          \
       S->formatProtoStreamId(Entry->mutable_id());                             \
       Entry->set_pred_true(PRED_TRUE);                                         \
+      Entry->set_pred_dg_id(PredDGId);                                         \
     }                                                                          \
   }
   ADD_STREAM(this->PredicatedTrueStreams, predicated_streams, true);
@@ -167,9 +183,17 @@ llvm::Type *StaticStream::getCoreElementType() const {
    */
   if (!this->FusedLoadOps.empty()) {
     return this->FusedLoadOps.back()->getType();
-  } else {
-    return this->getMemElementType();
   }
+
+  // For compare exchange, the CoreElementType is the value.
+  switch (this->Inst->getOpcode()) {
+  case llvm::Instruction::PHI:
+  case llvm::Instruction::Load:
+  case llvm::Instruction::AtomicRMW:
+  case llvm::Instruction::AtomicCmpXchg:
+    return this->Inst->getType();
+  }
+  return this->getMemElementType();
 }
 
 int StaticStream::getCoreElementSize() const {
@@ -855,8 +879,7 @@ void StaticStream::fillProtobufStreamInfo(
     auto AddrFuncInfo = ProtobufInfo->mutable_addr_func_info();
     this->fillProtobufAddrFuncInfo(AddrFuncInfo);
     // Dump the predication function.
-    auto PredFuncInfo = ProtobufStaticInfo->mutable_pred_func_info();
-    this->fillProtobufPredFuncInfo(PredFuncInfo);
+    this->fillProtobufPredFuncInfo(ProtobufStaticInfo);
     // Dump the store function.
     this->fillProtobufValueDGFuncInfo(ProtobufStaticInfo);
   }
@@ -976,11 +999,11 @@ void StaticStream::fillProtobufAddrFuncInfo(
 }
 
 void StaticStream::fillProtobufPredFuncInfo(
-    ::LLVM::TDG::ExecFuncInfo *PredFuncInfo) const {
-  if (this->BBPredDG) {
-    this->fillProtobufExecFuncInfo(PredFuncInfo, this->BBPredDG->getFuncName(),
-                                   *this->BBPredDG,
-                                   this->BBPredDG->getReturnType(true));
+    ::LLVM::TDG::StaticStreamInfo *SSInfo) const {
+  for (auto BBPredDG : this->BBPredDGs) {
+    auto PredFuncInfo = SSInfo->add_pred_func_info();
+    this->fillProtobufExecFuncInfo(PredFuncInfo, BBPredDG->getFuncName(),
+                                   *BBPredDG, BBPredDG->getReturnType(true));
   }
 }
 
@@ -1057,14 +1080,14 @@ void StaticStream::fillProtobufValueDGFuncInfoImpl(
     AddArg(AtomicInputPtrType->getPointerElementType(), this);
   }
 
-  auto StoreType = this->ValueDG->getReturnType(false /* IsLoad */);
-  auto StoreTypeBits = DataLayout->getTypeStoreSizeInBits(StoreType);
+  auto RetType = this->ValueDG->getReturnType(IsLoad);
+  auto StoreTypeBits = DataLayout->getTypeStoreSizeInBits(RetType);
   // if (StoreTypeBits > 64) {
   //   llvm::errs() << "Invalid result type, Stream: " << this->getStreamName()
   //                << " Bits " << StoreTypeBits << '\n';
   //   assert(false && "Invalid type for result.");
   // }
-  ExInfo->set_type(this->translateToProtobufDataType(StoreType));
+  ExInfo->set_type(this->translateToProtobufDataType(RetType));
 }
 
 StaticStream::InputValueList StaticStream::getValueDGInputValues() const {
@@ -1126,7 +1149,14 @@ StaticStream::InputValueList StaticStream::getReduceFuncInputValues() const {
 
 StaticStream::InputValueList StaticStream::getPredFuncInputValues() const {
   assert(this->isChosen() && "Only consider chosen stream's input values.");
-  assert(this->BBPredDG && "No BBPredDG.");
-  assert(this->BBPredDG->isValid() && "Invalid BBPredDG.");
-  return this->getExecFuncInputValues(*this->BBPredDG);
+
+  InputValueList ret;
+  for (auto *BBPredDG : this->BBPredDGs) {
+    assert(BBPredDG && "No BBPredDG.");
+    assert(BBPredDG->isValid() && "Invalid BBPredDG.");
+
+    auto values = this->getExecFuncInputValues(*BBPredDG);
+    ret.splice(ret.end(), values);
+  }
+  return ret;
 }

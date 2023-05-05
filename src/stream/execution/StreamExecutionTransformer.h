@@ -109,7 +109,7 @@ private:
   void mergePredicatedStreams(StaticStreamRegionAnalyzer *Analyzer,
                               StaticStream *LoadSS);
   void mergePredicatedStore(StaticStreamRegionAnalyzer *Analyzer,
-                            StaticStream *LoadSS, StaticStream *StoreSS,
+                            StaticStream *LoadSS, const StaticStream::PredStream &Pred,
                             bool PredTrue);
   void handleValueDG(StaticStreamRegionAnalyzer *Analyzer, StaticStream *S);
   llvm::Instruction *findStepPosition(StaticStream *StepStream,
