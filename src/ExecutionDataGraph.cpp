@@ -244,6 +244,16 @@ void ExecutionDataGraph::translate(std::unique_ptr<llvm::Module> &Module,
     return;
   }
   auto NewInst = Inst->clone();
+
+  /**
+   * To avoid compiler emitting some crazy AVX-512 instructions, here I manually
+   * disable fast.
+   */
+  if (Inst->getOpcode() == llvm::Instruction::FDiv &&
+      Inst->getType()->isVectorTy()) {
+    NewInst->setFast(false);
+  }
+
   // Fix the operand.
   LLVM_DEBUG({
     llvm::dbgs() << "Translating Inst";
