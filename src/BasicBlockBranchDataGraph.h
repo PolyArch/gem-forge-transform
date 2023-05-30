@@ -42,6 +42,7 @@ public:
    * Predication requires:
    * 1. True/FalseBB are not this BB.
    * 2. True/FalseBB are dominated by this BB.
+   * 3. True/FalseBB does not post-dominate this BB.
    * 3. All Inputs are from the same BB, or post-dominated by BB.
    */
   bool isValidPredicate(const llvm::PostDominatorTree *PDT) const {
@@ -51,13 +52,16 @@ public:
         return false;
       }
     }
-    return this->isPredicate(this->TrueBB) || this->isPredicate(this->FalseBB);
+    return this->isPredicate(PDT, this->TrueBB) ||
+           this->isPredicate(PDT, this->FalseBB);
   }
-  const llvm::BasicBlock *getPredicateBB(bool True) const {
+  const llvm::BasicBlock *getPredicateBB(const llvm::PostDominatorTree *PDT,
+                                         bool True) const {
     auto TargetBB = True ? this->TrueBB : this->FalseBB;
-    return this->isPredicate(TargetBB) ? TargetBB : nullptr;
+    return this->isPredicate(PDT, TargetBB) ? TargetBB : nullptr;
   }
-  bool isPredicate(const llvm::BasicBlock *TargetBB) const;
+  bool isPredicate(const llvm::PostDominatorTree *PDT,
+                   const llvm::BasicBlock *TargetBB) const;
 
   /**
    * LoopHeaderBB requires:

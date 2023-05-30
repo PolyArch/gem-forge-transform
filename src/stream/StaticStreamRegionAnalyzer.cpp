@@ -355,6 +355,12 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
 }
 
 void StaticStreamRegionAnalyzer::markPredicateRelationship() {
+
+  // Predication is not enabled unless we enable computation.
+  if (!StreamPassEnableValueDG) {
+    return;
+  }
+
   for (auto BBIter = this->TopLoop->block_begin(),
             BBEnd = this->TopLoop->block_end();
        BBIter != BBEnd; ++BBIter) {
@@ -420,14 +426,14 @@ void StaticStreamRegionAnalyzer::markPredicateRelationshipForLoopBB(
   for (auto PredInst : PredInputs) {
     auto PredStream = this->getStreamWithPlaceholderInst(PredInst, Loop);
     LLVM_DEBUG(llvm::dbgs() << "PredS " << PredStream->getStreamName() << '\n');
-    if (auto TrueBB = BBPredDG->getPredicateBB(true)) {
+    if (auto TrueBB = BBPredDG->getPredicateBB(this->PDT, true)) {
       LLVM_DEBUG(llvm::dbgs()
                  << " TrueBB " << Utils::formatLLVMBB(TrueBB) << '\n');
       if (MarkStreamInBB(PredStream, TrueBB, true)) {
         FoundPredication = true;
       }
     }
-    if (auto FalseBB = BBPredDG->getPredicateBB(false)) {
+    if (auto FalseBB = BBPredDG->getPredicateBB(this->PDT, false)) {
       LLVM_DEBUG(llvm::dbgs()
                  << " FalseBB " << Utils::formatLLVMBB(FalseBB) << '\n');
       if (MarkStreamInBB(PredStream, FalseBB, false)) {

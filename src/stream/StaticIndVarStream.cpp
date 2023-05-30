@@ -261,7 +261,7 @@ bool StaticIndVarStream::checkReduceDGComplete() {
   if (auto DebugLoc = this->InnerMostLoop->getStartLoc()) {
     auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
     auto FileName = Scope->getFilename().str();
-    if (FileName.find("pr_push.cc") != std::string::npos) {
+    if (FileName.find("pr_kernels.h") != std::string::npos) {
       ForceReduction = true;
     }
     if (FileName.find("pntnet2") != std::string::npos) {

@@ -132,7 +132,8 @@ void BBBranchDataGraph::clear() {
   this->FalseBB = nullptr;
 }
 
-bool BBBranchDataGraph::isPredicate(const llvm::BasicBlock *TargetBB) const {
+bool BBBranchDataGraph::isPredicate(const llvm::PostDominatorTree *PDT,
+                                    const llvm::BasicBlock *TargetBB) const {
   assert((TargetBB == this->TrueBB || TargetBB == this->FalseBB) &&
          "Invalid Predicate TargetBB");
   if (!this->isValid() || !TargetBB) {
@@ -140,6 +141,10 @@ bool BBBranchDataGraph::isPredicate(const llvm::BasicBlock *TargetBB) const {
   }
   if (TargetBB == this->BB) {
     // Do not allow self predicate.
+    return false;
+  }
+  if (PDT->dominates(TargetBB, this->BB)) {
+    // If TargetBB dominates this BB, there is no predication.
     return false;
   }
   return TargetBB->getSinglePredecessor() == this->BB;
