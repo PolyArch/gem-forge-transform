@@ -59,7 +59,9 @@ __attribute__((noinline)) Value foo(Value *A, Value *X, Value *B, int64_t M,
     pbi[1] = bi - bk * multiplier;
 
 #ifndef NO_AVX
-#pragma clang loop vectorize(enable)
+#pragma clang loop vectorize(enable) unroll(disable) interleave(disable)
+#else
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
 #endif
     for (int64_t j = k; j < N - 1; ++j) {
 

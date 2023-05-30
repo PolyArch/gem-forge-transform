@@ -48,15 +48,17 @@ foo(Value *features,           // [nPoints][nDims]
 
 #ifndef NO_OPENMP
 #pragma omp parallel firstprivate(                                             \
-    features, centers, memberships, newCenters, newCentersPartial,             \
-    clusterSize, clusterSizePartial, nPoints, nDims, nCenters)
+        features, centers, memberships, newCenters, newCentersPartial,         \
+            clusterSize, clusterSizePartial, nPoints, nDims, nCenters)
   {
 
     int64_t tid = omp_get_thread_num();
     Value *myNewCenters = newCentersPartial + tid * nCenters * nDims;
     Index *myClusterSize = clusterSizePartial + tid * nCenters;
+#endif
 
-#pragma omp for schedule(static)
+#ifndef NO_OPENMP
+#pragma omp for schedule(static) nowait
 #endif
     for (int64_t point = 0; point < nPoints; ++point) {
 
@@ -98,19 +100,43 @@ foo(Value *features,           // [nPoints][nDims]
 
       // Update the newCenters.
       myClusterSize[minCenter]++;
+    }
+
+#ifndef NO_OPENMP
+#pragma omp for schedule(static)
+#endif
+    for (int64_t point = 0; point < nPoints; ++point) {
+
+      Index minCenter = memberships[point];
+
+      // Manual vectorization to get rid of epilogue.
 
 #ifndef NO_AVX // Vectorize version.
-#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
-#else // Scalar version.
+
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-#endif
-      for (int64_t dim = 0; dim < nDims; ++dim) {
-        Value v = features[point * nDims + dim];
-#pragma ss stream_name "gfm.kmeans.new_center.ld/no-stream"
-        Value s = myNewCenters[minCenter * nDims + dim];
-#pragma ss stream_name "gfm.kmeans.new_center.st/no-stream"
-        myNewCenters[minCenter * nDims + dim] = s + v;
+      for (int64_t dim = 0; dim < nDims; dim += 16) {
+        ValueAVX v = ValueAVXLoad(features + point * nDims + dim);
+#pragma ss stream_name "gfm.kmeans.new_center.ld"
+        ValueAVX s = ValueAVXLoad(myNewCenters + minCenter * nDims + dim);
+
+        ValueAVX w = ValueAVXAdd(v, s);
+
+#pragma ss stream_name "gfm.kmeans.new_center.st"
+        ValueAVXStore(myNewCenters + minCenter * nDims + dim, w);
       }
+
+#else // Scalar version.
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+    for (int64_t dim = 0; dim < nDims; ++dim) {
+      Value v = features[point * nDims + dim];
+#pragma ss stream_name "gfm.kmeans.new_center.ld"
+      Value s = myNewCenters[minCenter * nDims + dim];
+#pragma ss stream_name "gfm.kmeans.new_center.st"
+      myNewCenters[minCenter * nDims + dim] = s + v;
+    }
+
+#endif
     }
 
 #ifndef NO_OPENMP
