@@ -6,7 +6,7 @@ const std::unordered_set<std::string> UserDefinedMemStream::StreamLoadFuncNames{
 };
 
 UserDefinedMemStream::UserDefinedMemStream(
-    StaticStreamRegionAnalyzer *_Analyzer, const llvm::Instruction *_Inst,
+    StaticStreamRegionAnalyzer *_Analyzer, llvm::Instruction *_Inst,
     const llvm::Loop *_ConfigureLoop, const llvm::Loop *_InnerMostLoop,
     llvm::ScalarEvolution *_SE, const llvm::PostDominatorTree *_PDT,
     llvm::DataLayout *_DataLayout)

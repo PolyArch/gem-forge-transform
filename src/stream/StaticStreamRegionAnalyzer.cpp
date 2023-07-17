@@ -361,6 +361,13 @@ void StaticStreamRegionAnalyzer::markPredicateRelationship() {
     return;
   }
 
+  // ! The predication in rodinia streamcluster is too complicated. Disable it.
+  auto FuncName = this->TopLoop->getHeader()->getParent()->getName();
+  if (FuncName.find("pgain_dist") != llvm::StringRef::npos ||
+      FuncName.find("pgain_assign") != llvm::StringRef::npos) {
+    return;
+  }
+
   for (auto BBIter = this->TopLoop->block_begin(),
             BBEnd = this->TopLoop->block_end();
        BBIter != BBEnd; ++BBIter) {
@@ -849,6 +856,16 @@ void StaticStreamRegionAnalyzer::fuseLoadOps(StaticStream *S) {
     return true;
   };
 
+  /**
+   * Do not fuse load if we have a dependent reduction, as it will recognize
+   * the original stream value as input.
+   * TODO: Fix this case by using the load-fused value as reduction input.
+   */
+  if (!S->BackIVDependentStreams.empty()) {
+    LLVM_DEBUG(llvm::dbgs() << "[FuseLoadOps] No fusing as BackIVDepS.\n");
+    return;
+  }
+
   if (!AreUserInstsFromSameBB(S->Inst)) {
     LLVM_DEBUG(llvm::dbgs()
                << "[FuseLoadOps] No fusing as user not in the same BB.\n");
@@ -1279,6 +1296,13 @@ void StaticStreamRegionAnalyzer::buildValueDepForStoreOrAtomic(
     auto OuterS = InputS;
     if (StoreS->InnerMostLoop->contains(InputS->InnerMostLoop)) {
       // The opposite way, e.g., using final reduced value.
+      // Check if we allowed this case.
+      if (StoreS->InnerMostLoop != InputS->InnerMostLoop &&
+          !StreamPassEnableValueDepOnInnerLoop) {
+        LLVM_DEBUG(llvm::dbgs() << "[NoValueDG] Dep on InnerLoop "
+                                << InputS->getStreamName() << '\n');
+        return;
+      }
       InnerS = InputS;
       OuterS = StoreS;
     }
@@ -1323,7 +1347,6 @@ void StaticStreamRegionAnalyzer::analyzeIsCandidate() {
       S->analyzeIsCandidate();
     }
   }
-  LLVM_DEBUG(llvm::dbgs() << "analyzeIsCandidate done.\n");
 }
 
 bool StaticStreamRegionAnalyzer::isLegalValueDepInput(

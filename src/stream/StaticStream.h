@@ -37,7 +37,7 @@ public:
     USER,
   };
   const TypeT Type;
-  const llvm::Instruction *const Inst;
+  llvm::Instruction *const Inst;
   const llvm::Loop *const ConfigureLoop;
   const llvm::Loop *const InnerMostLoop;
   const std::string FuncNameBase;
@@ -73,13 +73,24 @@ public:
   bool UserNoStream = false;
 
   /**
+   * User explicitly add this addr base stream.
+   */
+  std::string UserFakeAddrBaseStreamName;
+
+  /**
+   * User explicitly control float decision.
+   */
+  ::LLVM::TDG::StaticStreamInfo::ManualFloatType UserFloat =
+      ::LLVM::TDG::StaticStreamInfo_ManualFloatType_RUNTIME;
+
+  /**
    * The constructor just creates the object and does not perform any analysis.
    *
    * After creating all the streams, the manager should call constructGraph() to
    * initialize the MetaGraph and StreamGraph.
    */
   StaticStream(StaticStreamRegionAnalyzer *_Analyzer, TypeT _Type,
-               const llvm::Instruction *_Inst, const llvm::Loop *_ConfigureLoop,
+               llvm::Instruction *_Inst, const llvm::Loop *_ConfigureLoop,
                const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
                const llvm::PostDominatorTree *_PDT,
                llvm::DataLayout *_DataLayout);
@@ -332,6 +343,10 @@ public:
   }
   bool isLoopEliminated() const {
     return this->StaticStreamInfo.loop_eliminated();
+  }
+
+  virtual const llvm::SCEV *getLinearCondStepStrideSCEV() const {
+    llvm_unreachable("Not implemented.");
   }
 
 protected:

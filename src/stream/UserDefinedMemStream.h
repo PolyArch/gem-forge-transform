@@ -11,7 +11,7 @@
 class UserDefinedMemStream : public StaticStream {
 public:
   UserDefinedMemStream(StaticStreamRegionAnalyzer *_Analyzer,
-                       const llvm::Instruction *_Inst,
+                       llvm::Instruction *_Inst,
                        const llvm::Loop *_ConfigureLoop,
                        const llvm::Loop *_InnerMostLoop,
                        llvm::ScalarEvolution *_SE,

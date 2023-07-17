@@ -109,7 +109,8 @@ private:
   void mergePredicatedStreams(StaticStreamRegionAnalyzer *Analyzer,
                               StaticStream *LoadSS);
   void mergePredicatedStore(StaticStreamRegionAnalyzer *Analyzer,
-                            StaticStream *LoadSS, const StaticStream::PredStream &Pred,
+                            StaticStream *LoadSS,
+                            const StaticStream::PredStream &Pred,
                             bool PredTrue);
   void handleValueDG(StaticStreamRegionAnalyzer *Analyzer, StaticStream *S);
   llvm::Instruction *findStepPosition(StaticStream *StepStream,
@@ -155,6 +156,14 @@ private:
   using InputValueVec = std::vector<llvm::Value *>;
   using ProtoStreamConfiguration = LLVM::TDG::IVPattern;
   using ProtoStreamParam = ::LLVM::TDG::StreamParam;
+  struct GenStreamConfigArgs {
+    const llvm::Loop *ClonedConfigureLoop;
+    const llvm::Loop *ClonedInnerMostLoop;
+    llvm::ScalarEvolution *ClonedSE;
+    llvm::SCEVExpander *ClonedSEExpander;
+    InputValueVec &ClonedInputValues;
+    llvm::Instruction *InsertBefore;
+  };
   void generateIVStreamConfiguration(StaticStream *S,
                                      llvm::Instruction *InsertBefore,
                                      InputValueVec &ClonedInputValues);
@@ -164,26 +173,24 @@ private:
   void generateUserMemStreamConfiguration(StaticStream *S,
                                           llvm::Instruction *InsertBefore,
                                           InputValueVec &ClonedInputValues);
-  void generateReduceAndPtrChaseStreamConfiguration(
-      const llvm::Loop *ClonedConfigureLoop,
-      const llvm::Loop *ClonedInnerMostLoop, const StaticIndVarStream *SS,
-      llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
-      llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
-      ProtoStreamConfiguration *ProtoConfiguration);
-  void generateAddRecStreamConfiguration(
-      const llvm::Loop *ClonedConfigureLoop,
-      const llvm::Loop *ClonedInnerMostLoop,
-      const llvm::SCEVAddRecExpr *ClonedAddRecSCEV,
-      llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
-      llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
-      ProtoStreamConfiguration *ProtoConfiguration);
+  void
+  generateReduceAndPtrChaseStreamConfig(GenStreamConfigArgs &Args,
+                                        const StaticIndVarStream *SS,
+                                        ProtoStreamConfiguration *ProtoConfig);
+  void
+  generateLinearCondStepStreamConfig(GenStreamConfigArgs &Args,
+                                     const StaticStream *SS,
+                                     ProtoStreamConfiguration *ProtoConfig);
+  void generateAddRecStreamConfig(GenStreamConfigArgs &Args,
+                                  const llvm::SCEVAddRecExpr *ClonedAddRecSCEV,
+                                  ProtoStreamConfiguration *ProtoConfig);
   void handleExtraInputValue(StaticStream *SS,
                              InputValueVec &ClonedInputValues);
   void addStreamInputSCEV(const llvm::SCEV *ClonedSCEV, bool Signed,
                           llvm::Instruction *InsertBefore,
                           llvm::SCEVExpander *ClonedSEExpander,
                           InputValueVec &ClonedInputValues,
-                          ProtoStreamConfiguration *ProtoConfiguration);
+                          ProtoStreamConfiguration *ProtoConfig);
   void addStreamInputValue(const llvm::Value *ClonedValue, bool Signed,
                            InputValueVec &ClonedInputValues,
                            ProtoStreamParam *ProtoParam);

@@ -20,7 +20,7 @@ uint64_t StaticStream::AllocatedStreamId =
  * initialize the MetaGraph and StreamGraph.
  */
 StaticStream::StaticStream(StaticStreamRegionAnalyzer *_Analyzer, TypeT _Type,
-                           const llvm::Instruction *_Inst,
+                           llvm::Instruction *_Inst,
                            const llvm::Loop *_ConfigureLoop,
                            const llvm::Loop *_InnerMostLoop,
                            llvm::ScalarEvolution *_SE,
@@ -142,6 +142,9 @@ void StaticStream::setStaticStreamInfo(LLVM::TDG::StaticStreamInfo &SSI) const {
       this->translateToProtobufDataType(this->getCoreElementType()));
   SSI.set_mem_element_type(
       this->translateToProtobufDataType(this->getMemElementType()));
+
+  // Set the manual float.
+  SSI.set_float_manual(this->UserFloat);
 }
 
 llvm::Type *StaticStream::getMemElementType() const {
@@ -383,10 +386,34 @@ void StaticStream::constructMetaGraph(GetStreamFuncT GetStream) {
       DFSStack.pop_back();
     }
   }
+
+  // Add user defined fake addr base stream.
+  if (!this->UserFakeAddrBaseStreamName.empty()) {
+    bool Found = false;
+    for (auto *BB : this->InnerMostLoop->blocks()) {
+      for (auto &Inst : *BB) {
+        if (auto S = GetStream(&Inst, this->ConfigureLoop)) {
+          if (S->getStreamName().find(this->UserFakeAddrBaseStreamName) !=
+              std::string::npos) {
+            LLVM_DEBUG(llvm::dbgs()
+                       << "Add UserFakeAddrBaseS " << S->getStreamName()
+                       << " -> " << this->getStreamName() << '\n');
+            this->LoadBaseStreams.insert(S);
+            Found = true;
+            break;
+          }
+        }
+      }
+      if (Found) {
+        break;
+      }
+    }
+    assert(Found && "Failed to find UserFakeAddrBaseS.");
+  }
 }
 
 void StaticStream::addBaseStream(StaticStream *Other) {
-  LLVM_DEBUG(llvm::dbgs() << "== SS: AddBaseStream: "
+  LLVM_DEBUG(llvm::dbgs() << "== SS: AddBaseS: "
                           << (Other ? Other->getStreamName() : "nullptr")
                           << '\n');
   this->BaseStreams.insert(Other);
@@ -604,6 +631,9 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
    *  - nest=loop-level: Specify how many loop level this stream should be
    *      configured at, e.g., 2 will configure the stream at the second outer
    *      loop counting from the inner-most loop.
+   *  - fake-addr-base=stream: This is to add a fake addr base to some memory
+   * stream to make this one an indirect stream. Used when our address pattern
+   *      is not a simple affine pattern from the ind var.
    */
   auto SlashPos = SSName.find('/');
   auto FirstSlashPos = SlashPos;
@@ -628,6 +658,10 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
       this->UserNestLoopLevel = std::stoi(Param.substr(EqualPos + 1));
     } else if (ParamName == "no-stream") {
       this->UserNoStream = true;
+    } else if (ParamName == "no-float") {
+      this->UserFloat = ::LLVM::TDG::StaticStreamInfo_ManualFloatType_NOT_FLOAT;
+    } else if (ParamName == "fake-addr-base") {
+      this->UserFakeAddrBaseStreamName = Param.substr(EqualPos + 1);
     }
 
     SlashPos = NextSlashPos;

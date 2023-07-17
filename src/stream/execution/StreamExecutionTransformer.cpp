@@ -1338,9 +1338,9 @@ StreamExecutionTransformer::findStepPosition(StaticStream *StepStream,
     }
   }
   // Check if it is reachable from StepBB to DependentBB.
-  llvm::SmallVector<llvm::BasicBlock *, 1> StartBB = {StepBB};
-  llvm::SmallPtrSet<llvm::BasicBlock *, 1> ExclusionBB = {Latch};
   for (auto DepBB : DependentStreamBBs) {
+    llvm::SmallVector<llvm::BasicBlock *, 1> StartBB = {StepBB};
+    llvm::SmallPtrSet<llvm::BasicBlock *, 1> ExclusionBB = {Latch};
     if (llvm::isPotentiallyReachableFromMany(StartBB, DepBB, &ExclusionBB, DT,
                                              LI)) {
       llvm::errs() << "Potential MemStream after StreamStep "
@@ -1568,7 +1568,7 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
     std::vector<llvm::Value *> &ClonedInputValues) {
   assert(S->Type == StaticStream::TypeT::IV && "Must be IV stream.");
   auto SS = static_cast<const StaticIndVarStream *>(S);
-  auto ProtoConfiguration = SS->StaticStreamInfo.mutable_iv_pattern();
+  auto ProtoConfig = SS->StaticStreamInfo.mutable_iv_pattern();
 
   auto PHINode = SS->PHINode;
   auto ClonedPHINode = this->getClonedValue(PHINode);
@@ -1598,29 +1598,27 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
 
   const auto ValuePattern = SS->StaticStreamInfo.val_pattern();
 
+  GenStreamConfigArgs GenArgs{
+      ClonedConfigureLoop, ClonedInnerMostLoop, ClonedSE,
+      ClonedSEExpander,    ClonedInputValues,   InsertBefore};
+
   if (PHINodeSCEV && llvm::isa<llvm::SCEVAddRecExpr>(PHINodeSCEV)) {
     auto PHINodeAddRecSCEV = llvm::dyn_cast<llvm::SCEVAddRecExpr>(PHINodeSCEV);
     auto ClonedPHINodeAddRecSCEV =
         llvm::dyn_cast<llvm::SCEVAddRecExpr>(ClonedPHINodeSCEV);
     assert(ClonedPHINodeAddRecSCEV && "Cloned SCEV is not AddRec anymore.");
-    this->generateAddRecStreamConfiguration(
-        ClonedConfigureLoop, ClonedInnerMostLoop, ClonedPHINodeAddRecSCEV,
-        InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
-        ProtoConfiguration);
+    this->generateAddRecStreamConfig(GenArgs, ClonedPHINodeAddRecSCEV,
+                                     ProtoConfig);
   } else if (ValuePattern == ::LLVM::TDG::StreamValuePattern::REDUCTION ||
              ValuePattern == ::LLVM::TDG::StreamValuePattern::POINTER_CHASE) {
     // Set the IV pattern, and the generate the configuration.
-    ProtoConfiguration->set_val_pattern(ValuePattern);
-    this->generateReduceAndPtrChaseStreamConfiguration(
-        ClonedConfigureLoop, ClonedInnerMostLoop, SS, InsertBefore, ClonedSE,
-        ClonedSEExpander, ClonedInputValues, ProtoConfiguration);
+    ProtoConfig->set_val_pattern(ValuePattern);
+    this->generateReduceAndPtrChaseStreamConfig(GenArgs, SS, ProtoConfig);
   } else if (SS->StaticStreamInfo.val_pattern() ==
                  ::LLVM::TDG::StreamValuePattern::LINEAR &&
              SS->StaticStreamInfo.stp_pattern() ==
                  ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
-    llvm::errs() << "Can't handle Conditional Linear IVStream "
-                 << S->getStreamName() << '\n';
-    assert(false);
+    this->generateLinearCondStepStreamConfig(GenArgs, SS, ProtoConfig);
   } else {
     llvm::errs() << "Can't handle IVStream " << S->getStreamName() << '\n';
     assert(false);
@@ -1641,7 +1639,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
 
   this->handleExtraInputValue(S, ClonedInputValues);
 
-  auto ProtoConfiguration = SS->StaticStreamInfo.mutable_iv_pattern();
+  auto ProtoConfig = SS->StaticStreamInfo.mutable_iv_pattern();
 
   auto Addr = const_cast<llvm::Value *>(Utils::getMemAddrValue(SS->Inst));
   auto ClonedAddr = this->getClonedValue(Addr);
@@ -1659,6 +1657,15 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
   });
 
   auto ValuePattern = SS->StaticStreamInfo.val_pattern();
+
+  auto ClonedConfigureLoop =
+      this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
+  auto ClonedInnerMostLoop =
+      this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
+  auto ClonedAddrSCEV = ClonedSE->getSCEV(ClonedAddr);
+  GenStreamConfigArgs GenArgs{
+      ClonedConfigureLoop, ClonedInnerMostLoop, ClonedSE,
+      ClonedSEExpander,    ClonedInputValues,   InsertBefore};
 
   if (ValuePattern == ::LLVM::TDG::StreamValuePattern::INDIRECT ||
       ValuePattern == ::LLVM::TDG::StreamValuePattern::POINTER_CHASE) {
@@ -1685,7 +1692,7 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
     }
     // Set the IV pattern to indirect, and the stream will fill in AddrFunc
     // info.
-    ProtoConfiguration->set_val_pattern(ValuePattern);
+    ProtoConfig->set_val_pattern(ValuePattern);
     // Handle the addr func input values.
     for (auto Input : SS->getAddrFuncInputValues()) {
       ClonedInputValues.push_back(this->getClonedValue(Input));
@@ -1701,23 +1708,15 @@ void StreamExecutionTransformer::generateMemStreamConfiguration(
         llvm::errs() << '\n';
         assert(false && "Unconditional linear stream should have AddRecSCEV.");
       }
-      auto ClonedConfigureLoop =
-          this->getOrCreateLoopInClonedModule(SS->ConfigureLoop);
-      auto ClonedInnerMostLoop =
-          this->getOrCreateLoopInClonedModule(SS->InnerMostLoop);
-      auto ClonedAddrSCEV = ClonedSE->getSCEV(ClonedAddr);
       auto ClonedAddrAddRecSCEV =
           llvm::dyn_cast<llvm::SCEVAddRecExpr>(ClonedAddrSCEV);
-      this->generateAddRecStreamConfiguration(
-          ClonedConfigureLoop, ClonedInnerMostLoop, ClonedAddrAddRecSCEV,
-          InsertBefore, ClonedSE, ClonedSEExpander, ClonedInputValues,
-          ProtoConfiguration);
+      this->generateAddRecStreamConfig(GenArgs, ClonedAddrAddRecSCEV,
+                                       ProtoConfig);
       return;
     } else if (SS->StaticStreamInfo.stp_pattern() ==
                ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
-      llvm::errs() << "Can't handle conditional linear mem stream "
-                   << S->getStreamName() << '\n';
-      assert(false);
+      this->generateLinearCondStepStreamConfig(GenArgs, SS, ProtoConfig);
+      return;
     }
   }
 
@@ -1789,90 +1788,84 @@ void StreamExecutionTransformer::generateUserMemStreamConfiguration(
   this->PendingRemovedInsts.insert(ClonedConfigInst);
 }
 
-void StreamExecutionTransformer::generateReduceAndPtrChaseStreamConfiguration(
-    const llvm::Loop *ClonedConfigureLoop,
-    const llvm::Loop *ClonedInnerMostLoop, const StaticIndVarStream *SS,
-    llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
-    llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
-    ProtoStreamConfiguration *ProtoConfiguration) {
-  // Add the input value.
-  auto PHINode = SS->PHINode;
-  int NumInitialValues = 0;
-  for (int Idx = 0, NumIncoming = PHINode->getNumIncomingValues();
-       Idx < NumIncoming; ++Idx) {
-    auto IncomingBB = PHINode->getIncomingBlock(Idx);
-    auto IncomingValue = PHINode->getIncomingValue(Idx);
-    if (!SS->InnerMostLoop->contains(IncomingBB)) {
-      NumInitialValues++;
-      ClonedInputValues.push_back(this->getClonedValue(IncomingValue));
-      if (auto IncomingInst =
-              llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
-        if (SS->ConfigureLoop->contains(IncomingInst)) {
-          llvm::errs() << SS->getStreamName()
-                       << " InitValue inside ConfigLoop:\n";
-          IncomingInst->print(llvm::errs());
-          llvm_unreachable("Reduce/PtrChase InitValue inside ConfigLoop.");
-        }
-      }
-    }
-  }
-
-  if (NumInitialValues != 1) {
-    llvm::errs() << "Stream " << SS->getStreamName()
-                 << " NonSingle NumInitValues " << NumInitialValues << '\n';
-    assert(false && "Multiple initial values for Reduce/PtrChase stream.");
-  }
+void StreamExecutionTransformer::generateReduceAndPtrChaseStreamConfig(
+    GenStreamConfigArgs &Args, const StaticIndVarStream *SS,
+    ProtoStreamConfiguration *ProtoConfig) {
   /**
    * If the initial value is zero, we encode it in the configuration to save
    * one instruction.
    */
-  auto InitialValue = ClonedInputValues.back();
+  auto InitialValue = SS->getSingleInitValue();
+  Args.ClonedInputValues.push_back(this->getClonedValue(InitialValue));
   if (auto ConstantInitialValue =
           llvm::dyn_cast<llvm::Constant>(InitialValue)) {
     if (ConstantInitialValue->isZeroValue()) {
       SS->StaticStreamInfo.mutable_compute_info()->set_reduce_from_zero(true);
-      ClonedInputValues.pop_back();
-    }
-  }
-  /**
-   * If the TripCount is fixed, we also put it as part of the configuration.
-   */
-  if (SS->StaticStreamInfo.is_trip_count_fixed()) {
-    for (auto Loop = ClonedInnerMostLoop; ClonedConfigureLoop->contains(Loop);
-         Loop = Loop->getParentLoop()) {
-      auto TripCountSCEV = LoopUtils::getTripCountSCEV(ClonedSE, Loop);
-      if (llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) ||
-          !ClonedSE->isLoopInvariant(TripCountSCEV, ClonedConfigureLoop)) {
-        llvm::errs() << "This is not FixedTripCount.\n";
-      }
-
-      LLVM_DEBUG({
-        llvm::dbgs() << "Stream " << SS->getStreamName()
-                     << " Add FixTripSCEV: ";
-        TripCountSCEV->dump();
-        llvm::dbgs() << ".\n";
-      });
-      this->addStreamInputSCEV(TripCountSCEV, false /* Signed */, InsertBefore,
-                               ClonedSEExpander, ClonedInputValues,
-                               ProtoConfiguration);
+      Args.ClonedInputValues.pop_back();
     }
   }
   // Any additional input values from the reduction function.
   for (auto Input : SS->getReduceFuncInputValues()) {
-    ClonedInputValues.push_back(this->getClonedValue(Input));
+    Args.ClonedInputValues.push_back(this->getClonedValue(Input));
   }
 }
 
-void StreamExecutionTransformer::generateAddRecStreamConfiguration(
-    const llvm::Loop *ClonedConfigureLoop,
-    const llvm::Loop *ClonedInnerMostLoop,
-    const llvm::SCEVAddRecExpr *ClonedAddRecSCEV,
-    llvm::Instruction *InsertBefore, llvm::ScalarEvolution *ClonedSE,
-    llvm::SCEVExpander *ClonedSEExpander, InputValueVec &ClonedInputValues,
-    ProtoStreamConfiguration *ProtoConfiguration) {
+void StreamExecutionTransformer::generateLinearCondStepStreamConfig(
+    GenStreamConfigArgs &Args, const StaticStream *SS,
+    ProtoStreamConfiguration *ProtoConfig) {
+  ProtoConfig->set_val_pattern(::LLVM::TDG::StreamValuePattern::LINEAR);
+
+  auto StepSCEV = SS->getLinearCondStepStrideSCEV();
+  auto ConstStepSCEV = llvm::dyn_cast<llvm::SCEVConstant>(StepSCEV);
+  if (!ConstStepSCEV) {
+    llvm_unreachable("We can only handle ConstStep for Linear CondStepS.");
+  }
+  // So far we can only handle const step.
+  this->addStreamInputSCEV(StepSCEV, true /* Signed */, Args.InsertBefore,
+                           Args.ClonedSEExpander, Args.ClonedInputValues,
+                           ProtoConfig);
+
+  const llvm::SCEV *ClonedInitialValueSCEV = nullptr;
+  if (SS->Type == StaticStream::TypeT::IV) {
+    auto IVS = reinterpret_cast<const StaticIndVarStream *>(SS);
+    auto InitialValue = IVS->getSingleInitValue();
+    auto ClonedInitialValue = this->getClonedValue(InitialValue);
+    ClonedInitialValueSCEV = Args.ClonedSE->getSCEV(ClonedInitialValue);
+  } else if (SS->Type == StaticStream::TypeT::MEM) {
+    auto MemS = reinterpret_cast<const StaticMemStream *>(SS);
+    auto BaseSCEV = MemS->getLinearCondStepBaseSCEV();
+    auto BaseValueSCEV = llvm::dyn_cast<llvm::SCEVUnknown>(BaseSCEV);
+    if (!BaseValueSCEV) {
+      llvm_unreachable("Base not Value.");
+    }
+    auto BaseValue = BaseValueSCEV->getValue();
+    auto ClonedBaseValue = this->getClonedValue(BaseValue);
+    ClonedInitialValueSCEV = Args.ClonedSE->getSCEV(ClonedBaseValue);
+
+  } else {
+    llvm_unreachable("Not implemented yet.");
+  }
+
+  this->addStreamInputSCEV(ClonedInitialValueSCEV, false /* Signed */,
+                           Args.InsertBefore, Args.ClonedSEExpander,
+                           Args.ClonedInputValues, ProtoConfig);
+
+}
+
+void StreamExecutionTransformer::generateAddRecStreamConfig(
+    GenStreamConfigArgs &Args, const llvm::SCEVAddRecExpr *ClonedAddRecSCEV,
+    ProtoStreamConfiguration *ProtoConfig) {
+
+  auto &ClonedConfigureLoop = Args.ClonedConfigureLoop;
+  auto &ClonedInnerMostLoop = Args.ClonedInnerMostLoop;
+  auto &InsertBefore = Args.InsertBefore;
+  auto &ClonedSE = Args.ClonedSE;
+  auto &ClonedSEExpander = Args.ClonedSEExpander;
+  auto &ClonedInputValues = Args.ClonedInputValues;
+
   assert(ClonedAddRecSCEV->isAffine() &&
          "Can only handle affine AddRecSCEV so far.");
-  ProtoConfiguration->set_val_pattern(::LLVM::TDG::StreamValuePattern::LINEAR);
+  ProtoConfig->set_val_pattern(::LLVM::TDG::StreamValuePattern::LINEAR);
 
   // ! These are all cloned SCEV.
   int RecurLevel = 0;
@@ -1895,7 +1888,7 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
         // Add the stride input.
         this->addStreamInputSCEV(StrideSCEV, true /* Signed */, InsertBefore,
                                  ClonedSEExpander, ClonedInputValues,
-                                 ProtoConfiguration);
+                                 ProtoConfig);
         auto StartSCEV = AddRecSCEV->getStart();
         CurrentSCEV = StartSCEV;
       } else {
@@ -1913,7 +1906,7 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
           llvm::IntegerType::get(this->ClonedModule->getContext(), 64));
       this->addStreamInputSCEV(ZeroStrideSCEV, true /* Signed */, InsertBefore,
                                ClonedSEExpander, ClonedInputValues,
-                               ProtoConfiguration);
+                               ProtoConfig);
     }
     // We need the back-edge taken times if this is not ConfigureLoop.
     // Otherwise it's optional.
@@ -1926,7 +1919,7 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
         ClonedSE->isLoopInvariant(TripCountSCEV, ClonedConfigureLoop)) {
       this->addStreamInputSCEV(TripCountSCEV, false /* Signed */, InsertBefore,
                                ClonedSEExpander, ClonedInputValues,
-                               ProtoConfiguration);
+                               ProtoConfig);
     } else {
       assert(CurrentLoop == ClonedConfigureLoop &&
              "Need const TripCount for nested loop.");
@@ -1942,8 +1935,7 @@ void StreamExecutionTransformer::generateAddRecStreamConfiguration(
   assert(ClonedSE->isLoopInvariant(CurrentSCEV, ClonedConfigureLoop) &&
          "LoopVariant StartValue.");
   this->addStreamInputSCEV(CurrentSCEV, false /*Signed */, InsertBefore,
-                           ClonedSEExpander, ClonedInputValues,
-                           ProtoConfiguration);
+                           ClonedSEExpander, ClonedInputValues, ProtoConfig);
 }
 
 void StreamExecutionTransformer::handleExtraInputValue(
@@ -2008,8 +2000,8 @@ void StreamExecutionTransformer::handleExtraInputValue(
 void StreamExecutionTransformer::addStreamInputSCEV(
     const llvm::SCEV *ClonedSCEV, bool Signed, llvm::Instruction *InsertBefore,
     llvm::SCEVExpander *ClonedSCEVExpander, InputValueVec &ClonedInputValues,
-    LLVM::TDG::IVPattern *ProtoConfiguration) {
-  auto ProtoInput = ProtoConfiguration->add_params();
+    LLVM::TDG::IVPattern *ProtoConfig) {
+  auto ProtoInput = ProtoConfig->add_params();
   auto ClonedInputValue =
       ClonedSCEVExpander->expandCodeFor(ClonedSCEV, nullptr, InsertBefore);
   this->addStreamInputValue(ClonedInputValue, Signed, ClonedInputValues,

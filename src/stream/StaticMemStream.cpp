@@ -7,7 +7,7 @@
 #define DEBUG_TYPE "StaticMemStream"
 
 StaticMemStream::StaticMemStream(StaticStreamRegionAnalyzer *_Analyzer,
-                                 const llvm::Instruction *_Inst,
+                                 llvm::Instruction *_Inst,
                                  const llvm::Loop *_ConfigureLoop,
                                  const llvm::Loop *_InnerMostLoop,
                                  llvm::ScalarEvolution *_SE,
@@ -225,22 +225,37 @@ void StaticMemStream::analyzeIsCandidate() {
   }
 
   if (this->isDirectMemStream()) {
+    /**
+     * For DirectMemS, either:
+     * 1. It is a valid AddRecSCEV.
+     * 2. Or it is a AddSCEV with LinearCondStep IVBaseS.
+     */
     // For direct MemStream we want to enforce AddRecSCEV.
-    if (!llvm::isa<llvm::SCEVAddRecExpr>(SCEV)) {
+    if (llvm::isa<llvm::SCEVAddRecExpr>(SCEV)) {
+      if (!this->validateAddRecSCEV(SCEV)) {
+        LLVM_DEBUG({
+          llvm::dbgs() << "[NotCandidate]: DirectMemS but Invalid AddRecSCEV "
+                       << this->getStreamName() << " SCEV: ";
+          SCEV->print(llvm::dbgs());
+          llvm::dbgs() << '\n';
+        });
+        this->IsCandidate = false;
+        return;
+      }
+    } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV)) {
+
+      if (!this->validateAddSCEV(AddSCEV)) {
+        LLVM_DEBUG(llvm::dbgs()
+                       << "[NotCandidate]: InvalidAddSCEV for DirectMemS "
+                       << this->getStreamName() << '\n';);
+        this->IsCandidate = false;
+        return;
+      }
+
+    } else {
       LLVM_DEBUG({
-        llvm::dbgs() << "[NotCandidate]: DirectMemStream Requires AddRecSCEV "
+        llvm::dbgs() << "[NotCandidate]: InvalidSCEV for DirectMemS "
                      << this->getStreamName() << " SCEV: ";
-        SCEV->print(llvm::dbgs());
-        llvm::dbgs() << '\n';
-      });
-      this->IsCandidate = false;
-      return;
-    }
-    if (!this->validateAddRecSCEV(SCEV)) {
-      LLVM_DEBUG({
-        llvm::dbgs()
-            << "[NotCandidate]: DirectMemStream but Invalid AddRecSCEV "
-            << this->getStreamName() << " SCEV: ";
         SCEV->print(llvm::dbgs());
         llvm::dbgs() << '\n';
       });
@@ -359,6 +374,117 @@ bool StaticMemStream::validateSCEVAsStreamDG(
   return true;
 }
 
+bool StaticMemStream::validateAddSCEV(const llvm::SCEVAddExpr *AddSCEV) {
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "  Find AddSCEV: ";
+    AddSCEV->print(llvm::dbgs());
+    llvm::dbgs() << '\n';
+  });
+
+  if (this->BaseStepRootStreams.size() != 1) {
+    LLVM_DEBUG(llvm::dbgs() << "  Not SingleStepRootS: Cnt "
+                            << this->BaseStepRootStreams.size() << '\n';);
+    return false;
+  }
+
+  /**
+   * Very limit support for LinearCondStep MemS. The SCEV must be
+   * the format of:
+   *
+   * ElemSize * IndVar + Base.
+   *
+   * Corresponding to C program A[i].
+   */
+
+  auto NumOperands = AddSCEV->getNumOperands();
+  if (NumOperands != 2) {
+    LLVM_DEBUG(llvm::dbgs() << "  Not BinaryAddSCEV\n");
+    return false;
+  }
+
+  const llvm::SCEV *BaseSCEV = nullptr;
+  const llvm::SCEV *OffsetSCEV = nullptr;
+
+  for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
+    auto OpSCEV = AddSCEV->getOperand(OperandIdx);
+    if (!this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
+      if (OffsetSCEV) {
+        // Already have one.
+        LLVM_DEBUG(llvm::dbgs() << "  Multi OffsetSCEV\n");
+        return false;
+      } else {
+        OffsetSCEV = OpSCEV;
+      }
+    } else {
+      if (BaseSCEV) {
+        LLVM_DEBUG(llvm::dbgs() << "  Multi BaseSCEV\n");
+        return false;
+      } else {
+        BaseSCEV = OpSCEV;
+      }
+    }
+  }
+
+  if (!BaseSCEV || !OffsetSCEV) {
+    LLVM_DEBUG(llvm::dbgs() << "  Missing BaseSCEV or OffsetSCEV\n");
+    return false;
+  }
+
+  auto OffsetMulSCEV = llvm::dyn_cast<llvm::SCEVMulExpr>(OffsetSCEV);
+  if (!OffsetMulSCEV) {
+    LLVM_DEBUG(llvm::dbgs() << "  Not Mul OffsetSECV\n");
+    return false;
+  }
+
+  if (OffsetMulSCEV->getNumOperands() != 2) {
+    LLVM_DEBUG(llvm::dbgs() << "  Not Binary OffsetSECV\n");
+    return false;
+  }
+  auto ConstSCEV = OffsetMulSCEV->getOperand(0);
+  auto IndVarSCEV = OffsetMulSCEV->getOperand(1);
+  if (!llvm::isa<llvm::SCEVConstant>(ConstSCEV)) {
+    LLVM_DEBUG({
+      llvm::dbgs() << "  Not ConstSECV ";
+      ConstSCEV->print(llvm::dbgs());
+      llvm::dbgs() << '\n';
+    });
+    return false;
+  }
+
+  auto StepRootS = *this->BaseStepRootStreams.begin();
+  auto StepRootSCEV = this->SE->getSCEV(StepRootS->Inst);
+  if (IndVarSCEV != StepRootSCEV) {
+    LLVM_DEBUG(llvm::dbgs() << "  Not IndVarSCEV\n");
+    return false;
+  }
+
+  this->LinearCondStepBaseSCEV = BaseSCEV;
+  this->LinearCondStepElemSizeSCEV = ConstSCEV;
+  return true;
+}
+
+const llvm::SCEV *StaticMemStream::getLinearCondStepStrideSCEV() const {
+
+  // Need to multiply the the ElemSize with IndVar's Stride.
+  auto BaseS = *this->ChosenBaseStepRootStreams.begin();
+  auto IndVarStride = BaseS->getLinearCondStepStrideSCEV();
+
+  auto Stride =
+      this->SE->getMulExpr(IndVarStride, this->LinearCondStepElemSizeSCEV);
+
+  // This should automatically fold constant.
+  if (!llvm::isa<llvm::SCEVConstant>(Stride)) {
+    llvm_unreachable("Only Support Constant Stride.");
+  }
+
+  return Stride;
+}
+
+const llvm::SCEV *StaticMemStream::getLinearCondStepBaseSCEV() const {
+  return this->LinearCondStepBaseSCEV;
+}
+
 bool StaticMemStream::validateAddRecSCEV(const llvm::SCEV *SCEV) {
 
   int RecurLevel = 0;
@@ -440,8 +566,8 @@ bool StaticMemStream::checkIsQualifiedWithoutBackEdgeDep() const {
       return false;
     }
   }
-  // All the base streams are qualified, and thus know their StepPattern. We can
-  // check the constraints on static mapping.
+  // All the base streams are qualified, and thus know their StepPattern. We
+  // can check the constraints on static mapping.
   if (!this->checkStaticMapToBaseStreamsInParentLoop()) {
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::NO_STATIC_MAPPING);

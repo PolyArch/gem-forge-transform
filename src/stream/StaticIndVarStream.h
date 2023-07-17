@@ -20,6 +20,9 @@ public:
   void finalizePattern() override;
   const InstSet &getComputeInsts() const override { return this->ComputeInsts; }
 
+  llvm::Value *getSingleInitValue() const;
+  const llvm::SCEV *getLinearCondStepStrideSCEV() const override;
+
   llvm::PHINode *PHINode;
 
 private:
@@ -55,6 +58,9 @@ private:
     }
     void debug() const;
   };
+
+  const ComputeMetaNode *
+  getFirstNonEmptyComputeNode(const ComputePath &ComputePath) const;
 
   /**
    * Initialize the DFSStack by pushing the first PHINodeMetaGraph.

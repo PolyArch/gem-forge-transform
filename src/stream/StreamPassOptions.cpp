@@ -48,6 +48,10 @@ llvm::cl::opt<bool> StreamPassEnableValueDG(
     "stream-pass-enable-value-dg", llvm::cl::init(false),
     llvm::cl::desc("Analyze ValueDG for store/atomic streams."));
 
+llvm::cl::opt<bool> StreamPassEnableValueDepOnInnerLoop(
+    "stream-pass-enable-value-dep-on-inner-loop", llvm::cl::init(false),
+    llvm::cl::desc("Allow value dependence on inner loop."));
+
 llvm::cl::opt<bool> StreamPassEnableFuseLoadOp(
     "stream-pass-enable-fuse-load-op", llvm::cl::init(false),
     llvm::cl::desc("Fuse profitable load ops into streams."));

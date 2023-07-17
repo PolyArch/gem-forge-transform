@@ -77,24 +77,8 @@ void StaticIndVarStream::analyzeValuePattern() {
   if (!this->NonEmptyComputePath) {
     return;
   }
-  const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
-  for (const auto &ComputeMNode : this->NonEmptyComputePath->ComputeMetaNodes) {
-    if (ComputeMNode->isEmpty()) {
-      continue;
-    }
-    FirstNonEmptyComputeMNode = ComputeMNode;
-    break;
-  }
-  LLVM_DEBUG({
-    llvm::dbgs() << "  FirstNonEmpty Value: "
-                 << FirstNonEmptyComputeMNode->RootValue->getName()
-                 << " SCEV: ";
-    if (FirstNonEmptyComputeMNode->SCEV) {
-      FirstNonEmptyComputeMNode->SCEV->dump();
-    } else {
-      llvm::dbgs() << "None\n";
-    }
-  });
+  auto FirstNonEmptyComputeMNode =
+      this->getFirstNonEmptyComputeNode(*this->NonEmptyComputePath);
   this->StaticStreamInfo.set_val_pattern(
       this->analyzeValuePatternFromComputePath(FirstNonEmptyComputeMNode));
   LLVM_DEBUG(llvm::dbgs() << "  Value pattern "
@@ -496,6 +480,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
 
   // 1.
   if (!this->CallInputs.empty()) {
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: HasCallInput.\n");
     this->IsCandidate = false;
     return;
   }
@@ -508,6 +493,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
   if (this->StaticStreamInfo.val_pattern() ==
       LLVM::TDG::StreamValuePattern::RANDOM) {
     // This is not a recognizable pattern.
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Random ValPat.\n");
     this->IsCandidate = false;
     return;
   }
@@ -518,6 +504,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
   if (this->StaticStreamInfo.stp_pattern() ==
       LLVM::TDG::StreamStepPattern::CONDITIONAL) {
     if (!StreamPassEnableConditionalStep) {
+      LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: Disabled CondStep.\n");
       this->IsCandidate = false;
       return;
     }
@@ -538,6 +525,7 @@ void StaticIndVarStream::analyzeIsCandidate() {
     this->IsCandidate = false;
     this->StaticStreamInfo.set_not_stream_reason(
         LLVM::TDG::StaticStreamInfo::IV_NO_MEM_DEPENDENT);
+    LLVM_DEBUG(llvm::dbgs() << "[NotCandidate]: IVStream wo. MemDep.\n");
     return;
   }
 
@@ -917,4 +905,94 @@ void StaticIndVarStream::searchComputeInsts() {
       }
     }
   }
+}
+
+llvm::Value *StaticIndVarStream::getSingleInitValue() const {
+
+  auto PHINode = this->PHINode;
+  int NumInitialValues = 0;
+  int InitialValueIdx = -1;
+  for (int Idx = 0, NumIncoming = PHINode->getNumIncomingValues();
+       Idx < NumIncoming; ++Idx) {
+    auto IncomingBB = PHINode->getIncomingBlock(Idx);
+    auto IncomingValue = PHINode->getIncomingValue(Idx);
+    if (!this->InnerMostLoop->contains(IncomingBB)) {
+      NumInitialValues++;
+      InitialValueIdx = Idx;
+      if (auto IncomingInst =
+              llvm::dyn_cast<llvm::Instruction>(IncomingValue)) {
+        if (this->ConfigureLoop->contains(IncomingInst)) {
+          llvm::errs() << this->getStreamName()
+                       << " InitValue inside ConfigLoop:\n";
+          IncomingInst->print(llvm::errs());
+          llvm_unreachable("Reduce/PtrChase InitValue inside ConfigLoop.");
+        }
+      }
+    }
+  }
+
+  if (NumInitialValues != 1) {
+    llvm::errs() << "Stream " << this->getStreamName()
+                 << " NonSingle NumInitValues " << NumInitialValues << '\n';
+    assert(false && "Multiple initial values for Reduce/PtrChase stream.");
+  }
+
+  return PHINode->getIncomingValue(InitialValueIdx);
+}
+
+const StaticIndVarStream::ComputeMetaNode *
+StaticIndVarStream::getFirstNonEmptyComputeNode(
+    const ComputePath &ComputePath) const {
+
+  const ComputeMetaNode *FirstNonEmptyComputeMNode = nullptr;
+  for (const auto &ComputeMNode : ComputePath.ComputeMetaNodes) {
+    if (ComputeMNode->isEmpty()) {
+      continue;
+    }
+    FirstNonEmptyComputeMNode = ComputeMNode;
+    break;
+  }
+  LLVM_DEBUG({
+    llvm::dbgs() << "  FirstNonEmpty Value: "
+                 << FirstNonEmptyComputeMNode->RootValue->getName()
+                 << " SCEV: ";
+    if (FirstNonEmptyComputeMNode->SCEV) {
+      FirstNonEmptyComputeMNode->SCEV->dump();
+    } else {
+      llvm::dbgs() << "None\n";
+    }
+  });
+  return FirstNonEmptyComputeMNode;
+}
+
+const llvm::SCEV *StaticIndVarStream::getLinearCondStepStrideSCEV() const {
+  assert(this->StaticStreamInfo.stp_pattern() ==
+         ::LLVM::TDG::StreamStepPattern::CONDITIONAL);
+  assert(this->StaticStreamInfo.val_pattern() ==
+         ::LLVM::TDG::StreamValuePattern::LINEAR);
+
+  assert(this->NonEmptyComputePath && "Missing NonEmptyComputePath.");
+  auto FirstNonEmptyComputeMNode =
+      this->getFirstNonEmptyComputeNode(*this->NonEmptyComputePath);
+  auto SCEV = FirstNonEmptyComputeMNode->SCEV;
+  auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV);
+  assert(AddSCEV && "Should be AddSCEV");
+
+  /**
+   * There should be only one LoopInvariant Value, which is the step.
+   * So far we only handle constant value.
+   */
+  auto NumOperands = AddSCEV->getNumOperands();
+  const llvm::SCEV *LoopVariantSCEV = nullptr;
+  bool hasOneLoopVariantSCEV = false;
+  for (size_t OperandIdx = 0; OperandIdx < NumOperands; ++OperandIdx) {
+    auto OpSCEV = AddSCEV->getOperand(OperandIdx);
+    if (this->SE->isLoopInvariant(OpSCEV, this->InnerMostLoop)) {
+      // Loop invariant.
+      return OpSCEV;
+    }
+    assert(!LoopVariantSCEV && "Multi LoopVariant Val.");
+    LoopVariantSCEV = OpSCEV;
+  }
+  llvm_unreachable("No StepValue.");
 }

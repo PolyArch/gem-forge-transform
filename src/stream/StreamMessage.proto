@@ -105,7 +105,7 @@ message StaticStreamInfo {
   uint32 loop_possible_path = 7;
   uint32 config_loop_possible_path = 8;
   IVPattern iv_pattern = 9;
-  bool float_manual = 10;
+  ManualFloatType float_manual = 10;
   StreamParam const_update_param = 14;
   bool is_cond_access = 15; // Whether this is conditional access.
   bool is_trip_count_fixed = 16; // Whether the trip count is know at configure time.
@@ -169,6 +169,12 @@ message StaticStreamInfo {
     // Not Qualified Reason.
     BASE_STREAM_NOT_QUALIFIED = 20;
     NO_STATIC_MAPPING = 21;
+  }
+
+  enum ManualFloatType {
+    RUNTIME = 0;
+    FLOAT = 1;
+    NOT_FLOAT = 2;
   }
 }
 

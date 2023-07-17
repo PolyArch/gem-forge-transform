@@ -6,8 +6,7 @@
 class StaticMemStream : public StaticStream {
 public:
   StaticMemStream(StaticStreamRegionAnalyzer *_Analyzer,
-                  const llvm::Instruction *_Inst,
-                  const llvm::Loop *_ConfigureLoop,
+                  llvm::Instruction *_Inst, const llvm::Loop *_ConfigureLoop,
                   const llvm::Loop *_InnerMostLoop, llvm::ScalarEvolution *_SE,
                   const llvm::PostDominatorTree *_PDT,
                   llvm::DataLayout *_DataLayout);
@@ -19,6 +18,9 @@ public:
     return this->AddrDG->getComputeInsts();
   }
   InputValueList getAddrFuncInputValues() const;
+
+  const llvm::SCEV *getLinearCondStepStrideSCEV() const override;
+  const llvm::SCEV *getLinearCondStepBaseSCEV() const;
 
   void constructChosenGraph() override;
 
@@ -53,6 +55,17 @@ private:
    * Helper function to check that AddRecSCEV is valid at ConfigureLoop.
    */
   bool validateAddRecSCEV(const llvm::SCEV *SCEV);
+
+  /**
+   * Helper function to check that AddSCEV is valid at ConfigureLoop.
+   */
+  bool validateAddSCEV(const llvm::SCEVAddExpr *AddSCEV);
+
+  /**
+   * Remember some AddSCEV break down.
+   */
+  const llvm::SCEV *LinearCondStepBaseSCEV = nullptr;
+  const llvm::SCEV *LinearCondStepElemSizeSCEV = nullptr;
 
   LLVM::TDG::StreamStepPattern computeStepPattern() const override;
 
