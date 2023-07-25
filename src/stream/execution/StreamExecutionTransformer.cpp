@@ -1804,6 +1804,31 @@ void StreamExecutionTransformer::generateReduceAndPtrChaseStreamConfig(
       Args.ClonedInputValues.pop_back();
     }
   }
+  /**
+   * If the TripCount is fixed, we also put it as part of the configuration.
+   */
+  if (SS->StaticStreamInfo.is_trip_count_fixed()) {
+    for (auto Loop = Args.ClonedInnerMostLoop;
+         Args.ClonedConfigureLoop->contains(Loop);
+         Loop = Loop->getParentLoop()) {
+      auto TripCountSCEV = LoopUtils::getTripCountSCEV(Args.ClonedSE, Loop);
+      if (llvm::isa<llvm::SCEVCouldNotCompute>(TripCountSCEV) ||
+          !Args.ClonedSE->isLoopInvariant(TripCountSCEV,
+                                          Args.ClonedConfigureLoop)) {
+        llvm::errs() << "This is not FixedTripCount.\n";
+      }
+
+      LLVM_DEBUG({
+        llvm::dbgs() << "Stream " << SS->getStreamName()
+                     << " Add FixTripSCEV: ";
+        TripCountSCEV->dump();
+        llvm::dbgs() << ".\n";
+      });
+      this->addStreamInputSCEV(TripCountSCEV, false /* Signed */,
+                               Args.InsertBefore, Args.ClonedSEExpander,
+                               Args.ClonedInputValues, ProtoConfig);
+    }
+  }
   // Any additional input values from the reduction function.
   for (auto Input : SS->getReduceFuncInputValues()) {
     Args.ClonedInputValues.push_back(this->getClonedValue(Input));
@@ -1849,7 +1874,6 @@ void StreamExecutionTransformer::generateLinearCondStepStreamConfig(
   this->addStreamInputSCEV(ClonedInitialValueSCEV, false /* Signed */,
                            Args.InsertBefore, Args.ClonedSEExpander,
                            Args.ClonedInputValues, ProtoConfig);
-
 }
 
 void StreamExecutionTransformer::generateAddRecStreamConfig(
