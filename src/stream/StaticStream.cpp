@@ -470,7 +470,7 @@ void StaticStream::constructGraph(GetStreamFuncT GetStream) {
   LLVM_DEBUG(llvm::dbgs() << "== SS: ConstructStreamGraph done.\n");
   // Some misc analysis.
   this->analyzeIsConditionalAccess();
-  this->analyzeIsTripCountFixed();
+  this->analyzeTripCount();
 }
 
 /**
@@ -662,6 +662,8 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
       this->UserFloat = ::LLVM::TDG::StaticStreamInfo_ManualFloatType_NOT_FLOAT;
     } else if (ParamName == "fake-addr-base") {
       this->UserFakeAddrBaseStreamName = Param.substr(EqualPos + 1);
+    } else if (ParamName == "analyze-max-trip-count") {
+      this->UserAnalyzeMaxTripCount = true;
     }
 
     SlashPos = NextSlashPos;
@@ -744,7 +746,8 @@ void StaticStream::analyzeIsConditionalAccess() const {
   return;
 }
 
-void StaticStream::analyzeIsTripCountFixed() const {
+void StaticStream::analyzeTripCount() {
+  bool TripCountFixed = true;
   for (auto Loop = this->InnerMostLoop; this->ConfigureLoop->contains(Loop);
        Loop = Loop->getParentLoop()) {
     auto TripCountSCEV = LoopUtils::getTripCountSCEV(this->SE, Loop);
@@ -757,11 +760,31 @@ void StaticStream::analyzeIsTripCountFixed() const {
         this->SE->print(llvm::dbgs());
         llvm::dbgs() << '\n';
       });
-      this->StaticStreamInfo.set_is_trip_count_fixed(false);
-      return;
+      TripCountFixed = false;
+      break;
     }
   }
-  this->StaticStreamInfo.set_is_trip_count_fixed(true);
+  this->StaticStreamInfo.set_is_trip_count_fixed(TripCountFixed);
+  if (TripCountFixed) {
+    return;
+  }
+
+  /**
+   * If the trip count is not fixed, we check if there is a maximal
+   * trip count. So far we only do this for single level loop.
+   *
+   * And we only do this for specific stream.
+   */
+  if (this->InnerMostLoop != this->ConfigureLoop ||
+      !this->UserAnalyzeMaxTripCount) {
+    return;
+  }
+
+  auto MaxTripSCEV = LoopUtils::getMaxTripCountSCEV(SE, this->InnerMostLoop);
+  if (auto MaxTripUnknown = llvm::dyn_cast<llvm::SCEVUnknown>(MaxTripSCEV)) {
+    this->StaticStreamInfo.set_has_max_trip_count(true);
+    this->MaxTripCount = MaxTripUnknown->getValue();
+  }
   return;
 }
 

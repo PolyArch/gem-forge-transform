@@ -261,31 +261,7 @@ const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
   const auto &FuncName =
       Utils::getDemangledFunctionName(Loop->getHeader()->getParent());
   if (LoopUtils::isSingleExitLoop(Loop)) {
-    // Special case: we simply take the exit count from the the single in-loop
-    // predecessor BB of the header.
-    llvm::SmallVector<llvm::BasicBlock *, 4> ExitingBBs;
-    Loop->getExitingBlocks(ExitingBBs);
-    auto HeaderBB = Loop->getHeader();
-    llvm::BasicBlock *SingleExitingBB = nullptr;
-    for (auto ExitingBB : ExitingBBs) {
-      for (auto SuccBB : llvm::successors(ExitingBB)) {
-        if (SuccBB == HeaderBB) {
-          if (SingleExitingBB) {
-            // We already have an single exiting BB.
-            llvm::errs() << "Func " << FuncName << " has multi-exit loop "
-                         << Loop->getName() << '\n';
-            llvm_unreachable("Illegal SingleExit Function.");
-          }
-          SingleExitingBB = ExitingBB;
-          break;
-        }
-      }
-    }
-    if (!SingleExitingBB) {
-      llvm::errs() << "Func " << FuncName << " has no-exit loop "
-                   << Loop->getName() << '\n';
-      llvm_unreachable("Illegal SingleExit Function.");
-    }
+    auto SingleExitingBB = LoopUtils::getSingleExitBB(Loop);
     BackEdgeTakenSCEV = SE->getExitCount(Loop, SingleExitingBB);
     LLVM_DEBUG({
       llvm::dbgs()
@@ -328,6 +304,10 @@ const llvm::SCEV *LoopUtils::getTripCountSCEV(llvm::ScalarEvolution *SE,
 }
 
 bool LoopUtils::isSingleExitLoop(const llvm::Loop *Loop) {
+  if (Loop->getBlocks().size() == 1) {
+    // Single BB loop.
+    return true;
+  }
   std::string FileName;
   if (auto DebugLoc = Loop->getStartLoc()) {
     auto Scope = llvm::cast<llvm::DIScope>(DebugLoc.getScope());
@@ -344,6 +324,108 @@ bool LoopUtils::isSingleExitLoop(const llvm::Loop *Loop) {
     }
   }
   return false;
+}
+
+llvm::BasicBlock *LoopUtils::getSingleExitBB(const llvm::Loop *Loop) {
+  // Special case: we simply take the exit count from the the single in-loop
+  // predecessor BB of the header.
+  llvm::SmallVector<llvm::BasicBlock *, 4> ExitingBBs;
+  Loop->getExitingBlocks(ExitingBBs);
+  auto HeaderBB = Loop->getHeader();
+  llvm::BasicBlock *SingleExitingBB = nullptr;
+  for (auto ExitingBB : ExitingBBs) {
+    for (auto SuccBB : llvm::successors(ExitingBB)) {
+      if (SuccBB == HeaderBB) {
+        if (SingleExitingBB) {
+          // We already have an single exiting BB.
+          llvm::errs() << "Func " << Loop->getHeader()->getParent()->getName()
+                       << " has multi-exit loop " << Loop->getName() << '\n';
+          llvm_unreachable("Illegal SingleExit Function.");
+        }
+        SingleExitingBB = ExitingBB;
+        break;
+      }
+    }
+  }
+  if (!SingleExitingBB) {
+    llvm::errs() << "Func " << Loop->getHeader()->getParent()->getName()
+                 << " has no-exit loop " << Loop->getName() << '\n';
+    llvm_unreachable("Illegal SingleExit Function.");
+  }
+  return SingleExitingBB;
+}
+
+const llvm::SCEV *LoopUtils::getMaxTripCountSCEV(llvm::ScalarEvolution *SE,
+                                                 const llvm::Loop *Loop) {
+
+  LLVM_DEBUG(llvm::dbgs() << "Analyze MaxTripCount for " << getLoopId(Loop)
+                          << '\n');
+
+  auto MaxBackEdgeTakenCount = SE->computeMaxBackedgeTakenCount(Loop);
+  LLVM_DEBUG({
+    llvm::dbgs() << "SymbolicMaxBackEdgeTakenCount ";
+    MaxBackEdgeTakenCount->print(llvm::dbgs());
+    llvm::dbgs() << '\n';
+  });
+
+  if (!llvm::isa<llvm::SCEVCouldNotCompute>(MaxBackEdgeTakenCount)) {
+    return MaxBackEdgeTakenCount;
+  }
+
+  if (!LoopUtils::isSingleExitLoop(Loop)) {
+    LLVM_DEBUG(llvm::dbgs() << "Not single exit loop.\n");
+    return MaxBackEdgeTakenCount;
+  }
+
+  auto SingleExitingBB = LoopUtils::getSingleExitBB(Loop);
+  auto TerminatorInst = SingleExitingBB->getTerminator();
+  auto BranchInst = llvm::dyn_cast<llvm::BranchInst>(TerminatorInst);
+  if (!BranchInst) {
+    return MaxBackEdgeTakenCount;
+  }
+
+  auto BranchCond = BranchInst->getOperand(0);
+
+  /**
+   * Brute-force pattern match on the branch condition:
+   *
+   * cond = ((i + 1) == max_trip_count) || (...)
+   *
+   */
+  if (auto BranchCondInst = llvm::dyn_cast<llvm::BinaryOperator>(BranchCond)) {
+    if (BranchCondInst->getOpcode() == llvm::Instruction::BinaryOps::Or) {
+      if (auto CmpInst =
+              llvm::dyn_cast<llvm::ICmpInst>(BranchCondInst->getOperand(0))) {
+        if (CmpInst->getPredicate() == llvm::CmpInst::Predicate::ICMP_EQ) {
+          auto AddInst =
+              llvm::dyn_cast<llvm::BinaryOperator>(CmpInst->getOperand(0));
+          auto MaxTripCount =
+              llvm::dyn_cast<llvm::Instruction>(CmpInst->getOperand(1));
+          if (AddInst &&
+              AddInst->getOpcode() == llvm::Instruction::BinaryOps::Add &&
+              MaxTripCount && !Loop->contains(MaxTripCount) &&
+              SE->isSCEVable(MaxTripCount->getType())) {
+
+            auto IV = llvm::dyn_cast<llvm::PHINode>(AddInst->getOperand(0));
+            auto Step =
+                llvm::dyn_cast<llvm::ConstantInt>(AddInst->getOperand(1));
+            if (IV && Loop->contains(IV) && Step && Step->getZExtValue() == 1) {
+              // Finally we should be fine.
+              MaxBackEdgeTakenCount = SE->getSCEV(MaxTripCount);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "Final ";
+    MaxBackEdgeTakenCount->print(llvm::dbgs());
+    llvm::dbgs() << '\n';
+  });
+
+  return MaxBackEdgeTakenCount;
 }
 
 void LoopIterCounter::configure(llvm::Loop *_Loop) {

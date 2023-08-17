@@ -1964,6 +1964,14 @@ void StreamExecutionTransformer::generateAddRecStreamConfig(
 
 void StreamExecutionTransformer::handleExtraInputValue(
     StaticStream *SS, InputValueVec &ClonedInputValues) {
+
+  /**
+   * If we have the MaxTripCount, add it to the input.
+   */
+  if (SS->MaxTripCount) {
+    ClonedInputValues.push_back(this->getClonedValue(SS->MaxTripCount));
+  }
+
   /**
    * If this has merged predicate stream, handle inputs from pred func.
    */

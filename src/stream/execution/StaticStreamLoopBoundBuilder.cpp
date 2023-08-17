@@ -91,6 +91,7 @@ bool StaticStreamLoopBoundBuilder::isStreamLoopBound(
    * We add the LoopBoundDG to ConfigureInfo iff.
    * 1. This is a valid LoopBoundPredicate.
    * 2. All the input streams are chosen streams configured within this loop.
+   * 3. The loop does not has a fixed trip count.
    */
   if (!LatchBBBranchDG->isValidLoopBoundPredicate()) {
     LLVM_DEBUG(llvm::dbgs() << "[LoopBound] InvalidLoopBoundPredicate\n");

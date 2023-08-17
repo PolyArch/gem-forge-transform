@@ -108,7 +108,8 @@ message StaticStreamInfo {
   ManualFloatType float_manual = 10;
   StreamParam const_update_param = 14;
   bool is_cond_access = 15; // Whether this is conditional access.
-  bool is_trip_count_fixed = 16; // Whether the trip count is know at configure time.
+  bool is_trip_count_fixed = 16; // Whether the trip count is known at configure time.
+  bool has_max_trip_count = 17;  // Whether the max trip count is known, (but breakable).
   repeated PredicatedStreamId predicated_streams = 18; // Predicated streams.
   repeated PredicatedStreamId merged_predicated_streams = 19; // Merged predicated streams.
   bool is_merged_predicated_stream = 20; // This predicated stream has been merged.

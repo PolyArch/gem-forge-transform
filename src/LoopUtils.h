@@ -109,6 +109,11 @@ public:
                                             const llvm::Loop *Loop);
   static bool isSingleExitLoop(const llvm::Loop *Loop);
 
+  static llvm::BasicBlock *getSingleExitBB(const llvm::Loop *Loop);
+
+  static const llvm::SCEV *getMaxTripCountSCEV(llvm::ScalarEvolution *SE,
+                                               const llvm::Loop *Loop);
+
 private:
   static int countPossiblePathFromBB(
       const llvm::Loop *Loop,

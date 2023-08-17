@@ -84,6 +84,12 @@ public:
       ::LLVM::TDG::StaticStreamInfo_ManualFloatType_RUNTIME;
 
   /**
+   * User want to analyze the maximal trip count of the stream.
+   * So far only used in BFS pull CSR.
+   */
+  bool UserAnalyzeMaxTripCount = false;
+
+  /**
    * The constructor just creates the object and does not perform any analysis.
    *
    * After creating all the streams, the manager should call constructGraph() to
@@ -323,6 +329,11 @@ public:
   bool InputValuesValid = false;
   std::list<const llvm::Value *> InputValues;
 
+  /**
+   * Remember that we have a MaxTripCount.
+   */
+  const llvm::Value *MaxTripCount = nullptr;
+
   using InstSet = std::unordered_set<const llvm::Instruction *>;
   const InstSet &getStepInsts() const { return this->StepInsts; }
   virtual const InstSet &getComputeInsts() const = 0;
@@ -494,7 +505,7 @@ protected:
   /**
    * Analyze if this has known trip count.
    */
-  void analyzeIsTripCountFixed() const;
+  void analyzeTripCount();
 
   /**
    * This is a hack function to judge if this is a StepInst.
