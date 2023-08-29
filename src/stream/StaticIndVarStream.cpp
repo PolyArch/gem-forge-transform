@@ -137,6 +137,21 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
         return LLVM::TDG::StreamValuePattern::LINEAR;
       }
     } else if (auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV)) {
+      LLVM_DEBUG(llvm::dbgs() << "Start of add expr \n");
+
+      if (StaticIndVarStream::ternCheck(AddSCEV)) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Ternary Pattern Identified, Returning Linear \n");
+        this->StaticStreamInfo.set_stp_pattern(
+            ::LLVM::TDG::StreamStepPattern::CONDITIONAL);
+        this->IsTernaryIV = true;
+        for (auto BaseBaseS : this->BackBaseStreams) {
+          BaseBaseS->BackIVDependentStreams.erase(this);
+        }
+        this->BackBaseStreams.clear();
+        return LLVM::TDG::StreamValuePattern::LINEAR;
+      }
+
       /**
        * If one of the operand is loop invariant, and the other one is our
        * PHINode, then this is LINEAR.
@@ -188,6 +203,57 @@ StaticIndVarStream::analyzeValuePatternFromComputePath(
   this->StaticStreamInfo.set_not_stream_reason(
       LLVM::TDG::StaticStreamInfo::RANDOM_PATTERN);
   return LLVM::TDG::StreamValuePattern::RANDOM;
+}
+
+bool StaticIndVarStream::ternCheck(const llvm::SCEVAddExpr *AddSCEV) {
+  LLVM_DEBUG(llvm::dbgs() << "In Tern Check");
+  auto NumOperands = AddSCEV->getNumOperands();
+  // const llvm::SCEV *LoopVariantSCEV = nullptr;
+  auto OpSCEV1 = AddSCEV->getOperand(0);
+  auto OpSCEV2 = AddSCEV->getOperand(1);
+  bool ZextValid = false;
+  const llvm::SCEVZeroExtendExpr *ZopExpr;
+  LLVM_DEBUG(llvm::dbgs() << OpSCEV1);
+  if (llvm::isa<llvm::SCEVZeroExtendExpr>(OpSCEV1)) {
+    LLVM_DEBUG(llvm::dbgs() << "Zext expression found as first operand\n");
+
+    auto ZopSCEV = llvm::dyn_cast<llvm::SCEVZeroExtendExpr>(OpSCEV1);
+    ZopExpr = ZopSCEV;
+    auto Op1 = ZopSCEV->getOperand(0)->getType();
+    LLVM_DEBUG({
+      ZopSCEV->dump();
+      OpSCEV1->dump();
+      Op1->dump();
+      if (llvm::isa<llvm::SCEVUnknown>(ZopSCEV->getOperand(0))) {
+        llvm::dbgs() << "Unknown value found\n";
+      }
+      // llvm::dbgs() << "\n";
+    });
+
+    if (Op1->isIntegerTy(1)) {
+      LLVM_DEBUG(llvm::dbgs() << "Zext has 1 bit int \n ");
+      ZextValid = true;
+      // LLVM_DEBUG(llvm::dbgs() << ZextValid);
+    }
+  }
+  if (llvm::isa<llvm::SCEVUnknown>(OpSCEV2)) {
+    auto USCEV = llvm::dyn_cast<llvm::SCEVUnknown>(OpSCEV2);
+    auto phiU =
+        llvm::dyn_cast<llvm::SCEVUnknown>(this->SE->getSCEV(this->PHINode));
+    llvm::dbgs() << "Unknown expression found as 2nd operand";
+    if (USCEV->getValue() == phiU->getValue()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Second operand is PHI, Ternary Check Complete \n");
+      // LLVM_DEBUG(llvm::dbgs() << ZextValid);
+
+      StepAmnt =
+          llvm::dyn_cast<llvm::SCEVUnknown>(ZopExpr->getOperand(0))->getValue();
+      return ZextValid;
+    }
+  }
+  LLVM_DEBUG(
+      llvm::dbgs() << "Ternary Patten Not Found, continuing Branch check\n");
+  return false;
 }
 
 void StaticIndVarStream::buildReduceDG(
@@ -743,6 +809,9 @@ void StaticIndVarStream::finalizePattern() {
       if (this->StaticStreamInfo.val_pattern() ==
           LLVM::TDG::StreamValuePattern::REDUCTION) {
         // Do not reset the reduction pattern?
+      } else if (this->StaticStreamInfo.val_pattern() ==
+                 LLVM::TDG::StreamValuePattern::LINEAR) {
+        // Do not reset the Linear pattern for ternary experiment.
       } else {
         this->StaticStreamInfo.set_val_pattern(
             LLVM::TDG::StreamValuePattern::PREV_LOAD);
@@ -977,6 +1046,13 @@ const llvm::SCEV *StaticIndVarStream::getLinearCondStepStrideSCEV() const {
   auto SCEV = FirstNonEmptyComputeMNode->SCEV;
   auto AddSCEV = llvm::dyn_cast<llvm::SCEVAddExpr>(SCEV);
   assert(AddSCEV && "Should be AddSCEV");
+
+  if (this->IsTernaryIV) {
+    auto &LLVMContext = this->PHINode->getType()->getContext();
+    // stepAmount = llvm::Type::getInt64Ty(LLVMContext);
+    return this->SE->getConstant(llvm::Type::getInt64Ty(LLVMContext), 1,
+                                 true /* Signed */);
+  }
 
   /**
    * There should be only one LoopInvariant Value, which is the step.

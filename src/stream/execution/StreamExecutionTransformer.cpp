@@ -1028,20 +1028,46 @@ void StreamExecutionTransformer::transformStepInst(
     auto StreamIdValue = llvm::ConstantInt::get(
         llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
         StreamId, false);
-    std::array<llvm::Value *, 1> StreamStepArgs{StreamIdValue};
-    auto StreamStepInst = Builder.CreateCall(
-        llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
-                                        llvm::Intrinsic::ssp_stream_step),
-        StreamStepArgs);
-  }
-  /**
-   * If this is a CallInst to ssp_step, we can mark it pending removed.
-   */
-  if (Utils::isCallOrInvokeInst(StepInst)) {
-    auto Callee = Utils::getCalledValue(StepInst);
-    if (Callee->getName() == "ssp_step") {
-      auto ClonedStepInst = this->getClonedValue(StepInst);
-      this->PendingRemovedInsts.insert(ClonedStepInst);
+    bool IsConditionalIV = false;
+    if (StepStream->Type == StaticStream::TypeT::IV) {
+      auto StaticIV = static_cast<StaticIndVarStream *>(StepStream);
+      if (StaticIV->IsTernaryIV) {
+        IsConditionalIV = true;
+        auto StepAmount = StaticIV->StepAmnt;
+        llvm::Value *stepAmnt64 = nullptr;
+
+        auto ClonedStepAmount = this->getClonedValue(StepAmount);
+        stepAmnt64 = Builder.CreateZExt(
+            ClonedStepAmount,
+            llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()),
+            "Step_Amnt");
+
+        std::array<llvm::Value *, 2> StreamStepArgs2{StreamIdValue, stepAmnt64};
+        auto StreamStepInstByAmnt =
+            Builder.CreateCall(llvm::Intrinsic::getDeclaration(
+                                   this->ClonedModule.get(),
+                                   llvm::Intrinsic::ssp_stream_step_amnt),
+                               StreamStepArgs2);
+      }
+    }
+    if (!IsConditionalIV) {
+
+      std::array<llvm::Value *, 1> StreamStepArgs{StreamIdValue};
+      auto StreamStepInst = Builder.CreateCall(
+          llvm::Intrinsic::getDeclaration(this->ClonedModule.get(),
+                                          llvm::Intrinsic::ssp_stream_step),
+          StreamStepArgs);
+    }
+
+    /**
+     * If this is a CallInst to ssp_step, we can mark it pending removed.
+     */
+    if (Utils::isCallOrInvokeInst(StepInst)) {
+      auto Callee = Utils::getCalledValue(StepInst);
+      if (Callee->getName() == "ssp_step") {
+        auto ClonedStepInst = this->getClonedValue(StepInst);
+        this->PendingRemovedInsts.insert(ClonedStepInst);
+      }
     }
   }
 }
@@ -1197,8 +1223,9 @@ void StreamExecutionTransformer::handleValueDG(
     if (SS->UpdateStream) {
       /**
        * If this is an update stream, we remember the information in the
-       * LoadUpdateStream. Notice that update stream has implicit dependence on
-       * itself, therefore we should avoid adding the circular dependence here.
+       * LoadUpdateStream. Notice that update stream has implicit dependence
+       * on itself, therefore we should avoid adding the circular dependence
+       * here.
        */
       if (LoadSS != SS->UpdateStream) {
         auto LoadProto = LoadSS->StaticStreamInfo.mutable_compute_info()
@@ -1277,28 +1304,30 @@ StreamExecutionTransformer::findStepPosition(StaticStream *StepStream,
    * It is tricky to find the correct insertion point of the step instruction.
    * It changes the meaning of the induction variable as well as all dependent
    * streams.
-   * One naive solution is to insert StreamStep after the increment instruction,
-   * usually like i++. However, when the loop body contains a[i+1], the compiler
-   * will try to avoid compute i+1 twice. Thus, it will generate IR like these:
+   * One naive solution is to insert StreamStep after the increment
+   * instruction, usually like i++. However, when the loop body contains
+   * a[i+1], the compiler will try to avoid compute i+1 twice. Thus, it will
+   * generate IR like these:
    *
    * next.i = i + 1
    * value  = load a[next.i]
    * ended  = cmp next.i, N
    * br
    *
-   * Therefore, inserting StreamStep after next.i will cause the next StreamLoad
-   * to be stepped early. I have no general solution so far, but luckily, in the
-   * current implementation, the original induction variable is not removed,
-   * which simplifies the semantic of StreamStep. It only controls the memory
-   * streams, and the induction variable streams are not exposed to the original
-   * program. So I came up with a adhoc solution.
-   * 1. Check if the basic block dominates all loop latches. If so, then this is
-   * an uncondtionally step, and we simply insert one StreamStep before the
+   * Therefore, inserting StreamStep after next.i will cause the next
+   * StreamLoad to be stepped early. I have no general solution so far, but
+   * luckily, in the current implementation, the original induction variable
+   * is not removed, which simplifies the semantic of StreamStep. It only
+   * controls the memory streams, and the induction variable streams are not
+   * exposed to the original program. So I came up with a adhoc solution.
+   * 1. Check if the basic block dominates all loop latches. If so, then this
+   * is an uncondtionally step, and we simply insert one StreamStep before the
    * terminator of all loop latches.
    * 2. If not, then this is a conditional step. I am not sure how to handle
-   * this yet, but we perform a sanity check if any dependent stream load comes
-   * after the basic block. If no StreamLoad comes after me, then we simply
-   * insert the StreamStep before the terminator of the step basic block.
+   * this yet, but we perform a sanity check if any dependent stream load
+   * comes after the basic block. If no StreamLoad comes after me, then we
+   * simply insert the StreamStep before the terminator of the step basic
+   * block.
    */
   auto Loop = StepStream->InnerMostLoop;
   auto LI = this->CachedLI->getLoopInfo(StepInst->getFunction());
@@ -1620,7 +1649,13 @@ void StreamExecutionTransformer::generateIVStreamConfiguration(
                  ::LLVM::TDG::StreamStepPattern::CONDITIONAL) {
     this->generateLinearCondStepStreamConfig(GenArgs, SS, ProtoConfig);
   } else {
-    llvm::errs() << "Can't handle IVStream " << S->getStreamName() << '\n';
+    llvm::errs() << "Can't handle IVStream " << S->getStreamName() << " ValPat "
+                 << ::LLVM::TDG::StreamValuePattern_Name(
+                        SS->StaticStreamInfo.val_pattern())
+                 << " StpPat "
+                 << ::LLVM::TDG::StreamStepPattern_Name(
+                        SS->StaticStreamInfo.stp_pattern())
+                 << '\n';
     assert(false);
   }
 }
