@@ -5,6 +5,8 @@
 
 class StaticIndVarStream : public StaticStream {
 public:
+  llvm::Value *StepAmnt = nullptr;
+  bool IsTernaryIV = false;
   StaticIndVarStream(StaticStreamRegionAnalyzer *_Analyzer,
                      llvm::PHINode *_PHINode, const llvm::Loop *_ConfigureLoop,
                      const llvm::Loop *_InnerMostLoop,
@@ -108,6 +110,7 @@ private:
   bool analyzeIsPointerChaseFromComputePath(
       const ComputeMetaNode *FirstNonEmptyComputeMNode) const;
 
+  bool ternCheck(const llvm::SCEVAddExpr *AddSCEV);
   /**
    * Build the ReduceDG.
    */
