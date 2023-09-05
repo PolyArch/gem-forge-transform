@@ -148,6 +148,12 @@ message StaticStreamInfo {
 
   repeated string user_param = 64;
 
+  // User specified strand split loop level (outer-most: 0).
+  repeated int32 user_strand_split_loop_level = 65;
+
+  // User want to spatially pin the offloaded stream
+  bool user_spatial_pin = 66;
+
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.

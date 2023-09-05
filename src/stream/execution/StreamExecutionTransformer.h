@@ -102,6 +102,9 @@ private:
                                   llvm::AtomicCmpXchgInst *AtomicCmpXchg);
   void transformStepInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
+  void fuseLoadBroadcast(StaticStreamRegionAnalyzer *Analyzer,
+                         StaticStream *LoadSS,
+                         llvm::Value *StreamLoadInst);
   void handleFusedLoadOpsForLoadStream(StaticStreamRegionAnalyzer *Analyzer,
                                        StaticStream *LoadSS);
   void upgradeLoadToUpdateStream(StaticStreamRegionAnalyzer *Analyzer,

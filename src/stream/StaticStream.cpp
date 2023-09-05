@@ -632,14 +632,21 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
    *      configured at, e.g., 2 will configure the stream at the second outer
    *      loop counting from the inner-most loop.
    *  - fake-addr-base=stream: This is to add a fake addr base to some memory
-   * stream to make this one an indirect stream. Used when our address pattern
-   *      is not a simple affine pattern from the ind var.
+   *      stream to make this one an indirect stream. Used when our address
+   *      pattern is not a simple affine pattern from the ind var.
+   *  - split-at-loop=loop-level[,...]+: This is to specify one or multiple
+   *      loop levels that the stream should be split into strands.
+   *      Counting from the outer-most loop (0).
+   *  - spatial-pin: When offloaded, the stream should be spatially pinned
+   *      without migration.
+   *  - no-ld-st-merge: Do not merge the store computation into the load
+   *      stream even when they are accessing the same address.
    */
   auto SlashPos = SSName.find('/');
   auto FirstSlashPos = SlashPos;
   while (SlashPos != SSName.npos) {
     auto NextSlashPos = SSName.find('/', SlashPos + 1);
-    auto Param = SSName.substr(SlashPos + 1, NextSlashPos).str();
+    auto Param = SSName.substr(SlashPos + 1, NextSlashPos - SlashPos - 1).str();
     this->StaticStreamInfo.add_user_param(Param);
 
     auto EqualPos = Param.find('=');
@@ -664,6 +671,23 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
       this->UserFakeAddrBaseStreamName = Param.substr(EqualPos + 1);
     } else if (ParamName == "analyze-max-trip-count") {
       this->UserAnalyzeMaxTripCount = true;
+    } else if (ParamName == "split-at-loop") {
+      // Separted by comma.
+      auto PrevPos = EqualPos + 1;
+      while (true) {
+        auto CommaPos = Param.find(',', PrevPos);
+        auto SplitLoopLevelStr = Param.substr(PrevPos, CommaPos);
+        this->StaticStreamInfo.add_user_strand_split_loop_level(
+            std::stoi(SplitLoopLevelStr));
+        if (CommaPos == std::string::npos) {
+          break;
+        }
+        PrevPos = CommaPos + 1;
+      }
+    } else if (ParamName == "spatial-pin") {
+      this->StaticStreamInfo.set_user_spatial_pin(true);
+    } else if (ParamName == "no-ld-st-merge") {
+      this->UserNoLoadStoreMerge = true;
     }
 
     SlashPos = NextSlashPos;
@@ -756,8 +780,8 @@ void StaticStream::analyzeTripCount() {
       continue;
     } else {
       LLVM_DEBUG({
-        llvm::dbgs() << "Unknown TripCount ";
-        this->SE->print(llvm::dbgs());
+        llvm::dbgs() << "Unknown TripCount for " << this->StreamName << ' ';
+        // this->SE->print(llvm::dbgs());
         llvm::dbgs() << '\n';
       });
       TripCountFixed = false;

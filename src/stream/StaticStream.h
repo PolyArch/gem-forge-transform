@@ -90,6 +90,11 @@ public:
   bool UserAnalyzeMaxTripCount = false;
 
   /**
+   * User explicitly disabled the load-store merge for store stream.
+   */
+  bool UserNoLoadStoreMerge = false;
+
+  /**
    * The constructor just creates the object and does not perform any analysis.
    *
    * After creating all the streams, the manager should call constructGraph() to

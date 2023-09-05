@@ -343,6 +343,11 @@ void StaticStreamRegionAnalyzer::markUpdateRelationshipForLoadStream(
     return;
   }
 
+  // CandidateSS explicitly disabled load store merge.
+  if (CandidateSS->UserNoLoadStoreMerge) {
+    return;
+  }
+
   // Make sure we don't have multiple update relationship for same StoreSS.
   if (CandidateSS->UpdateStream) {
     return;

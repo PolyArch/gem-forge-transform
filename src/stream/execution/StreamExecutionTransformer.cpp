@@ -766,6 +766,8 @@ void StreamExecutionTransformer::transformLoadInst(
       &ClonedFinalValueInst->getDebugLoc());
   ClonedFinalValueInst->replaceAllUsesWith(StreamLoadInst);
 
+  this->fuseLoadBroadcast(Analyzer, S, StreamLoadInst);
+
   this->handleFusedLoadOpsForLoadStream(Analyzer, S);
   this->upgradeLoadToUpdateStream(Analyzer, S);
   this->mergePredicatedStreams(Analyzer, S);
@@ -1070,6 +1072,121 @@ void StreamExecutionTransformer::transformStepInst(
       }
     }
   }
+}
+
+void StreamExecutionTransformer::fuseLoadBroadcast(
+    StaticStreamRegionAnalyzer *Analyzer, StaticStream *LoadSS,
+    llvm::Value *StreamLoadInst) {
+
+  /**
+   * Leverage the semantics that if the destination register
+   * is multiple of the loaded stream value, it will broadcast.
+   *
+   * So far we just do peephole optimization on the following:
+   *
+   * x = stream.load.f32
+   * y = insertelement undef, x, 0
+   * z = shufflevector y, undef, zeroinitializer
+   *
+   * z = stream.load.f512
+   */
+
+  // Check we are stream.load.f32.
+  auto StreamLoadCallInst = llvm::dyn_cast<llvm::CallInst>(StreamLoadInst);
+  if (!StreamLoadCallInst) {
+    return;
+  }
+  auto StreamLoadCallee = StreamLoadCallInst->getCalledFunction();
+  if (!StreamLoadCallee->isIntrinsic() ||
+      StreamLoadCallee->getIntrinsicID() != llvm::Intrinsic::ssp_stream_load ||
+      !StreamLoadCallee->getReturnType()->isFloatTy()) {
+    return;
+  }
+
+  // Check the only user is a insertelement.
+  auto LoadUse = StreamLoadCallInst->getSingleUndroppableUse();
+  if (!LoadUse) {
+    return;
+  }
+  auto InsertElemInst =
+      llvm::dyn_cast<llvm::InsertElementInst>(LoadUse->getUser());
+  if (!InsertElemInst) {
+    return;
+  }
+  // Check the vector type is v16f32
+  auto VecType =
+      llvm::dyn_cast<llvm::FixedVectorType>(InsertElemInst->getType());
+  if (!VecType || !VecType->getElementType()->isFloatTy() ||
+      VecType->getNumElements() != 16) {
+    return;
+  }
+  // Check the loaded value is inserted.
+  if (InsertElemInst->getOperand(1) != StreamLoadCallInst) {
+    return;
+  }
+  // Check that the insert pos is 0.
+  auto InsertPos =
+      llvm::dyn_cast<llvm::ConstantInt>(InsertElemInst->getOperand(2));
+  if (!InsertPos || !InsertPos->isZero()) {
+    return;
+  }
+
+  // Check the only followed user is a shufflevector.
+  auto InsertElemUse = InsertElemInst->getSingleUndroppableUse();
+  if (!InsertElemUse) {
+    return;
+  }
+  auto ShuffleVecInst =
+      llvm::dyn_cast<llvm::ShuffleVectorInst>(InsertElemUse->getUser());
+  if (!ShuffleVecInst) {
+    return;
+  }
+
+  // Check the first operand is inserted vector.
+  if (ShuffleVecInst->getOperand(0) != InsertElemInst) {
+    return;
+  }
+  // Check the shuffle index is all zero.
+  if (ShuffleVecInst->changesLength()) {
+    return;
+  }
+  for (auto ShuffleMask : ShuffleVecInst->getShuffleMask()) {
+    if (ShuffleMask != 0) {
+      return;
+    }
+  }
+  LLVM_DEBUG(llvm::dbgs() << "Fuse into LoadBroadcast " << LoadSS->StreamName
+                          << '\n');
+
+  auto BroacastLoadType = llvm::FixedVectorType::get(
+      llvm::Type::getDoubleTy(this->ClonedModule->getContext()), 8);
+  std::array<llvm::Type *, 1> BroadcastLoadTypes{BroacastLoadType};
+  llvm::IRBuilder<> Builder(StreamLoadCallInst);
+
+  auto IntrinsicID = llvm::Intrinsic::ssp_stream_load;
+
+  std::array<llvm::Value *, 1> StreamLoadArgs{
+      StreamLoadCallInst->getArgOperand(0)};
+  auto BroadcastLoadInst = Builder.CreateCall(
+      llvm::Intrinsic::getDeclaration(this->ClonedModule.get(), IntrinsicID,
+                                      BroadcastLoadTypes),
+      StreamLoadArgs);
+
+  // Remember the new StreamLoadInst in the map.
+  this->StreamToStreamLoadInstMap.erase(LoadSS);
+  this->StreamToStreamLoadInstMap.emplace(LoadSS, BroadcastLoadInst);
+
+  // Need a bitcast v8f64 -> v16f32
+  auto FinalRetInst = Builder.CreateBitCast(BroadcastLoadInst, VecType,
+                                            "ssp.broadcast_load.bitcast." +
+                                                LoadSS->Inst->getName());
+  // Replace the use of ShuffleVec with the new one.
+  ShuffleVecInst->replaceAllUsesWith(FinalRetInst);
+
+  // Mark the original StreamLoad to be removed.
+  this->PendingRemovedInsts.insert(StreamLoadCallInst);
+  this->PendingRemovedInsts.insert(InsertElemInst);
+  this->PendingRemovedInsts.insert(ShuffleVecInst);
 }
 
 void StreamExecutionTransformer::handleFusedLoadOpsForLoadStream(
