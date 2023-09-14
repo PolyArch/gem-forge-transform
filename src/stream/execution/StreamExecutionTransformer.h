@@ -103,8 +103,7 @@ private:
   void transformStepInst(StaticStreamRegionAnalyzer *Analyzer,
                          llvm::Instruction *StepInst);
   void fuseLoadBroadcast(StaticStreamRegionAnalyzer *Analyzer,
-                         StaticStream *LoadSS,
-                         llvm::Value *StreamLoadInst);
+                         StaticStream *LoadSS, llvm::Value *StreamLoadInst);
   void handleFusedLoadOpsForLoadStream(StaticStreamRegionAnalyzer *Analyzer,
                                        StaticStream *LoadSS);
   void upgradeLoadToUpdateStream(StaticStreamRegionAnalyzer *Analyzer,
@@ -201,6 +200,9 @@ private:
                                      llvm::Instruction *ClonedInsertBefore,
                                      const llvm::DebugLoc *DebugLoc = nullptr,
                                      bool isAtomic = false);
+  llvm::Value *addStreamTileLoad(StaticStream *S, llvm::Type *LoadType,
+                                 llvm::Instruction *ClonedInsertBefore,
+                                 const llvm::DebugLoc *DebugLoc = nullptr);
   void addStreamStore(StaticStream *S, llvm::Instruction *ClonedInsertBefore,
                       const llvm::DebugLoc *DebugLoc = nullptr);
   void addStreamInput(llvm::IRBuilder<> &Builder, int StreamId,

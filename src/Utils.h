@@ -21,6 +21,7 @@ public:
   }
 
   static bool isMemAccessInst(const llvm::Instruction *Inst);
+  static bool isTileLoadInst(const llvm::Instruction *Inst);
   static llvm::Value *getMemAddrValue(const llvm::Instruction *Inst);
   static llvm::Value *getMemAddrValue(const llvm::LoadInst *Inst) {
     return Inst->getOperand(0);

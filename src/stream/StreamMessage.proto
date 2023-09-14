@@ -31,6 +31,7 @@ enum DataType {
   VOID = 7;
   INT1 = 8;
   INT32_INT1 = 9;
+  TILE_1kB = 10;
 }
 
 message StreamParam {
@@ -153,6 +154,9 @@ message StaticStreamInfo {
 
   // User want to spatially pin the offloaded stream
   bool user_spatial_pin = 66;
+
+  // User specified bypass cache level
+  repeated string user_bypass_level = 67;
 
   enum StaticNotStreamReason {
     UNKNOWN = 0;

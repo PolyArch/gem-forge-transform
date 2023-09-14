@@ -761,9 +761,16 @@ void StreamExecutionTransformer::transformLoadInst(
     ClonedFinalValueInst = ClonedFusedOp;
   }
 
-  auto StreamLoadInst = this->addStreamLoadOrAtomic(
-      S, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
-      &ClonedFinalValueInst->getDebugLoc());
+  llvm::Value *StreamLoadInst = nullptr;
+  if (Utils::isTileLoadInst(S->Inst)) {
+    StreamLoadInst = this->addStreamTileLoad(
+        S, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
+        &ClonedFinalValueInst->getDebugLoc());
+  } else {
+    StreamLoadInst = this->addStreamLoadOrAtomic(
+        S, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
+        &ClonedFinalValueInst->getDebugLoc());
+  }
   ClonedFinalValueInst->replaceAllUsesWith(StreamLoadInst);
 
   this->fuseLoadBroadcast(Analyzer, S, StreamLoadInst);
@@ -863,6 +870,45 @@ llvm::Value *StreamExecutionTransformer::addStreamLoadOrAtomic(
     FinalRetInst = Builder.CreateBitCast(
         StreamLoadInst, LoadType, "ssp.load.bitcast." + S->Inst->getName());
   }
+  assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
+         "Module broken after inserting StreamLoad or StreamAtomic.");
+  return FinalRetInst;
+}
+
+llvm::Value *StreamExecutionTransformer::addStreamTileLoad(
+    StaticStream *S, llvm::Type *LoadType,
+    llvm::Instruction *ClonedInsertBefore, const llvm::DebugLoc *DebugLoc) {
+  /**
+   * Insert a StreamLoad for S.
+   */
+
+  // Here we should RegionStreamId to fit in immediate field.
+  auto StreamId = S->getRegionStreamId();
+  assert(StreamId >= 0 && StreamId < 128 &&
+         "Illegal RegionStreamId for StreamLoad.");
+  auto StreamIdValue = llvm::ConstantInt::get(
+      llvm::IntegerType::getInt64Ty(this->ClonedModule->getContext()), StreamId,
+      false);
+
+  auto TileRegValue = this->getClonedValue(Utils::getArgOperand(S->Inst, 0));
+
+  std::array<llvm::Value *, 2> StreamTileLoadArgs{StreamIdValue, TileRegValue};
+
+  auto StreamLoadType = LoadType;
+
+  llvm::IRBuilder<> Builder(ClonedInsertBefore);
+
+  auto IntrinsicID = llvm::Intrinsic::ssp_stream_tile_load;
+
+  auto StreamLoadInst =
+      Builder.CreateCall(llvm::Intrinsic::getDeclaration(
+                             this->ClonedModule.get(), IntrinsicID, {}),
+                         StreamTileLoadArgs);
+  if (DebugLoc) {
+    StreamLoadInst->setDebugLoc(llvm::DebugLoc(DebugLoc->get()));
+  }
+  this->StreamToStreamLoadInstMap.emplace(S, StreamLoadInst);
+  llvm::Value *FinalRetInst = StreamLoadInst;
   assert(!llvm::verifyModule(*this->ClonedModule, &llvm::errs()) &&
          "Module broken after inserting StreamLoad or StreamAtomic.");
   return FinalRetInst;
@@ -1553,6 +1599,11 @@ void StreamExecutionTransformer::cleanClonedModule() {
   for (auto &StreamInstPair : this->StreamToStreamLoadInstMap) {
     auto S = StreamInstPair.first;
     bool StreamCleared = false;
+    // Do not do this for the TileLoad for now.
+    // TODO: Correctly track whether the loaded tile is used.
+    if (Utils::isTileLoadInst(S->Inst)) {
+      continue;
+    }
     if (S->isLoopEliminated()) {
       StreamCleared = true;
     } else {

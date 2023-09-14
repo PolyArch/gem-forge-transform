@@ -66,9 +66,29 @@ bool Utils::isMemAccessInst(const llvm::Instruction *Inst) {
   if (Utils::isCallOrInvokeInst(Inst)) {
     // Check if this is a masked store with constant mask.
     auto Callee = Utils::getCalledFunction(Inst);
-    if (Callee && Callee->getIntrinsicID() == llvm::Intrinsic::masked_store) {
-      auto Mask = Utils::getArgOperand(Inst, 3);
-      if (llvm::isa<llvm::ConstantVector>(Mask)) {
+    if (Callee && Callee->isIntrinsic()) {
+      auto IntrinsicID = Callee->getIntrinsicID();
+      if (IntrinsicID == llvm::Intrinsic::masked_store) {
+        auto Mask = Utils::getArgOperand(Inst, 3);
+        if (llvm::isa<llvm::ConstantVector>(Mask)) {
+          return true;
+        }
+      } else if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool Utils::isTileLoadInst(const llvm::Instruction *Inst) {
+  if (Utils::isCallOrInvokeInst(Inst)) {
+    // Check if this is a masked store with constant mask.
+    auto Callee = Utils::getCalledFunction(Inst);
+    if (Callee && Callee->isIntrinsic()) {
+      auto IntrinsicID = Callee->getIntrinsicID();
+      if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
         return true;
       }
     }
@@ -89,9 +109,12 @@ llvm::Value *Utils::getMemAddrValue(const llvm::Instruction *Inst) {
   case llvm::Instruction::Store:
     return Inst->getOperand(1);
   case llvm::Instruction::Call: {
-    // Store or Call to MaskedStore.
-    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
-        llvm::Intrinsic::masked_store) {
+    auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+    if (IntrinsicID == llvm::Intrinsic::masked_store) {
+      // Store or Call to MaskedStore.
+      return Utils::getArgOperand(Inst, 1);
+    } else if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
+      // AMX tile load.
       return Utils::getArgOperand(Inst, 1);
     }
     break;

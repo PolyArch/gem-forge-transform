@@ -1512,20 +1512,26 @@ void StaticStreamRegionAnalyzer::chooseStreamAtInnerMost() {
 }
 
 void StaticStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
+  /**
+   * 1. For IV Stream:
+   * Instead of just choose the out-most loop, we use
+   * a heuristic to select the level with most number
+   * of dependent streams qualified.
+   * TODO: Fully check all dependent streams.
+   * 2: For Non-IV Stream:
+   * Choose the level same as the IV StepRoot.
+   */
   for (auto &InstStream : this->InstStaticStreamMap) {
     auto Inst = InstStream.first;
+    if (!llvm::isa<llvm::PHINode>(Inst)) {
+      continue;
+    }
     StaticStream *ChosenStream = nullptr;
     int ChosenNumQualifiedDepStreams = -1;
     for (auto &S : InstStream.second) {
       if (S->isQualified()) {
         LLVM_DEBUG(llvm::dbgs() << "==== Choose stream StaticOuterMost for "
                                 << S->getStreamName() << '\n');
-        /**
-         * Instead of just choose the out-most loop, we use
-         * a heuristic to select the level with most number
-         * of dependent streams qualified.
-         * TODO: Fully check all dependent streams.
-         */
         int NumQualifiedDepStreams = 0;
         std::vector<StaticStream *> Stack;
         std::set<StaticStream *> QualifiedDepStreams;
@@ -1569,6 +1575,33 @@ void StaticStreamRegionAnalyzer::chooseStreamAtStaticOuterMost() {
       ChosenStream->markChosen();
       LLVM_DEBUG(llvm::dbgs()
                  << "== Choose " << ChosenStream->getStreamName() << '\n');
+    }
+  }
+  for (auto &InstStream : this->InstStaticStreamMap) {
+    auto Inst = InstStream.first;
+    if (llvm::isa<llvm::PHINode>(Inst)) {
+      continue;
+    }
+    for (auto &S : InstStream.second) {
+      if (!S->isQualified()) {
+        continue;
+      }
+      LLVM_DEBUG(llvm::dbgs() << "==== Choose stream StaticOuterMost for "
+                              << S->getStreamName() << '\n');
+      assert(!S->BaseStepRootStreams.empty() &&
+             "Missing StepRoot for QualifiedS?");
+      bool AllStepRootChosen = true;
+      for (auto StepRootS : S->BaseStepRootStreams) {
+        if (!StepRootS->isChosen()) {
+          AllStepRootChosen = false;
+          break;
+        }
+      }
+      if (AllStepRootChosen) {
+        this->InstChosenStreamMap.emplace(Inst, S);
+        S->markChosen();
+        LLVM_DEBUG(llvm::dbgs() << "== Choose " << S->getStreamName() << '\n');
+      }
     }
   }
 }

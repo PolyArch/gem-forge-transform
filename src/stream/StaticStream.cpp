@@ -4,6 +4,7 @@
 
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/IntrinsicsX86.h" // For some x86 intrinsic ids.
 #include "llvm/Support/raw_ostream.h"
 
 #include <sstream>
@@ -71,6 +72,8 @@ StaticStream::translateToProtobufDataType(llvm::DataLayout *DataLayout,
       return ::LLVM::TDG::DataType::VECTOR_256;
     case 512:
       return ::LLVM::TDG::DataType::VECTOR_512;
+    case 8192:
+      return ::LLVM::TDG::DataType::TILE_1kB;
     default:
       llvm::errs() << "Invalid Vector BitWidth " << NumBits << '\n';
       Type->print(llvm::errs());
@@ -160,11 +163,15 @@ llvm::Type *StaticStream::getMemElementType() const {
     return ElementType;
   }
   case llvm::Instruction::Call: {
-    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
-        llvm::Intrinsic::masked_store) {
+    auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+    if (IntrinsicID == llvm::Intrinsic::masked_store) {
       auto AddrType = Utils::getMemAddrValue(this->Inst)->getType();
       auto ElementType = AddrType->getPointerElementType();
       return ElementType;
+    } else if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
+      // Get a fake v256f32 1kB vector type.
+      return llvm::FixedVectorType::get(
+          llvm::Type::getFloatTy(this->Inst->getModule()->getContext()), 256);
     } else {
       // This should be some atomic operation.
       return this->Inst->getType();
@@ -641,6 +648,8 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
    *      without migration.
    *  - no-ld-st-merge: Do not merge the store computation into the load
    *      stream even when they are accessing the same address.
+   *  - bypass=memory-level[,...]+: This is to specify which memory hierarchy
+   *      the stream would like to bypass. Only works for non-offloading.
    */
   auto SlashPos = SSName.find('/');
   auto FirstSlashPos = SlashPos;
@@ -688,6 +697,18 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
       this->StaticStreamInfo.set_user_spatial_pin(true);
     } else if (ParamName == "no-ld-st-merge") {
       this->UserNoLoadStoreMerge = true;
+    } else if (ParamName == "bypass") {
+      // Separted by comma.
+      auto PrevPos = EqualPos + 1;
+      while (true) {
+        auto CommaPos = Param.find(',', PrevPos);
+        auto BypassLevel = Param.substr(PrevPos, CommaPos);
+        this->StaticStreamInfo.add_user_bypass_level(BypassLevel);
+        if (CommaPos == std::string::npos) {
+          break;
+        }
+        PrevPos = CommaPos + 1;
+      }
     }
 
     SlashPos = NextSlashPos;
