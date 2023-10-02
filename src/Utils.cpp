@@ -30,8 +30,10 @@ bool Utils::isStoreInst(const llvm::Instruction *Inst) {
     return true;
   }
   if (llvm::isa<llvm::CallInst>(Inst)) {
-    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
-        llvm::Intrinsic::masked_store) {
+    auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+    if (IntrinsicID == llvm::Intrinsic::masked_store) {
+      return true;
+    } else if (IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
       return true;
     }
   }
@@ -44,12 +46,141 @@ llvm::Value *Utils::getStoreValue(const llvm::Instruction *Inst) {
     return Inst->getOperand(0);
   }
   if (llvm::isa<llvm::CallInst>(Inst)) {
-    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
-        llvm::Intrinsic::masked_store) {
+    auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+    if (IntrinsicID == llvm::Intrinsic::masked_store) {
       return Utils::getArgOperand(Inst, 0);
+    } else if (IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
+      return const_cast<llvm::Value *>(
+          Utils::getAMXValue(Inst, Utils::getArgOperand(Inst, 0)));
     }
   }
   llvm_unreachable("Failed to get StoreValue.");
+}
+
+llvm::Type *Utils::getType(const llvm::Value *Value) {
+  if (Utils::isAMXLoadInst(Value) || Utils::isAMXComputeInst(Value)) {
+    // Use vector float to fake tile register.
+    return llvm::FixedVectorType::get(
+        llvm::Type::getFloatTy(Value->getContext()), 16);
+  }
+  return Value->getType();
+}
+
+bool Utils::isAMXLoadInst(const llvm::Instruction *Inst) {
+  if (llvm::isa<llvm::CallInst>(Inst)) {
+    auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+    if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Utils::isAMXComputeInst(const llvm::Instruction *Inst) {
+  if (llvm::isa<llvm::CallInst>(Inst)) {
+    auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+    if (IntrinsicID == llvm::Intrinsic::x86_tdpbssd) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Utils::isAMXStoreInst(const llvm::Instruction *Inst) {
+  if (llvm::isa<llvm::CallInst>(Inst)) {
+    auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+    if (IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const llvm::Value *Utils::getAMXValue(const llvm::Instruction *ConsumingInst,
+                                      const llvm::Value *AMXRegIdx) {
+
+  /**
+   * I don't have a good solution, since LLVM's AMX support gives up the SSA
+   * format. Here I try to search backward to find any AMX load or compute
+   * instruction that writes the reg.
+   */
+
+  std::set<const llvm::BasicBlock *> VisitedBB;
+  std::vector<const llvm::BasicBlock *> Stack;
+  std::vector<const llvm::Instruction *> Producers;
+
+  VisitedBB.emplace(ConsumingInst->getParent());
+  Stack.push_back(ConsumingInst->getParent());
+
+  while (!Stack.empty()) {
+    auto BB = Stack.back();
+    Stack.pop_back();
+
+    auto InstIter = BB->rbegin();
+    auto InstEnd = BB->rend();
+
+    // Skip the those behind Inst if we are the first BB.
+    if (BB == ConsumingInst->getParent()) {
+      while (&(*InstIter) != ConsumingInst && InstIter != InstEnd) {
+        ++InstIter;
+      }
+      assert(InstIter != InstEnd && "ConsumingInst not in its BB?");
+      ++InstIter;
+    }
+
+    const llvm::Instruction *Producer = nullptr;
+
+    while (InstIter != InstEnd && !Producer) {
+      auto Inst = &*InstIter;
+
+      if (llvm::isa<llvm::CallInst>(Inst)) {
+
+        auto IntrinsicID = Utils::getCalledFunction(Inst)->getIntrinsicID();
+        switch (IntrinsicID) {
+        case llvm::Intrinsic::x86_tileloadd64:
+        case llvm::Intrinsic::x86_tdpbssd: {
+          if (Utils::getArgOperand(Inst, 0) == AMXRegIdx) {
+            Producer = Inst;
+          }
+          break;
+        }
+        default: {
+          break;
+        }
+        }
+      }
+
+      ++InstIter;
+    }
+
+    if (Producer) {
+      // If we found producer, no need to keep searching predecessors.
+      Producers.push_back(Producer);
+    } else {
+      // Else, add predecessor BB to the stack.
+      for (auto PredecessorBB : llvm::predecessors(BB)) {
+        if (!VisitedBB.count(PredecessorBB)) {
+          VisitedBB.emplace(PredecessorBB);
+          Stack.push_back(PredecessorBB);
+        }
+      }
+    }
+  }
+
+  if (Producers.size() != 1) {
+    llvm::errs() << "Failed to get AMX value "
+                 << Utils::formatLLVMInst(ConsumingInst) << " tile reg ";
+    AMXRegIdx->print(llvm::errs());
+    llvm::errs() << "\n";
+    llvm::errs() << "Found AMX Producers " << Producers.size() << " :\n";
+    for (auto Producer : Producers) {
+      llvm::errs() << "  " << Utils::formatLLVMInstWithoutFunc(Producer)
+                   << '\n';
+    }
+    llvm_unreachable("Failed to get AMX value.");
+  }
+
+  return Producers.front();
 }
 
 bool Utils::isMemAccessInst(const llvm::Instruction *Inst) {
@@ -74,6 +205,8 @@ bool Utils::isMemAccessInst(const llvm::Instruction *Inst) {
           return true;
         }
       } else if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
+        return true;
+      } else if (IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
         return true;
       }
     }
@@ -116,6 +249,9 @@ llvm::Value *Utils::getMemAddrValue(const llvm::Instruction *Inst) {
     } else if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
       // AMX tile load.
       return Utils::getArgOperand(Inst, 1);
+    } else if (IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
+      // AMX tile store.
+      return Utils::getArgOperand(Inst, 1);
     }
     break;
   }
@@ -136,6 +272,7 @@ bool Utils::isStreamSupportedIntrinsic(const llvm::Instruction *Inst) {
         case llvm::Intrinsic::sadd_sat:
         case llvm::Intrinsic::x86_avx512_min_ps_512:
         case llvm::Intrinsic::x86_avx512_max_ps_512:
+        case llvm::Intrinsic::x86_tdpbssd:
           return true;
         default:
           break;

@@ -168,7 +168,8 @@ llvm::Type *StaticStream::getMemElementType() const {
       auto AddrType = Utils::getMemAddrValue(this->Inst)->getType();
       auto ElementType = AddrType->getPointerElementType();
       return ElementType;
-    } else if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
+    } else if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64 ||
+               IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
       // Get a fake v256f32 1kB vector type.
       return llvm::FixedVectorType::get(
           llvm::Type::getFloatTy(this->Inst->getModule()->getContext()), 256);
@@ -653,6 +654,23 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
    */
   auto SlashPos = SSName.find('/');
   auto FirstSlashPos = SlashPos;
+
+  auto SplitByComma = [](const std::string &Param,
+                         std::size_t EqualPos) -> std::vector<std::string> {
+    auto PrevPos = EqualPos + 1;
+    std::vector<std::string> SubParams;
+    while (true) {
+      auto CommaPos = Param.find(',', PrevPos);
+      auto BypassLevel = Param.substr(PrevPos, CommaPos);
+      SubParams.push_back(BypassLevel);
+      if (CommaPos == std::string::npos) {
+        break;
+      }
+      PrevPos = CommaPos + 1;
+    }
+    return SubParams;
+  };
+
   while (SlashPos != SSName.npos) {
     auto NextSlashPos = SSName.find('/', SlashPos + 1);
     auto Param = SSName.substr(SlashPos + 1, NextSlashPos - SlashPos - 1).str();
@@ -682,16 +700,9 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
       this->UserAnalyzeMaxTripCount = true;
     } else if (ParamName == "split-at-loop") {
       // Separted by comma.
-      auto PrevPos = EqualPos + 1;
-      while (true) {
-        auto CommaPos = Param.find(',', PrevPos);
-        auto SplitLoopLevelStr = Param.substr(PrevPos, CommaPos);
+      for (const auto &SplitLoopLevelStr : SplitByComma(Param, EqualPos)) {
         this->StaticStreamInfo.add_user_strand_split_loop_level(
             std::stoi(SplitLoopLevelStr));
-        if (CommaPos == std::string::npos) {
-          break;
-        }
-        PrevPos = CommaPos + 1;
       }
     } else if (ParamName == "spatial-pin") {
       this->StaticStreamInfo.set_user_spatial_pin(true);
@@ -699,15 +710,13 @@ StaticStream::generateStreamNameFromMetaInfo(llvm::StringRef SSName) {
       this->UserNoLoadStoreMerge = true;
     } else if (ParamName == "bypass") {
       // Separted by comma.
-      auto PrevPos = EqualPos + 1;
-      while (true) {
-        auto CommaPos = Param.find(',', PrevPos);
-        auto BypassLevel = Param.substr(PrevPos, CommaPos);
+      for (const auto &BypassLevel : SplitByComma(Param, EqualPos)) {
         this->StaticStreamInfo.add_user_bypass_level(BypassLevel);
-        if (CommaPos == std::string::npos) {
-          break;
-        }
-        PrevPos = CommaPos + 1;
+      }
+    } else if (ParamName == "reuse") {
+      // Separted by comma.
+      for (const auto &Reuse : SplitByComma(Param, EqualPos)) {
+        this->StaticStreamInfo.add_user_reuse(Reuse);
       }
     }
 
@@ -1170,7 +1179,7 @@ void StaticStream::fillProtobufValueDGFuncInfoImpl(
     if (this->Inst == Input) {
       InputS = this;
     }
-    AddArg(Input->getType(), InputS);
+    AddArg(Utils::getType(Input), InputS);
   }
 
   // Finally handle tail AtomicRMWInst, with myself as the last input.

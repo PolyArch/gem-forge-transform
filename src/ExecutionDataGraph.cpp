@@ -83,7 +83,7 @@ void ExecutionDataGraph::dfsOnComputeInsts(const llvm::Instruction *Inst,
 
 llvm::Type *ExecutionDataGraph::getReturnType(bool IsLoad) const {
   if (this->hasSingleResult()) {
-    auto ResultType = this->getSingleResultValue()->getType();
+    auto ResultType = Utils::getType(this->getSingleResultValue());
     if (this->TailAtomicInst) {
       /**
        * For TailAtomicInst, the only exception is the load function for
@@ -113,7 +113,7 @@ llvm::FunctionType *ExecutionDataGraph::createFunctionType(llvm::Module *Module,
                                                            bool IsLoad) const {
   std::vector<llvm::Type *> Args;
   for (const auto &Input : this->Inputs) {
-    Args.emplace_back(Input->getType());
+    Args.emplace_back(Utils::getType(Input));
   }
   if (this->TailAtomicInst) {
     // Add additional input of the TailAtomicInst.
@@ -133,6 +133,8 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
     auto TempFunc = Module->getFunction(FuncName);
     assert(TempFunc == nullptr && "Function is already inside the module.");
   }
+
+  LLVM_DEBUG(llvm::dbgs() << "Generate ExecDataGraph " << FuncName << '\n');
 
   auto FuncType = this->createFunctionType(Module.get(), IsLoad);
   auto Function = llvm::Function::Create(
@@ -171,10 +173,16 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
   {
     // Remember to translate the constant value to themselves.
     for (const auto &ConstantData : this->ConstantValues) {
-      // This is hacky...
-      ValueMap.emplace(ConstantData,
-                       const_cast<llvm::Value *>(
-                           static_cast<const llvm::Value *>(ConstantData)));
+      if (auto ConstantInt = llvm::dyn_cast<llvm::ConstantInt>(ConstantData)) {
+        auto NewValue =
+            llvm::ConstantInt::get(Context, ConstantInt->getValue());
+        ValueMap.emplace(ConstantData, NewValue);
+      } else {
+        // This is hacky...
+        ValueMap.emplace(ConstantData,
+                         const_cast<llvm::Value *>(
+                             static_cast<const llvm::Value *>(ConstantData)));
+      }
     }
   }
 
@@ -228,6 +236,23 @@ ExecutionDataGraph::generateFunction(const std::string &FuncName,
       FinalValue = ValueMap.at(Op);
     }
   }
+
+  // Handle AMX compute inst. Simply return the first argument?
+  if (Utils::isAMXComputeInst(FinalValue)) {
+    LLVM_DEBUG({
+      llvm::dbgs() << "Return first arg. for AMX compute inst ";
+      FinalValue->dump();
+      llvm::dbgs() << "\n";
+    });
+    assert(!this->Inputs.empty() && "No input for AMX computation?");
+    FinalValue = ValueMap.at(this->Inputs.front());
+  }
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "Return ";
+    FinalValue->dump();
+    llvm::dbgs() << "\n";
+  });
 
   // Create the return inst.
   Builder.CreateRet(FinalValue);

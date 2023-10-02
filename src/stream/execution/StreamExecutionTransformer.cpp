@@ -1458,6 +1458,19 @@ void StreamExecutionTransformer::handleValueDG(
         &ClonedFinalValueInst->getDebugLoc(), true /* isAtomic */);
     ClonedFinalValueInst->replaceAllUsesWith(StreamAtomicInst);
   }
+
+  /**
+   * If this is an AMX store, we mark all compute inst as pending remove,
+   * as the compiler can not remove it automatically.
+   */
+  if (Utils::isAMXStoreInst(SS->Inst)) {
+    for (auto ComputeInst : SS->ValueDG->getComputeInsts()) {
+      if (Utils::isAMXComputeInst(ComputeInst)) {
+        auto ClonedComputeInst = this->getClonedValue(ComputeInst);
+        this->PendingRemovedInsts.insert(ClonedComputeInst);
+      }
+    }
+  }
 }
 
 llvm::Instruction *

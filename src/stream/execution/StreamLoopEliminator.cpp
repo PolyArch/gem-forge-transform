@@ -126,10 +126,10 @@ void StreamLoopEliminator::eliminateLoop(StaticStreamRegionAnalyzer *Analyzer,
    * For eliminated nest stream region, we remove StreamEnd.
    */
   if (Analyzer->getConfigureLoopInfo(Loop).isNested())
-  for (auto ClonedEndInst :
-       this->Transformer->LoopToClonedEndInstsMap.at(Loop)) {
-    this->Transformer->PendingRemovedInsts.insert(ClonedEndInst);
-  }
+    for (auto ClonedEndInst :
+         this->Transformer->LoopToClonedEndInstsMap.at(Loop)) {
+      this->Transformer->PendingRemovedInsts.insert(ClonedEndInst);
+    }
 
   LLVM_DEBUG({
     if (llvm::verifyFunction(*ClonedFunc, &llvm::dbgs())) {
@@ -186,6 +186,8 @@ bool StreamLoopEliminator::canLoopBeEliminated(
         auto Callee = Utils::getCalledFunction(Inst);
         if (Callee &&
             (Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_load ||
+             Callee->getIntrinsicID() ==
+                 llvm::Intrinsic::ssp_stream_tile_load ||
              Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_step ||
              Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_atomic ||
              Callee->getIntrinsicID() == llvm::Intrinsic::ssp_stream_store ||

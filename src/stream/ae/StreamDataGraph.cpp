@@ -71,7 +71,7 @@ void StreamDataGraph::constructDataGraph(IsIndOrCmpVarFuncT IsIndOrCmpVar) {
 
     if (llvm::isa<llvm::LoadInst>(Inst) ||
         llvm::isa<llvm::AtomicCmpXchgInst>(Inst) ||
-        llvm::isa<llvm::AtomicRMWInst>(Inst)) {
+        llvm::isa<llvm::AtomicRMWInst>(Inst) || Utils::isAMXLoadInst(Inst)) {
       // This is a load/atomic stream, should also be an input value.
       UnsortedInputs.insert(Inst);
       continue;
@@ -81,6 +81,21 @@ void StreamDataGraph::constructDataGraph(IsIndOrCmpVarFuncT IsIndOrCmpVar) {
     bool Inserted = this->ComputeInsts.insert(Inst).second;
     if (Inserted) {
       // The instruction is inserted, which means that it is an new instruction.
+      // We need to push into the BFS queue, with special cases for AMX.
+      if (Utils::isAMXComputeInst(Inst)) {
+        // Skip the first dest register and last intrinsic value.
+        for (unsigned OperandIdx = 1, NumOperand = Inst->getNumOperands();
+             OperandIdx + 1 < NumOperand; ++OperandIdx) {
+          auto AMXRegIdx = Inst->getOperand(OperandIdx);
+          auto AMXValue = Utils::getAMXValue(Inst, AMXRegIdx);
+          Queue.emplace_back(AMXValue);
+        }
+      }
+      /**
+       * Notice that even for AMX, we added all the operands (they should be
+       * constant data) to the queue so that we can later handle translation in
+       * ExecutionDataGraph.
+       */
       for (unsigned OperandIdx = 0, NumOperand = Inst->getNumOperands();
            OperandIdx != NumOperand; ++OperandIdx) {
         Queue.emplace_back(Inst->getOperand(OperandIdx));
@@ -190,12 +205,26 @@ StreamDataGraph::sliceWithFusedOp(const StreamSet &Streams) const {
     }
     bool StillUsed = false;
     for (const auto &ComputeInst : NewComputeInsts) {
-      for (auto OperandIdx = 0; OperandIdx < ComputeInst->getNumOperands();
-           ++OperandIdx) {
-        auto Operand = ComputeInst->getOperand(OperandIdx);
-        if (Operand == FinalInputValue) {
-          StillUsed = true;
-          break;
+      // Correctly handle the AMX dependence.
+      if (Utils::isAMXComputeInst(ComputeInst)) {
+        for (auto OperandIdx = 0; OperandIdx + 1 < ComputeInst->getNumOperands();
+             ++OperandIdx) {
+          auto Operand = ComputeInst->getOperand(OperandIdx);
+          auto AMXValue = Utils::getAMXValue(ComputeInst, Operand);
+          if (AMXValue == FinalInputValue) {
+            StillUsed = true;
+            break;
+          }
+        }
+
+      } else {
+        for (auto OperandIdx = 0; OperandIdx < ComputeInst->getNumOperands();
+             ++OperandIdx) {
+          auto Operand = ComputeInst->getOperand(OperandIdx);
+          if (Operand == FinalInputValue) {
+            StillUsed = true;
+            break;
+          }
         }
       }
       if (StillUsed) {

@@ -38,6 +38,38 @@ public:
   static bool isStoreInst(const llvm::Instruction *Inst);
   static llvm::Value *getStoreValue(const llvm::Instruction *Inst);
 
+  static llvm::Type *getType(const llvm::Value *Value);
+
+  /**
+   * Used to get the AMX tile value.
+   */
+  static bool isAMXLoadInst(const llvm::Value *Value) {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      return Utils::isAMXLoadInst(Inst);
+    } else {
+      return false;
+    }
+  }
+  static bool isAMXLoadInst(const llvm::Instruction *Inst);
+  static bool isAMXComputeInst(const llvm::Value *Value) {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      return Utils::isAMXComputeInst(Inst);
+    } else {
+      return false;
+    }
+  }
+  static bool isAMXComputeInst(const llvm::Instruction *Inst);
+  static bool isAMXStoreInst(const llvm::Value *Value) {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      return Utils::isAMXStoreInst(Inst);
+    } else {
+      return false;
+    }
+  }
+  static bool isAMXStoreInst(const llvm::Instruction *Inst);
+  static const llvm::Value *getAMXValue(const llvm::Instruction *ConsumingInst,
+                                        const llvm::Value *AMXRegIdx);
+
   static llvm::Type *getMemElementType(const llvm::Instruction *Inst) {
     auto MemAddrType = Utils::getMemAddrValue(Inst)->getType();
     return MemAddrType->getPointerElementType();

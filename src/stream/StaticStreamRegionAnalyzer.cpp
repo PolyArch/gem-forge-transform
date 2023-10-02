@@ -1356,6 +1356,9 @@ void StaticStreamRegionAnalyzer::analyzeIsCandidate() {
 
 bool StaticStreamRegionAnalyzer::isLegalValueDepInput(
     const llvm::Value *Value) const {
+  if (Utils::isAMXLoadInst(Value)) {
+    return true;
+  }
   auto Type = Value->getType();
   auto TypeSize = this->DataLayout->getTypeStoreSize(Type);
   if (TypeSize > 64) {

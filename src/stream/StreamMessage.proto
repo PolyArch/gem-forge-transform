@@ -158,6 +158,9 @@ message StaticStreamInfo {
   // User specified bypass cache level
   repeated string user_bypass_level = 67;
 
+  // User specified reuse at each cache level
+  repeated string user_reuse = 68;
+
   enum StaticNotStreamReason {
     UNKNOWN = 0;
     // Not Candidate Reason.
