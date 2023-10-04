@@ -7,16 +7,17 @@
 #include <stdlib.h>
 
 typedef long long Value;
+typedef int32_t Index;
 
 #define CHECK
 #define WARM_CACHE
 
-__attribute__((noinline)) Value foo(Value *a, Value *b, int *ia, int *ib,
-                                    int N) {
-  int x = 0;
-  int y = 0;
+__attribute__((noinline)) Value foo_branch(Value *a, Value *b, Index *ia,
+                                           Index *ib, int M, int N) {
+  int64_t x = 0;
+  int64_t y = 0;
   Value c = 0;
-  while (x < N && y < N) {
+  while (x < M && y < N) {
     if (ia[x] == ib[y]) {
       c += a[x] * b[y];
       x++;
@@ -30,12 +31,30 @@ __attribute__((noinline)) Value foo(Value *a, Value *b, int *ia, int *ib,
   return c;
 }
 
+__attribute__((noinline)) Value foo(Value *a, Value *b, Index *ia, Index *ib,
+                                    int M, int N) {
+  int64_t x = 0;
+  int64_t y = 0;
+  Value c = 0;
+  while (x < M && y < N) {
+    int idxA = ia[x];
+    int idxB = ib[y];
+    Value valA = a[x];
+    Value valB = b[y];
+    Value nextC = valA * valB + c;
+    c = (idxA == idxB) ? nextC : c;
+    x = (idxA <= idxB) ? (x + 1) : x;
+    y = (idxB <= idxA) ? (y + 1) : y;
+  }
+  return c;
+}
+
 // 65536*4 is 512kB.
 const int N = 65536;
 Value a[N];
 Value b[N];
-int ia[N];
-int ib[N];
+Index ia[N];
+Index ib[N];
 
 void fillIndex();
 
@@ -49,10 +68,8 @@ int main() {
   }
 #endif
 
-  int ia[] = {0, 2, 4, 6, 8};
-  int ib[] = {1, 2, 3, 8, 9};
   m5_detail_sim_start();
-  volatile Value ret = foo(a, b, ia, ib, N);
+  volatile Value ret = foo(a, b, ia, ib, N, N);
   m5_detail_sim_end();
 
 #ifdef CHECK

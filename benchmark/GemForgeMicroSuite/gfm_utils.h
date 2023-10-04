@@ -86,6 +86,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <immintrin.h>
 
 #include "affinity_alloc.h"
 
@@ -146,17 +147,24 @@ void LOAD_BIN_ARRAY_FROM_FILE_TO_BUFFER(int64_t size, char *buffer,
   m5_stream_nuca_set_property(start, property, value)
 #define gf_stream_nuca_remap() m5_stream_nuca_remap()
 
-void gf_warm_array(const char *name, void *buffer, uint64_t totalBytes) {
+__attribute__((noinline)) uint64_t gf_warm_array(const char *name, void *buffer,
+                                                 uint64_t totalBytes) {
   uint64_t cachedBytes = m5_stream_nuca_get_cached_bytes(buffer);
   printf("[GF_WARM] Region %s TotalBytes %lu CachedBytes %lu Cached %.2f%%.\n",
          name, totalBytes, cachedBytes,
          ((float)cachedBytes) / ((float)totalBytes) * 100.f);
   assert(cachedBytes <= totalBytes);
-  for (uint64_t i = 0; i < cachedBytes; i += 64) {
-    __attribute__((unused)) volatile uint8_t data = ((uint8_t *)buffer)[i];
+
+  uint8_t *buf = (uint8_t *)buffer;
+  uint64_t N = cachedBytes / 64;
+  uint64_t x = 0;
+#pragma clang loop unroll(disable) vectorize(disable) interleave(disable)
+  for (uint64_t i = 0; i < N; i++) {
+    x += buf[i * 64];
   }
   printf("[GF_WARM] Region %s Warmed %.2f%%.\n", name,
          ((float)cachedBytes) / ((float)totalBytes) * 100.f);
+  return x;
 }
 
 #else

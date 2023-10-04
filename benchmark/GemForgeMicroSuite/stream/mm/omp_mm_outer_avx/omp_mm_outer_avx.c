@@ -30,8 +30,9 @@ typedef ValueT Value;
 #define BLOCK_SIZE 16
 #endif
 
-__attribute__((noinline)) Value foo(Value *A, Value *B, Value *C, int64_t L,
-                                    int64_t M, int64_t N, int64_t m) {
+__attribute__((noinline)) Value foo(Value *restrict A, Value *restrict B,
+                                    Value *restrict C, int64_t L, int64_t M,
+                                    int64_t N, int64_t m) {
 
   /**
    * A is LxM, B is MxN, C is LxN.
@@ -43,73 +44,50 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *C, int64_t L,
   // int64_t tailCol = colBlocks * BLOCK_SIZE;
 
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static) firstprivate(A, B, C, L, M, N, m)
+#pragma omp parallel firstprivate(A, B, C, L, M, N, m)
 #endif
-  for (int64_t l = 0; l < L; ++l) {
+  {
+    __builtin_assume(L > 0);
+    __builtin_assume(M > 0);
+    __builtin_assume(N > 0);
+    __builtin_assume(L % 16 == 0);
+    __builtin_assume(M % 16 == 0);
+    __builtin_assume(N % 16 == 0);
+
+#ifndef NO_OPENMP
+#pragma omp for schedule(static)
+#endif
+    for (int64_t l = 0; l < L; ++l) {
 
 #pragma ss stream_name "gfm.mm_outer.A.ld"
-    Value a = A[l * M + m];
-
-    /**
-     * Somehow auto-vectorized loop has an epilogue loop. Streams within this
-     * epilogue loop can't be configured at outer loop, which makes the region
-     * not eliminated.
-     *
-     * For now I will manually vectorize the loop.
-     */
+      Value a = A[l * M + m];
 
 #ifndef NO_AVX
-
-    const int64_t vElem = 64 / sizeof(Value);
-#pragma clang unroll(disable) interleave(disable)
-    for (int64_t n = 0; n < N - (vElem - 1); n += vElem) {
-
-#pragma ss stream_name "gfm.mm_outer.B.ld"
-      ValueAVX vb = ValueAVXLoad(B + m * N + n);
-
-#pragma ss stream_name "gfm.mm_outer.C.ld"
-      ValueAVX vc = ValueAVXLoad(C + l * N + n);
-
-      ValueAVX va = ValueAVXSet1(a);
-
-      ValueAVX v = ValueAVXAdd(vc, ValueAVXMul(va, vb));
-
-#pragma ss stream_name "gfm.mm_outer.C.st"
-      ValueAVXStore(C + l * N + n, v);
-    }
-
-    const int64_t remain = (N / vElem) * vElem;
-#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-    for (int64_t n = remain; n < N; ++n) {
-
-#pragma ss stream_name "gfm.mm_outer.ep.B.ld"
-      Value b = B[m * N + n];
-
-#pragma ss stream_name "gfm.mm_outer.ep.C.ld"
-      Value c = C[l * N + n];
-
-      Value v = c + a * b;
-
-#pragma ss stream_name "gfm.mm_outer.ep.C.st"
-      C[l * N + n] = v;
-    }
+      // Vectorized version.
+#ifndef NO_OPENMP
+#pragma omp simd
 #else
-    // Scalar version.
+#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
+#endif
+#else
+      // Scalar version.
 #pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
-    for (int64_t n = 0; n < N; ++n) {
+#endif
+      for (int64_t n = 0; n < N; ++n) {
 
 #pragma ss stream_name "gfm.mm_outer.B.ld"
-      Value b = B[m * N + n];
+        Value b = B[m * N + n];
 
 #pragma ss stream_name "gfm.mm_outer.C.ld"
-      Value c = C[l * N + n];
+        Value c = C[l * N + n];
 
-      Value v = c + a * b;
+        Value v = c + a * b;
 
 #pragma ss stream_name "gfm.mm_outer.C.st"
-      C[l * N + n] = v;
+        C[l * N + n] = v;
+      }
+      // #endif
     }
-#endif
   }
 
   return 0;

@@ -7,9 +7,13 @@
 #include <omp.h>
 #endif
 
+// Classic inner product.
 #define LOOP_LNM 1
 #define LOOP_NLM 2
 #define LOOP_LMN 3
+// Tiled design: Inner-Outer
+#define LOOP_LNM_LNM 4
+#define LOOP_LNM_MLN 5
 
 #ifndef LOOP_ORDER
 #define LOOP_ORDER LOOP_LNM
@@ -38,7 +42,8 @@ typedef ValueT Value;
 #define BLOCK_SIZE 16
 #endif
 
-__attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
+__attribute__((noinline)) Value foo(Value *restrict A, Value *restrict B,
+                                    Value *restrict Bt, Value *restrict C,
                                     int64_t L, int64_t M, int64_t N,
                                     int64_t P) {
 
@@ -79,22 +84,26 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
  **********************************************/
 #if defined(TILE_L) && defined(TILE_N) && defined(TILE_M)
 
-#if LOOP_ORDER != LOOP_LNM
-#error "LOOP_ORDER should be LNM when tiled."
-#endif
+#if LOOP_ORDER == LOOP_LNM_LNM || LOOP_ORDER == LOOP_LNM_MLN
 
 #ifndef NO_OPENMP
-#pragma omp parallel for schedule(static) firstprivate(A, Bt, C, L, M, N, P)
+#pragma omp parallel for schedule(static) firstprivate(A, B, Bt, C, L, M, N, P)
 #endif
 
   for (int64_t ll = 0; ll < P * TILE_L; ll += TILE_L) {
 
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
     for (int64_t nn = 0; nn < N; nn += TILE_N) {
 
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
       for (int64_t mm = 0; mm < M; mm += TILE_M) {
 
+#if LOOP_ORDER == LOOP_LNM_LNM
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
         for (int64_t l = 0; l < TILE_L; ++l) {
 
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
           for (int64_t n = 0; n < TILE_N; ++n) {
 
             Value s = 0;
@@ -106,17 +115,59 @@ __attribute__((noinline)) Value foo(Value *A, Value *B, Value *Bt, Value *C,
 #endif
             for (int64_t m = 0; m < TILE_M; ++m) {
 
+#pragma ss stream_name "gfm.mm.A.ld"
               Value a = A[(ll + l) * M + mm + m];
+#pragma ss stream_name "gfm.mm.Bt.ld"
               Value b = Bt[(nn + n) * M + mm + m];
               s += a * b;
             }
 
-            C[(ll + l) * N + nn + n] += s;
+#pragma ss stream_name "gfm.mm.C.ld"
+            Value c = C[(ll + l) * N + nn + n];
+#pragma ss stream_name "gfm.mm.C.st"
+            C[(ll + l) * N + nn + n] = c + s;
           }
         }
+
+#elif LOOP_ORDER == LOOP_LNM_MLN
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+        for (int64_t m = 0; m < TILE_M; ++m) {
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+          for (int64_t l = 0; l < TILE_L; ++l) {
+
+#pragma ss stream_name "gfm.mm.A.ld"
+            Value a = A[(ll + l) * M + mm + m];
+
+#ifndef NO_AVX
+#ifndef NO_OPENMP
+#pragma omp simd
+#else
+#pragma clang loop vectorize_width(16) unroll(disable) interleave(disable)
+#endif
+#else
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
+#endif
+            for (int64_t n = 0; n < TILE_N; ++n) {
+#pragma ss stream_name "gfm.mm.B.ld"
+              Value b = B[(mm + m) * N + nn + n];
+#pragma ss stream_name "gfm.mm.C.ld"
+              Value c = C[(ll + l) * N + nn + n];
+#pragma ss stream_name "gfm.mm.C.st"
+              C[(ll + l) * N + nn + n] = c + a * b;
+            }
+          }
+        }
+
+#endif
       }
     }
   }
+
+#else
+#error "Unsupported tiled LOOP_ORDER."
+#endif
 
 /**********************************************
  * Non-Tiled implementation.
