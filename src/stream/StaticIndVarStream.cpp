@@ -211,40 +211,38 @@ bool StaticIndVarStream::ternCheck(const llvm::SCEVAddExpr *AddSCEV) {
   // const llvm::SCEV *LoopVariantSCEV = nullptr;
   auto OpSCEV1 = AddSCEV->getOperand(0);
   auto OpSCEV2 = AddSCEV->getOperand(1);
-  bool ZextValid = false;
   const llvm::SCEVZeroExtendExpr *ZopExpr;
   LLVM_DEBUG(llvm::dbgs() << OpSCEV1);
-  if (llvm::isa<llvm::SCEVZeroExtendExpr>(OpSCEV1)) {
+  if (ZopExpr = llvm::dyn_cast<llvm::SCEVZeroExtendExpr>(OpSCEV1)) {
     LLVM_DEBUG(llvm::dbgs() << "Zext expression found as first operand\n");
 
-    auto ZopSCEV = llvm::dyn_cast<llvm::SCEVZeroExtendExpr>(OpSCEV1);
-    ZopExpr = ZopSCEV;
-    auto Op1 = ZopSCEV->getOperand(0)->getType();
+    auto ExtendedValue = ZopExpr->getOperand(0);
+    auto ExtendedType = ExtendedValue->getType();
     LLVM_DEBUG({
-      ZopSCEV->dump();
+      ZopExpr->dump();
       OpSCEV1->dump();
-      Op1->dump();
-      if (llvm::isa<llvm::SCEVUnknown>(ZopSCEV->getOperand(0))) {
+      ExtendedType->dump();
+      if (llvm::isa<llvm::SCEVUnknown>(ZopExpr->getOperand(0))) {
         llvm::dbgs() << "Unknown value found\n";
       }
-      // llvm::dbgs() << "\n";
     });
 
-    if (Op1->isIntegerTy(1)) {
-      LLVM_DEBUG(llvm::dbgs() << "Zext has 1 bit int \n ");
-      ZextValid = true;
-      // LLVM_DEBUG(llvm::dbgs() << ZextValid);
-    }
-  }
-  if (auto USCEV = llvm::dyn_cast<llvm::SCEVUnknown>(OpSCEV2)) {
-    LLVM_DEBUG(llvm::dbgs() << "Unknown expression found as 2nd operand.\n");
-    if (USCEV->getValue() == this->PHINode) {
+    if (ExtendedType->isIntegerTy(1) &&
+        llvm::isa<llvm::SCEVUnknown>(ExtendedValue)) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "Second operand is PHI. Ternary Check Complete.\n");
+                 << "Zexted Value has 1 bit int and is SCEV Unknown.\n ");
+      if (auto USCEV = llvm::dyn_cast<llvm::SCEVUnknown>(OpSCEV2)) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Unknown expression found as 2nd operand.\n");
+        if (USCEV->getValue() == this->PHINode) {
+          LLVM_DEBUG(llvm::dbgs()
+                     << "Second operand is PHI. Ternary Check Complete.\n");
 
-      StepAmnt =
-          llvm::dyn_cast<llvm::SCEVUnknown>(ZopExpr->getOperand(0))->getValue();
-      return ZextValid;
+          this->StepAmnt =
+              llvm::dyn_cast<llvm::SCEVUnknown>(ExtendedValue)->getValue();
+          return true;
+        }
+      }
     }
   }
   LLVM_DEBUG(
