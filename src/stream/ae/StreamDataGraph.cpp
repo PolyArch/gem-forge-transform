@@ -83,8 +83,8 @@ void StreamDataGraph::constructDataGraph(IsIndOrCmpVarFuncT IsIndOrCmpVar) {
       // The instruction is inserted, which means that it is an new instruction.
       // We need to push into the BFS queue, with special cases for AMX.
       if (Utils::isAMXComputeInst(Inst)) {
-        // Skip the first dest register and last intrinsic value.
-        for (unsigned OperandIdx = 1, NumOperand = Inst->getNumOperands();
+        // Skip the last intrinsic value.
+        for (unsigned OperandIdx = 0, NumOperand = Inst->getNumOperands();
              OperandIdx + 1 < NumOperand; ++OperandIdx) {
           auto AMXRegIdx = Inst->getOperand(OperandIdx);
           auto AMXValue = Utils::getAMXValue(Inst, AMXRegIdx);
@@ -207,8 +207,8 @@ StreamDataGraph::sliceWithFusedOp(const StreamSet &Streams) const {
     for (const auto &ComputeInst : NewComputeInsts) {
       // Correctly handle the AMX dependence.
       if (Utils::isAMXComputeInst(ComputeInst)) {
-        for (auto OperandIdx = 0; OperandIdx + 1 < ComputeInst->getNumOperands();
-             ++OperandIdx) {
+        for (auto OperandIdx = 0;
+             OperandIdx + 1 < ComputeInst->getNumOperands(); ++OperandIdx) {
           auto Operand = ComputeInst->getOperand(OperandIdx);
           auto AMXValue = Utils::getAMXValue(ComputeInst, Operand);
           if (AMXValue == FinalInputValue) {

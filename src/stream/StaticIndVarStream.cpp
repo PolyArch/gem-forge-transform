@@ -236,15 +236,11 @@ bool StaticIndVarStream::ternCheck(const llvm::SCEVAddExpr *AddSCEV) {
       // LLVM_DEBUG(llvm::dbgs() << ZextValid);
     }
   }
-  if (llvm::isa<llvm::SCEVUnknown>(OpSCEV2)) {
-    auto USCEV = llvm::dyn_cast<llvm::SCEVUnknown>(OpSCEV2);
-    auto phiU =
-        llvm::dyn_cast<llvm::SCEVUnknown>(this->SE->getSCEV(this->PHINode));
-    llvm::dbgs() << "Unknown expression found as 2nd operand";
-    if (USCEV->getValue() == phiU->getValue()) {
+  if (auto USCEV = llvm::dyn_cast<llvm::SCEVUnknown>(OpSCEV2)) {
+    LLVM_DEBUG(llvm::dbgs() << "Unknown expression found as 2nd operand.\n");
+    if (USCEV->getValue() == this->PHINode) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "Second operand is PHI, Ternary Check Complete \n");
-      // LLVM_DEBUG(llvm::dbgs() << ZextValid);
+                 << "Second operand is PHI. Ternary Check Complete.\n");
 
       StepAmnt =
           llvm::dyn_cast<llvm::SCEVUnknown>(ZopExpr->getOperand(0))->getValue();
