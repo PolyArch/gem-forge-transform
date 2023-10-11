@@ -957,32 +957,27 @@ void StaticStream::fillProtobufStreamInfo(
   ProtobufInfo->set_name(this->getStreamName());
   ProtobufInfo->set_id(this->StreamId);
   ProtobufInfo->set_region_stream_id(this->RegionStreamId);
-  switch (this->Inst->getOpcode()) {
-  case llvm::Instruction::PHI:
-    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
-    break;
-  case llvm::Instruction::Load:
-    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
-    break;
-  case llvm::Instruction::Store:
+  if (Utils::isStoreInst(this->Inst)) {
     ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_ST);
-    break;
-  case llvm::Instruction::AtomicRMW:
-  case llvm::Instruction::AtomicCmpXchg:
-    ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
-    break;
-  case llvm::Instruction::Call: {
-    if (Utils::getCalledFunction(Inst)->getIntrinsicID() ==
-        llvm::Intrinsic::masked_store) {
-      ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_ST);
-    } else {
+  } else {
+    switch (this->Inst->getOpcode()) {
+    case llvm::Instruction::PHI:
+      ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_IV);
+      break;
+    case llvm::Instruction::Load:
       ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
+      break;
+    case llvm::Instruction::AtomicRMW:
+    case llvm::Instruction::AtomicCmpXchg:
+      ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_AT);
+      break;
+    case llvm::Instruction::Call:
+      ProtobufInfo->set_type(::LLVM::TDG::StreamInfo_Type_LD);
+      break;
+    default:
+      llvm::errs() << "Invalid stream type " << this->getStreamName() << '\n';
+      break;
     }
-    break;
-  }
-  default:
-    llvm::errs() << "Invalid stream type " << this->getStreamName() << '\n';
-    break;
   }
 
   // Dump the address function.

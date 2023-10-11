@@ -762,7 +762,7 @@ void StreamExecutionTransformer::transformLoadInst(
   }
 
   llvm::Value *StreamLoadInst = nullptr;
-  if (Utils::isTileLoadInst(S->Inst)) {
+  if (Utils::isAMXLoadInst(S->Inst)) {
     StreamLoadInst = this->addStreamTileLoad(
         S, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
         &ClonedFinalValueInst->getDebugLoc());
@@ -1614,7 +1614,7 @@ void StreamExecutionTransformer::cleanClonedModule() {
     bool StreamCleared = false;
     // Do not do this for the TileLoad for now.
     // TODO: Correctly track whether the loaded tile is used.
-    if (Utils::isTileLoadInst(S->Inst)) {
+    if (Utils::isAMXLoadInst(S->Inst)) {
       continue;
     }
     if (S->isLoopEliminated()) {

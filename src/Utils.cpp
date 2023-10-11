@@ -215,21 +215,6 @@ bool Utils::isMemAccessInst(const llvm::Instruction *Inst) {
   return false;
 }
 
-bool Utils::isTileLoadInst(const llvm::Instruction *Inst) {
-  if (Utils::isCallOrInvokeInst(Inst)) {
-    // Check if this is a masked store with constant mask.
-    auto Callee = Utils::getCalledFunction(Inst);
-    if (Callee && Callee->isIntrinsic()) {
-      auto IntrinsicID = Callee->getIntrinsicID();
-      if (IntrinsicID == llvm::Intrinsic::x86_tileloadd64) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 llvm::Value *Utils::getMemAddrValue(const llvm::Instruction *Inst) {
   assert(
       Utils::isMemAccessInst(Inst) &&
