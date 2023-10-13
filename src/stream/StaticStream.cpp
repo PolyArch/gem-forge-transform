@@ -866,8 +866,7 @@ void StaticStream::generateValueFunction(
     LLVM_DEBUG(llvm::dbgs()
                << "Generating ValueDG for " << this->getStreamName() << '\n');
     // Special case for fused load ops.
-    if (this->Inst->getOpcode() == llvm::Instruction::Load &&
-        !this->FusedLoadOps.empty()) {
+    if (Utils::isLoadInst(this->Inst) && !this->FusedLoadOps.empty()) {
       this->ValueDG->generateFunction(this->FuncNameBase + "_load", Module);
       assert(!this->UpdateStream && "FusedLoadOp in UpdateStream.");
       return;
@@ -884,8 +883,7 @@ void StaticStream::generateValueFunction(
   }
   // Special case for update stream. The store stream will be not chosen,
   // so we have to call it directly.
-  if (this->Inst->getOpcode() == llvm::Instruction::Load &&
-      this->UpdateStream &&
+  if (Utils::isLoadInst(this->Inst) && this->UpdateStream &&
       this->StaticStreamInfo.compute_info().enabled_store_func()) {
     LLVM_DEBUG(llvm::dbgs()
                << "Generating UpdateDG for " << this->getStreamName() << '\n');
