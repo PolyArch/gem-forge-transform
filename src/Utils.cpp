@@ -25,6 +25,16 @@ std::unordered_map<const llvm::Instruction *, const llvm::Instruction *>
 
 InstructionUIDMap Utils::InstUIDMap;
 
+bool Utils::isLoadInst(const llvm::Instruction *Inst) {
+  if (llvm::isa<llvm::LoadInst>(Inst)) {
+    return true;
+  }
+  if (Utils::isAMXLoadInst(Inst)) {
+    return true;
+  }
+  return false;
+}
+
 bool Utils::isStoreInst(const llvm::Instruction *Inst) {
   if (llvm::isa<llvm::StoreInst>(Inst)) {
     return true;

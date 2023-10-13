@@ -34,6 +34,7 @@ public:
   static llvm::Value *getMemAddrValue(const llvm::StoreInst *Inst) {
     return Inst->getOperand(1);
   }
+  static bool isLoadInst(const llvm::Instruction *Inst);
   static bool isStoreInst(const llvm::Instruction *Inst);
   static llvm::Value *getStoreValue(const llvm::Instruction *Inst);
 

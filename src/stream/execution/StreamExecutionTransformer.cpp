@@ -2217,7 +2217,7 @@ void StreamExecutionTransformer::handleExtraInputValue(
    * If this stream enabled ValueDG, add more ValueDG inputs.
    */
   if (SS->StaticStreamInfo.compute_info().enabled_store_func()) {
-    if (SS->Inst->getOpcode() == llvm::Instruction::Load) {
+    if (Utils::isLoadInst(SS->Inst)) {
       // This should be the update stream.
       assert(SS->UpdateStream &&
              "Missing UpdateStream for LoadStream with StoreFunc.");

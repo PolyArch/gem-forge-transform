@@ -269,7 +269,7 @@ void StaticStreamRegionAnalyzer::markUpdateRelationship() {
    */
   for (auto &InstStreams : this->InstStaticStreamMap) {
     auto Inst = InstStreams.first;
-    if (Inst->getOpcode() == llvm::Instruction::Load) {
+    if (Utils::isLoadInst(Inst)) {
       for (auto LoadSS : this->InstStaticStreamMap.at(Inst)) {
         this->markUpdateRelationshipForLoadStream(LoadSS);
       }
