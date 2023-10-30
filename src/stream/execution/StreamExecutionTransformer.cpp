@@ -766,6 +766,15 @@ void StreamExecutionTransformer::transformLoadInst(
     StreamLoadInst = this->addStreamTileLoad(
         S, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
         &ClonedFinalValueInst->getDebugLoc());
+  } else if (Utils::isPFLoadInst(S->Inst)) {
+    assert(S->FusedLoadOps.empty());
+    StreamLoadInst = this->addStreamLoadOrAtomic(
+        S, Utils::getType(ClonedFinalValueInst), ClonedFinalValueInst,
+        &ClonedFinalValueInst->getDebugLoc());
+
+    // PFLoadS should have nothing else to do.
+    return;
+
   } else {
     StreamLoadInst = this->addStreamLoadOrAtomic(
         S, ClonedFinalValueInst->getType(), ClonedFinalValueInst,
@@ -893,8 +902,6 @@ llvm::Value *StreamExecutionTransformer::addStreamTileLoad(
   auto TileRegValue = this->getClonedValue(Utils::getArgOperand(S->Inst, 0));
 
   std::array<llvm::Value *, 2> StreamTileLoadArgs{StreamIdValue, TileRegValue};
-
-  auto StreamLoadType = LoadType;
 
   llvm::IRBuilder<> Builder(ClonedInsertBefore);
 

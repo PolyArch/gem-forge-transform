@@ -32,6 +32,9 @@ bool Utils::isLoadInst(const llvm::Instruction *Inst) {
   if (Utils::isAMXLoadInst(Inst)) {
     return true;
   }
+  if (Utils::isPFLoadInst(Inst)) {
+    return true;
+  }
   return false;
 }
 
@@ -70,6 +73,11 @@ llvm::Value *Utils::getStoreValue(const llvm::Instruction *Inst) {
 llvm::Type *Utils::getType(const llvm::Value *Value) {
   if (Utils::isAMXLoadInst(Value) || Utils::isAMXComputeInst(Value)) {
     // Use vector float to fake tile register.
+    return llvm::FixedVectorType::get(
+        llvm::Type::getFloatTy(Value->getContext()), 16);
+  }
+  if (Utils::isPFLoadInst(Value)) {
+    // Use vector float to one cache line.
     return llvm::FixedVectorType::get(
         llvm::Type::getFloatTy(Value->getContext()), 16);
   }
@@ -193,6 +201,30 @@ const llvm::Value *Utils::getAMXValue(const llvm::Instruction *ConsumingInst,
   return Producers.front();
 }
 
+bool Utils::isPFLoadInst(const llvm::Instruction *Inst) {
+  if (Utils::isCallOrInvokeInst(Inst)) {
+    // Check if this is a masked store with constant mask.
+    auto Callee = Utils::getCalledFunction(Inst);
+    if (Callee && Callee->isIntrinsic()) {
+      auto IntrinsicID = Callee->getIntrinsicID();
+      if (IntrinsicID == llvm::Intrinsic::prefetch) {
+        /**
+         * We need to check that it is read from data cache.
+         */
+        auto RW =
+            llvm::dyn_cast<llvm::ConstantInt>(Utils::getArgOperand(Inst, 1));
+        auto CacheType =
+            llvm::dyn_cast<llvm::ConstantInt>(Utils::getArgOperand(Inst, 3));
+        if (RW->isZero() && CacheType->isOne()) {
+          // RW=0 -> read, CacheType=1 -> data cache.
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 bool Utils::isMemAccessInst(const llvm::Instruction *Inst) {
   switch (Inst->getOpcode()) {
   case llvm::Instruction::Load:
@@ -218,6 +250,18 @@ bool Utils::isMemAccessInst(const llvm::Instruction *Inst) {
         return true;
       } else if (IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
         return true;
+      } else if (IntrinsicID == llvm::Intrinsic::prefetch) {
+        /**
+         * We need to check that it is read from data cache.
+         */
+        auto RW =
+            llvm::dyn_cast<llvm::ConstantInt>(Utils::getArgOperand(Inst, 1));
+        auto CacheType =
+            llvm::dyn_cast<llvm::ConstantInt>(Utils::getArgOperand(Inst, 3));
+        if (RW->isZero() && CacheType->isOne()) {
+          // RW=0 -> read, CacheType=1 -> data cache.
+          return true;
+        }
       }
     }
   }
@@ -247,6 +291,11 @@ llvm::Value *Utils::getMemAddrValue(const llvm::Instruction *Inst) {
     } else if (IntrinsicID == llvm::Intrinsic::x86_tilestored64) {
       // AMX tile store.
       return Utils::getArgOperand(Inst, 1);
+    } else if (IntrinsicID == llvm::Intrinsic::prefetch) {
+      /**
+       * We need to check that it is read from data cache.
+       */
+      return Utils::getArgOperand(Inst, 0);
     }
     break;
   }

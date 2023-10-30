@@ -173,6 +173,10 @@ llvm::Type *StaticStream::getMemElementType() const {
       // Get a fake v256f32 1kB vector type.
       return llvm::FixedVectorType::get(
           llvm::Type::getFloatTy(this->Inst->getModule()->getContext()), 256);
+    } else if (IntrinsicID == llvm::Intrinsic::prefetch) {
+      // Get a fake v16f32 64B vector type.
+      return llvm::FixedVectorType::get(
+          llvm::Type::getFloatTy(this->Inst->getModule()->getContext()), 16);
     } else {
       // This should be some atomic operation.
       return this->Inst->getType();

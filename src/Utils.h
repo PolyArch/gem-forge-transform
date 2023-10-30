@@ -40,6 +40,15 @@ public:
 
   static llvm::Type *getType(const llvm::Value *Value);
 
+  static bool isPFLoadInst(const llvm::Value *Value) {
+    if (auto Inst = llvm::dyn_cast<llvm::Instruction>(Value)) {
+      return Utils::isPFLoadInst(Inst);
+    } else {
+      return false;
+    }
+  }
+  static bool isPFLoadInst(const llvm::Instruction *Inst);
+
   /**
    * Used to get the AMX tile value.
    */
